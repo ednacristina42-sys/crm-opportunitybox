@@ -2688,7 +2688,7 @@ function fatGerarPDF() {
   (obs ? '<div style="margin-top:16px;font-size:13px;color:#666;border-top:1px solid #eee;padding-top:10px">'+obs+'</div>' : '') +
   '<div style="margin-top:24px;text-align:center;font-size:12px;color:#999;border-top:1px solid #eee;padding-top:12px">' +
   'OpportunityBox · NIPC 510 575 170 · geral@opportunitybox.pt · www.opportunitybox.pt · +351 215 874 779</div>' +
-  '</body></html>';
+  '\n</body></html>';
 
   var win = window.open('', '_blank');
   win.document.write(html);
@@ -2698,15 +2698,17 @@ function fatGerarPDF() {
 
 // ── Enviar fatura ao TOConline ───────────────────────────────
 async function fatEnviarToco(fatNum) {
-  if (typeof TOCO_WEBHOOK_URL === 'undefined' || !TOCO_WEBHOOK_URL) {
-    alert('Configura primeiro o webhook TOConline (botão 🧾 TocOnline).');
-    return;
-  }
+  // Usar sempre o webhook fixo do Make
+  var WEBHOOK = 'https://hook.eu2.make.com/sayhmfcg8o8bzl5a99aoqj4uxrvf4exh';
   var fat = fatData.find(function(f) { return f.num === fatNum; });
   if (!fat) return;
   var statusEl = document.getElementById('fat-modal-status');
+  // Mostrar loading
+  if (statusEl) { statusEl.textContent = '⏳ A enviar para TOConline...'; statusEl.style.color='var(--muted)'; statusEl.style.display='block'; }
+  // Atualizar botão se existir
+  var btn = document.querySelector('[data-toco-fat="'+fatNum+'"]');
+  if (btn) { btn.textContent = '⏳'; btn.disabled = true; }
   try {
-    // Payload alinhado com cenário Make → TOConline
     var body = JSON.stringify({
       fat_num:      fat.num,
       cli:          fat.cli,
@@ -2724,19 +2726,26 @@ async function fatEnviarToco(fatNum) {
       obs:          fat.obs || '',
       source:       'OpportunityBox CRM'
     });
-    var resp = await fetch(TOCO_WEBHOOK_URL, { method:'POST', headers:{'Content-Type':'application/json'}, body:body });
+    var resp = await fetch(WEBHOOK, { method:'POST', headers:{'Content-Type':'application/json'}, body:body });
     if (resp.ok) {
+      var data = {};
+      try { data = await resp.json(); } catch(e) {}
       fat.tocoStatus = 'Enviada';
-      fat.tocoId = 'TOCO-' + Date.now();
+      fat.tocoId = data.toconline_doc_id || data.Id || ('TOCO-' + Date.now());
+      fat.tocoNum = data.toconline_num || data.Number || '';
       fat.st = 'Enviada';
       fatSave();
       fatRenderList();
-      if (statusEl) { statusEl.textContent = '✓ Enviado para TOConline'; statusEl.style.color='var(--g)'; statusEl.style.display='block'; }
+      var msg = '✓ Fatura criada no TOConline' + (fat.tocoNum ? ' — Nº ' + fat.tocoNum : '');
+      if (statusEl) { statusEl.textContent = msg; statusEl.style.color='var(--g)'; statusEl.style.display='block'; }
+      if (btn) { btn.textContent = '✓ TOConline'; btn.disabled = false; btn.style.color='var(--g)'; }
     } else {
-      throw new Error('HTTP ' + resp.status);
+      var errText = await resp.text().catch(()=>'');
+      throw new Error('HTTP ' + resp.status + (errText ? ': ' + errText.slice(0,120) : ''));
     }
   } catch(e) {
     if (statusEl) { statusEl.textContent = '✗ Erro TOConline: ' + e.message; statusEl.style.color='var(--r)'; statusEl.style.display='block'; }
+    if (btn) { btn.textContent = '🧾 TocOnline'; btn.disabled = false; }
     console.warn('[fatEnviarToco]', e);
   }
 }
@@ -2795,7 +2804,7 @@ function fatRenderList() {
       // ADD: Item 3 — badge de contactos + botão log
       '<td style="display:flex;gap:3px;flex-wrap:wrap;align-items:center">' +
         '<button class="tbtn" style="font-size:11px;padding:2px 6px" onclick="fatGerarPDFNum(' + JSON.stringify(f.num) + ')" title="PDF">📄</button>' +
-        '<button class="tbtn" style="font-size:11px;padding:2px 6px" onclick="fatEnviarToco(' + JSON.stringify(f.num) + ')" title="TOConline">🧾</button>' +
+        '<button class="tbtn" data-toco-fat="' + f.num + '" style="font-size:11px;padding:2px 6px' + (f.tocoStatus ? ';color:var(--g)' : '') + '" onclick="fatEnviarToco(' + JSON.stringify(f.num) + ')" title="TOConline">' + (f.tocoStatus ? '✓' : '🧾') + '</button>' +
         (f.st !== 'Paga' ? '<button class="tbtn" style="font-size:11px;padding:2px 6px;color:var(--g)" onclick="fatMarcarPaga(' + JSON.stringify(f.num) + ')" title="Marcar como Paga">✓</button>' : '') +
         '<button class="tbtn" style="font-size:11px;padding:2px 6px;color:var(--muted);position:relative" onclick="cobLogOpen(' + JSON.stringify(f.num) + ')" title="Log de Cobrança">' +
           '📞' + (cobContarLog(f.num) > 0 ? '<span style="position:absolute;top:-4px;right:-4px;background:var(--y);color:#000;border-radius:50%;width:12px;height:12px;font-size:10px;display:flex;align-items:center;justify-content:center;font-weight:700">' + cobContarLog(f.num) + '</span>' : '') +
@@ -3012,7 +3021,7 @@ function fatEnviarCobranca(fatNum) {
   var fat = fatData.find(function(f) { return f.num === fatNum; });
   if (!fat) return;
   var assunto = encodeURIComponent('[OpportunityBox] Fatura ' + fatNum + ' — Pagamento em Atraso');
-    var corpo = encodeURIComponent(
+  var corpo = encodeURIComponent(
     'Exmo(a) Sr(a),\n\nViemos por este meio informar que a fatura ' + fatNum + ' no valor de \u20ac' + (fat.total||0).toFixed(2) +
     ', emitida a ' + fat.dataEmissao + ', encontra-se vencida desde ' + fat.vencimento + '.\n\nAgradecemos a regulariza\u00e7\u00e3o com a maior brevidade poss\u00edvel.\n\n' +
     'Para pagamento por transfer\u00eancia:\nIBAN: PT50 0007 0000 0019 9443 8352 3\nEntidade: OpportunityBox\n\n' +
@@ -3185,6 +3194,77 @@ function nbTestarConexao() {
 })();
 
 </script>
+
+<!-- TOCO TOAST -->
+<div id="toco-toast" class="toco-toast"></div>
+
+<!-- ═══ MODAL TOCONLINE CONFIG ══════════════════════════════ -->
+<div class="toco-modal-overlay" id="toco-config-modal" style="display:none;position:fixed;inset:0;z-index:10001;background:rgba(0,0,0,.75);backdrop-filter:blur(4px);align-items:center;justify-content:center">
+  <div class="toco-modal-box">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+      <div style="font-size:17px;font-weight:700;color:var(--txt2)">⚙️ Configuração TocOnline</div>
+      <button onclick="tocoFecharConfig()" style="background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer">×</button>
+    </div>
+    <div style="font-size:12px;color:var(--muted);background:var(--bg3);border-radius:8px;padding:10px 12px;margin-bottom:16px">
+      💡 A API Key encontra-se em: <strong>TocOnline → Definições → Integrações → API</strong><br>
+      Se a ligação directa falhar por CORS, usa o Make.com como intermediário.
+    </div>
+    <div class="form-group" style="margin-bottom:12px">
+      <label class="form-label">API Key *</label>
+      <div style="display:flex;gap:6px">
+        <input type="password" id="toco-cfg-key" class="form-input" placeholder="ba319c2819c2315d1e493cfcb4b9e4eb" style="flex:1;font-family:monospace"/>
+        <button onclick="tocoToggleKeyVisibility()" style="background:var(--bg3);border:1px solid var(--border);color:var(--muted);border-radius:7px;padding:5px 10px;cursor:pointer;font-size:13px" id="toco-cfg-key-toggle">👁</button>
+      </div>
+    </div>
+    <div class="form-group" style="margin-bottom:12px">
+      <label class="form-label">URL Base da API</label>
+      <input type="text" id="toco-cfg-url" class="form-input" value="https://api30.toconline.pt" placeholder="https://api30.toconline.pt"/>
+    </div>
+    <div class="form-group" style="margin-bottom:12px">
+      <label class="form-label">NIF da Empresa</label>
+      <input type="text" id="toco-cfg-nif" class="form-input" placeholder="pt518038920" style="font-family:monospace"/>
+    </div>
+    <div class="form-group" style="margin-bottom:12px">
+      <label class="form-label">URL Webhook Make.com (proxy CORS — opcional)</label>
+      <input type="text" id="toco-cfg-webhook" class="form-input" placeholder="https://hook.eu2.make.com/..."/>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+      <input type="checkbox" id="toco-cfg-auto" style="cursor:pointer"/>
+      <label for="toco-cfg-auto" style="font-size:13px;color:var(--txt2);cursor:pointer">Sincronizar automaticamente ao abrir Faturas</label>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px">
+      <input type="checkbox" id="toco-cfg-proxy" style="cursor:pointer"/>
+      <label for="toco-cfg-proxy" style="font-size:13px;color:var(--txt2);cursor:pointer">Usar Make.com como proxy (se CORS falhar)</label>
+    </div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:16px;line-height:1.6">
+      📖 API Key em: <strong>TocOnline → Definições → Integrações → API</strong><br>
+      🔗 <a href="#" style="color:var(--accent)">Como obter API Key</a> · <a href="#" style="color:var(--accent)">Documentação TocOnline API</a><br>
+      ⚠️ Se ligação directa falhar (CORS), activa "Usar Make.com" e configura o webhook acima.
+    </div>
+    <div id="toco-cfg-status" style="display:none;font-size:13px;padding:8px 12px;border-radius:7px;margin-bottom:12px"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button onclick="tocoTestarLigacao()" style="background:var(--bg3);border:1px solid var(--border);color:var(--txt2);border-radius:8px;padding:8px 16px;cursor:pointer;font-size:13px">🔌 Testar Ligação</button>
+      <button onclick="tocoSalvarConfig()" style="background:var(--accent);border:none;color:#fff;border-radius:8px;padding:8px 18px;cursor:pointer;font-size:13px;font-weight:600">💾 Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ MODAL IMPORTAR CLIENTES TOCONLINE ════════════════════ -->
+<div id="toco-import-cli-modal" style="display:none;position:fixed;inset:0;z-index:10001;background:rgba(0,0,0,.75);backdrop-filter:blur(4px);align-items:center;justify-content:center">
+  <div class="toco-modal-box">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+      <div style="font-size:17px;font-weight:700;color:var(--txt2)">📥 Importar Clientes do TocOnline</div>
+      <button onclick="document.getElementById('toco-import-cli-modal').style.display='none'" style="background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer">×</button>
+    </div>
+    <div id="toco-import-cli-status" style="font-size:13px;color:var(--muted);margin-bottom:14px">A carregar clientes do TocOnline...</div>
+    <div id="toco-import-cli-list" style="max-height:300px;overflow-y:auto;margin-bottom:16px"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button onclick="document.getElementById('toco-import-cli-modal').style.display='none'" style="background:var(--bg3);border:1px solid var(--border);color:var(--txt2);border-radius:8px;padding:8px 16px;cursor:pointer;font-size:13px">Fechar</button>
+      <button onclick="tocoImportarClientesSelecionados()" style="background:var(--accent);border:none;color:#fff;border-radius:8px;padding:8px 18px;cursor:pointer;font-size:13px;font-weight:600">✅ Importar Selecionados</button>
+    </div>
+  </div>
+</div>
+
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -4558,6 +4638,38 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
 #page-crm .admin-page, #page-comercial-pipeline .admin-page { flex: 0 0 auto; }
 </style>
 
+
+<style>
+/* ── TOCONLINE INTEGRATION STYLES ─────────────────────────── */
+.toco-kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px}
+.toco-kpi{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:14px 16px}
+.toco-kpi-label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px}
+.toco-kpi-value{font-size:22px;font-weight:700;color:var(--txt2);font-family:'DM Mono',monospace}
+.toco-kpi-sub{font-size:11px;color:var(--muted);margin-top:2px}
+.toco-badge{display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:2px 8px;border-radius:20px;font-weight:600}
+.toco-badge-pago{background:rgba(63,207,142,.15);color:#3fcf8e;border:1px solid rgba(63,207,142,.3)}
+.toco-badge-aberto{background:rgba(234,179,8,.15);color:#eab308;border:1px solid rgba(234,179,8,.3)}
+.toco-badge-vencido{background:rgba(239,68,68,.15);color:#ef4444;border:1px solid rgba(239,68,68,.3)}
+.toco-badge-rascunho{background:rgba(148,163,184,.15);color:#94a3b8;border:1px solid rgba(148,163,184,.3)}
+.toco-sync-bar{display:flex;align-items:center;gap:10px;padding:8px 12px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;margin-bottom:12px;font-size:12px;color:var(--muted)}
+.toco-sync-dot{width:8px;height:8px;border-radius:50%;background:var(--muted);flex-shrink:0}
+.toco-sync-dot.active{background:#3fcf8e;animation:toco-pulse 2s infinite}
+@keyframes toco-pulse{0%,100%{opacity:1}50%{opacity:.4}}
+.toco-tab-bar{display:flex;gap:4px;margin-bottom:14px;border-bottom:1px solid var(--border);padding-bottom:0}
+.toco-tab{padding:7px 16px;font-size:13px;font-weight:500;color:var(--muted);cursor:pointer;border:none;background:none;border-bottom:2px solid transparent;margin-bottom:-1px;transition:all .15s}
+.toco-tab.active{color:var(--accent);border-bottom-color:var(--accent)}
+.toco-tab:hover{color:var(--txt2)}
+.toco-modal-overlay{display:none;position:fixed;inset:0;z-index:10001;background:rgba(0,0,0,.75);backdrop-filter:blur(4px);align-items:center;justify-content:center}
+.toco-modal-box{background:var(--bg2);border:1px solid var(--border2);border-radius:14px;padding:28px;width:100%;max-width:480px;margin:20px;box-shadow:0 20px 60px rgba(0,0,0,.5)}
+#toco-vencidas-badge{display:none;background:#ef4444;color:#fff;font-size:10px;font-weight:700;padding:1px 5px;border-radius:10px;margin-left:4px;vertical-align:middle}
+.toco-toast{position:fixed;bottom:24px;right:24px;z-index:99999;background:var(--bg2);border:1px solid var(--border2);border-radius:10px;padding:12px 18px;font-size:13px;color:var(--txt2);box-shadow:0 8px 32px rgba(0,0,0,.4);transform:translateY(80px);opacity:0;transition:all .3s;pointer-events:none;max-width:320px}
+.toco-toast.show{transform:translateY(0);opacity:1}
+.toco-toast.warn{border-color:rgba(234,179,8,.4);color:#eab308}
+.toco-toast.err{border-color:rgba(239,68,68,.4);color:#ef4444}
+.toco-toast.ok{border-color:rgba(63,207,142,.4);color:#3fcf8e}
+.toco-sync-status-bar{font-size:11px;color:var(--muted);margin-top:4px}
+</style>
+
 </head>
 <body>
 
@@ -4716,7 +4828,7 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
   <div class="space-lists" id="sl-comercial">
     <button class="sl-item" data-action="goPage" data-page="comercial-pipeline"><div class="sl-dot" style="background:var(--y)"></div>Pipeline de Leads</button>
     <button class="sl-item" data-action="goPage" data-page="comercial-clientes"><div class="sl-dot" style="background:#4d94db"></div>Clientes</button>
-    <button class="sl-item" data-action="goPage" data-page="comercial-orcamentos"><div class="sl-dot" style="background:#3fcf8e"></div>Orçamentos</button>
+    <button class="sl-item" data-action="goPage" data-page="comercial-orcamentos"><div class="sl-dot" style="background:#3fcf8e"></div>Orçamentos<span id="toco-vencidas-badge">!</span></button>
     <button class="sl-item" data-action="goPage" data-page="equipa-campo"><div class="sl-dot" style="background:#4d94db"></div>🗺️ Equipa em Campo</button>
   </div>
 
@@ -4891,7 +5003,7 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
     <div class="pg-hdr-top">
       <div class="pg-space-icon" style="background:var(--dc)">D</div>
       <div class="pg-title">Clientes</div>
-      <div class="pg-actions"><button class="tbtn y" data-action="cliOpenNew">+ Novo Cliente</button></div>
+      <div class="pg-actions"><button onclick="tocoAbrirImportarClientes()" style="background:rgba(99,102,241,.15);border:1px solid rgba(99,102,241,.4);color:#818cf8;border-radius:7px;padding:5px 12px;font-size:13px;cursor:pointer;margin-right:6px">🔄 Importar TocOnline</button><button class="tbtn y" data-action="cliOpenNew">+ Novo Cliente</button></div>
     </div>
   </div>
   <div class="task-content">
@@ -5348,20 +5460,85 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
         <option value="Atrasada">Atrasada</option>
       </select>
       <input id="fat-search" class="form-input" placeholder="🔍 Pesquisar fatura..." style="max-width:220px;padding:5px 10px;font-size:14px" oninput="fatRenderList()"/>
+      <!-- TOCO: botão sincronizar -->
+      <button onclick="tocoAbrirConfig()" style="background:rgba(99,102,241,.15);border:1px solid rgba(99,102,241,.4);color:#818cf8;border-radius:7px;padding:5px 12px;font-size:14px;cursor:pointer;white-space:nowrap" title="Sincronizar com TocOnline">🔄 TocOnline</button>
       <!-- ADD: Item 3 — botão exportar Excel -->
       <button onclick="fatExportExcel()" style="background:rgba(34,197,94,.15);border:1px solid rgba(34,197,94,.4);color:#22c55e;border-radius:7px;padding:5px 12px;font-size:14px;cursor:pointer;white-space:nowrap">📊 Excel</button>
       <!-- ADD: Item 4 — configurar webhook Make.com para email automático com PDF -->
       <button onclick="cobConfigWebhook()" style="background:var(--bg3);border:1px solid var(--border);color:var(--muted);border-radius:7px;padding:5px 12px;font-size:14px;cursor:pointer;white-space:nowrap" title="Configurar webhook Make.com para envio automático de PDF">⚙️ Email Auto</button>
     </div>
 
+    <!-- TOCO: tab bar -->
+    <div class="toco-tab-bar">
+      <button class="toco-tab active" id="fat-tab-local" onclick="fatSwitchTab('local')">📋 Faturas Locais</button>
+      <button class="toco-tab" id="fat-tab-toco" onclick="fatSwitchTab('toco')">🌐 TocOnline</button>
+      <button class="toco-tab" id="fat-tab-cli-toco" onclick="fatSwitchTab('clientes-toco')">👥 Clientes TocOnline</button>
+    </div>
+
+    <!-- TOCO: sync bar -->
+    <div class="toco-sync-bar" id="toco-sync-bar" style="display:none">
+      <span class="toco-sync-dot" id="toco-sync-dot"></span>
+      <span id="toco-sync-status">Nunca sincronizado</span>
+      <span style="flex:1"></span>
+      <select id="toco-filtro-tipo" onchange="tocoFiltrar()" style="background:var(--bg3);border:1px solid var(--border);color:var(--txt2);border-radius:6px;padding:3px 8px;font-size:12px">
+        <option value="">Todos os tipos</option>
+        <option value="FT">Faturas (FT)</option>
+        <option value="RC">Recibos (RC)</option>
+        <option value="NC">Notas Crédito (NC)</option>
+      </select>
+      <select id="toco-filtro-estado" onchange="tocoFiltrar()" style="background:var(--bg3);border:1px solid var(--border);color:var(--txt2);border-radius:6px;padding:3px 8px;font-size:12px">
+        <option value="">Todos os estados</option>
+        <option value="Pago">Pago</option>
+        <option value="Em Aberto">Em Aberto</option>
+        <option value="Vencido">Vencido</option>
+      </select>
+      <input id="toco-filtro-cliente" placeholder="🔍 Cliente..." oninput="tocoFiltrar()" style="background:var(--bg3);border:1px solid var(--border);color:var(--txt2);border-radius:6px;padding:3px 8px;font-size:12px;width:140px"/>
+      <input type="date" id="toco-filtro-de" onchange="tocoFiltrar()" title="Data de" style="background:var(--bg3);border:1px solid var(--border);color:var(--txt2);border-radius:6px;padding:3px 8px;font-size:12px;width:130px"/>
+      <input type="date" id="toco-filtro-ate" onchange="tocoFiltrar()" title="Data até" style="background:var(--bg3);border:1px solid var(--border);color:var(--txt2);border-radius:6px;padding:3px 8px;font-size:12px;width:130px"/>
+      <button onclick="tocoSincronizarFaturas(false)" style="background:rgba(99,102,241,.2);border:1px solid rgba(99,102,241,.4);color:#818cf8;border-radius:6px;padding:3px 10px;font-size:12px;cursor:pointer;white-space:nowrap">🔄 Sincronizar agora</button>
+    </div>
+
+    <!-- TOCO: KPIs TocOnline -->
+    <div class="toco-kpi-grid" id="toco-kpi-grid" style="display:none">
+      <div class="toco-kpi"><div class="toco-kpi-label">Total Faturado</div><div class="toco-kpi-value" id="toco-kpi-total">—</div><div class="toco-kpi-sub">TocOnline</div></div>
+      <div class="toco-kpi" style="border-color:rgba(63,207,142,.2)"><div class="toco-kpi-label">Pago</div><div class="toco-kpi-value" style="color:var(--g)" id="toco-kpi-pago">—</div><div class="toco-kpi-sub">recebido</div></div>
+      <div class="toco-kpi" style="border-color:rgba(234,179,8,.2)"><div class="toco-kpi-label">Em Aberto</div><div class="toco-kpi-value" style="color:#eab308" id="toco-kpi-aberto">—</div><div class="toco-kpi-sub">a receber</div></div>
+      <div class="toco-kpi" style="border-color:rgba(239,68,68,.2)"><div class="toco-kpi-label">Vencido</div><div class="toco-kpi-value" style="color:#ef4444" id="toco-kpi-vencido">—</div><div class="toco-kpi-sub">em atraso</div></div>
+    </div>
+
+    <!-- TOCO: tabela TocOnline -->
+    <div id="fat-panel-toco" style="display:none">
+      <div class="tw"><table>
+        <thead><tr>
+          <th>Nº Doc.</th><th>Tipo</th><th>Cliente</th><th>Data</th>
+          <th>Vencimento</th><th>Valor</th><th>Estado</th><th>Ações</th>
+        </tr></thead>
+        <tbody id="toco-fat-tbody"></tbody>
+      </table></div>
+    </div>
+
+    <!-- TOCO: painel clientes TocOnline -->
+    <div id="fat-panel-cli-toco" style="display:none">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
+        <button onclick="tocoCarregarClientes()" style="background:rgba(99,102,241,.15);border:1px solid rgba(99,102,241,.4);color:#818cf8;border-radius:7px;padding:6px 14px;font-size:13px;cursor:pointer">🔄 Carregar Clientes do TocOnline</button>
+        <span id="toco-cli-status" style="font-size:12px;color:var(--muted)"></span>
+      </div>
+      <div class="tw"><table>
+        <thead><tr>
+          <th>Nome</th><th>NIF</th><th>Email</th><th>Telefone</th><th>Morada</th><th>Estado CRM</th><th>Ações</th>
+        </tr></thead>
+        <tbody id="toco-cli-tbody"></tbody>
+      </table></div>
+    </div>
+
     <!-- Tabela faturas -->
-    <div class="tw"><table>
+    <div id="fat-panel-local"><div class="tw"><table>
       <thead><tr>
         <th>Nº Fatura</th><th>Orçamento</th><th>Cliente</th><th>Data</th>
         <th>Vencimento</th><th>Valor</th><th>Estado</th><th>TocOnline</th><th>Ações</th>
       </tr></thead>
       <tbody id="fat-tbody"></tbody>
-    </table></div>
+    </table></div></div><!-- /fat-panel-local -->
   </div><!-- /orc-panel-faturas -->
 
 </div>
@@ -15420,6 +15597,651 @@ document.addEventListener('click', function(e){
     case 'orcLogisticaCalc': if(typeof orcLogisticaCalc==='function') orcLogisticaCalc(); break;
   }
 }, true);
+</script>
+<script>
+
+// ══════════════════════════════════════════════════════════════════
+// TOCONLINE INTEGRATION — OB CRM v2
+// ══════════════════════════════════════════════════════════════════
+
+var TOCO_CFG_KEY = 'ob-toconline-config';
+var TOCO_FAT_KEY = 'ob-toconline-faturas';
+var TOCO_CLI_KEY = 'ob-toconline-clientes';
+var TOCO_CACHE_TTL = 5 * 60 * 1000; // 5 minutos
+var _tocoFatCache = []; // cache em memória
+
+// ── Carregar / guardar config ────────────────────────────────────
+function tocoGetConfig() {
+  try {
+    var raw = localStorage.getItem(TOCO_CFG_KEY);
+    if (!raw) return null;
+    var cfg = JSON.parse(raw);
+    cfg.key = cfg.key ? atob(cfg.key) : '';
+    return cfg;
+  } catch(e) { return null; }
+}
+
+function tocoSaveConfig(cfg) {
+  var safe = Object.assign({}, cfg, { key: cfg.key ? btoa(cfg.key) : '' });
+  localStorage.setItem(TOCO_CFG_KEY, JSON.stringify(safe));
+}
+
+// ── Abrir / fechar modal config ──────────────────────────────────
+function tocoAbrirConfig() {
+  var cfg = tocoGetConfig() || {};
+  var el = function(id){ return document.getElementById(id); };
+  if(el('toco-cfg-key')) el('toco-cfg-key').value = cfg.key || '';
+  if(el('toco-cfg-url')) el('toco-cfg-url').value = cfg.url || 'https://api30.toconline.pt';
+  if(el('toco-cfg-nif')) el('toco-cfg-nif').value = cfg.nif || '';
+  if(el('toco-cfg-webhook')) el('toco-cfg-webhook').value = cfg.webhook || '';
+  if(el('toco-cfg-auto')) el('toco-cfg-auto').checked = !!cfg.auto;
+  if(el('toco-cfg-status')) { el('toco-cfg-status').style.display='none'; el('toco-cfg-status').textContent=''; }
+  var modal = el('toco-config-modal');
+  if(modal) modal.style.display='flex';
+}
+
+function tocoFecharConfig() {
+  var modal = document.getElementById('toco-config-modal');
+  if(modal) modal.style.display='none';
+}
+
+function tocoToggleKeyVisibility() {
+  var inp = document.getElementById('toco-cfg-key');
+  var btn = document.getElementById('toco-cfg-key-toggle');
+  if(!inp) return;
+  inp.type = inp.type === 'password' ? 'text' : 'password';
+  if(btn) btn.textContent = inp.type === 'password' ? '👁' : '🙈';
+}
+
+function tocoSalvarConfig() {
+  var el = function(id){ return document.getElementById(id); };
+  var key = (el('toco-cfg-key')||{value:''}).value.trim();
+  var url = (el('toco-cfg-url')||{value:'https://api30.toconline.pt'}).value.trim();
+  var nif = (el('toco-cfg-nif')||{value:''}).value.trim();
+  var webhook = (el('toco-cfg-webhook')||{value:''}).value.trim();
+  var auto = (el('toco-cfg-auto')||{checked:false}).checked;
+  if(!key){ tocoShowStatus('⚠️ API Key obrigatória', 'warn'); return; }
+  tocoSaveConfig({ key, url, nif, webhook, auto });
+  tocoShowStatus('✅ Configuração guardada!', 'ok');
+  setTimeout(tocoFecharConfig, 1200);
+}
+
+function tocoShowStatus(msg, type) {
+  var el = document.getElementById('toco-cfg-status');
+  if(!el) return;
+  el.textContent = msg;
+  el.style.display = 'block';
+  el.style.background = type==='ok' ? 'rgba(63,207,142,.1)' : type==='warn' ? 'rgba(234,179,8,.1)' : 'rgba(239,68,68,.1)';
+  el.style.color = type==='ok' ? '#3fcf8e' : type==='warn' ? '#eab308' : '#ef4444';
+  el.style.border = '1px solid ' + (type==='ok' ? 'rgba(63,207,142,.3)' : type==='warn' ? 'rgba(234,179,8,.3)' : 'rgba(239,68,68,.3)');
+}
+
+// ── Testar ligação ───────────────────────────────────────────────
+async function tocoTestarLigacao() {
+  var el = function(id){ return document.getElementById(id); };
+  var key = (el('toco-cfg-key')||{value:''}).value.trim();
+  var url = (el('toco-cfg-url')||{value:'https://api30.toconline.pt'}).value.trim();
+  var webhook = (el('toco-cfg-webhook')||{value:''}).value.trim();
+  if(!key){ tocoShowStatus('⚠️ Introduz a API Key primeiro', 'warn'); return; }
+  tocoShowStatus('⏳ A testar ligação...', 'warn');
+  try {
+    var result = await tocoFetch(url, key, webhook, '/api/v1.0/Company', 'GET');
+    if(result && (result.Id || result.Name || Array.isArray(result))) {
+      tocoShowStatus('✅ Ligação OK! TocOnline respondeu com sucesso.', 'ok');
+    } else {
+      tocoShowStatus('⚠️ Resposta recebida mas formato inesperado. Verifica a API Key.', 'warn');
+    }
+  } catch(e) {
+    tocoShowStatus('❌ Erro: ' + e.message, 'err');
+  }
+}
+
+// ── Fetch com dupla estratégia (directa + Make proxy) ───────────
+async function tocoFetch(baseUrl, apiKey, webhookUrl, endpoint, method, body) {
+  method = method || 'GET';
+  var controller = new AbortController();
+  var timeout = setTimeout(function(){ controller.abort(); }, 10000);
+  try {
+    // ESTRATÉGIA A — directa
+    var opts = {
+      method: method,
+      signal: controller.signal,
+      headers: {
+        'Authorization': 'Bearer ' + apiKey,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      }
+    };
+    if(body) opts.body = JSON.stringify(body);
+    var resp = await fetch(baseUrl + endpoint, opts);
+    clearTimeout(timeout);
+    if(!resp.ok) throw new Error('HTTP ' + resp.status);
+    return await resp.json();
+  } catch(e) {
+    clearTimeout(timeout);
+    // ESTRATÉGIA B — Make proxy (se configurado e se for erro CORS/network)
+    if(webhookUrl && (e.name === 'TypeError' || e.name === 'AbortError' || e.message.includes('CORS') || e.message.includes('fetch'))) {
+      var ctrl2 = new AbortController();
+      var t2 = setTimeout(function(){ ctrl2.abort(); }, 15000);
+      try {
+        var proxyResp = await fetch(webhookUrl, {
+          method: 'POST',
+          signal: ctrl2.signal,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'proxy', endpoint: endpoint, method: method, api_key: apiKey, base_url: baseUrl, body: body || null })
+        });
+        clearTimeout(t2);
+        if(!proxyResp.ok) throw new Error('Proxy HTTP ' + proxyResp.status);
+        return await proxyResp.json();
+      } catch(e2) {
+        clearTimeout(t2);
+        throw new Error('Ligação directa e proxy Make falharam: ' + e2.message);
+      }
+    }
+    throw e;
+  }
+}
+
+// ── Sincronizar faturas do TocOnline ────────────────────────────
+async function tocoSincronizarFaturas(silent) {
+  var cfg = tocoGetConfig();
+  if(!cfg || !cfg.key) {
+    if(!silent) tocoAbrirConfig();
+    return;
+  }
+  var syncDot = document.getElementById('toco-sync-dot');
+  var syncStatus = document.getElementById('toco-sync-status');
+  if(syncDot) syncDot.classList.add('active');
+  if(syncStatus) syncStatus.textContent = '⏳ A sincronizar...';
+
+  try {
+    // Buscar faturas FT, RC, NC
+    var tipos = ['FT','RC','NC'];
+    var todos = [];
+    for(var i=0; i<tipos.length; i++) {
+      try {
+        var endpoint = '/api/v1.0/Sales/Documents?DocumentType=' + tipos[i] + '&PageSize=100';
+        var data = await tocoFetch(cfg.url, cfg.key, cfg.webhook, endpoint, 'GET');
+        var docs = Array.isArray(data) ? data : (data.Items || data.Documents || data.data || []);
+        docs.forEach(function(d){ d._tipo = tipos[i]; });
+        todos = todos.concat(docs);
+      } catch(e) { /* continua com os outros tipos */ }
+    }
+    _tocoFatCache = todos;
+    // Guardar cache com timestamp
+    localStorage.setItem(TOCO_FAT_KEY, JSON.stringify({ ts: Date.now(), data: todos }));
+    tocoRenderFaturas(todos);
+    var agora = new Date().toLocaleTimeString('pt-PT', {hour:'2-digit',minute:'2-digit'});
+    if(syncStatus) syncStatus.textContent = '✅ Sincronizado às ' + agora + ' — ' + todos.length + ' documentos';
+    if(syncDot) syncDot.classList.remove('active');
+    tocoUpdateVencidasBadge(todos);
+  } catch(e) {
+    if(syncStatus) syncStatus.textContent = '❌ Erro: ' + e.message;
+    if(syncDot) syncDot.classList.remove('active');
+  }
+}
+
+// ── Render tabela faturas TocOnline ─────────────────────────────
+function tocoRenderFaturas(docs) {
+  var tbody = document.getElementById('toco-fat-tbody');
+  if(!tbody) return;
+  docs = docs || _tocoFatCache;
+  // Filtros
+  var filtTipo = (document.getElementById('toco-filtro-tipo')||{value:''}).value;
+  var filtEst = (document.getElementById('toco-filtro-estado')||{value:''}).value;
+  var filtCli = ((document.getElementById('toco-filtro-cliente')||{value:''}).value||'').toLowerCase();
+  var filtered = docs.filter(function(d){
+    var tipo = d._tipo || d.DocumentType || d.Type || '';
+    var est = tocoGetEstado(d);
+    var cli = (d.CustomerName || d.Customer && d.Customer.Name || d.EntityName || '').toLowerCase();
+    return (!filtTipo || tipo===filtTipo) && (!filtEst || est===filtEst) && (!filtCli || cli.includes(filtCli));
+  });
+
+  // KPIs
+  var total=0, pago=0, aberto=0, vencido=0;
+  var hoje = new Date();
+  filtered.forEach(function(d){
+    var val = parseFloat(d.TotalAmount || d.Total || d.Amount || 0);
+    total += val;
+    var est = tocoGetEstado(d);
+    if(est==='Pago') pago+=val;
+    else if(est==='Vencido') vencido+=val;
+    else aberto+=val;
+  });
+  var fmt = function(v){ return v.toLocaleString('pt-PT',{style:'currency',currency:'EUR'}); };
+  var setKpi = function(id,v){ var el=document.getElementById(id); if(el) el.textContent=fmt(v); };
+  setKpi('toco-kpi-total',total); setKpi('toco-kpi-pago',pago); setKpi('toco-kpi-aberto',aberto); setKpi('toco-kpi-vencido',vencido);
+
+  if(!filtered.length) {
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:30px">Nenhum documento encontrado</td></tr>';
+    return;
+  }
+  tbody.innerHTML = filtered.map(function(d){
+    var num = d.Number || d.DocumentNumber || d.Id || '—';
+    var tipo = d._tipo || d.DocumentType || d.Type || '—';
+    var cli = d.CustomerName || (d.Customer && d.Customer.Name) || d.EntityName || '—';
+    var data = tocoFmtData(d.Date || d.DocumentDate || d.CreatedAt);
+    var venc = tocoFmtData(d.DueDate || d.ExpirationDate);
+    var valor = parseFloat(d.TotalAmount || d.Total || d.Amount || 0).toLocaleString('pt-PT',{style:'currency',currency:'EUR'});
+    var est = tocoGetEstado(d);
+    var badgeClass = est==='Pago'?'toco-badge-pago':est==='Vencido'?'toco-badge-vencido':est==='Em Aberto'?'toco-badge-aberto':'toco-badge-rascunho';
+    return '<tr>' +
+      '<td style="font-family:monospace;font-size:12px">' + num + '</td>' +
+      '<td><span class="toco-badge toco-badge-rascunho">' + tipo + '</span></td>' +
+      '<td>' + cli + '</td>' +
+      '<td style="font-size:12px">' + data + '</td>' +
+      '<td style="font-size:12px">' + venc + '</td>' +
+      '<td style="font-family:monospace;font-weight:600">' + valor + '</td>' +
+      '<td><span class="toco-badge ' + badgeClass + '">' + est + '</span></td>' +
+      '<td><button class="tbtn" style="font-size:11px;padding:2px 7px" onclick="tocoVerDetalhe(' + JSON.stringify(JSON.stringify(d)).replace(/"/g,"'") + ')">👁 Ver</button></td>' +
+      '</tr>';
+  }).join('');
+}
+
+function tocoGetEstado(d) {
+  var st = d.Status || d.DocumentStatus || d.State || '';
+  if(typeof st === 'number') {
+    // TocOnline usa códigos numéricos: 0=Rascunho,1=Em Aberto,2=Pago,3=Vencido
+    if(st===2||st==='2') return 'Pago';
+    if(st===3||st==='3') return 'Vencido';
+    if(st===1||st==='1') return 'Em Aberto';
+    return 'Rascunho';
+  }
+  st = String(st).toLowerCase();
+  if(st.includes('paid')||st.includes('pago')||st==='2') return 'Pago';
+  if(st.includes('overdue')||st.includes('vencid')||st==='3') return 'Vencido';
+  if(st.includes('open')||st.includes('aberto')||st==='1') return 'Em Aberto';
+  return 'Em Aberto';
+}
+
+function tocoFmtData(str) {
+  if(!str) return '—';
+  try {
+    var d = new Date(str);
+    if(isNaN(d)) return str;
+    return d.toLocaleDateString('pt-PT');
+  } catch(e){ return str; }
+}
+
+function tocoFiltrar() {
+  tocoRenderFaturas(_tocoFatCache);
+}
+
+// ── Ver detalhe ──────────────────────────────────────────────────
+function tocoVerDetalhe(jsonStr) {
+  try {
+    var d = JSON.parse(jsonStr);
+    var num = d.Number || d.DocumentNumber || d.Id || '—';
+    var cli = d.CustomerName || (d.Customer && d.Customer.Name) || '—';
+    var nif = d.CustomerTaxNumber || (d.Customer && d.Customer.TaxNumber) || '—';
+    var valor = parseFloat(d.TotalAmount || d.Total || d.Amount || 0).toLocaleString('pt-PT',{style:'currency',currency:'EUR'});
+    alert('Documento: ' + num + '\nCliente: ' + cli + '\nNIF: ' + nif + '\nValor: ' + valor + '\nEstado: ' + tocoGetEstado(d));
+  } catch(e){}
+}
+
+// ── Badge faturas vencidas no menu ───────────────────────────────
+function tocoUpdateVencidasBadge(docs) {
+  var badge = document.getElementById('toco-vencidas-badge');
+  if(!badge) return;
+  var vencidas = (docs||[]).filter(function(d){ return tocoGetEstado(d)==='Vencido'; }).length;
+  if(vencidas > 0) { badge.textContent = vencidas; badge.style.display='inline'; }
+  else { badge.style.display='none'; }
+}
+
+// ── Switch tabs Locais / TocOnline ───────────────────────────────
+function fatSwitchTab(tab) {
+  var local = document.getElementById('fat-panel-local');
+  var toco = document.getElementById('fat-panel-toco');
+  var syncBar = document.getElementById('toco-sync-bar');
+  var kpiGrid = document.getElementById('toco-kpi-grid');
+  var tabLocal = document.getElementById('fat-tab-local');
+  var tabToco = document.getElementById('fat-tab-toco');
+  if(tab === 'toco') {
+    if(local) local.style.display='none';
+    if(toco) toco.style.display='block';
+    if(syncBar) syncBar.style.display='flex';
+    if(kpiGrid) kpiGrid.style.display='grid';
+    if(tabLocal) tabLocal.classList.remove('active');
+    if(tabToco) tabToco.classList.add('active');
+    // Verificar cache
+    var cfg = tocoGetConfig();
+    var cached = null;
+    try { cached = JSON.parse(localStorage.getItem(TOCO_FAT_KEY)); } catch(e){}
+    if(cached && cached.data && (Date.now()-cached.ts) < TOCO_CACHE_TTL) {
+      _tocoFatCache = cached.data;
+      tocoRenderFaturas(_tocoFatCache);
+      var el = document.getElementById('toco-sync-status');
+      if(el) el.textContent = '📦 Cache — ' + _tocoFatCache.length + ' documentos (clica 🔄 para actualizar)';
+    } else if(cfg && cfg.auto) {
+      tocoSincronizarFaturas(true);
+    } else {
+      var el = document.getElementById('toco-sync-status');
+      if(el) el.textContent = 'Clica 🔄 TocOnline para sincronizar';
+    }
+  } else {
+    if(local) local.style.display='block';
+    if(toco) toco.style.display='none';
+    if(syncBar) syncBar.style.display='none';
+    if(kpiGrid) kpiGrid.style.display='none';
+    if(tabLocal) tabLocal.classList.add('active');
+    if(tabToco) tabToco.classList.remove('active');
+  }
+}
+
+// ── Importar Clientes do TocOnline ───────────────────────────────
+async function tocoAbrirImportarClientes() {
+  var cfg = tocoGetConfig();
+  if(!cfg || !cfg.key) { tocoAbrirConfig(); return; }
+  var modal = document.getElementById('toco-import-cli-modal');
+  var statusEl = document.getElementById('toco-import-cli-status');
+  var listEl = document.getElementById('toco-import-cli-list');
+  if(modal) modal.style.display='flex';
+  if(statusEl) statusEl.textContent = '⏳ A carregar clientes do TocOnline...';
+  if(listEl) listEl.innerHTML = '';
+  try {
+    var data = await tocoFetch(cfg.url, cfg.key, cfg.webhook, '/api/v1.0/Customers?PageSize=200', 'GET');
+    var clientes = Array.isArray(data) ? data : (data.Items || data.Customers || data.data || []);
+    localStorage.setItem(TOCO_CLI_KEY, JSON.stringify({ ts: Date.now(), data: clientes }));
+    if(!clientes.length) { if(statusEl) statusEl.textContent = 'Nenhum cliente encontrado no TocOnline.'; return; }
+    if(statusEl) statusEl.textContent = clientes.length + ' clientes encontrados. Seleciona os que queres importar:';
+    if(listEl) listEl.innerHTML = clientes.map(function(c, i){
+      var nome = c.Name || c.CustomerName || '—';
+      var nif = c.TaxNumber || c.Nif || '—';
+      var existe = (typeof cliData !== 'undefined' ? cliData : []).some(function(x){ return x.nif && x.nif === nif; });
+      return '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)">' +
+        '<input type="checkbox" id="toco-cli-'+i+'" value="'+i+'" '+(existe?'disabled title="Já existe (mesmo NIF)"':'') +'/>' +
+        '<div style="flex:1"><div style="font-size:13px;color:var(--txt2)">' + nome + '</div>' +
+        '<div style="font-size:11px;color:var(--muted)">NIF: ' + nif + (existe?' — <span style="color:#eab308">já existe no CRM</span>':'') + '</div></div>' +
+        '</div>';
+    }).join('');
+    // guardar referência
+    window._tocoCliImportList = clientes;
+  } catch(e) {
+    if(statusEl) statusEl.textContent = '❌ Erro: ' + e.message;
+  }
+}
+
+function tocoImportarClientesSelecionados() {
+  var lista = window._tocoCliImportList || [];
+  if(!lista.length) return;
+  var importados = 0;
+  lista.forEach(function(c, i){
+    var cb = document.getElementById('toco-cli-'+i);
+    if(!cb || !cb.checked || cb.disabled) return;
+    var nome = c.Name || c.CustomerName || 'Cliente TocOnline';
+    var nif = c.TaxNumber || c.Nif || '';
+    var email = c.Email || c.CustomerEmail || '';
+    var tel = c.Phone || c.PhoneNumber || '';
+    var morada = c.Address || (c.BillingAddress && c.BillingAddress.AddressDetail) || '';
+    var novo = { id: Date.now()+i, n: nome, sec: 'Outro', cont: nome, nif: nif, morada: morada, email: email, tel: tel, origem: 'toconline', st: 'Activo' };
+    if(typeof cliData !== 'undefined') cliData.push(novo);
+    importados++;
+  });
+  if(typeof cliSave === 'function') cliSave();
+  if(typeof renderClientes === 'function') renderClientes();
+  document.getElementById('toco-import-cli-modal').style.display='none';
+  if(importados > 0) {
+    alert('✅ ' + importados + ' clientes importados com sucesso!');
+  } else {
+    alert('Nenhum cliente selecionado.');
+  }
+}
+
+// ── Override: botão 🔄 TocOnline na toolbar chama sincronizar ────
+// (já coberto por tocoAbrirConfig que verifica config e sincroniza)
+// Redireccionamos o botão para sincronizar directamente se já configurado
+var _tocoOrigAbrirConfig = tocoAbrirConfig;
+tocoAbrirConfig = function() {
+  var cfg = tocoGetConfig();
+  if(cfg && cfg.key) {
+    // Já configurado: switch para tab TocOnline e sincroniza
+    fatSwitchTab('toco');
+    tocoSincronizarFaturas(false);
+  } else {
+    _tocoOrigAbrirConfig();
+  }
+};
+window.tocoAbrirConfig = tocoAbrirConfig;
+
+// ── Toast ────────────────────────────────────────────────────────
+function tocoToast(msg, type, dur) {
+  var el = document.getElementById('toco-toast');
+  if(!el) return;
+  el.textContent = msg;
+  el.className = 'toco-toast ' + (type||'ok');
+  el.classList.add('show');
+  clearTimeout(el._t);
+  el._t = setTimeout(function(){ el.classList.remove('show'); }, dur||3500);
+}
+
+// ── Erros HTTP tratados ──────────────────────────────────────────
+function tocoHandleError(e) {
+  var msg = e.message || '';
+  if(msg.includes('401')) return 'API Key inválida. Verifique a configuração.';
+  if(msg.includes('403')) return 'Acesso negado. API Key sem permissões.';
+  if(msg.includes('500')) return 'Erro no servidor TocOnline. Tente mais tarde.';
+  if(msg.includes('CORS') || msg.includes('fetch') || msg.includes('NetworkError')) return 'CORS bloqueado. Active "Usar Make.com" como proxy.';
+  if(msg.includes('AbortError') || msg.includes('abort')) return 'Ligação lenta. Tente novamente.';
+  return 'Erro de ligação: ' + msg;
+}
+
+// ── fatSwitchTab — override para suportar 3ª tab ─────────────────
+var _fatSwitchTabOrig = fatSwitchTab;
+fatSwitchTab = function(tab) {
+  var cliPanel = document.getElementById('fat-panel-cli-toco');
+  var tabCli = document.getElementById('fat-tab-cli-toco');
+  if(tab === 'clientes-toco') {
+    // Esconder outros panels
+    var local = document.getElementById('fat-panel-local');
+    var toco = document.getElementById('fat-panel-toco');
+    var syncBar = document.getElementById('toco-sync-bar');
+    var kpiGrid = document.getElementById('toco-kpi-grid');
+    if(local) local.style.display='none';
+    if(toco) toco.style.display='none';
+    if(syncBar) syncBar.style.display='none';
+    if(kpiGrid) kpiGrid.style.display='none';
+    if(cliPanel) cliPanel.style.display='block';
+    // tabs
+    ['fat-tab-local','fat-tab-toco','fat-tab-cli-toco'].forEach(function(id){
+      var el = document.getElementById(id);
+      if(el) el.classList.remove('active');
+    });
+    if(tabCli) tabCli.classList.add('active');
+  } else {
+    if(cliPanel) cliPanel.style.display='none';
+    if(tabCli) tabCli.classList.remove('active');
+    _fatSwitchTabOrig(tab);
+  }
+};
+window.fatSwitchTab = fatSwitchTab;
+
+// ── Carregar clientes TocOnline na tab ───────────────────────────
+async function tocoCarregarClientes() {
+  var cfg = tocoGetConfig();
+  if(!cfg || !cfg.key) { tocoAbrirConfig(); return; }
+  var statusEl = document.getElementById('toco-cli-status');
+  var tbody = document.getElementById('toco-cli-tbody');
+  if(statusEl) statusEl.textContent = '⏳ A carregar...';
+  if(tbody) tbody.innerHTML = '';
+  try {
+    var data = await tocoFetch(cfg.url, cfg.key, cfg.webhook, '/api/v1.0/Customers?PageSize=200', 'GET');
+    var clientes = Array.isArray(data) ? data : (data.Items || data.Customers || data.data || []);
+    localStorage.setItem(TOCO_CLI_KEY, JSON.stringify({ts:Date.now(), data:clientes}));
+    window._tocoCliImportList = clientes;
+    if(statusEl) statusEl.textContent = clientes.length + ' clientes encontrados';
+    if(!tbody) return;
+    if(!clientes.length) { tbody.innerHTML='<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:20px">Nenhum cliente no TocOnline</td></tr>'; return; }
+    tbody.innerHTML = clientes.map(function(c, i){
+      var nome = c.Name || c.CustomerName || '—';
+      var nif = c.TaxNumber || c.Nif || '—';
+      var email = c.Email || '—';
+      var tel = c.Phone || c.PhoneNumber || '—';
+      var morada = c.Address || (c.BillingAddress && c.BillingAddress.AddressDetail) || '—';
+      var existe = (typeof cliData !== 'undefined' ? cliData : []).some(function(x){ return x.nif && x.nif === nif; });
+      var badge = existe
+        ? '<span style="font-size:11px;background:rgba(234,179,8,.15);color:#eab308;border:1px solid rgba(234,179,8,.3);border-radius:10px;padding:1px 7px">Já importado</span>'
+        : '<span style="font-size:11px;background:rgba(63,207,142,.15);color:#3fcf8e;border:1px solid rgba(63,207,142,.3);border-radius:10px;padding:1px 7px">Novo</span>';
+      return '<tr>' +
+        '<td>' + nome + '</td>' +
+        '<td style="font-family:monospace;font-size:12px">' + nif + '</td>' +
+        '<td style="font-size:12px">' + email + '</td>' +
+        '<td style="font-size:12px">' + tel + '</td>' +
+        '<td style="font-size:12px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + morada + '</td>' +
+        '<td>' + badge + '</td>' +
+        '<td>' + (existe ? '<span style="color:var(--muted);font-size:11px">—</span>' :
+          '<button class="tbtn" style="font-size:11px;padding:2px 8px" onclick="tocoImportarUmCliente('+i+')">⬇ Importar</button>') + '</td>' +
+        '</tr>';
+    }).join('');
+    tocoToast('✅ ' + clientes.length + ' clientes carregados do TocOnline', 'ok');
+  } catch(e) {
+    var msg = tocoHandleError(e);
+    if(statusEl) statusEl.textContent = '❌ ' + msg;
+    tocoToast('❌ ' + msg, 'err');
+  }
+}
+
+function tocoImportarUmCliente(i) {
+  var lista = window._tocoCliImportList || [];
+  var c = lista[i]; if(!c) return;
+  var nome = c.Name || c.CustomerName || 'Cliente TocOnline';
+  var nif = c.TaxNumber || c.Nif || '';
+  if(typeof cliData !== 'undefined') {
+    cliData.push({ id: Date.now(), n: nome, sec: 'Outro', cont: nome, nif: nif,
+      morada: c.Address || '', email: c.Email || '', tel: c.Phone || '', origem: 'toconline', st: 'Activo' });
+    if(typeof cliSave === 'function') cliSave();
+    if(typeof renderClientes === 'function') renderClientes();
+  }
+  tocoToast('✅ ' + nome + ' importado!', 'ok');
+  tocoCarregarClientes(); // refresh
+}
+
+// ── Override tocoSalvarConfig para guardar proxy flag ────────────
+var _tocoSalvarOrig = tocoSalvarConfig;
+tocoSalvarConfig = function() {
+  var el = function(id){ return document.getElementById(id); };
+  var key = (el('toco-cfg-key')||{value:''}).value.trim();
+  var url = (el('toco-cfg-url')||{value:'https://api30.toconline.pt'}).value.trim();
+  var nif = (el('toco-cfg-nif')||{value:''}).value.trim();
+  var webhook = (el('toco-cfg-webhook')||{value:''}).value.trim();
+  var auto = (el('toco-cfg-auto')||{checked:false}).checked;
+  var proxy = (el('toco-cfg-proxy')||{checked:false}).checked;
+  if(!key){ tocoShowStatus('⚠️ API Key obrigatória', 'warn'); return; }
+  tocoSaveConfig({ key, url, nif, webhook, auto, proxy });
+  tocoShowStatus('✅ Configuração guardada!', 'ok');
+  setTimeout(tocoFecharConfig, 1200);
+};
+window.tocoSalvarConfig = tocoSalvarConfig;
+
+// ── Override tocoAbrirConfig para preencher proxy checkbox ───────
+var _tocoAbrirOrig2 = _tocoOrigAbrirConfig;
+_tocoOrigAbrirConfig = function() {
+  var cfg = tocoGetConfig() || {};
+  var el = function(id){ return document.getElementById(id); };
+  if(el('toco-cfg-key')) el('toco-cfg-key').value = cfg.key || '';
+  if(el('toco-cfg-url')) el('toco-cfg-url').value = cfg.url || 'https://api30.toconline.pt';
+  if(el('toco-cfg-nif')) el('toco-cfg-nif').value = cfg.nif || '';
+  if(el('toco-cfg-webhook')) el('toco-cfg-webhook').value = cfg.webhook || '';
+  if(el('toco-cfg-auto')) el('toco-cfg-auto').checked = !!cfg.auto;
+  if(el('toco-cfg-proxy')) el('toco-cfg-proxy').checked = !!cfg.proxy;
+  if(el('toco-cfg-status')) { el('toco-cfg-status').style.display='none'; }
+  var modal = el('toco-config-modal');
+  if(modal) modal.style.display='flex';
+};
+
+// ── Override tocoFiltrar para filtros de data ────────────────────
+var _tocoFiltrarOrig = tocoFiltrar;
+tocoFiltrar = function() {
+  var filtDe = (document.getElementById('toco-filtro-de')||{value:''}).value;
+  var filtAte = (document.getElementById('toco-filtro-ate')||{value:''}).value;
+  var docs = (_tocoFatCache || []).filter(function(d){
+    if(filtDe || filtAte) {
+      var dt = new Date(d.Date || d.DocumentDate || d.CreatedAt || 0);
+      if(filtDe && dt < new Date(filtDe)) return false;
+      if(filtAte && dt > new Date(filtAte + 'T23:59:59')) return false;
+    }
+    return true;
+  });
+  // Passar docs filtrados por data para o render (que filtra por tipo/estado/cliente)
+  var orig = _tocoFatCache;
+  _tocoFatCache = docs;
+  tocoRenderFaturas(docs);
+  _tocoFatCache = orig;
+};
+window.tocoFiltrar = tocoFiltrar;
+
+// ── Override sincronizar para toast ─────────────────────────────
+var _tocoSincOrig = tocoSincronizarFaturas;
+tocoSincronizarFaturas = async function(silent) {
+  await _tocoSincOrig(silent);
+  var vencidas = (_tocoFatCache||[]).filter(function(d){ return tocoGetEstado(d)==='Vencido'; }).length;
+  if(vencidas > 0) tocoToast('⚠️ ' + vencidas + ' faturas vencidas no TocOnline', 'warn', 5000);
+};
+window.tocoSincronizarFaturas = tocoSincronizarFaturas;
+
+// ── Status badge nas faturas locais (coluna TocOnline) ──────────
+// Override fatRenderList para mostrar badge de sync status
+var _fatRenderListOrig = typeof fatRenderList === 'function' ? fatRenderList : null;
+
+// ── Init: verificar vencidas ao carregar ─────────────────────────
+(function tocoInit(){
+  try {
+    var cached = JSON.parse(localStorage.getItem(TOCO_FAT_KEY));
+    if(cached && cached.data) tocoUpdateVencidasBadge(cached.data);
+  } catch(e){}
+})();
+
+
+// ── Exportar Configuração ────────────────────────────────────────
+function exportarConfiguracao() {
+  var backup = {
+    version: 2,
+    ts: new Date().toISOString(),
+    toconline: JSON.parse(localStorage.getItem('ob-toconline-config') || 'null'),
+    tocoFaturas: JSON.parse(localStorage.getItem('ob-toconline-faturas') || 'null'),
+    tocoClientes: JSON.parse(localStorage.getItem('ob-toconline-clientes') || 'null'),
+    faturas: JSON.parse(localStorage.getItem('ob-faturas') || '[]'),
+    clientes: JSON.parse(localStorage.getItem('ob-clientes') || '[]'),
+    orcamentos: JSON.parse(localStorage.getItem('ob-orcamentos') || '[]'),
+    leads: JSON.parse(localStorage.getItem('ob-crm-leads') || '[]'),
+    webhookToco: localStorage.getItem('ob-toco-webhook') || '',
+    webhookCK: localStorage.getItem('ob-ck-webhook') || ''
+  };
+  var blob = new Blob([JSON.stringify(backup, null, 2)], {type:'application/json'});
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'ob-crm-backup-' + new Date().toISOString().slice(0,10) + '.json';
+  a.click();
+}
+
+// ── Importar Configuração ────────────────────────────────────────
+function importarConfiguracao() {
+  var inp = document.createElement('input');
+  inp.type = 'file'; inp.accept = '.json';
+  inp.onchange = function(e) {
+    var file = e.target.files[0];
+    if(!file) return;
+    var reader = new FileReader();
+    reader.onload = function(ev) {
+      try {
+        var data = JSON.parse(ev.target.result);
+        if(!data.version) { alert('Ficheiro inválido.'); return; }
+        if(!confirm('Importar configuração? Isto substituirá os dados actuais.')) return;
+        if(data.toconline) localStorage.setItem('ob-toconline-config', JSON.stringify(data.toconline));
+        if(data.faturas) localStorage.setItem('ob-faturas', JSON.stringify(data.faturas));
+        if(data.clientes) localStorage.setItem('ob-clientes', JSON.stringify(data.clientes));
+        if(data.orcamentos) localStorage.setItem('ob-orcamentos', JSON.stringify(data.orcamentos));
+        if(data.leads) localStorage.setItem('ob-crm-leads', JSON.stringify(data.leads));
+        if(data.webhookToco) localStorage.setItem('ob-toco-webhook', data.webhookToco);
+        if(data.webhookCK) localStorage.setItem('ob-ck-webhook', data.webhookCK);
+        alert('✅ Configuração importada com sucesso! A página será recarregada.');
+        location.reload();
+      } catch(e) { alert('Erro ao importar: ' + e.message); }
+    };
+    reader.readAsText(file);
+  };
+  inp.click();
+}
+
 </script>
 </body>
 </html>
