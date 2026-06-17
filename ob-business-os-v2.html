@@ -11074,7 +11074,10 @@ function orcFmtEur(n){ return '€'+orcFmt(n); }
 function orcNextNum(){
   const year = new Date().getFullYear();
   const saved = orcData.filter(o=>o.num.includes('-'+year+'-'));
-  const last = saved.length ? parseInt(saved[saved.length-1].num.split('-').pop())||0 : 0;
+  // ADD: usar o MAIOR número do ano (não o último elemento do array — orcData guarda
+  // o mais recente primeiro via unshift, por isso o último elemento é o mais antigo
+  // e o número ficava preso a repetir-se em vez de avançar).
+  const last = saved.reduce((max,o)=>Math.max(max, parseInt(o.num.split('-').pop())||0), 0);
   const next = String(last+1).padStart(3,'0');
   return `ORC-${year}-${next}`;
 }
