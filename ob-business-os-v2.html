@@ -11239,8 +11239,8 @@ function orcNew(){
 function orcWhatsApp(){
   const d = orcGetData();
   if(!d.cli){ alert('Preenche o cliente.'); return; }
-  const linhas = d.linhas.map(l=>`  • ${l.produto}${l.desc?' ('+l.desc+')':''} x${l.qty} = €${orcFmt(l.sub)}`).join('%0A');
-  const msg = [
+  const linhas = d.linhas.map(l=>`  • ${l.produto}${l.desc?' ('+l.desc+')':''} x${l.qty} = €${orcFmt(l.sub)}`).join('\n');
+  const msgTexto = [
     '*Orçamento OpportunityBox*',
     `Nº *${d.num}* — válido até ${d.val.split('-').reverse().join('/')}`,
     '',
@@ -11255,8 +11255,13 @@ function orcWhatsApp(){
     '',
     'Para confirmar, responda a esta mensagem ou contacte-nos:',
     'Tel: +351 215 874 779 | geral@opportunitybox.pt'
-  ].filter(Boolean).join('%0A');
-  window.open('https://wa.me/?text='+msg,'_blank');
+  ].filter(Boolean).join('\n');
+  // ADD: usar o nº de WhatsApp do cliente (campo #orc-whatsapp) quando preenchido,
+  // para abrir já a conversa certa em vez do seletor genérico de contactos.
+  // Também codifica corretamente o texto (acentos, €, *, espaços) via encodeURIComponent.
+  const tel = (d.cliWA||'').replace(/[^0-9]/g,'');
+  const base = tel ? ('https://wa.me/'+tel) : 'https://wa.me/';
+  window.open(base+'?text='+encodeURIComponent(msgTexto),'_blank');
 }
 
 function orcEmail(){
