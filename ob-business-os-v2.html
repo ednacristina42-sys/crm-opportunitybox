@@ -2698,8 +2698,8 @@ function fatGerarPDF() {
 
 // ── Enviar fatura ao TOConline ───────────────────────────────
 async function fatEnviarToco(fatNum) {
-  // Usar sempre o webhook fixo do Make
-  var WEBHOOK = 'https://hook.eu2.make.com/sayhmfcg8o8bzl5a99aoqj4uxrvf4exh';
+  // Usar o webhook configurado em "Configurar TocOnline" (mesmo usado por enviarParaTocOnline)
+  var WEBHOOK = (typeof TOCO_WEBHOOK_URL !== 'undefined' && TOCO_WEBHOOK_URL) || 'https://hook.eu2.make.com/sayhmfcg8o8bzl5a99aoqj4uxrvf4exh';
   var fat = fatData.find(function(f) { return f.num === fatNum; });
   if (!fat) return;
   var statusEl = document.getElementById('fat-modal-status');
