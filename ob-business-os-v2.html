@@ -1062,6 +1062,41 @@ window.artesDrop = artesDrop;
 // ════════════════════════════════════════════════════════════════════
 // MÓDULO 3: TESOURARIA — Modal moderno (sem prompts nativos)
 // ════════════════════════════════════════════════════════════════════
+// ADD: saldo dos cartões pré-pagos Montepio
+var TES_CARTOES;
+try{ TES_CARTOES = JSON.parse(localStorage.getItem('ob-tes-cartoes')||'null'); }catch(e){ TES_CARTOES = null; }
+if(!TES_CARTOES){
+  TES_CARTOES = [
+    {nome:'Cartão Operacional 1', saldo:0},
+    {nome:'Cartão Operacional 2', saldo:0},
+    {nome:'Cartão Paulo Faria', saldo:0},
+    {nome:'Cartão Edna Faria', saldo:0}
+  ];
+}
+function tesCartoesSave(){ localStorage.setItem('ob-tes-cartoes', JSON.stringify(TES_CARTOES)); }
+function tesCartaoSaldoUpdate(){
+  var sel = document.getElementById('tes-m-cartao');
+  var lbl = document.getElementById('tes-m-cartao-saldo');
+  if(!sel||!lbl) return;
+  var c = TES_CARTOES.find(function(x){return x.nome===sel.value;});
+  lbl.textContent = 'Saldo disponível: € ' + ((c?c.saldo:0).toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2}));
+}
+function tesCartaoCarregar(){
+  var sel = document.getElementById('tes-m-cartao');
+  if(!sel) return;
+  var c = TES_CARTOES.find(function(x){return x.nome===sel.value;});
+  if(!c) return;
+  var v = prompt('Valor a carregar em "'+c.nome+'" (€):', '');
+  if(v===null) return;
+  var n = parseFloat(v.replace(',','.'));
+  if(!n || n<=0) return;
+  c.saldo = (c.saldo||0) + n;
+  tesCartoesSave();
+  tesCartaoSaldoUpdate();
+}
+window.tesCartaoSaldoUpdate = tesCartaoSaldoUpdate;
+window.tesCartaoCarregar = tesCartaoCarregar;
+
 function tesCalcTotal(){
   var liq = parseFloat(document.getElementById('tes-m-liq').value)||0;
   var iva = parseFloat(document.getElementById('tes-m-iva').value)||0;
@@ -1078,6 +1113,7 @@ function tesToggleCartao(){
   var pw = document.getElementById('tes-m-cartao-placeholder');
   if(cw) cw.style.display = met==='Cartão Montepio Pré-Pago'?'block':'none';
   if(pw) pw.style.display = met==='Cartão Montepio Pré-Pago'?'none':'block';
+  if(met==='Cartão Montepio Pré-Pago' && typeof tesCartaoSaldoUpdate==='function') tesCartaoSaldoUpdate();
   // Update placeholder label based on method
   var refLbl = pw ? pw.querySelector('.form-label') : null;
   if(refLbl){
@@ -1154,6 +1190,11 @@ function tesGuardarModal() {
   var pagRef = (document.getElementById('tes-m-pagref')||{}).value||'';
   var cartao = (document.getElementById('tes-m-cartao')||{}).value||'';
   var pagInfo = pagMet==='Cartão Montepio Pré-Pago' ? pagMet+' — '+cartao : pagMet+(pagRef?' ('+pagRef+')':'');
+  // ADD: deduzir do saldo do cartão pré-pago usado
+  if(pagMet==='Cartão Montepio Pré-Pago' && cartao && typeof TES_CARTOES!=='undefined'){
+    var _cartaoObj = TES_CARTOES.find(function(x){return x.nome===cartao;});
+    if(_cartaoObj){ _cartaoObj.saldo = (_cartaoObj.saldo||0) - valor; tesCartoesSave(); }
+  }
   var lancamento = {
     id: tocoId,
     tocoId: tocoId,
@@ -7040,12 +7081,16 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
         </div>
         <div class="form-group" id="tes-m-cartao-wrap" style="display:none">
           <label class="form-label">Cartão Montepio</label>
-          <select id="tes-m-cartao" class="form-input">
+          <select id="tes-m-cartao" class="form-input" onchange="tesCartaoSaldoUpdate()">
             <option value="Cartão Operacional 1">Cartão Operacional 1</option>
             <option value="Cartão Operacional 2">Cartão Operacional 2</option>
             <option value="Cartão Paulo Faria">Cartão Paulo Faria</option>
             <option value="Cartão Edna Faria">Cartão Edna Faria</option>
           </select>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-top:6px;font-size:12px;color:var(--muted)">
+            <span id="tes-m-cartao-saldo">Saldo disponível: € 0,00</span>
+            <button type="button" class="tbtn" style="font-size:11px;padding:2px 7px" onclick="tesCartaoCarregar()">+ Carregar</button>
+          </div>
         </div>
         <div class="form-group" id="tes-m-cartao-placeholder" >
           <label class="form-label">Referência / IBAN</label>
