@@ -15835,10 +15835,11 @@ async function tocoTestarLigacao() {
   tocoShowStatus('⏳ A testar ligação...', 'warn');
   try {
     var result = await tocoFetch(url, key, webhook, '/api/v1.0/Company', 'GET', null, preferProxy);
+    console.log('[TOConline DEBUG] resposta completa:', result); // ADD: log temporário para diagnóstico, remover depois
     if(result && (result.Id || result.Name || Array.isArray(result))) {
       tocoShowStatus('✅ Ligação OK! TocOnline respondeu com sucesso.', 'ok');
     } else {
-      tocoShowStatus('⚠️ Resposta recebida mas formato inesperado. Verifica a API Key.', 'warn');
+      tocoShowStatus('⚠️ Resposta recebida mas formato inesperado. Verifica a API Key. (Ver detalhes na Consola - F12)', 'warn');
     }
   } catch(e) {
     tocoShowStatus('❌ Erro: ' + e.message, 'err');
