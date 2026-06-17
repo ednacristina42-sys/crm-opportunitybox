@@ -2194,6 +2194,14 @@ var CK_STATUS_MAP = {
 var CK_STATUS_COLOR = {'A fazer':'#6b6b72','Em progresso':'#4d94db','Em revisão':'#d9822b','Concluído':'#3fcf8e'};
 var CK_PRIO_MAP = {urgent:'Urgente',high:'Alta',normal:'Normal',low:'Baixa'};
 var CK_PRIO_COLOR = {Urgente:'#e74c3c',Alta:'#e67e22',Normal:'#6b6b72',Baixa:'#94a3b8'};
+// ADD: mapeamento space ClickUp → nome de departamento usado no Kanban/Lista de tarefas (HOME_DEPTS)
+// Nota: difere do CK_SPACES.name (usado só na página ClickUp Live) — "Dep. Admin" vs "Dep. Administrativo"
+var CK_DEPT_KANBAN_MAP = {
+  '90153926268':'Dep. Comercial',
+  '90155366310':'Dep. Design',
+  '90153965643':'Chão da Fábrica',
+  '901510527937':'Dep. Administrativo'
+};
 
 function ckMapStatus(t){
   var s=(t.status&&t.status.status||'').toLowerCase();
@@ -2211,11 +2219,11 @@ function ckMapAssignee(t){
   return {ini:ini, nome:nome};
 }
 function ckFormatDue(t){
-  if(!t.due_date) return {due:'—', dueType:'ok'};
+  if(!t.due_date) return {due:'—', dueType:'ok', dueTs:0};
   var d=new Date(+t.due_date);
   var now=Date.now();
   var dStr=d.toLocaleDateString('pt-PT',{day:'2-digit',month:'2-digit'});
-  return {due:dStr, dueType:(+t.due_date<now?'late':'ok')};
+  return {due:dStr, dueType:(+t.due_date<now?'late':'ok'), dueTs:+t.due_date};
 }
 
 async function ckEnsureToken(){
@@ -2284,7 +2292,8 @@ async function ckImportToHomeTasks(){
     tasks.forEach(function(t){
       idsRecebidos[t.id]=true;
       var sp = CK_SPACES.find(function(s){return s.id===(t.space&&t.space.id);});
-      var deptNome = sp ? sp.name : 'Outro';
+      // ADD: usar CK_DEPT_KANBAN_MAP (não sp.name) para bater certo com as categorias do Kanban/Lista
+      var deptNome = CK_DEPT_KANBAN_MAP[(t.space&&t.space.id)] || 'Outro';
       var status = ckMapStatus(t);
       var prio = ckMapPrio(t);
       var ass = ckMapAssignee(t);
@@ -2297,7 +2306,7 @@ async function ckImportToHomeTasks(){
         existente.prio=prio; existente.prioBg=CK_PRIO_COLOR[prio];
         existente.group=deptNome; existente.dept=deptNome;
         existente.ass=ass.ini; existente.assNome=ass.nome; existente.assC=(sp?sp.color:'#6b6b72');
-        existente.due=dueInfo.due; existente.dueType=dueInfo.dueType;
+        existente.due=dueInfo.due; existente.dueType=dueInfo.dueType; existente.dueTs=dueInfo.dueTs;
         existente.st='ativa';
         atualizadas++;
       } else {
@@ -2307,7 +2316,7 @@ async function ckImportToHomeTasks(){
           status:status, statusC:CK_STATUS_COLOR[status],
           prio:prio, prioBg:CK_PRIO_COLOR[prio],
           dept:deptNome, ass:ass.ini, assNome:ass.nome, assC:(sp?sp.color:'#6b6b72'),
-          due:dueInfo.due, dueType:dueInfo.dueType, st:'ativa'
+          due:dueInfo.due, dueType:dueInfo.dueType, dueTs:dueInfo.dueTs, st:'ativa'
         });
         novas++;
       }
@@ -8640,6 +8649,30 @@ var ALL_TASKS=HOME_TASKS_DEFAULT;
 var homeTasksData;
 try{homeTasksData=JSON.parse(localStorage.getItem('ob-home-tasks')||'null');}catch(e){homeTasksData=null;}
 homeTasksData=homeTasksData||HOME_TASKS_DEFAULT.map(t=>({...t}));
+
+// ADD: limpeza única das tarefas fictícias de demonstração (mesmos nomes dos clientes fictícios já removidos)
+// Não remove tarefas reais criadas manualmente nem tarefas importadas do ClickUp (têm ckId).
+var OB_TAREFAS_FICTICIAS = [
+  'Follow-up Hotel Serra da Lua — Proposta Totem','Enviar orçamento CC Mira Sintra — Sinalética',
+  'Reunião Clínica Dente & Saúde — 14h','Fechar contrato Auto Premium Sintra',
+  'Arte final Letras 3D — Rest. O Farol','Mockup Totem — Hotel Serra da Lua v2',
+  'Sinalética CC Mira — Plantas baixas','Neon Bar Nox — Revisão cliente',
+  'Produção Totem — Hotel Serra da Lua','Painel LED Pingo Bom — Corte perfis',
+  'Sinalética Clínica D&S — Montagem','Instalação Auto Premium — Equipa',
+  'Reunião geral de equipa — 9h','Processar despesas semana 20',
+  'Actualizar TOConline — faturas Maio','Licença Câmara — Totem CC Mira'
+];
+(function obLimparTarefasFicticiasUmaVez(){
+  try{
+    if(localStorage.getItem('ob-limpeza-tarefas-ficticias-v1')) return;
+    var antes = homeTasksData.length;
+    homeTasksData = homeTasksData.filter(function(t){ return OB_TAREFAS_FICTICIAS.indexOf(t.title) === -1; });
+    localStorage.setItem('ob-home-tasks', JSON.stringify(homeTasksData));
+    localStorage.setItem('ob-limpeza-tarefas-ficticias-v1', '1');
+    console.log('[OB] Limpeza de tarefas fictícias concluída:', antes, '→', homeTasksData.length);
+  }catch(e){ console.error('[OB] Erro na limpeza de tarefas fictícias:', e); }
+})();
+
 function saveHomeTasksData(){localStorage.setItem('ob-home-tasks',JSON.stringify(homeTasksData));}
 
 // ── SYNC APP TAREFAS ────────────────────────────────────────
@@ -8725,6 +8758,16 @@ function getMyTasks(){
   return homeTasksData.filter(t=>t.dept===CU.dept);
 }
 
+// ADD: ordenação comum das tarefas — prioridade (Urgente→Baixa) e depois data mais recente primeiro
+var HOME_PRIO_RANK={'Urgente':4,'Alta':3,'Normal':2,'Baixa':1};
+function homeSortTasks(arr){
+  return arr.slice().sort(function(a,b){
+    var pr=(HOME_PRIO_RANK[b.prio]||0)-(HOME_PRIO_RANK[a.prio]||0);
+    if(pr!==0) return pr;
+    return (b.dueTs||0)-(a.dueTs||0);
+  });
+}
+
 // ── RENDER TASKS LIST ─────────────────────────────────────
 function renderTasksList(){
   const tasks=homeGetFilteredTasks();
@@ -8732,7 +8775,7 @@ function renderTasksList(){
   const el=document.getElementById('tasks-list-view');
   if(!el)return;
   el.innerHTML=groups.map(grp=>{
-    const gtasks=tasks.filter(t=>t.group===grp);
+    const gtasks=homeSortTasks(tasks.filter(t=>t.group===grp));
     const deptColors={'Dep. Comercial':'#e74c3c','Dep. Design':'#e67e22','Chão da Fábrica':'#3b82f6','Dep. Administrativo':'#8b5cf6'};
     const dc=deptColors[grp]||'#888';
     return `<div>
@@ -8781,7 +8824,14 @@ function renderTasksBoard(){
   const el=document.getElementById('tasks-board-view');
   if(!el)return;
   el.innerHTML=statuses.map(st=>{
-    const stasks=tasks.filter(t=>t.status===st);
+    // ADD: agrupar visualmente por departamento dentro da coluna, depois por prioridade/data
+    const stasks=tasks.filter(t=>t.status===st).sort(function(a,b){
+      const g=(a.group||'').localeCompare(b.group||'');
+      if(g!==0) return g;
+      const pr=(HOME_PRIO_RANK[b.prio]||0)-(HOME_PRIO_RANK[a.prio]||0);
+      if(pr!==0) return pr;
+      return (b.dueTs||0)-(a.dueTs||0);
+    });
     const c=HOME_ST_COLORS[st]||'#888';
     return `<div class="k-col" style="min-width:220px"
       ondragover="event.preventDefault();event.currentTarget.classList.add('drag-over')"
