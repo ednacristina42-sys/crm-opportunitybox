@@ -5535,6 +5535,17 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
         <option value="Vencido">Vencido</option>
       </select>
       <input id="toco-filtro-cliente" placeholder="🔍 Cliente..." oninput="tocoFiltrar()" style="background:var(--bg3);border:1px solid var(--border);color:var(--txt2);border-radius:6px;padding:3px 8px;font-size:12px;width:140px"/>
+      <!-- ADD: dropdown de ano para filtrar/buscar faturas TocOnline por ano -->
+      <select id="toco-filtro-ano" onchange="tocoFiltrarPorAno()" style="background:var(--bg3);border:1px solid var(--border);color:var(--txt2);border-radius:6px;padding:3px 8px;font-size:12px">
+        <option value="">Todos os anos</option>
+        <option value="2026">2026</option>
+        <option value="2025">2025</option>
+        <option value="2024">2024</option>
+        <option value="2023">2023</option>
+        <option value="2022">2022</option>
+        <option value="2021">2021</option>
+        <option value="2020">2020</option>
+      </select>
       <input type="date" id="toco-filtro-de" onchange="tocoFiltrar()" title="Data de" style="background:var(--bg3);border:1px solid var(--border);color:var(--txt2);border-radius:6px;padding:3px 8px;font-size:12px;width:130px"/>
       <input type="date" id="toco-filtro-ate" onchange="tocoFiltrar()" title="Data até" style="background:var(--bg3);border:1px solid var(--border);color:var(--txt2);border-radius:6px;padding:3px 8px;font-size:12px;width:130px"/>
       <button onclick="tocoSincronizarFaturas(false)" style="background:rgba(99,102,241,.2);border:1px solid rgba(99,102,241,.4);color:#818cf8;border-radius:6px;padding:3px 10px;font-size:12px;cursor:pointer;white-space:nowrap">🔄 Sincronizar agora</button>
@@ -15835,11 +15846,10 @@ async function tocoTestarLigacao() {
   tocoShowStatus('⏳ A testar ligação...', 'warn');
   try {
     var result = await tocoFetch(url, key, webhook, '/api/v1.0/Company', 'GET', null, preferProxy);
-    console.log('[TOConline DEBUG] resposta completa:', result); // ADD: log temporário para diagnóstico, remover depois
     if(result && (result.Id || result.Name || Array.isArray(result))) {
       tocoShowStatus('✅ Ligação OK! TocOnline respondeu com sucesso.', 'ok');
     } else {
-      tocoShowStatus('⚠️ Resposta recebida mas formato inesperado. Verifica a API Key. (Ver detalhes na Consola - F12)', 'warn');
+      tocoShowStatus('⚠️ Resposta recebida mas formato inesperado. Verifica a API Key.', 'warn');
     }
   } catch(e) {
     tocoShowStatus('❌ Erro: ' + e.message, 'err');
@@ -15908,7 +15918,11 @@ async function tocoFetch(baseUrl, apiKey, webhookUrl, endpoint, method, body, pr
 }
 
 // ── Sincronizar faturas do TocOnline ────────────────────────────
-async function tocoSincronizarFaturas(silent) {
+// ADD: parâmetro opcional "ano" — quando indicado e a TocOnline suportar paginação,
+// percorre páginas adicionais à procura de documentos desse ano. Os resultados são
+// MESCLADOS com a cache existente (por Id/Number), nunca substituídos por completo,
+// para não perder histórico de outros anos já sincronizados anteriormente.
+async function tocoSincronizarFaturas(silent, ano) {
   var cfg = tocoGetConfig();
   if(!cfg || !cfg.key) {
     if(!silent) tocoAbrirConfig();
@@ -15925,13 +15939,33 @@ async function tocoSincronizarFaturas(silent) {
     var todos = [];
     for(var i=0; i<tipos.length; i++) {
       try {
-        var endpoint = '/api/v1.0/Sales/Documents?DocumentType=' + tipos[i] + '&PageSize=100';
-        var data = await tocoFetch(cfg.url, cfg.key, cfg.webhook, endpoint, 'GET', null, cfg.proxy);
-        var docs = Array.isArray(data) ? data : (data.Items || data.Documents || data.data || []);
-        docs.forEach(function(d){ d._tipo = tipos[i]; });
-        todos = todos.concat(docs);
+        var pagina = 1;
+        var maxPaginas = ano ? 10 : 1; // ADD: se um ano foi pedido, tenta páginas adicionais para encontrar histórico mais antigo
+        var encontrouAno = !ano;
+        while(pagina <= maxPaginas) {
+          var endpoint = '/api/v1.0/Sales/Documents?DocumentType=' + tipos[i] + '&PageSize=100&Page=' + pagina;
+          var data = await tocoFetch(cfg.url, cfg.key, cfg.webhook, endpoint, 'GET', null, cfg.proxy);
+          var docs = Array.isArray(data) ? data : (data.Items || data.Documents || data.data || []);
+          if(!docs.length) break;
+          docs.forEach(function(d){ d._tipo = tipos[i]; });
+          todos = todos.concat(docs);
+          if(ano) {
+            var temAno = docs.some(function(d){
+              var dt = new Date(d.Date || d.DocumentDate || d.CreatedAt || 0);
+              return String(dt.getFullYear()) === ano;
+            });
+            if(temAno) { encontrouAno = true; break; }
+          }
+          pagina++;
+        }
       } catch(e) { /* continua com os outros tipos */ }
     }
+    // ADD: mesclar com a cache existente em vez de substituir (preserva anos já sincronizados)
+    var chave = function(d){ return (d._tipo||'') + '-' + (d.Id || d.Number || d.DocumentNumber || JSON.stringify(d).slice(0,40)); };
+    var mapa = {};
+    (_tocoFatCache||[]).forEach(function(d){ mapa[chave(d)] = d; });
+    todos.forEach(function(d){ mapa[chave(d)] = d; });
+    todos = Object.keys(mapa).map(function(k){ return mapa[k]; });
     _tocoFatCache = todos;
     // Guardar cache com timestamp
     localStorage.setItem(TOCO_FAT_KEY, JSON.stringify({ ts: Date.now(), data: todos }));
@@ -16313,20 +16347,23 @@ _tocoOrigAbrirConfig = function() {
   if(modal) modal.style.display='flex';
 };
 
-// ── Override tocoFiltrar para filtros de data ────────────────────
+// ── Override tocoFiltrar para filtros de data + ano ───────────────
 var _tocoFiltrarOrig = tocoFiltrar;
 tocoFiltrar = function() {
   var filtDe = (document.getElementById('toco-filtro-de')||{value:''}).value;
   var filtAte = (document.getElementById('toco-filtro-ate')||{value:''}).value;
+  // ADD: filtro por ano (dropdown toco-filtro-ano)
+  var filtAno = (document.getElementById('toco-filtro-ano')||{value:''}).value;
   var docs = (_tocoFatCache || []).filter(function(d){
+    var dt = new Date(d.Date || d.DocumentDate || d.CreatedAt || 0);
     if(filtDe || filtAte) {
-      var dt = new Date(d.Date || d.DocumentDate || d.CreatedAt || 0);
       if(filtDe && dt < new Date(filtDe)) return false;
       if(filtAte && dt > new Date(filtAte + 'T23:59:59')) return false;
     }
+    if(filtAno && String(dt.getFullYear()) !== filtAno) return false;
     return true;
   });
-  // Passar docs filtrados por data para o render (que filtra por tipo/estado/cliente)
+  // Passar docs filtrados por data/ano para o render (que filtra por tipo/estado/cliente)
   var orig = _tocoFatCache;
   _tocoFatCache = docs;
   tocoRenderFaturas(docs);
@@ -16334,10 +16371,26 @@ tocoFiltrar = function() {
 };
 window.tocoFiltrar = tocoFiltrar;
 
+// ADD: ao escolher um ano, garante que a cache tem dados desse ano (sincroniza se necessário) e filtra
+function tocoFiltrarPorAno() {
+  var filtAno = (document.getElementById('toco-filtro-ano')||{value:''}).value;
+  if(!filtAno) { tocoFiltrar(); return; }
+  var temDoAno = (_tocoFatCache||[]).some(function(d){
+    var dt = new Date(d.Date || d.DocumentDate || d.CreatedAt || 0);
+    return String(dt.getFullYear()) === filtAno;
+  });
+  if(!temDoAno) {
+    tocoSincronizarFaturas(false, filtAno).then(tocoFiltrar);
+  } else {
+    tocoFiltrar();
+  }
+}
+window.tocoFiltrarPorAno = tocoFiltrarPorAno;
+
 // ── Override sincronizar para toast ─────────────────────────────
 var _tocoSincOrig = tocoSincronizarFaturas;
-tocoSincronizarFaturas = async function(silent) {
-  await _tocoSincOrig(silent);
+tocoSincronizarFaturas = async function(silent, ano) {
+  await _tocoSincOrig(silent, ano);
   var vencidas = (_tocoFatCache||[]).filter(function(d){ return tocoGetEstado(d)==='Vencido'; }).length;
   if(vencidas > 0) tocoToast('⚠️ ' + vencidas + ' faturas vencidas no TocOnline', 'warn', 5000);
 };
