@@ -11527,199 +11527,6 @@ function submitForm(e){
   </div>
 </div>
 
-<!-- ─── MODAL EMISSÃO DE FATURA ──────────────────────────── -->
-<div id="fat-modal" style="display:none;position:fixed;inset:0;z-index:10500;background:rgba(0,0,0,.75);backdrop-filter:blur(4px);align-items:flex-start;justify-content:center;padding:16px;overflow-y:auto">
-  <div style="background:var(--bg2);border:1px solid var(--border2);border-radius:14px;padding:24px;width:100%;max-width:680px;margin:auto;box-shadow:0 20px 60px rgba(0,0,0,.5)">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px">
-      <div>
-        <div style="font-size:17px;font-weight:700;color:var(--txt2)" id="fat-modal-title">🧾 Emitir Fatura</div>
-        <div style="font-size:13px;color:var(--muted);margin-top:2px" id="fat-modal-sub">com base no orçamento</div>
-      </div>
-      <button onclick="fatCloseModal()" style="background:none;border:none;color:var(--muted);font-size:21px;cursor:pointer">×</button>
-    </div>
-
-    <!-- Dados da Fatura -->
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
-      <div class="form-group">
-        <label class="form-label">Nº Fatura</label>
-        <input class="form-input" id="fat-num" readonly style="opacity:.7;font-family:'DM Mono',monospace;color:var(--y)"/>
-      </div>
-      <div class="form-group">
-        <label class="form-label">Data de Emissão</label>
-        <input type="date" class="form-input" id="fat-data-emissao"/>
-      </div>
-    </div>
-
-    <!-- Dados do Cliente (editáveis) -->
-    <div style="background:var(--bg3);border:1px solid var(--border);border-radius:9px;padding:12px;margin-bottom:12px">
-      <div style="font-size:12px;font-weight:600;color:var(--y);letter-spacing:.06em;margin-bottom:10px">DADOS DE FATURAÇÃO (editáveis)</div>
-      <div class="form-group" style="margin-bottom:8px">
-        <label class="form-label">Razão Social / Cliente</label>
-        <!-- ADD: Item 1 — datalist + auto-preenchimento de NIF/morada da ficha do cliente -->
-        <input class="form-input" id="fat-cli" placeholder="Nome ou empresa"
-               list="fat-cli-list" oninput="fatAutoFillCliente(this.value)"/>
-        <datalist id="fat-cli-list"></datalist>
-      </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
-        <div class="form-group">
-          <label class="form-label">NIF</label>
-          <input class="form-input" id="fat-nif" placeholder="PT 000 000 000"/>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Prazo de Pagamento</label>
-          <select class="form-select" id="fat-prazo">
-            <option value="Imediato">Imediato</option>
-            <option value="15 dias">15 dias</option>
-            <option value="30 dias" selected>30 dias</option>
-            <option value="45 dias">45 dias</option>
-            <option value="60 dias">60 dias</option>
-            <option value="90 dias">90 dias</option>
-          </select>
-        </div>
-      </div>
-      <div class="form-group" style="margin-bottom:8px">
-        <label class="form-label">Morada de Faturação</label>
-        <input class="form-input" id="fat-morada" placeholder="Rua, nº, Localidade, CP"/>
-      </div>
-      <div class="form-group" style="margin-bottom:0">
-        <label class="form-label">Forma de Pagamento</label>
-        <select class="form-select" id="fat-pagamento" required>
-          <option value="">-- Selecione --</option>
-          <option value="Transferência Bancária">🏦 Transferência Bancária</option>
-          <option value="Multibanco">💳 Multibanco</option>
-          <option value="Cheque">📝 Cheque</option>
-          <option value="Numerário">💵 Numerário</option>
-          <option value="Débito Directo">📋 Débito Directo</option>
-        </select>
-      </div>
-    </div>
-
-    <!-- Linhas de fatura (editáveis — remover com checkbox) -->
-    <div style="margin-bottom:12px">
-      <div style="font-size:12px;font-weight:600;color:var(--y);letter-spacing:.06em;margin-bottom:8px">LINHAS DA FATURA (desmarcar para remover)</div>
-      <div id="fat-linhas-list" style="display:flex;flex-direction:column;gap:5px;max-height:200px;overflow-y:auto"></div>
-    </div>
-
-    <!-- Desconto global -->
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px">
-      <div class="form-group">
-        <label class="form-label">Desconto Global (%)</label>
-        <input type="number" class="form-input" id="fat-desconto" value="0" min="0" max="100" step="0.5" oninput="fatCalcTotal()"/>
-      </div>
-      <div class="form-group">
-        <label class="form-label">IVA (%)</label>
-        <input type="number" class="form-input" id="fat-iva" value="23" min="0" max="100" oninput="fatCalcTotal()"/>
-      </div>
-      <div class="form-group">
-        <label class="form-label">Total c/ IVA</label>
-        <div style="font-size:19px;font-weight:800;color:var(--y);font-family:'DM Mono',monospace;padding:7px 0" id="fat-total-preview">€0,00</div>
-      </div>
-    </div>
-
-    <!-- Notas -->
-    <div class="form-group" style="margin-bottom:14px">
-      <label class="form-label">Observações na Fatura (opcional)</label>
-      <input class="form-input" id="fat-obs" placeholder="ex: Referência ao orçamento, condições especiais..."/>
-    </div>
-
-    <!-- Botões -->
-    <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">
-      <button class="tbtn" onclick="fatCloseModal()">Cancelar</button>
-      <button class="tbtn" onclick="fatGuardar('Rascunho')" style="color:var(--muted)">💾 Rascunho</button>
-      <button class="tbtn" onclick="fatGerarPDF()" style="color:#4d94db;border-color:rgba(77,148,219,.3)">📄 Pré-visualizar PDF</button>
-      <button class="tbtn y" onclick="fatEmitir()">🧾 Emitir Fatura</button>
-    </div>
-    <div id="fat-modal-status" style="display:none;margin-top:10px;font-size:13px;text-align:right;font-family:'DM Mono',monospace"></div>
-  </div>
-</div>
-
-<!-- ─── MODAL SUBTAREFAS + CHECKLISTS ──────────────────────────── -->
-<div id="subchk-modal" style="display:none;position:fixed;inset:0;z-index:11000;background:rgba(0,0,0,.75);backdrop-filter:blur(4px);align-items:flex-start;justify-content:center;padding:16px;overflow-y:auto">
-  <div style="background:var(--bg2);border:1px solid var(--border2);border-radius:14px;padding:24px;width:100%;max-width:560px;margin:auto;box-shadow:0 20px 60px rgba(0,0,0,.5)">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-      <div style="font-size:16px;font-weight:700;color:var(--txt2)" id="subchk-modal-title">📋 Subtarefas & Checklists</div>
-      <button onclick="subchkCloseModal()" style="background:none;border:none;color:var(--muted);font-size:21px;cursor:pointer">×</button>
-    </div>
-
-    <!-- ── SUBTAREFAS ──────────────────────────── -->
-    <div style="margin-bottom:18px">
-      <div style="font-size:12px;font-weight:600;color:var(--y);letter-spacing:.08em;margin-bottom:8px">📋 SUBTAREFAS</div>
-      <div id="subchk-sub-list" style="display:flex;flex-direction:column;gap:5px;margin-bottom:8px"></div>
-      <div style="display:flex;gap:6px">
-        <input class="form-input" id="subchk-new-sub" placeholder="Nova subtarefa..." style="flex:1;font-size:14px" onkeydown="if(event.key==='Enter')subchkAddSub()"/>
-        <select class="form-select" id="subchk-sub-resp" style="max-width:130px;font-size:13px">
-          <option value="">Responsável</option>
-        </select>
-        <button class="tbtn" onclick="subchkAddSub()" style="font-size:13px;padding:5px 10px">+ Add</button>
-      </div>
-    </div>
-
-    <!-- ── CHECKLISTS ──────────────────────────── -->
-    <div style="margin-bottom:18px">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-        <div style="font-size:12px;font-weight:600;color:var(--y);letter-spacing:.08em">☑ CHECKLISTS</div>
-        <button class="tbtn" onclick="subchkAddChecklist()" style="font-size:12px;padding:3px 8px">+ Nova lista</button>
-      </div>
-      <div id="subchk-ck-list" style="display:flex;flex-direction:column;gap:12px"></div>
-    </div>
-
-    <!-- Botões -->
-    <div style="display:flex;gap:8px;justify-content:flex-end;border-top:1px solid var(--border);padding-top:12px">
-      <button class="tbtn" onclick="subchkCloseModal()">Fechar</button>
-      <button class="tbtn y" onclick="subchkSave()">💾 Guardar</button>
-    </div>
-  </div>
-</div>
-
-
-<!-- ADD: Item 3 — Modal de Log de Cobrança -->
-<div id="cob-log-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9999;align-items:center;justify-content:center">
-  <div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;width:min(520px,95vw);max-height:85vh;display:flex;flex-direction:column;overflow:hidden">
-    <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
-      <div>
-        <div style="font-weight:700;color:var(--txt2);font-size:16px">📞 Log de Cobrança</div>
-        <div id="cob-log-fat-label" style="font-size:13px;color:var(--muted);margin-top:2px"></div>
-      </div>
-      <button onclick="cobLogClose()" style="background:none;border:none;color:var(--muted);font-size:19px;cursor:pointer;padding:4px 8px">✕</button>
-    </div>
-    <!-- Registar novo contacto -->
-    <div style="padding:14px 20px;border-bottom:1px solid var(--border);background:var(--bg3)">
-      <div style="font-size:13px;font-weight:600;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.04em">Registar Contacto</div>
-      <div style="display:grid;grid-template-columns:auto auto 1fr;gap:8px;align-items:end">
-        <div>
-          <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:3px">Tipo</label>
-          <select id="cob-tipo" style="background:var(--bg4);border:1px solid var(--border2);color:var(--txt2);border-radius:6px;padding:5px 8px;font-size:13px">
-            <option value="email">📧 Email</option>
-            <option value="tel">📞 Ligação</option>
-            <option value="whatsapp">💬 WhatsApp</option>
-          </select>
-        </div>
-        <div>
-          <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:3px">Resultado</label>
-          <select id="cob-resultado" style="background:var(--bg4);border:1px solid var(--border2);color:var(--txt2);border-radius:6px;padding:5px 8px;font-size:13px">
-            <option value="enviado">Enviado</option>
-            <option value="sem-resposta">Sem resposta</option>
-            <option value="prometeu-pagar">Prometeu pagar</option>
-            <option value="pago">Pago ✓</option>
-            <option value="disputa">Disputa</option>
-          </select>
-        </div>
-        <div>
-          <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:3px">Nota (opcional)</label>
-          <input id="cob-nota" class="form-input" placeholder="ex: disse que paga até sexta" style="font-size:13px;padding:5px 8px"/>
-        </div>
-      </div>
-      <div style="margin-top:8px;display:flex;gap:8px;justify-content:flex-end">
-        <button onclick="cobLogGuardar()" style="background:rgba(245,196,0,.15);border:1px solid rgba(245,196,0,.4);color:var(--y);border-radius:6px;padding:5px 14px;font-size:13px;cursor:pointer;font-weight:600">💾 Guardar</button>
-        <button onclick="cobEnviarEmailCobranca()" style="background:rgba(59,130,246,.12);border:1px solid rgba(59,130,246,.3);color:var(--b);border-radius:6px;padding:5px 14px;font-size:13px;cursor:pointer">📧 Enviar Email + Registar</button>
-      </div>
-    </div>
-    <!-- Lista de contactos -->
-    <div style="flex:1;overflow-y:auto;padding:0">
-      <div id="cob-log-lista" style="min-height:60px"></div>
-    </div>
-  </div>
-</div>
 
 </body>
 </html>`;
@@ -13171,6 +12978,201 @@ renderLogin();
 // Init novos módulos (Stock, Financeiro)
 if(typeof initNovosModulos==='function') setTimeout(initNovosModulos, 200);
 </script>
+
+<!-- ─── MODAL EMISSÃO DE FATURA ──────────────────────────── -->
+<div id="fat-modal" style="display:none;position:fixed;inset:0;z-index:10500;background:rgba(0,0,0,.75);backdrop-filter:blur(4px);align-items:flex-start;justify-content:center;padding:16px;overflow-y:auto">
+  <div style="background:var(--bg2);border:1px solid var(--border2);border-radius:14px;padding:24px;width:100%;max-width:680px;margin:auto;box-shadow:0 20px 60px rgba(0,0,0,.5)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px">
+      <div>
+        <div style="font-size:17px;font-weight:700;color:var(--txt2)" id="fat-modal-title">🧾 Emitir Fatura</div>
+        <div style="font-size:13px;color:var(--muted);margin-top:2px" id="fat-modal-sub">com base no orçamento</div>
+      </div>
+      <button onclick="fatCloseModal()" style="background:none;border:none;color:var(--muted);font-size:21px;cursor:pointer">×</button>
+    </div>
+
+    <!-- Dados da Fatura -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+      <div class="form-group">
+        <label class="form-label">Nº Fatura</label>
+        <input class="form-input" id="fat-num" readonly style="opacity:.7;font-family:'DM Mono',monospace;color:var(--y)"/>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Data de Emissão</label>
+        <input type="date" class="form-input" id="fat-data-emissao"/>
+      </div>
+    </div>
+
+    <!-- Dados do Cliente (editáveis) -->
+    <div style="background:var(--bg3);border:1px solid var(--border);border-radius:9px;padding:12px;margin-bottom:12px">
+      <div style="font-size:12px;font-weight:600;color:var(--y);letter-spacing:.06em;margin-bottom:10px">DADOS DE FATURAÇÃO (editáveis)</div>
+      <div class="form-group" style="margin-bottom:8px">
+        <label class="form-label">Razão Social / Cliente</label>
+        <!-- ADD: Item 1 — datalist + auto-preenchimento de NIF/morada da ficha do cliente -->
+        <input class="form-input" id="fat-cli" placeholder="Nome ou empresa"
+               list="fat-cli-list" oninput="fatAutoFillCliente(this.value)"/>
+        <datalist id="fat-cli-list"></datalist>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+        <div class="form-group">
+          <label class="form-label">NIF</label>
+          <input class="form-input" id="fat-nif" placeholder="PT 000 000 000"/>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Prazo de Pagamento</label>
+          <select class="form-select" id="fat-prazo">
+            <option value="Imediato">Imediato</option>
+            <option value="15 dias">15 dias</option>
+            <option value="30 dias" selected>30 dias</option>
+            <option value="45 dias">45 dias</option>
+            <option value="60 dias">60 dias</option>
+            <option value="90 dias">90 dias</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group" style="margin-bottom:8px">
+        <label class="form-label">Morada de Faturação</label>
+        <input class="form-input" id="fat-morada" placeholder="Rua, nº, Localidade, CP"/>
+      </div>
+      <div class="form-group" style="margin-bottom:0">
+        <label class="form-label">Forma de Pagamento</label>
+        <select class="form-select" id="fat-pagamento" required>
+          <option value="">-- Selecione --</option>
+          <option value="Transferência Bancária">🏦 Transferência Bancária</option>
+          <option value="Multibanco">💳 Multibanco</option>
+          <option value="Cheque">📝 Cheque</option>
+          <option value="Numerário">💵 Numerário</option>
+          <option value="Débito Directo">📋 Débito Directo</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Linhas de fatura (editáveis — remover com checkbox) -->
+    <div style="margin-bottom:12px">
+      <div style="font-size:12px;font-weight:600;color:var(--y);letter-spacing:.06em;margin-bottom:8px">LINHAS DA FATURA (desmarcar para remover)</div>
+      <div id="fat-linhas-list" style="display:flex;flex-direction:column;gap:5px;max-height:200px;overflow-y:auto"></div>
+    </div>
+
+    <!-- Desconto global -->
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px">
+      <div class="form-group">
+        <label class="form-label">Desconto Global (%)</label>
+        <input type="number" class="form-input" id="fat-desconto" value="0" min="0" max="100" step="0.5" oninput="fatCalcTotal()"/>
+      </div>
+      <div class="form-group">
+        <label class="form-label">IVA (%)</label>
+        <input type="number" class="form-input" id="fat-iva" value="23" min="0" max="100" oninput="fatCalcTotal()"/>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Total c/ IVA</label>
+        <div style="font-size:19px;font-weight:800;color:var(--y);font-family:'DM Mono',monospace;padding:7px 0" id="fat-total-preview">€0,00</div>
+      </div>
+    </div>
+
+    <!-- Notas -->
+    <div class="form-group" style="margin-bottom:14px">
+      <label class="form-label">Observações na Fatura (opcional)</label>
+      <input class="form-input" id="fat-obs" placeholder="ex: Referência ao orçamento, condições especiais..."/>
+    </div>
+
+    <!-- Botões -->
+    <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">
+      <button class="tbtn" onclick="fatCloseModal()">Cancelar</button>
+      <button class="tbtn" onclick="fatGuardar('Rascunho')" style="color:var(--muted)">💾 Rascunho</button>
+      <button class="tbtn" onclick="fatGerarPDF()" style="color:#4d94db;border-color:rgba(77,148,219,.3)">📄 Pré-visualizar PDF</button>
+      <button class="tbtn y" onclick="fatEmitir()">🧾 Emitir Fatura</button>
+    </div>
+    <div id="fat-modal-status" style="display:none;margin-top:10px;font-size:13px;text-align:right;font-family:'DM Mono',monospace"></div>
+  </div>
+</div>
+
+<!-- ─── MODAL SUBTAREFAS + CHECKLISTS ──────────────────────────── -->
+<div id="subchk-modal" style="display:none;position:fixed;inset:0;z-index:11000;background:rgba(0,0,0,.75);backdrop-filter:blur(4px);align-items:flex-start;justify-content:center;padding:16px;overflow-y:auto">
+  <div style="background:var(--bg2);border:1px solid var(--border2);border-radius:14px;padding:24px;width:100%;max-width:560px;margin:auto;box-shadow:0 20px 60px rgba(0,0,0,.5)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <div style="font-size:16px;font-weight:700;color:var(--txt2)" id="subchk-modal-title">📋 Subtarefas & Checklists</div>
+      <button onclick="subchkCloseModal()" style="background:none;border:none;color:var(--muted);font-size:21px;cursor:pointer">×</button>
+    </div>
+
+    <!-- ── SUBTAREFAS ──────────────────────────── -->
+    <div style="margin-bottom:18px">
+      <div style="font-size:12px;font-weight:600;color:var(--y);letter-spacing:.08em;margin-bottom:8px">📋 SUBTAREFAS</div>
+      <div id="subchk-sub-list" style="display:flex;flex-direction:column;gap:5px;margin-bottom:8px"></div>
+      <div style="display:flex;gap:6px">
+        <input class="form-input" id="subchk-new-sub" placeholder="Nova subtarefa..." style="flex:1;font-size:14px" onkeydown="if(event.key==='Enter')subchkAddSub()"/>
+        <select class="form-select" id="subchk-sub-resp" style="max-width:130px;font-size:13px">
+          <option value="">Responsável</option>
+        </select>
+        <button class="tbtn" onclick="subchkAddSub()" style="font-size:13px;padding:5px 10px">+ Add</button>
+      </div>
+    </div>
+
+    <!-- ── CHECKLISTS ──────────────────────────── -->
+    <div style="margin-bottom:18px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <div style="font-size:12px;font-weight:600;color:var(--y);letter-spacing:.08em">☑ CHECKLISTS</div>
+        <button class="tbtn" onclick="subchkAddChecklist()" style="font-size:12px;padding:3px 8px">+ Nova lista</button>
+      </div>
+      <div id="subchk-ck-list" style="display:flex;flex-direction:column;gap:12px"></div>
+    </div>
+
+    <!-- Botões -->
+    <div style="display:flex;gap:8px;justify-content:flex-end;border-top:1px solid var(--border);padding-top:12px">
+      <button class="tbtn" onclick="subchkCloseModal()">Fechar</button>
+      <button class="tbtn y" onclick="subchkSave()">💾 Guardar</button>
+    </div>
+  </div>
+</div>
+
+
+<!-- ADD: Item 3 — Modal de Log de Cobrança -->
+<div id="cob-log-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9999;align-items:center;justify-content:center">
+  <div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;width:min(520px,95vw);max-height:85vh;display:flex;flex-direction:column;overflow:hidden">
+    <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
+      <div>
+        <div style="font-weight:700;color:var(--txt2);font-size:16px">📞 Log de Cobrança</div>
+        <div id="cob-log-fat-label" style="font-size:13px;color:var(--muted);margin-top:2px"></div>
+      </div>
+      <button onclick="cobLogClose()" style="background:none;border:none;color:var(--muted);font-size:19px;cursor:pointer;padding:4px 8px">✕</button>
+    </div>
+    <!-- Registar novo contacto -->
+    <div style="padding:14px 20px;border-bottom:1px solid var(--border);background:var(--bg3)">
+      <div style="font-size:13px;font-weight:600;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.04em">Registar Contacto</div>
+      <div style="display:grid;grid-template-columns:auto auto 1fr;gap:8px;align-items:end">
+        <div>
+          <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:3px">Tipo</label>
+          <select id="cob-tipo" style="background:var(--bg4);border:1px solid var(--border2);color:var(--txt2);border-radius:6px;padding:5px 8px;font-size:13px">
+            <option value="email">📧 Email</option>
+            <option value="tel">📞 Ligação</option>
+            <option value="whatsapp">💬 WhatsApp</option>
+          </select>
+        </div>
+        <div>
+          <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:3px">Resultado</label>
+          <select id="cob-resultado" style="background:var(--bg4);border:1px solid var(--border2);color:var(--txt2);border-radius:6px;padding:5px 8px;font-size:13px">
+            <option value="enviado">Enviado</option>
+            <option value="sem-resposta">Sem resposta</option>
+            <option value="prometeu-pagar">Prometeu pagar</option>
+            <option value="pago">Pago ✓</option>
+            <option value="disputa">Disputa</option>
+          </select>
+        </div>
+        <div>
+          <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:3px">Nota (opcional)</label>
+          <input id="cob-nota" class="form-input" placeholder="ex: disse que paga até sexta" style="font-size:13px;padding:5px 8px"/>
+        </div>
+      </div>
+      <div style="margin-top:8px;display:flex;gap:8px;justify-content:flex-end">
+        <button onclick="cobLogGuardar()" style="background:rgba(245,196,0,.15);border:1px solid rgba(245,196,0,.4);color:var(--y);border-radius:6px;padding:5px 14px;font-size:13px;cursor:pointer;font-weight:600">💾 Guardar</button>
+        <button onclick="cobEnviarEmailCobranca()" style="background:rgba(59,130,246,.12);border:1px solid rgba(59,130,246,.3);color:var(--b);border-radius:6px;padding:5px 14px;font-size:13px;cursor:pointer">📧 Enviar Email + Registar</button>
+      </div>
+    </div>
+    <!-- Lista de contactos -->
+    <div style="flex:1;overflow-y:auto;padding:0">
+      <div id="cob-log-lista" style="min-height:60px"></div>
+    </div>
+  </div>
+</div>
+
 <!-- PROFILE EDIT MODAL -->
 <div id="edit-modal" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.8);backdrop-filter:blur(6px);align-items:center;justify-content:center">
   <div style="background:var(--bg2);border:1px solid var(--border2);border-radius:12px;padding:24px;width:100%;margin:20px">
