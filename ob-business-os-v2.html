@@ -15652,9 +15652,10 @@ document.addEventListener('click', function(e){
     case 'print': e.preventDefault(); window.print(); break;
     case 'switchView': safe(switchView,[vw]); break;
     case 'taskOriginFilter':
-      var ori=btn.dataset.origin||'all';
+      // ADD: corrigido bug onde 'btn' não estava definido (a variável correta é 'el')
+      var ori=el.dataset.origin||'all';
       document.querySelectorAll('[data-action="taskOriginFilter"]').forEach(b=>b.classList.remove('on'));
-      btn.classList.add('on');
+      el.classList.add('on');
       homeOriginFilter=ori;
       renderTasksList(); renderTasksBoard();
       break;
