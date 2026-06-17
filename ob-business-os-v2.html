@@ -13911,37 +13911,9 @@ function _fEur(v) {
   return '\u20ac' + (v || 0).toLocaleString('pt-PT', {minimumFractionDigits:2, maximumFractionDigits:2});
 }
 
-function orcMaoObraCalc() {
-  var horasBancada    = _vn('orc-mo-horas-bancada', 0);
-  var custoBancadaH   = _vn('orc-mo-custo-bancada', 12.50);
-  var horasMaquinaria = _vn('orc-mo-horas-maquinaria', 0);
-  var custoMaquinariaH= _vn('orc-mo-custo-maquinaria', 15.00);
-
-  var custoBancada    = horasBancada * custoBancadaH;
-  var custoMaquinaria = horasMaquinaria * custoMaquinariaH;
-  var total           = custoBancada + custoMaquinaria;
-
-  ORC_MAO_OBRA.bancada    = custoBancada;
-  ORC_MAO_OBRA.maquinaria = custoMaquinaria;
-  ORC_MAO_OBRA.total      = total;
-
-  var elBancada = document.getElementById('orc-mo-bancada-custo');
-  if (elBancada) elBancada.textContent = _fEur(custoBancada);
-  var elMaq = document.getElementById('orc-mo-maquinaria-custo');
-  if (elMaq) elMaq.textContent = _fEur(custoMaquinaria);
-  var elTotal = document.getElementById('orc-mo-total');
-  if (elTotal) elTotal.textContent = _fEur(total);
-
-  var linhas = [];
-  if (horasBancada > 0) linhas.push(horasBancada + 'h bancada \u00d7 ' + _fEur(custoBancadaH) + '/h = ' + _fEur(custoBancada));
-  if (horasMaquinaria > 0) linhas.push(horasMaquinaria + 'h m\u00e1quina \u00d7 ' + _fEur(custoMaquinariaH) + '/h = ' + _fEur(custoMaquinaria));
-  var elDet = document.getElementById('orc-mo-detalhe');
-  if (elDet) elDet.innerHTML = linhas.join('<br>');
-
-  // Recalcular preco sugerido com mao de obra incluída
-  if (typeof orcRecalcMateriais === 'function') orcRecalcMateriais();
-}
-window.orcMaoObraCalc = orcMaoObraCalc;
+// orcMaoObraCalc: definicao unica delegada a moCalcTotal() (linha ~930).
+// Duplicado legado removido aqui: escrevia 0 em #orc-mo-total/#orc-mo-detalhe
+// lendo campos hidden ('orc-mo-horas-bancada' etc.) nunca actualizados pela UI actual.
 
 // Limpar mao de obra ao criar novo orçamento
 (function() {
