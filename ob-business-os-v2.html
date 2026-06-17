@@ -15344,20 +15344,26 @@ window.orcChangeStatus = function(orcNum, novoEstado) {
   if (!orc) return;
   var estadoAnterior = orc.st;
   orc.st = novoEstado;
-  orc.stc = novoEstado==='Aprovado'?'g':novoEstado==='Em Producao'?'b':novoEstado==='Concluido'?'g2':'ba';
+  // ADD: aceitar 'Em Producao'/'Concluido' (legado, sem acento) e 'Em Produção'/'Concluído'
+  // (valores reais enviados pelo <select> da lista, ver ESTADOS_ORC) — antes só comparava
+  // sem acento e por isso nunca atualizava a cor/stock quando vinha do dropdown.
+  var _ehProducao = (novoEstado === 'Em Producao' || novoEstado === 'Em Produção');
+  var _ehConcluido = (novoEstado === 'Concluido' || novoEstado === 'Concluído');
+  var _eraProducao = (estadoAnterior === 'Em Producao' || estadoAnterior === 'Em Produção');
+  orc.stc = novoEstado==='Aprovado'?'g':_ehProducao?'b':_ehConcluido?'g2':'ba';
 
   // Reservar stock ao Aprovar + injectar logística na Tesouraria
-  if (novoEstado === 'Aprovado' && estadoAnterior !== 'Aprovado' && estadoAnterior !== 'Em Producao') {
+  if (novoEstado === 'Aprovado' && estadoAnterior !== 'Aprovado' && !_eraProducao) {
     if (typeof stockReservarMateriais === 'function') stockReservarMateriais(orc);
     if (typeof tesInjectarLogisticaOrçamento === 'function') tesInjectarLogisticaOrçamento(orc);
   }
   // Liberar reserva se voltar atrás
-  if (estadoAnterior === 'Aprovado' && novoEstado !== 'Aprovado' && novoEstado !== 'Em Producao') {
+  if (estadoAnterior === 'Aprovado' && novoEstado !== 'Aprovado' && !_ehProducao) {
     if (typeof stockLiberarReserva === 'function') stockLiberarReserva(orc);
   }
   // Baixa real quando entra Em Producao (so uma vez)
   var jaFezBaixa = orc.fichasTecnicas && orc.fichasTecnicas.length > 0;
-  if (novoEstado === 'Em Producao' && estadoAnterior !== 'Em Producao' && !jaFezBaixa) {
+  if (_ehProducao && !_eraProducao && !jaFezBaixa) {
     if (orc.materiais && orc.materiais.length && typeof stockBaixaOrçamento === 'function') {
       var relatorio = stockBaixaOrçamento(orc);
       if (relatorio.length) {
