@@ -5956,6 +5956,7 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
       <button class="tbtn" id="tes-tab-receber" onclick="tesMostrarTab('receber')" style="font-size:13px">📥 A Receber</button>
       <button class="tbtn" id="tes-tab-recebidos" onclick="tesMostrarTab('recebidos')" style="font-size:13px">💰 Recebidos</button>
       <button class="tbtn" id="tes-tab-log" onclick="tesMostrarTab('log')" style="font-size:13px">🚚 Logística</button>
+      <button class="tbtn" id="tes-tab-iva" onclick="tesMostrarTab('iva')" style="font-size:13px">📊 IVA &amp; Resumo</button>
     </div>
 
     <!-- Tabela A Pagar -->
@@ -6042,6 +6043,40 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
           </thead>
           <tbody id="tes-tbody-log">
             <tr><td colspan="8" style="text-align:center;color:var(--muted);padding:20px">Sem despesas de logística registadas.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ADD: IVA & Resumo Anual — sincronizado via webhook Make (TOConline) -->
+    <div id="tes-panel-iva" style="display:none">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px">
+        <div style="font-size:13px;color:var(--muted);background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:8px 12px">
+          📊 Dados de IVA e resumo anual. Sincronize com o cenário Make ligado ao TOConline para atualizar.
+        </div>
+        <div style="display:flex;gap:6px">
+          <span id="tes-iva-sync-info" style="font-size:12px;color:var(--muted);align-self:center"></span>
+          <button class="tbtn" onclick="tesIvaConfigurarWebhook()" style="font-size:13px">⚙️ Configurar Webhook</button>
+          <button class="tbtn y" onclick="tesIvaSincronizar()" style="font-size:13px">🔄 Sincronizar agora</button>
+        </div>
+      </div>
+
+      <div class="tw" style="margin-bottom:18px">
+        <table>
+          <thead><tr><th colspan="5" style="text-align:center">IVA</th></tr>
+          <tr><th>Mês</th><th>Vendas</th><th>Compras</th><th>Estimativa</th><th>Valor Real Pago</th></tr></thead>
+          <tbody id="tes-iva-tbody">
+            <tr><td colspan="5" style="text-align:center;color:var(--muted);padding:20px">Sem dados. Configure o webhook e sincronize.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="tw">
+        <table>
+          <thead><tr><th colspan="7" style="text-align:center">Quadro Resumo Vendas/Despesas/Impostos/Salários</th></tr>
+          <tr><th>Mês</th><th>Vendas</th><th>Despesas</th><th>Impostos</th><th>IVA</th><th>Salários</th><th>Saldo</th></tr></thead>
+          <tbody id="tes-resumo-tbody">
+            <tr><td colspan="7" style="text-align:center;color:var(--muted);padding:20px">Sem dados. Configure o webhook e sincronize.</td></tr>
           </tbody>
         </table>
       </div>
@@ -14699,8 +14734,77 @@ function tesRender() {
   }
 }
 
+// ADD: IVA & Resumo Anual — sincronizado via webhook Make (TOConline)
+var TES_MESES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+var TES_IVA_WEBHOOK = localStorage.getItem('ob-iva-webhook') || '';
+var TES_IVA_DATA;
+try{ TES_IVA_DATA = JSON.parse(localStorage.getItem('ob-iva-dados')||'null'); }catch(e){ TES_IVA_DATA = null; }
+if(!TES_IVA_DATA){ TES_IVA_DATA = {iva:[], resumo:[], ultimaSync:null}; }
+
+function tesIvaConfigurarWebhook(){
+  var url = prompt('URL do Webhook Make (TOConline → IVA/Resumo):\n\nO cenário Make deve responder com um JSON:\n{"iva":[{"mes":"Janeiro","vendas":0,"compras":0,"estimativa":0,"valorPago":0}, ...],\n "resumo":[{"mes":"Janeiro","vendas":0,"despesas":0,"impostos":0,"iva":0,"salarios":0,"saldo":0}, ...]}', TES_IVA_WEBHOOK || '');
+  if(url===null) return;
+  TES_IVA_WEBHOOK = url.trim();
+  localStorage.setItem('ob-iva-webhook', TES_IVA_WEBHOOK);
+  if(TES_IVA_WEBHOOK) alert('✓ Webhook configurado.');
+}
+
+async function tesIvaSincronizar(){
+  if(!TES_IVA_WEBHOOK){ alert('Configure primeiro o webhook (⚙️ Configurar Webhook).'); return; }
+  var info = document.getElementById('tes-iva-sync-info');
+  if(info) info.textContent = 'A sincronizar…';
+  try{
+    var res = await fetch(TES_IVA_WEBHOOK);
+    var data = await res.json();
+    if(data && (data.iva || data.resumo)){
+      TES_IVA_DATA = {iva: data.iva||[], resumo: data.resumo||[], ultimaSync: new Date().toLocaleString('pt-PT')};
+      localStorage.setItem('ob-iva-dados', JSON.stringify(TES_IVA_DATA));
+      tesIvaRender();
+      if(info) info.textContent = 'Sincronizado às ' + TES_IVA_DATA.ultimaSync;
+    } else {
+      if(info) info.textContent = 'Resposta inesperada do webhook.';
+    }
+  }catch(e){
+    console.error('[Tesouraria] Erro a sincronizar IVA/Resumo:', e);
+    if(info) info.textContent = 'Erro ao sincronizar — verifique o webhook.';
+  }
+}
+
+function tesIvaFmt(n){ return (parseFloat(n)||0).toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2})+'€'; }
+
+function tesIvaRender(){
+  var ivaBody = document.getElementById('tes-iva-tbody');
+  var resBody = document.getElementById('tes-resumo-tbody');
+  var info = document.getElementById('tes-iva-sync-info');
+  if(info && TES_IVA_DATA.ultimaSync) info.textContent = 'Última sincronização: ' + TES_IVA_DATA.ultimaSync;
+
+  if(ivaBody){
+    if(TES_IVA_DATA.iva && TES_IVA_DATA.iva.length){
+      var totalPago = TES_IVA_DATA.iva.reduce(function(s,r){return s+(parseFloat(r.valorPago)||0);},0);
+      ivaBody.innerHTML = TES_IVA_DATA.iva.map(function(r){
+        return '<tr><td>'+(r.mes||'—')+'</td><td>'+tesIvaFmt(r.vendas)+'</td><td>'+tesIvaFmt(r.compras)+'</td><td>'+tesIvaFmt(r.estimativa)+'</td><td>'+(r.valorPago!=null?tesIvaFmt(r.valorPago):'—')+'</td></tr>';
+      }).join('') + '<tr><td colspan="4" style="text-align:right;font-weight:700">Total Pago</td><td style="font-weight:700">'+tesIvaFmt(totalPago)+'</td></tr>';
+    } else {
+      ivaBody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:20px">Sem dados. Configure o webhook e sincronize.</td></tr>';
+    }
+  }
+
+  if(resBody){
+    if(TES_IVA_DATA.resumo && TES_IVA_DATA.resumo.length){
+      resBody.innerHTML = TES_IVA_DATA.resumo.map(function(r){
+        return '<tr><td>'+(r.mes||'—')+'</td><td>'+tesIvaFmt(r.vendas)+'</td><td>'+tesIvaFmt(r.despesas)+'</td><td>'+tesIvaFmt(r.impostos)+'</td><td>'+tesIvaFmt(r.iva)+'</td><td>'+tesIvaFmt(r.salarios)+'</td><td>'+tesIvaFmt(r.saldo)+'</td></tr>';
+      }).join('');
+    } else {
+      resBody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:20px">Sem dados. Configure o webhook e sincronize.</td></tr>';
+    }
+  }
+}
+window.tesIvaConfigurarWebhook = tesIvaConfigurarWebhook;
+window.tesIvaSincronizar = tesIvaSincronizar;
+window.tesIvaRender = tesIvaRender;
+
 function tesMostrarTab(tab) {
-  ['pagar','pagas','receber','recebidos','log'].forEach(function(t) {
+  ['pagar','pagas','receber','recebidos','log','iva'].forEach(function(t) {
     var p = document.getElementById('tes-panel-'+t);
     var btn = document.getElementById('tes-tab-'+t);
     if (p) p.style.display = t===tab ? 'block' : 'none';
