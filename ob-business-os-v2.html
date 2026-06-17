@@ -5092,6 +5092,7 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
                 <option value="45 dias">45 dias</option>
                 <option value="60 dias">60 dias</option>
                 <option value="90 dias">90 dias</option>
+                <option value="50% adjudicação + 50% entrega">50% adjudicação + 50% entrega</option>
               </select>
             </div>
             <div class="form-group" style="display:flex;align-items:flex-end">
@@ -11190,8 +11191,12 @@ function orcGetData(){
   const totais = orcCalcTotal();
   const vendedor = (typeof CU !== 'undefined' && CU) ? CU.name : 'Equipa OpportunityBox';
   const email    = ORC_USER_EMAILS[vendedor] || 'geral@opportunitybox.pt';
+  // ADD: condições de pagamento 50% adjudicação + 50% entrega — calcula sinal/saldo a partir do total
+  const pagamento50 = prazo === '50% adjudicação + 50% entrega';
+  const sinal = pagamento50 ? Math.round(totais.total*50)/100 : null;
+  const saldo = pagamento50 ? Math.round((totais.total-sinal)*100)/100 : null;
   return {num, cli, prazo, morada, nif, val, linhas, totais, vendedor, email,
-    cliEmail, cliWA,
+    cliEmail, cliWA, pagamento50, sinal, saldo,
     data: new Date().toLocaleDateString('pt-PT',{day:'2-digit',month:'2-digit',year:'numeric'})
   };
 }
@@ -11656,6 +11661,9 @@ body{font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#222;background
   ${d.totais.descPct>0 ? '<div class="totais-row disc"><span class="lbl">Desconto ('+d.totais.descPct+'%)</span><span class="val">-€'+orcFmt(d.totais.descVal)+'</span></div>' : ''}
   <div class="totais-row"><span class="lbl">IVA (${d.totais.ivaPct}%)</span><span class="val">€${orcFmt(d.totais.ivaVal)}</span></div>
   <div class="totais-row total"><span class="lbl">TOTAL</span><span class="val">€${orcFmt(d.totais.total)}</span></div>
+  ${d.pagamento50 ? `
+  <div class="totais-row"><span class="lbl">Sinal (50% adjudicação)</span><span class="val">€${orcFmt(d.sinal)}</span></div>
+  <div class="totais-row"><span class="lbl">Saldo (50% entrega)</span><span class="val">€${orcFmt(d.saldo)}</span></div>` : ''}
 </div>
 
 <div class="notes-box">
