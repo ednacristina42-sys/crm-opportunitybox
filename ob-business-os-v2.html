@@ -6133,6 +6133,7 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
               <th>Categoria</th>
               <th>Descrição</th>
               <th>Valor</th>
+              <th>Método Pagamento</th>
               <th>Estado</th>
               <th>Sync Make</th>
               <th>Ações</th>
@@ -13775,6 +13776,7 @@ function finRenderDespesas() {
       '<td><span class="tag" style="background:var(--bg4);color:var(--txt2)">' + (d.categoria||'—') + '</span></td>' +
       '<td style="font-size:13px;color:var(--muted)">' + (d.descricao||'—') + '</td>' +
       '<td style="font-family:DM Mono,monospace;font-weight:600">' + fmtEur(d.valor) + '</td>' +
+      '<td><span class="tag" style="background:var(--bg4);color:var(--txt2)">' + (d.metodoPagamento||'—') + '</span></td>' +
       '<td><span style="color:' + corEstado + ';font-size:13px;font-weight:600">' + (d.estado||'Pendente') + '</span></td>' +
       '<td>' + syncIcon + '</td>' +
       '<td style="display:flex;gap:4px">' +
@@ -13783,7 +13785,7 @@ function finRenderDespesas() {
       '</td>' +
     '</tr>';
   }).join('');
-  tbody.innerHTML = rows || '<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:20px">Sem despesas registadas.</td></tr>';
+  tbody.innerHTML = rows || '<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:20px">Sem despesas registadas.</td></tr>';
 
   // Webhook status
   var dot = document.getElementById('fin-ws-dot');
@@ -13806,6 +13808,8 @@ function finNovaDespesa() {
   var val = parseFloat(prompt('Valor (€):') || '0');
   var cat = prompt('Categoria (Combustível / Material / Refeição / Viagem / Outro):') || 'Outro';
   var desc = prompt('Descrição:') || '';
+  // ADD: método de pagamento, campo que faltava no registo de despesas
+  var metodo = prompt('Método de Pagamento (Dinheiro / Cartão Pessoal / Cartão Montepio Pré-Pago / Transferência):') || 'Outro';
   FIN_DESPESAS.unshift({
     id: 'desp-' + Date.now(),
     data: new Date().toLocaleDateString('pt-PT'),
@@ -13813,6 +13817,7 @@ function finNovaDespesa() {
     categoria: cat,
     descricao: desc,
     valor: val,
+    metodoPagamento: metodo,
     estado: 'Pendente',
     sync: 'pendente',
     origem: 'Manual'
@@ -13853,6 +13858,7 @@ function finReceberWebhookMake(payload) {
       categoria: d.categoria || 'Outro',
       descricao: d.descricao || '',
       valor: parseFloat(d.valor) || 0,
+      metodoPagamento: d.metodoPagamento || d.metodo_pagamento || '—', // ADD: método de pagamento vindo do Make
       estado: 'Pendente',
       sync: 'ok',
       origem: 'Make Webhook'
@@ -13878,9 +13884,9 @@ function finTestWebhook() {
 }
 
 function finExportDespesas() {
-  var rows = ['Data,Funcionário,Categoria,Descrição,Valor,Estado,Origem'];
+  var rows = ['Data,Funcionário,Categoria,Descrição,Valor,Método Pagamento,Estado,Origem'];
   FIN_DESPESAS.forEach(function(d) {
-    rows.push([d.data||'',d.funcionario||'',d.categoria||'','"'+(d.descricao||'')+'"',d.valor||0,d.estado||'',d.origem||''].join(','));
+    rows.push([d.data||'',d.funcionario||'',d.categoria||'','"'+(d.descricao||'')+'"',d.valor||0,d.metodoPagamento||'',d.estado||'',d.origem||''].join(','));
   });
   var blob = new Blob([rows.join('\n')], {type:'text/csv;charset=utf-8;'});
   var a = document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='despesas-ob.csv'; a.click();
