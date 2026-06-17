@@ -5024,7 +5024,7 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
   </div>
 
   <!-- Todas as tarefas -->
-  <button class="space-item on" id="si-todas" data-action="goPage" data-page="todas">
+  <button class="space-item on" id="si-todas" data-action="goPage" data-page="todas" onclick="homeClearFilter()">
     <div class="space-icon" style="background:var(--bg5);color:var(--muted)">✦</div>
     <span class="space-name">Todas as tarefas</span>
     <span class="space-chevron">›</span>
@@ -5041,6 +5041,10 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
     <button class="sl-item" data-action="goPage" data-page="comercial-clientes"><div class="sl-dot" style="background:#4d94db"></div>Clientes</button>
     <button class="sl-item" data-action="goPage" data-page="comercial-orcamentos"><div class="sl-dot" style="background:#3fcf8e"></div>Orçamentos<span id="toco-vencidas-badge">!</span></button>
     <button class="sl-item" data-action="goPage" data-page="equipa-campo"><div class="sl-dot" style="background:#4d94db"></div>🗺️ Equipa em Campo</button>
+    <button class="sl-item" onclick="homeFilterTasks('Dep. Comercial')"><div class="sl-dot" style="background:#e74c3c"></div>📋 Tarefas ClickUp — Comercial</button>
+    <button class="sl-item" onclick="homeFilterTasks('Dep. Comercial','Rui Mota')"><div class="sl-dot" style="background:#e74c3c"></div>👤 Rui Mota</button>
+    <button class="sl-item" onclick="homeFilterTasks('Dep. Comercial','Paulo Faria')"><div class="sl-dot" style="background:#e74c3c"></div>👤 Paulo Faria</button>
+    <button class="sl-item" onclick="homeFilterTasks('Dep. Comercial','Humberto Estrelinha')"><div class="sl-dot" style="background:#e74c3c"></div>👤 Humberto Estrelinha</button>
   </div>
 
   <!-- Dep. Design -->
@@ -5052,6 +5056,7 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
   <div class="space-lists" id="sl-design">
     <button class="sl-item" data-action="goPage" data-page="design-tarefas"><div class="sl-dot" style="background:var(--y)"></div>Tarefas Design</button>
     <button class="sl-item" data-action="goPage" data-page="design-ficheiros"><div class="sl-dot" style="background:#4d94db"></div>Ficheiros e Artes</button>
+    <button class="sl-item" onclick="homeFilterTasks('Dep. Design')"><div class="sl-dot" style="background:#e67e22"></div>📋 Tarefas ClickUp — Design</button>
   </div>
 
   <!-- Chão da Fábrica -->
@@ -5063,6 +5068,7 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
   <div class="space-lists" id="sl-fabrica">
     <button class="sl-item" data-action="goPage" data-page="fabrica-producao"><div class="sl-dot" style="background:var(--y)"></div>Pipeline Produção</button>
     <button class="sl-item" data-action="goPage" data-page="fabrica-instalacoes"><div class="sl-dot" style="background:#3fcf8e"></div>Instalações</button>
+    <button class="sl-item" onclick="homeFilterTasks('Chão da Fábrica')"><div class="sl-dot" style="background:#3b82f6"></div>📋 Tarefas ClickUp — Fábrica</button>
   </div>
 
   <!-- Dep. Administrativo -->
@@ -5076,6 +5082,7 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
     <button class="sl-item" data-action="goPage" data-page="admin-docs"><div class="sl-dot" style="background:#4d94db"></div>Documentos</button>
     <button class="sl-item" data-action="goPage" data-page="admin-despesas"><div class="sl-dot" style="background:#d9822b"></div>Despesas</button>
     <button class="sl-item" data-action="goPage" data-page="admin-rh"><div class="sl-dot" style="background:#ec4899"></div>👥 Recursos Humanos</button>
+    <button class="sl-item" onclick="homeFilterTasks('Dep. Administrativo')"><div class="sl-dot" style="background:#8b5cf6"></div>📋 Tarefas ClickUp — Admin</button>
   </div>
 
   <!-- ADMIN ONLY section -->
@@ -8743,13 +8750,40 @@ async function homeSyncApp(){
   }
 }
 
+// ADD: filtro de menu lateral por departamento/pessoa (não altera dados, só o que aparece)
+var homeDeptFilter = null;   // ex: 'Dep. Comercial' | null = todas
+var homePersonFilter = null; // ex: 'Rui Mota' | null = toda a equipa do dept
+
+function homeFilterTasks(dept, person){
+  homeDeptFilter = dept || null;
+  homePersonFilter = person || null;
+  const titleEl = document.getElementById('home-title');
+  if(titleEl){
+    if(person) titleEl.textContent = '👤 ' + person + ' — ' + dept;
+    else if(dept) titleEl.textContent = '📁 ' + dept + ' — todas as tarefas';
+    else titleEl.textContent = 'Todas as tarefas';
+  }
+  goPage('home');
+}
+window.homeFilterTasks = homeFilterTasks;
+
+function homeClearFilter(){
+  homeDeptFilter = null; homePersonFilter = null;
+  const titleEl = document.getElementById('home-title');
+  if(titleEl) titleEl.textContent = CU && !CU.admin ? `Minhas tarefas — ${CU.dept}` : 'Todas as tarefas — OpportunityBox';
+  goPage('todas');
+}
+window.homeClearFilter = homeClearFilter;
+
 function homeGetFilteredTasks(){
   const crm = getMyTasks().map(t=>({...t, origem:'crm'}));
   // Remove CRM duplicates: if app has same id (prefixed), skip
   const appIds = new Set(homeAppTasks.map(t=>t.id));
-  const all = [...homeAppTasks, ...crm];
-  if(homeOriginFilter==='app') return homeAppTasks;
-  if(homeOriginFilter==='crm') return crm;
+  let all = [...homeAppTasks, ...crm];
+  if(homeOriginFilter==='app') all = homeAppTasks;
+  else if(homeOriginFilter==='crm') all = crm;
+  if(homeDeptFilter) all = all.filter(t=>t.group===homeDeptFilter || t.dept===homeDeptFilter);
+  if(homePersonFilter) all = all.filter(t=>(t.assNome||'').toLowerCase()===homePersonFilter.toLowerCase());
   return all;
 }
 
@@ -8820,9 +8854,32 @@ var homeDragId=null;
 
 function renderTasksBoard(){
   const tasks=homeGetFilteredTasks();
-  const statuses=['A fazer','Em progresso','Em revisão','Concluído'];
   const el=document.getElementById('tasks-board-view');
   if(!el)return;
+  // ADD: ao ver um departamento completo (sem pessoa escolhida), agrupar colunas por vendedor/pessoa
+  if(homeDeptFilter && !homePersonFilter){
+    const people=[...new Set(tasks.map(t=>t.assNome||t.ass||'Sem responsável'))].sort();
+    el.innerHTML=people.map(person=>{
+      const ptasks=homeSortTasks(tasks.filter(t=>(t.assNome||t.ass||'Sem responsável')===person));
+      const dc=HOME_DEPTS[homeDeptFilter]||'#888';
+      return `<div class="k-col" style="min-width:220px">
+        <div class="k-col-hdr" style="background:${dc}18;border:1px solid ${dc}40">
+          <div class="k-col-name" style="color:${dc}">👤 ${person}</div>
+          <div class="k-col-count" style="background:${dc}25;color:${dc}">${ptasks.length}</div>
+        </div>
+        ${ptasks.map(t=>`<div class="k-card" id="htask-${t.id}">
+          <div class="k-card-title">${t.title}</div>
+          <div class="k-card-sub" style="color:${dc}">${t.status}</div>
+          <div class="k-card-meta">
+            <div class="prio"><div class="prio-dot" style="background:${t.prioBg}"></div>${t.prio}</div>
+            <span class="due ${t.dueType}" style="font-size:12px">${t.due}</span>
+          </div>
+        </div>`).join('')}
+      </div>`;
+    }).join('');
+    return;
+  }
+  const statuses=['A fazer','Em progresso','Em revisão','Concluído'];
   el.innerHTML=statuses.map(st=>{
     // ADD: agrupar visualmente por departamento dentro da coluna, depois por prioridade/data
     const stasks=tasks.filter(t=>t.status===st).sort(function(a,b){
