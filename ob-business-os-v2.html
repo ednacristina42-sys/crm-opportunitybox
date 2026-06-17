@@ -1976,6 +1976,10 @@ var PRIO_LABEL = {urgent:"Urgente", high:"Alta", normal:"Normal", low:"Baixa"};
 function ckInit(){
   const saved = localStorage.getItem("ob-ck-token");
   if(saved){ CK_TOKEN = saved; ckShowDash(); }
+  // ADD: actualizar card de Integrações e iniciar sync automático (30 min) se já houver token
+  try{
+    if(saved){ ckUpdateConexaoUI(true); ckUpdateLastSync(); ckStartAutoSync(); }
+  }catch(e){}
 }
 
 async function ckLogin(e){
@@ -2171,6 +2175,163 @@ function ckDeptFilterById(id){
     d.style.borderColor = CK_DEPT_FILTER===CK_SPACES[i]?.id ? CK_SPACES[i].color : '';
   });
   ckRenderTasks();
+}
+
+// ═══════════════════════════════════════════════════════
+// ADD: Importação real ClickUp → homeTasksData (Kanban/Lista de tarefas)
+// Substitui a simulação anterior do modal "Importar do ClickUp" por dados reais da API,
+// com dedup por id (ckId), atualização de tarefas existentes e arquivamento das removidas no ClickUp.
+// ═══════════════════════════════════════════════════════
+var CK_SYNC_TIMER = null;
+var CK_SYNC_INTERVAL_MS = 30 * 60 * 1000; // 30 minutos
+
+var CK_STATUS_MAP = {
+  'to do':'A fazer','a fazer':'A fazer',
+  'in progress':'Em progresso','em progresso':'Em progresso',
+  'in review':'Em revisão','em revisão':'Em revisão','em revisao':'Em revisão',
+  'done':'Concluído','concluído':'Concluído','concluido':'Concluído','closed':'Concluído'
+};
+var CK_STATUS_COLOR = {'A fazer':'#6b6b72','Em progresso':'#4d94db','Em revisão':'#d9822b','Concluído':'#3fcf8e'};
+var CK_PRIO_MAP = {urgent:'Urgente',high:'Alta',normal:'Normal',low:'Baixa'};
+var CK_PRIO_COLOR = {Urgente:'#e74c3c',Alta:'#e67e22',Normal:'#6b6b72',Baixa:'#94a3b8'};
+
+function ckMapStatus(t){
+  var s=(t.status&&t.status.status||'').toLowerCase();
+  return CK_STATUS_MAP[s] || 'A fazer';
+}
+function ckMapPrio(t){
+  var p=(t.priority&&t.priority.priority||'normal').toLowerCase();
+  return CK_PRIO_MAP[p] || 'Normal';
+}
+function ckMapAssignee(t){
+  var a = t.assignees && t.assignees[0];
+  if(!a) return {ini:'?',nome:'Sem atrib.'};
+  var nome = a.username || a.email || '?';
+  var ini = nome.split(' ').map(function(w){return w[0];}).join('').substring(0,2).toUpperCase();
+  return {ini:ini, nome:nome};
+}
+function ckFormatDue(t){
+  if(!t.due_date) return {due:'—', dueType:'ok'};
+  var d=new Date(+t.due_date);
+  var now=Date.now();
+  var dStr=d.toLocaleDateString('pt-PT',{day:'2-digit',month:'2-digit'});
+  return {due:dStr, dueType:(+t.due_date<now?'late':'ok')};
+}
+
+async function ckEnsureToken(){
+  if(CK_TOKEN) return CK_TOKEN;
+  var input=document.getElementById('ck2-token-input');
+  var token=input?input.value.trim():'';
+  if(!token){ alert('Cola o teu token pessoal do ClickUp no campo de Integrações antes de sincronizar.'); return null; }
+  try{
+    var r=await fetch(CK_BASE+'/user',{headers:{'Authorization':token}});
+    if(!r.ok) throw new Error();
+    CK_TOKEN=token;
+    localStorage.setItem('ob-ck-token',token);
+    return token;
+  }catch(e){
+    alert('❌ Token inválido ou sem permissões.');
+    return null;
+  }
+}
+
+function ckUpdateConexaoUI(ligado){
+  var ico=document.getElementById('ck2-ico'), st=document.getElementById('ck2-status');
+  if(ico) ico.style.background = ligado ? 'rgba(63,207,142,.1)' : 'var(--bg3)';
+  if(ico) ico.textContent = ligado ? '🟢' : '⚪';
+  if(st){
+    st.style.color = ligado ? 'var(--g)' : 'var(--muted)';
+    st.textContent = ligado ? '● Ligado · sync automático activo' : 'Não ligado — cola o token abaixo';
+  }
+}
+
+function ckUpdateLastSync(){
+  var el=document.getElementById('ck2-last-sync');
+  var ts=localStorage.getItem('ob-ck-last-sync');
+  if(el) el.textContent = ts ? new Date(ts).toLocaleTimeString('pt-PT',{hour:'2-digit',minute:'2-digit'}) : 'nunca';
+}
+
+async function ckSalvarToken(){
+  var token=await ckEnsureToken();
+  if(!token) return;
+  ckUpdateConexaoUI(true);
+  await ckImportToHomeTasks();
+  ckStartAutoSync();
+}
+
+async function ckSincronizarAgora(){
+  var token=await ckEnsureToken();
+  if(!token) return;
+  await ckImportToHomeTasks();
+}
+
+function ckStartAutoSync(){
+  if(CK_SYNC_TIMER) clearInterval(CK_SYNC_TIMER);
+  CK_SYNC_TIMER=setInterval(function(){ if(CK_TOKEN) ckImportToHomeTasks(); },CK_SYNC_INTERVAL_MS);
+}
+
+async function ckImportToHomeTasks(){
+  if(!CK_TOKEN) return;
+  try{
+    var tasks = await ckFetchTasks();
+    var byCkId={};
+    homeTasksData.forEach(function(t){ if(t.ckId) byCkId[t.ckId]=t; });
+
+    var maxId = Math.max(0, ...homeTasksData.map(function(t){return t.id||0;}));
+    var novas=0, atualizadas=0;
+    var idsRecebidos={};
+
+    tasks.forEach(function(t){
+      idsRecebidos[t.id]=true;
+      var sp = CK_SPACES.find(function(s){return s.id===(t.space&&t.space.id);});
+      var deptNome = sp ? sp.name : 'Outro';
+      var status = ckMapStatus(t);
+      var prio = ckMapPrio(t);
+      var ass = ckMapAssignee(t);
+      var dueInfo = ckFormatDue(t);
+
+      var existente = byCkId[t.id];
+      if(existente){
+        existente.title=t.name;
+        existente.status=status; existente.statusC=CK_STATUS_COLOR[status];
+        existente.prio=prio; existente.prioBg=CK_PRIO_COLOR[prio];
+        existente.group=deptNome; existente.dept=deptNome;
+        existente.ass=ass.ini; existente.assNome=ass.nome; existente.assC=(sp?sp.color:'#6b6b72');
+        existente.due=dueInfo.due; existente.dueType=dueInfo.dueType;
+        existente.st='ativa';
+        atualizadas++;
+      } else {
+        maxId++;
+        homeTasksData.push({
+          id:maxId, ckId:t.id, title:t.name, group:deptNome,
+          status:status, statusC:CK_STATUS_COLOR[status],
+          prio:prio, prioBg:CK_PRIO_COLOR[prio],
+          dept:deptNome, ass:ass.ini, assNome:ass.nome, assC:(sp?sp.color:'#6b6b72'),
+          due:dueInfo.due, dueType:dueInfo.dueType, st:'ativa'
+        });
+        novas++;
+      }
+    });
+
+    // ADD: tarefas que tinham ckId mas já não voltaram da API -> foram excluídas no ClickUp -> arquivar
+    var arquivadas=0;
+    homeTasksData.forEach(function(t){
+      if(t.ckId && !idsRecebidos[t.ckId] && t.st!=='arquivada'){
+        t.st='arquivada'; t.status='Arquivada'; t.statusC='#555';
+        arquivadas++;
+      }
+    });
+
+    localStorage.setItem('ob-home-tasks', JSON.stringify(homeTasksData));
+    localStorage.setItem('ob-ck-last-sync', new Date().toISOString());
+    ckUpdateLastSync();
+    ckUpdateConexaoUI(true);
+    try{ renderTasksList(); }catch(e){}
+    try{ renderTasksBoard(); }catch(e){}
+    return {novas:novas, atualizadas:atualizadas, arquivadas:arquivadas};
+  }catch(ex){
+    console.error('[ClickUp] Erro na sincronização real:', ex);
+  }
 }
 
 function ckRenderTasks(){
@@ -6347,7 +6508,24 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
           4. Acesso: <strong style="color:var(--txt2)">"Qualquer pessoa"</strong> → Implementar → Copia o URL aqui
         </div>
       </div>
-      <div class="conn"><div class="cico" style="background:rgba(63,207,142,.1)">🟢</div><div><div class="cname">ClickUp — Workspace OB</div><div class="cst" style="color:var(--g)">● Ligado · 4 espaços importados · Sync activo</div></div><div style="margin-left:auto"><button class="bsm bon" data-action="showImport">↑ Reimportar</button></div></div>
+      <!-- ADD: card real de ligação ao ClickUp — substitui o card estático/fictício anterior -->
+      <div class="conn" style="flex-direction:column;align-items:stretch;gap:10px">
+        <div style="display:flex;align-items:center;gap:11px">
+          <div class="cico" id="ck2-ico" style="background:var(--bg3)">⚪</div>
+          <div style="flex:1">
+            <div class="cname">ClickUp — Workspace OB</div>
+            <div class="cst" id="ck2-status" style="color:var(--muted)">Não ligado — cola o token abaixo</div>
+          </div>
+          <div>
+            <button class="bsm bon" data-action="ckSincronizarAgora">🔄 Sincronizar agora</button>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input class="form-input" id="ck2-token-input" placeholder="pk_XXXXXXXXXXXXXXXXXX" style="font-size:13px;flex:1"/>
+          <button class="bsm bon" id="ck2-save-btn" style="white-space:nowrap;cursor:pointer" data-action="ckSalvarToken">💾 Guardar e Ligar</button>
+        </div>
+        <div style="font-size:12px;color:var(--muted)">Última sincronização: <span id="ck2-last-sync">nunca</span> · Sync automático a cada 30 min · Espaços: Comercial, Design, Fábrica, Admin</div>
+      </div>
       <div class="conn"><div class="cico" style="background:var(--bg3)">⚪</div><div><div class="cname">Google Calendar</div><div class="cst" style="color:var(--muted)">Sincronizar agenda</div></div><div style="margin-left:auto"><button class="bsm bon">Ligar</button></div></div>
 
       <!-- ── NOVO BANCO API (estrutura placeholder — não ativar sem credenciais) -->
@@ -15865,6 +16043,8 @@ document.addEventListener('click', function(e){
     case 'ecLogout': safe(ecLogout); break;
     case 'ckRefresh': safe(ckRefresh); break;
     case 'ckLogout': safe(ckLogout); break;
+    case 'ckSalvarToken': safe(ckSalvarToken); break;
+    case 'ckSincronizarAgora': safe(ckSincronizarAgora); break;
     case 'gsSalvarURL': safe(gsSalvarURL); break;
     case 'gsTestarUI': safe(gsTestarUI); break;
     case 'showImport': safe(showImport); break;
