@@ -11827,14 +11827,10 @@ if(document.readyState==='loading'){
 function orcRenderList(){
   const el = document.getElementById('orc-tbody');
   if(!el) return;
-  const all = [
-    ...orcData,
-    {num:'ORC-2025-042',cli:'Hotel Serra da Lua',val:7200,st:'Pendente',stc:'ba',dt:'15/05/2025',vendedor:'Paulo Faria'},
-    {num:'ORC-2025-041',cli:'Auto Premium Sintra',val:6800,st:'Aprovado',stc:'bg',dt:'12/05/2025',vendedor:'Rui Mota'},
-    {num:'ORC-2025-040',cli:'CC Mira Sintra',val:12400,st:'Em análise',stc:'by',dt:'10/05/2025',vendedor:'Rui Mota'},
-    {num:'ORC-2025-039',cli:'Clínica D&S',val:2900,st:'Pendente',stc:'ba',dt:'08/05/2025',vendedor:'Paulo Faria'},
-    {num:'ORC-2025-038',cli:'Pingo Bom',val:9200,st:'Aprovado',stc:'bg',dt:'05/05/2025',vendedor:'Rui Mota'},
-  ];
+  // ADD: removidos 5 orçamentos de exemplo (hardcoded) que apareciam sempre na lista
+  // misturados com os reais — não existiam em orcData, por isso o dropdown de estado
+  // deles parecia interativo mas não tinha qualquer efeito (orcChangeStatus não os encontrava).
+  const all = [...orcData];
   var ESTADOS_ORC = ['Pendente','Em análise','Aprovado','Em Produção','Concluído','Faturado','Cancelado'];
   // Garantir que a tabela tem a coluna TocOnline
   var thead = document.querySelector('#page-comercial-orcamentos table thead tr');
