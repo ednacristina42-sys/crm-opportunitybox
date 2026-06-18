@@ -15075,6 +15075,12 @@ function tesIvaCalcularReal(){
 async function tesIvaSincronizar(){
   var info = document.getElementById('tes-iva-sync-info');
   if(info) info.textContent = 'A sincronizar…';
+  // Vai sempre buscar as faturas mais recentes ao TocOnline primeiro — igual ao botão
+  // "🔄 Sincronizar Faturas TocOnline" do Financeiro — antes de calcular/exibir o IVA & Resumo.
+  if(typeof tocoSincronizarFaturas==='function'){
+    try{ await tocoSincronizarFaturas(false); }catch(e){ console.error('[IVA] Erro ao sincronizar TocOnline:', e); }
+  }
+  if(typeof tocoAtualizarTesourariaComFaturas==='function') tocoAtualizarTesourariaComFaturas();
   // Sem webhook configurado: calcula directamente a partir dos dados reais já no CRM (TocOnline + Tesouraria).
   if(!TES_IVA_WEBHOOK){
     var calc = tesIvaCalcularReal();
@@ -15179,6 +15185,9 @@ function tesRenderCharts(tab){
     var g=agruparPor((typeof TES_CONTAS!=='undefined'?TES_CONTAS:[]).filter(function(c){return c.estado==='Paga';}),'categoria','valor');
     var ks=Object.keys(g); mk('tesPagasChart',ks,ks.map(function(k){return g[k];}),ks.map(function(_,i){return paletas[i%paletas.length];}));
   }
+  if(tab==='receber'||tab==='recebidos'){
+    if(typeof tocoMergeFaturasCacheReceber==='function') tocoMergeFaturasCacheReceber();
+  }
   if(tab==='receber'){
     var g=agruparPor(TES_RECEBER.filter(function(r){return r.estado!=='Recebido';}),'cliente','total');
     var ks=Object.keys(g); mk('tesReceberChart',ks,ks.map(function(k){return g[k];}),ks.map(function(_,i){return paletas[i%paletas.length];}));
@@ -15242,10 +15251,14 @@ function tesGetReceber(){ return TES_RECEBER; }
 function tesGetRecebidos(){ return TES_RECEBER.filter(r=>r.estado==='Recebido'); }
 
 // Liga as faturas reais do TocOnline (tocoFaturasCache) à Tesouraria.
-// Cria/atualiza entradas em TES_RECEBER a partir das faturas (FT) reais — nunca apaga lançamentos manuais.
-function tocoAtualizarTesourariaComFaturas(){
+// Atualiza/cria entradas em TES_RECEBER a partir das faturas (FT) e notas de crédito (NC) reais — nunca apaga lançamentos manuais.
+// Não renderiza nada (sem recursão); quem chama decide se/quando renderizar.
+function tocoMergeFaturasCacheReceber(){
   var docs = (typeof tocoFaturasCache==='function') ? tocoFaturasCache() : [];
+  if(!docs.length) return false;
+  var alterou = false;
   var faturas = docs.filter(function(d){ return (d._tipo||d.DocumentType)==='FT'; });
+  var notas = docs.filter(function(d){ return (d._tipo||d.DocumentType)==='NC'; });
   var porId = {}; TES_RECEBER.forEach(function(r){ if(r._tocoId) porId[r._tocoId]=r; });
   faturas.forEach(function(d){
     var id = d.Id || d.Number || d.DocumentNumber;
@@ -15256,11 +15269,13 @@ function tocoAtualizarTesourariaComFaturas(){
     var pago = estado==='Pago';
     var existente = porId[id];
     if(existente){
+      if(existente.total!==total || existente.valorLiq!==liq) alterou=true;
       existente.total = total; existente.valorLiq = liq;
-      if(pago && existente.estado!=='Recebido'){ existente.estado='Recebido'; existente.dataRec=new Date().toLocaleDateString('pt-PT'); }
+      if(pago && existente.estado!=='Recebido'){ existente.estado='Recebido'; existente.dataRec=new Date().toLocaleDateString('pt-PT'); alterou=true; }
     } else {
+      alterou = true;
       TES_RECEBER.unshift({
-        id:'TOCO-'+id, _tocoId:id,
+        id:'TOCO-'+id, _tocoId:id, tipo:'FT',
         data:new Date().toLocaleDateString('pt-PT'),
         descricao:'Fatura '+(d.Number||d.DocumentNumber||id),
         cliente: d.CustomerName || (d.Customer && d.Customer.Name) || '—',
@@ -15273,29 +15288,48 @@ function tocoAtualizarTesourariaComFaturas(){
       });
     }
   });
-  tesSaveReceber();
+  // Notas de Crédito (NC) — entram em "Recebidos" como valores negativos (abatem ao total recebido do cliente).
+  notas.forEach(function(d){
+    var id = d.Id || d.Number || d.DocumentNumber;
+    if(!id) return;
+    var total = -Math.abs(parseFloat(d.TotalAmount||d.Total||d.Amount||0)||0);
+    var existente = porId[id];
+    if(existente){
+      if(existente.total!==total) alterou=true;
+      existente.total = total; existente.valorLiq = total/1.23;
+    } else {
+      alterou = true;
+      TES_RECEBER.unshift({
+        id:'TOCO-NC-'+id, _tocoId:id, tipo:'NC',
+        data:new Date().toLocaleDateString('pt-PT'),
+        descricao:'Nota de Crédito '+(d.Number||d.DocumentNumber||id),
+        cliente: d.CustomerName || (d.Customer && d.Customer.Name) || '—',
+        projeto:'',
+        valorLiq: total/1.23, ivaPct: 23, total: total,
+        vencimento:'', dataEmissao: d.Date || d.DocumentDate || '',
+        estado:'Recebido', dataRec:new Date().toLocaleDateString('pt-PT')
+      });
+    }
+  });
+  if(alterou) tesSaveReceber();
+  return alterou;
+}
+
+function tocoAtualizarTesourariaComFaturas(){
+  tocoMergeFaturasCacheReceber();
   if(typeof tesRenderReceber==='function') tesRenderReceber();
   if(typeof tesRenderRecebidos==='function') tesRenderRecebidos();
   if(typeof tesRender==='function') tesRender();
 }
 
+// Modal de criação manual (prompt) removido — os dados de "A Receber"/"Recebidos" vêm
+// automaticamente das faturas reais sincronizadas do TocOnline. Este botão agora sincroniza.
 function tesNovaReceber(){
-  var desc=prompt('Descrição / N.º Fatura:','');
-  if(!desc)return;
-  var cliente=prompt('Cliente:','');
-  var proj=prompt('Projeto / Orçamento:','ORC-2026-');
-  var liq=parseFloat(prompt('Valor Líquido (€):','0'))||0;
-  var iva=parseFloat(prompt('IVA (%):','23'))||0;
-  var total=liq*(1+iva/100);
-  var venc=prompt('Data de Vencimento (DD/MM/AAAA):','');
-  TES_RECEBER.unshift({
-    id:'REC-'+Date.now(),data:new Date().toLocaleDateString('pt-PT'),
-    descricao:desc, cliente:cliente||'', projeto:proj||'',
-    valorLiq:liq, ivaPct:iva, total:total,
-    vencimento:venc, dataEmissao:new Date().toISOString().split('T')[0],
-    estado:'Pendente'
-  });
-  tesSaveReceber(); tesRenderReceber();
+  if(typeof tocoSincronizarFaturas==='function'){
+    tocoSincronizarFaturas(false).then(function(){ tocoAtualizarTesourariaComFaturas(); });
+  } else if(typeof tocoAtualizarTesourariaComFaturas==='function'){
+    tocoAtualizarTesourariaComFaturas();
+  }
 }
 
 function tesReceberMarcarPago(id){
@@ -15305,8 +15339,13 @@ function tesReceberMarcarPago(id){
 
 function tesRenderReceber(){
   var el=document.getElementById('tes-tbody-receber'); if(!el) return;
+  tocoMergeFaturasCacheReceber();
   var list=TES_RECEBER.filter(function(r){return r.estado!=='Recebido';});
-  if(!list.length){ el.innerHTML='<tr><td colspan="10" style="text-align:center;color:var(--muted);padding:20px">Sem faturas a receber.</td></tr>'; return; }
+  if(!list.length){
+    var temToco = (typeof tocoFaturasCache==='function') && tocoFaturasCache().length>0;
+    el.innerHTML='<tr><td colspan="10" style="text-align:center;color:var(--muted);padding:20px">'+(temToco?'Sem faturas a receber.':'Sincronize com TocOnline para ver as faturas.')+'</td></tr>';
+    return;
+  }
   var hoje=new Date();
   el.innerHTML=list.map(function(r){
     var vd=parseVencTes(r.vencimento); var dias=Math.round((vd-hoje)/86400000);
@@ -15328,14 +15367,19 @@ function tesRenderReceber(){
 }
 function tesRenderRecebidos(){
   var el=document.getElementById('tes-tbody-recebidos'); if(!el) return;
+  tocoMergeFaturasCacheReceber();
   var list=TES_RECEBER.filter(r=>r.estado==='Recebido');
-  if(!list.length){ el.innerHTML='<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:20px">Sem recebimentos.</td></tr>'; return; }
+  if(!list.length){
+    var temToco = (typeof tocoFaturasCache==='function') && tocoFaturasCache().length>0;
+    el.innerHTML='<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:20px">'+(temToco?'Sem recebimentos.':'Sincronize com TocOnline para ver as faturas.')+'</td></tr>';
+    return;
+  }
   el.innerHTML=list.map(r=>'<tr>'
     +'<td style="font-family:monospace;font-size:13px">'+r.dataRec+'</td>'
-    +'<td><strong style="color:var(--txt2)">'+r.descricao+'</strong></td>'
+    +'<td><strong style="color:var(--txt2)">'+r.descricao+(r.tipo==='NC'?' <span style="font-size:11px;background:rgba(224,85,85,.15);color:var(--r);border-radius:5px;padding:1px 6px;margin-left:4px">Nota de Crédito</span>':'')+'</strong></td>'
     +'<td style="font-size:13px">'+r.cliente+'</td>'
     +'<td style="font-size:13px">'+r.projeto+'</td>'
-    +'<td style="font-family:monospace;font-weight:700;color:var(--g)">€'+parseFloat(r.total||0).toFixed(2)+'</td>'
+    +'<td style="font-family:monospace;font-weight:700;color:'+(parseFloat(r.total||0)<0?'var(--r)':'var(--g)')+'">€'+parseFloat(r.total||0).toFixed(2)+'</td>'
     +'<td style="font-size:13px">—</td>'
     +'</tr>').join('');
 }
