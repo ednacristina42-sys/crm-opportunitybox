@@ -16194,6 +16194,12 @@ var TOCO_CLI_KEY = 'ob-toconline-clientes';
 var TOCO_CACHE_TTL = 5 * 60 * 1000; // 5 minutos
 var _tocoFatCache = []; // cache em memória
 
+// TocOnline bloqueia chamadas directas do browser (CORS), por isso usamos sempre
+// este webhook do Make.com como proxy. Não é segredo (a chave de API real nunca
+// passa por aqui em texto fixo, só é enviada em runtime), por isso pode ficar
+// como valor por omissão e não obrigar a configuração manual do utilizador.
+var TOCO_WEBHOOK_DEFAULT = 'https://hook.eu2.make.com/d9xfzgzrtlf4w7zqtwy5ip7cbp7s1dqh';
+
 // ── Carregar / guardar config ────────────────────────────────────
 function tocoGetConfig() {
   try {
@@ -16201,6 +16207,8 @@ function tocoGetConfig() {
     if (!raw) return null;
     var cfg = JSON.parse(raw);
     cfg.key = cfg.key ? atob(cfg.key) : '';
+    if(!cfg.webhook) cfg.webhook = TOCO_WEBHOOK_DEFAULT;
+    if(!cfg.proxy) cfg.proxy = true;
     return cfg;
   } catch(e) { return null; }
 }
@@ -16217,7 +16225,7 @@ function tocoAbrirConfig() {
   if(el('toco-cfg-key')) el('toco-cfg-key').value = cfg.key || '';
   if(el('toco-cfg-url')) el('toco-cfg-url').value = cfg.url || 'https://api30.toconline.pt';
   if(el('toco-cfg-nif')) el('toco-cfg-nif').value = cfg.nif || '';
-  if(el('toco-cfg-webhook')) el('toco-cfg-webhook').value = cfg.webhook || '';
+  if(el('toco-cfg-webhook')) el('toco-cfg-webhook').value = cfg.webhook || TOCO_WEBHOOK_DEFAULT;
   if(el('toco-cfg-auto')) el('toco-cfg-auto').checked = !!cfg.auto;
   if(el('toco-cfg-status')) { el('toco-cfg-status').style.display='none'; el('toco-cfg-status').textContent=''; }
   var modal = el('toco-config-modal');
@@ -16794,9 +16802,9 @@ _tocoOrigAbrirConfig = function() {
   if(el('toco-cfg-key')) el('toco-cfg-key').value = cfg.key || '';
   if(el('toco-cfg-url')) el('toco-cfg-url').value = cfg.url || 'https://api30.toconline.pt';
   if(el('toco-cfg-nif')) el('toco-cfg-nif').value = cfg.nif || '';
-  if(el('toco-cfg-webhook')) el('toco-cfg-webhook').value = cfg.webhook || '';
+  if(el('toco-cfg-webhook')) el('toco-cfg-webhook').value = cfg.webhook || TOCO_WEBHOOK_DEFAULT;
   if(el('toco-cfg-auto')) el('toco-cfg-auto').checked = !!cfg.auto;
-  if(el('toco-cfg-proxy')) el('toco-cfg-proxy').checked = !!cfg.proxy;
+  if(el('toco-cfg-proxy')) el('toco-cfg-proxy').checked = cfg.proxy !== false;
   if(el('toco-cfg-status')) { el('toco-cfg-status').style.display='none'; }
   var modal = el('toco-config-modal');
   if(modal) modal.style.display='flex';
