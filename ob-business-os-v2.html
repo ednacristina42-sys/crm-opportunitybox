@@ -1953,9 +1953,8 @@ window.ecRefresh = ecRefresh;
 
 
 // ═══════════════════════════════════════════════════════
-// CLICKUP LIVE — Real-time workspace integration
+// CLICKUP — Integrações sync (real)
 // ═══════════════════════════════════════════════════════
-var CK_WS = "90151026843";
 var CK_BASE = "https://api.clickup.com/api/v2";
 var CK_SPACES = [
   {id:"90153926268", name:"Dep. Comercial", emoji:"🔴", color:"#e74c3c"},
@@ -1965,216 +1964,14 @@ var CK_SPACES = [
 ];
 
 var CK_TOKEN = null;
-var CK_ALL_TASKS = [];
-var CK_FILTER = "all";
-var CK_DEPT_FILTER = "all";
-var CK_REFRESH_TIMER = null;
-
-var PRIO_COLOR = {urgent:"#e74c3c", high:"#e67e22", normal:"#6b7280", low:"#94a3b8"};
-var PRIO_LABEL = {urgent:"Urgente", high:"Alta", normal:"Normal", low:"Baixa"};
 
 function ckInit(){
-  const saved = localStorage.getItem("ob-ck-token");
-  if(saved){ CK_TOKEN = saved; ckShowDash(); }
-  // ADD: actualizar card de Integrações e iniciar sync automático (30 min) se já houver token
+  // Restaura sessão ClickUp (Integrações) e relança o auto-sync (30 min) se já houver token guardado.
+  var saved = localStorage.getItem("ob-ck-token");
+  if(saved){ CK_TOKEN = saved; }
   try{
     if(saved){ ckUpdateConexaoUI(true); ckUpdateLastSync(); ckStartAutoSync(); }
   }catch(e){}
-}
-
-async function ckLogin(e){
-  e.preventDefault();
-  const token = document.getElementById("ck-token-input").value.trim();
-  const btn = document.getElementById("ck-login-btn");
-  const err = document.getElementById("ck-err");
-  err.style.display="none";
-  btn.disabled=true; btn.textContent="⏳ A verificar...";
-  try {
-    const r = await fetch(`${CK_BASE}/user`, {headers:{"Authorization":token}});
-    if(!r.ok) throw new Error("Token inválido ou sem permissões.");
-    const d = await r.json();
-    CK_TOKEN = token;
-    localStorage.setItem("ob-ck-token", token);
-    ckShowDash();
-  } catch(ex){
-    err.textContent = "❌ " + ex.message;
-    err.style.display="block";
-  } finally {
-    btn.disabled=false; btn.textContent="🔗 Ligar ao ClickUp";
-  }
-  return false;
-}
-
-function ckLogout(){
-  if(CK_REFRESH_TIMER) clearInterval(CK_REFRESH_TIMER);
-  CK_TOKEN=null; CK_ALL_TASKS=[];
-  localStorage.removeItem("ob-ck-token");
-  document.getElementById("ck-auth-view").style.display="block";
-  document.getElementById("ck-dashboard").style.display="none";
-  const b = document.getElementById("ck-conn");
-  b.classList.add("off");
-  document.getElementById("ck-conn-txt").textContent="Não ligado";
-}
-
-function ckShowDash(){
-  document.getElementById("ck-auth-view").style.display="none";
-  document.getElementById("ck-dashboard").style.display="block";
-  const b = document.getElementById("ck-conn");
-  b.classList.remove("off");
-  document.getElementById("ck-conn-txt").textContent="● Ligado · Workspace OB";
-  // Dept filter tabs
-  const dt = document.getElementById("ck-dept-tabs");
-  dt.innerHTML = `<button class="ck-filter-tab on" data-ckd="all" data-action="ckDeptFilter">Todos</button>` +
-    CK_SPACES.map(s=>`<button class="ck-filter-tab" data-ckd="${s.id}" data-action="ckDeptFilter" style="white-space:nowrap">${s.emoji} ${s.name.replace("Dep. ","").replace("Chão da ","")}</button>`).join("");
-  ckRefresh();
-  if(CK_REFRESH_TIMER) clearInterval(CK_REFRESH_TIMER);
-  CK_REFRESH_TIMER = setInterval(ckRefresh, 60000);
-}
-
-function loadCKLiveData(){
-  if(!CK_TOKEN) ckInit();
-}
-
-async function ckFetchTasks(){
-  // Buscar tarefas de todos os espaços em paralelo
-  const params = new URLSearchParams({
-    page: 0,
-    include_closed: false,
-    subtasks: true,
-    order_by: "updated",
-    reverse: true,
-    page_size: 100
-  });
-  CK_SPACES.forEach(s => params.append("space_ids[]", s.id));
-  const r = await fetch(`${CK_BASE}/team/${CK_WS}/task?${params}`, {
-    headers: {"Authorization": CK_TOKEN, "Content-Type": "application/json"}
-  });
-  if(!r.ok) throw new Error(`API erro: ${r.status}`);
-  const d = await r.json();
-  return d.tasks || [];
-}
-
-async function ckRefresh(){
-  const icon = document.getElementById("ck-spin-icon");
-  if(icon) icon.innerHTML = '<span class="ck-spin"></span>';
-  try {
-    CK_ALL_TASKS = await ckFetchTasks();
-    ckRenderAll();
-    document.getElementById("ck-updated").textContent = new Date().toLocaleTimeString("pt-PT",{hour:"2-digit",minute:"2-digit"});
-  } catch(ex){
-    console.error("ClickUp refresh erro:", ex);
-  } finally {
-    if(icon) icon.textContent = "↻";
-  }
-}
-
-function ckRenderAll(){
-  const tasks = CK_ALL_TASKS;
-  const now = Date.now();
-  const todayStart = new Date(); todayStart.setHours(0,0,0,0);
-
-  // KPIs
-  const active = tasks.filter(t=>t.status && ["in progress","em progresso","a fazer","to do"].includes(t.status.status?.toLowerCase()));
-  const urgent = tasks.filter(t=>t.priority && ["urgent","urgente"].includes(t.priority.priority?.toLowerCase()));
-  const late = tasks.filter(t=>t.due_date && +t.due_date < now && !["done","concluído","concluido","closed","fechado"].includes(t.status?.status?.toLowerCase()));
-  const doneToday = tasks.filter(t=>{
-    const s = t.status?.status?.toLowerCase()||"";
-    const upd = t.date_updated ? +t.date_updated : 0;
-    return (s.includes("done")||s.includes("conclu")) && upd >= todayStart.getTime();
-  });
-  document.getElementById("ck-n-total").textContent  = tasks.length;
-  document.getElementById("ck-n-active").textContent  = active.length;
-  document.getElementById("ck-n-urgent").textContent  = urgent.length;
-  document.getElementById("ck-n-late").textContent    = late.length;
-  document.getElementById("ck-n-done").textContent    = doneToday.length;
-
-  // Dept cards
-  const deptEl = document.getElementById("ck-depts");
-  deptEl.innerHTML = CK_SPACES.map(sp=>{
-    const st = tasks.filter(t=>t.space?.id===sp.id);
-    const o  = st.filter(t=>{const s=t.status?.status?.toLowerCase()||"";return !s.includes("done")&&!s.includes("conclu")&&!s.includes("closed");});
-    const u  = st.filter(t=>["urgent","urgente"].includes(t.priority?.priority?.toLowerCase()));
-    const l  = st.filter(t=>t.due_date&&+t.due_date<now);
-    return `<div class="ck-dept" onclick="ckDeptFilterById('${sp.id}')" style="border-color:${CK_DEPT_FILTER===sp.id?sp.color:''}">
-      <div class="ck-dept-head">
-        <div class="ck-dept-ico" style="background:${sp.color}22">${sp.emoji}</div>
-        <div>
-          <div style="font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em">${sp.name}</div>
-        </div>
-      </div>
-      <div class="ck-dept-name" style="color:${sp.color}">${o.length} <span style="color:var(--muted);font-weight:400;font-size:13px">abertas</span></div>
-      <div class="ck-dept-stats">
-        <div class="ck-dept-stat">🚨 <span class="val" style="color:${u.length?'var(--r)':'var(--muted)'}">${u.length}</span> urgentes</div>
-        <div class="ck-dept-stat">⏰ <span class="val" style="color:${l.length?'var(--a)':'var(--muted)'}">${l.length}</span> atrasadas</div>
-        <div class="ck-dept-stat">📋 <span class="val">${st.length}</span> total</div>
-      </div>
-    </div>`;
-  }).join("");
-
-  // Urgent sidebar
-  const urgRows = [...urgent].sort((a,b)=>+b.date_updated-+a.date_updated).slice(0,10);
-  document.getElementById("ck-urgent-list").innerHTML = urgRows.length
-    ? urgRows.map(t=>{
-        const sp = CK_SPACES.find(s=>s.id===t.space?.id);
-        return `<div class="ck-urgent-row">
-          <div class="ck-urgent-row prio" style="background:${PRIO_COLOR[t.priority?.priority||"normal"]}"></div>
-          <div class="txt">
-            <div class="n" title="${t.name}">${t.name.length>52?t.name.substring(0,52)+"…":t.name}</div>
-            <div class="l">${sp?.emoji||""} ${t.list?.name||""} · ${t.assignees?.map(a=>a.username||a.initials).join(", ")||"Sem atrib."}</div>
-          </div>
-        </div>`;
-      }).join("")
-    : '<div class="ck-empty">Sem tarefas urgentes</div>';
-
-  // Due soon sidebar
-  const dueRows = tasks
-    .filter(t=>t.due_date)
-    .sort((a,b)=>+a.due_date-+b.due_date)
-    .slice(0,8);
-  document.getElementById("ck-due-list").innerHTML = dueRows.length
-    ? dueRows.map(t=>{
-        const d = new Date(+t.due_date);
-        const isLate = +t.due_date < now;
-        const dStr = d.toLocaleDateString("pt-PT",{day:"2-digit",month:"2-digit"});
-        return `<div class="ck-urgent-row">
-          <div class="ck-urgent-row prio" style="background:${isLate?'var(--r)':'var(--a)'}"></div>
-          <div class="txt">
-            <div class="n" title="${t.name}">${t.name.length>46?t.name.substring(0,46)+"…":t.name}</div>
-            <div class="l" style="color:${isLate?'var(--r)':'var(--muted)'}">${isLate?'⚠️ vencida':'📅'} ${dStr}</div>
-          </div>
-        </div>`;
-      }).join("")
-    : '<div class="ck-empty">Sem prazos definidos</div>';
-
-  ckRenderTasks();
-}
-
-function ckFilter(btn){
-  document.querySelectorAll('[data-ckf]').forEach(b=>b.classList.remove('on'));
-  btn.classList.add('on');
-  CK_FILTER = btn.dataset.ckf;
-  ckRenderTasks();
-}
-
-function ckDeptFilter(btn){
-  document.querySelectorAll('[data-ckd]').forEach(b=>b.classList.remove('on'));
-  btn.classList.add('on');
-  CK_DEPT_FILTER = btn.dataset.ckd;
-  // also update dept cards highlight
-  document.querySelectorAll('.ck-dept').forEach(d=>{d.style.borderColor='';});
-  ckRenderTasks();
-}
-
-function ckDeptFilterById(id){
-  CK_DEPT_FILTER = id === CK_DEPT_FILTER ? 'all' : id;
-  document.querySelectorAll('[data-ckd]').forEach(b=>{
-    b.classList.toggle('on', b.dataset.ckd === CK_DEPT_FILTER || (CK_DEPT_FILTER==='all' && b.dataset.ckd==='all'));
-  });
-  const sp = CK_SPACES.find(s=>s.id===id);
-  document.querySelectorAll('.ck-dept').forEach((d,i)=>{
-    d.style.borderColor = CK_DEPT_FILTER===CK_SPACES[i]?.id ? CK_SPACES[i].color : '';
-  });
-  ckRenderTasks();
 }
 
 // ═══════════════════════════════════════════════════════
@@ -2342,52 +2139,6 @@ async function ckImportToHomeTasks(){
     console.error('[ClickUp] Erro na sincronização real:', ex);
   }
 }
-
-function ckRenderTasks(){
-  const now = Date.now();
-  let tasks = [...CK_ALL_TASKS];
-
-  if(CK_DEPT_FILTER !== 'all') tasks = tasks.filter(t=>t.space?.id===CK_DEPT_FILTER);
-
-  if(CK_FILTER==='urgent') tasks = tasks.filter(t=>["urgent","urgente"].includes(t.priority?.priority?.toLowerCase()));
-  else if(CK_FILTER==='late') tasks = tasks.filter(t=>t.due_date && +t.due_date < now);
-  else if(CK_FILTER==='today'){
-    const ts = new Date(); ts.setHours(0,0,0,0);
-    const te = new Date(); te.setHours(23,59,59,999);
-    tasks = tasks.filter(t=>t.due_date && +t.due_date>=ts.getTime() && +t.due_date<=te.getTime());
-  }
-
-  const el = document.getElementById('ck-task-list');
-  if(!tasks.length){el.innerHTML='<div class="ck-empty">Nenhuma tarefa neste filtro</div>';return;}
-
-  el.innerHTML = tasks.slice(0,80).map(t=>{
-    const pColor = PRIO_COLOR[t.priority?.priority||'normal'];
-    const pLabel = PRIO_LABEL[t.priority?.priority||'normal'];
-    const sColor = t.status?.color || '#6b7280';
-    const sLabel = t.status?.status || '—';
-    const sp = CK_SPACES.find(s=>s.id===t.space?.id);
-    const ass = t.assignees?.slice(0,3)||[];
-    const isLate = t.due_date && +t.due_date < now;
-    const dueStr = t.due_date ? new Date(+t.due_date).toLocaleDateString("pt-PT",{day:"2-digit",month:"2-digit"}) : '';
-
-    return `<div class="ck-task" onclick="window.open('${t.url||`https://app.clickup.com/t/${t.id}`}','_blank')">
-      <div class="prio" style="background:${pColor};margin-top:4px"></div>
-      <div class="info">
-        <div class="name">${t.name}</div>
-        <div class="meta">
-          <span class="tag" style="background:${sColor}22;color:${sColor}">${sLabel}</span>
-          <span class="tag" style="background:${pColor}22;color:${pColor}">${pLabel}</span>
-          ${sp?`<span style="font-size:12px;color:var(--muted)">${sp.emoji} ${t.list?.name||sp.name}</span>`:''}
-        </div>
-      </div>
-      <div class="right">
-        ${dueStr?`<div class="due" style="color:${isLate?'var(--r)':'var(--muted)'}">${isLate?'⚠️ ':''} ${dueStr}</div>`:''}
-        <div class="av-stack">${ass.slice(0,3).map(a=>avHtml(a.username||a.name||'?',a.color||'#4d94db')).join('')}${ass.length>3?`<div class="av-more" title="${ass.slice(3).map(a=>a.username||a.name).join(', ')}">+${ass.length-3}</div>`:''}</div>
-      </div>
-    </div>`;
-  }).join('');
-}
-
 
 // ── ORC NOVO CLIENTE ────────────────────────────────────────
 function orcNovoCliOpen(){
@@ -4841,10 +4592,6 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
   box-sizing: border-box;
 }
 
-/* ClickUp auth gate — hidden by default, only show in ck-live page */
-#ck-auth-view { display: none; }
-.app-page.on#page-ck-live #ck-auth-view { display: block; }
-
 /* CRM page — admin-page should not force full height */
 #page-crm .admin-page, #page-comercial-pipeline .admin-page { flex: 0 0 auto; }
 </style>
@@ -5096,7 +4843,6 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
     <button class="sni" id="ni-relatorios" data-action="goPage" data-page="relatorios"><span class="si">📊</span>Relatórios</button>
     <button class="sni" data-action="goPage" data-page="admin-analise-vendas"><span class="si">📈</span>Análise de Vendas</button>
     <button class="sni" id="ni-equipa" data-action="goPage" data-page="equipa"><span class="si">👥</span>Equipa (22)</button>
-    <button class="sni" id="ni-ck-live" data-action="goPage" data-page="ck-live"><span class="si">🔗</span>ClickUp Live</button>
     <button class="sni" id="ni-integracoes" data-action="goPage" data-page="integracoes"><span class="si">⚙</span>Integrações</button>
   </div>
 
@@ -7480,105 +7226,7 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
 
 
 
-<!-- ═══════════ CLICKUP LIVE ═══════════ -->
-<div id="page-ck-live" class="app-page">
-  <div class="pg-hdr">
-    <div class="pg-hdr-top">
-      <div class="pg-space-icon" style="background:#4d94db">✦</div>
-      <div class="pg-title">ClickUp Live · Workspace OB</div>
-      <div class="pg-actions" id="ck-header-actions">
-        <span class="ck-conn-badge off" id="ck-conn">
-          <span class="dot"></span>
-          <span id="ck-conn-txt">Não ligado</span>
-        </span>
-      </div>
-    </div>
-  </div>
-  <div class="ck-wrap">
 
-    <!-- AUTH GATE -->
-    <div id="ck-auth-view">
-      <div class="ck-auth-gate">
-        <div class="ico">🔗</div>
-        <h2>Ligar ao ClickUp</h2>
-        <p>Cola o teu Personal API Token do ClickUp para teres as tarefas em tempo real directamente aqui.</p>
-        <div class="steps">
-          <strong>Como obter o token:</strong><br>
-          1. Abre o ClickUp → canto inferior esquerdo → <strong>Avatar</strong><br>
-          2. <strong>Settings → Apps</strong><br>
-          3. Em <strong>API Token</strong> clica em <strong>Generate</strong> (ou copia o existente)
-        </div>
-        <form class="ck-form" id="ck-login-form" onsubmit="return ckLogin(event)">
-          <input type="password" id="ck-token-input" placeholder="pk_XXXXXXXXXXXXXXXXXXXXXXXX" autocomplete="off" required/>
-          <button type="submit" id="ck-login-btn">🔗 Ligar ao ClickUp</button>
-          <div class="err" id="ck-err" style="display:none"></div>
-        </form>
-      </div>
-    </div>
-
-    <!-- DASHBOARD -->
-    <div id="ck-dashboard" style="display:none">
-
-      <div class="ck-controls">
-        <div class="left">
-          <button class="ck-btn-sm" data-action="ckRefresh"><span id="ck-spin-icon">↻</span> Actualizar</button>
-          <span style="font-size:13px;color:var(--muted);font-family:'DM Mono',monospace">Workspace: <strong style="color:var(--txt2)">OpportunityBox</strong> · actualizado: <span id="ck-updated">—</span></span>
-        </div>
-        <button class="ck-logout" data-action="ckLogout">Desligar</button>
-      </div>
-
-      <!-- KPIs -->
-      <div class="ck-kpis">
-        <div class="ck-kpi"><div class="n" id="ck-n-total">—</div><div class="l">Total tarefas</div></div>
-        <div class="ck-kpi progress"><div class="n" id="ck-n-active">—</div><div class="l">Em progresso</div></div>
-        <div class="ck-kpi urgent"><div class="n" id="ck-n-urgent">—</div><div class="l">Urgentes</div></div>
-        <div class="ck-kpi late"><div class="n" id="ck-n-late">—</div><div class="l">Atrasadas</div></div>
-        <div class="ck-kpi done"><div class="n" id="ck-n-done">—</div><div class="l">Concluídas hoje</div></div>
-      </div>
-
-      <!-- DEPT OVERVIEW -->
-      <div class="ck-depts" id="ck-depts"></div>
-
-      <!-- MAIN + SIDEBAR -->
-      <div class="ck-main">
-        <div>
-          <div class="ck-card">
-            <div class="ck-card-head">
-              <div class="ck-card-title">📋 Tarefas</div>
-              <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-                <div class="ck-filter-tabs">
-                  <button class="ck-filter-tab on" data-ckf="all" data-action="ckFilter">Todas</button>
-                  <button class="ck-filter-tab" data-ckf="urgent" data-action="ckFilter">Urgentes</button>
-                  <button class="ck-filter-tab" data-ckf="late" data-action="ckFilter">Atrasadas</button>
-                  <button class="ck-filter-tab" data-ckf="today" data-action="ckFilter">Hoje</button>
-                </div>
-                <div class="ck-filter-tabs" id="ck-dept-tabs" style="overflow-x:auto;width:100%"></div>
-              </div>
-            </div>
-            <div id="ck-task-list"><div class="ck-empty">A carregar tarefas...</div></div>
-          </div>
-        </div>
-
-        <div>
-          <div class="ck-sidebar-card" style="margin-bottom:12px">
-            <div class="ck-card-head" style="margin-bottom:10px">
-              <div class="ck-card-title">🚨 Urgentes & Alta prioridade</div>
-            </div>
-            <div id="ck-urgent-list"><div class="ck-empty">—</div></div>
-          </div>
-
-          <div class="ck-sidebar-card">
-            <div class="ck-card-head" style="margin-bottom:10px">
-              <div class="ck-card-title">⏰ Vencimento próximo</div>
-            </div>
-            <div id="ck-due-list"><div class="ck-empty">—</div></div>
-          </div>
-        </div>
-      </div>
-
-    </div>
-  </div>
-</div>
 </div>
 </div>
 
