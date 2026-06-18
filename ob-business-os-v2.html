@@ -3238,6 +3238,10 @@ function nbTestarConexao() {
       <button onclick="document.getElementById('toco-import-cli-modal').style.display='none'" style="background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer">×</button>
     </div>
     <div id="toco-import-cli-status" style="font-size:13px;color:var(--muted);margin-bottom:14px">A carregar clientes do TocOnline...</div>
+    <div id="toco-import-cli-selectall-wrap" style="display:none;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);margin-bottom:6px">
+      <input type="checkbox" id="toco-cli-selectall" onchange="tocoToggleSelecionarTodos(this.checked)"/>
+      <label for="toco-cli-selectall" style="font-size:13px;color:var(--txt2);cursor:pointer">Selecionar todos</label>
+    </div>
     <div id="toco-import-cli-list" style="max-height:300px;overflow-y:auto;margin-bottom:16px"></div>
     <div style="display:flex;gap:8px;justify-content:flex-end">
       <button onclick="document.getElementById('toco-import-cli-modal').style.display='none'" style="background:var(--bg3);border:1px solid var(--border);color:var(--txt2);border-radius:8px;padding:8px 16px;cursor:pointer;font-size:13px">Fechar</button>
@@ -16350,8 +16354,12 @@ async function tocoAbrirImportarClientes() {
     var data = await tocoFetch(cfg.url, cfg.key, cfg.webhook, '/api/customers', 'GET', null, cfg.proxy);
     var clientes = Array.isArray(data) ? data : (data.Items || data.Customers || data.data || []);
     localStorage.setItem(TOCO_CLI_KEY, JSON.stringify({ ts: Date.now(), data: clientes }));
-    if(!clientes.length) { if(statusEl) statusEl.textContent = 'Nenhum cliente encontrado no TocOnline.'; return; }
+    var selectAllWrap = document.getElementById('toco-import-cli-selectall-wrap');
+    if(!clientes.length) { if(statusEl) statusEl.textContent = 'Nenhum cliente encontrado no TocOnline.'; if(selectAllWrap) selectAllWrap.style.display='none'; return; }
     if(statusEl) statusEl.textContent = clientes.length + ' clientes encontrados. Seleciona os que queres importar:';
+    if(selectAllWrap) selectAllWrap.style.display='flex';
+    var selectAllCb = document.getElementById('toco-cli-selectall');
+    if(selectAllCb) selectAllCb.checked = false;
     if(listEl) listEl.innerHTML = clientes.map(function(c, i){
       var a = c.attributes || c;
       var nome = a.business_name || a.contact_name || '—';
@@ -16388,6 +16396,14 @@ function tocoCompletarClienteExistente(nome, campos) {
   return true;
 }
 
+function tocoToggleSelecionarTodos(marcar) {
+  var lista = window._tocoCliImportList || [];
+  lista.forEach(function(c, i){
+    var cb = document.getElementById('toco-cli-'+i);
+    if(cb && !cb.disabled) cb.checked = marcar;
+  });
+}
+
 function tocoImportarClientesSelecionados() {
   var lista = window._tocoCliImportList || [];
   if(!lista.length) return;
@@ -16395,11 +16411,12 @@ function tocoImportarClientesSelecionados() {
   lista.forEach(function(c, i){
     var cb = document.getElementById('toco-cli-'+i);
     if(!cb || !cb.checked || cb.disabled) return;
-    var nome = c.Name || c.CustomerName || 'Cliente TocOnline';
-    var nif = c.TaxNumber || c.Nif || '';
-    var email = c.Email || c.CustomerEmail || '';
-    var tel = c.Phone || c.PhoneNumber || '';
-    var morada = c.Address || (c.BillingAddress && c.BillingAddress.AddressDetail) || '';
+    var a = c.attributes || c;
+    var nome = a.business_name || a.contact_name || 'Cliente TocOnline';
+    var nif = a.tax_registration_number || '';
+    var email = a.email || '';
+    var tel = a.phone_number || a.mobile_number || '';
+    var morada = a.address || '';
     if(tocoCompletarClienteExistente(nome, {nif:nif, email:email, tel:tel, morada:morada, cont:nome})) {
       completados++;
       return;
