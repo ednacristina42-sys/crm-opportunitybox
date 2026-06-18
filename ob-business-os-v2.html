@@ -1419,8 +1419,8 @@ function avGetSupabase() {
   if (!window.supabase) return null;
   try {
     window._avSB = window.supabase.createClient(
-      'https://xtiguuyvotnpwqzmggnc.supabase.co',
-      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh0aWd1dXl2b3RucHdxem1nZ25jIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc0Nzg3NjcsImV4cCI6MjA5MzA1NDc2N30.YHxMPauh6MA4nkFEEQBPGUduozWLKlGsymsix9jY7Bc'
+      'https://ddzlbmnmsdyodouqxbjx.supabase.co',
+      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRkemxibW5tc2R5b2RvdXF4Ymp4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkyMDQ2NTUsImV4cCI6MjA5NDc4MDY1NX0.P8nyU1zL4bd6Vhs8MGsTqHcB_bSeQsbNHXtQgatVt-Y'
     );
     return window._avSB;
   } catch(e) { return null; }
@@ -14381,7 +14381,7 @@ async function finRejeitarDespesa(id) {
 
 function finConfigurarWebhook() {
   var sb = finGetSupabase();
-  var url = (sb && sb.supabaseUrl) ? sb.supabaseUrl : 'https://xtiguuyvotnpwqzmggnc.supabase.co';
+  var url = (sb && sb.supabaseUrl) ? sb.supabaseUrl : 'https://ddzlbmnmsdyodouqxbjx.supabase.co';
   alert(
     '🔗 Ligação Make → Supabase (tempo real)\n\n' +
     'No Make, usa um módulo HTTP "Make a request" com:\n\n' +
