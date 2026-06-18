@@ -6443,7 +6443,7 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
   <div class="admin-page" >
     <div class="stitle">Integrações externas</div>
     <div class="sg">
-      <div class="conn"><div class="cico" style="background:rgba(63,207,142,.1)">🟢</div><div><div class="cname">TOConline — API</div><div class="cst" style="color:var(--g)">● Ligado · NIF: 514 XXX XXX · Sync: há 15 min</div></div><div style="margin-left:auto"><button class="bsm boff">Desligar</button></div></div>
+      <div class="conn"><div class="cico" id="toco2-ico" style="background:var(--bg3)">⚪</div><div><div class="cname">TOConline — API</div><div class="cst" id="toco2-status" style="color:var(--muted)">Ainda não sincronizado</div></div><div style="margin-left:auto"><button class="bsm bon" data-action="tocoSincronizarFaturasUI">🔄 Sincronizar agora</button></div></div>
       <div class="conn"><div class="cico" style="background:rgba(63,207,142,.1)">🟢</div><div><div class="cname">WhatsApp Business API</div><div class="cst" style="color:var(--g)">● Ligado · +351 967 395 254</div></div><div style="margin-left:auto"><button class="bsm boff">Desligar</button></div></div>
       <!-- GOOGLE SHEETS CONNECTION -->
       <div class="conn" style="flex-direction:column;align-items:stretch;gap:10px">
@@ -12192,6 +12192,7 @@ function _boot(){
   }
   try{if(typeof ecInit==='function') ecInit();}catch(e){}
   try{if(typeof ckInit==='function') ckInit();}catch(e){}
+      try{if(typeof tocoRestaurarEstadoConexao==='function') tocoRestaurarEstadoConexao();}catch(e){}
   try{if(typeof uniInitAll==='function') uniInitAll();}catch(e){}
   try{if(typeof gsInitUI==='function') gsInitUI();}catch(e){}
   // Botão integracoes
@@ -16697,6 +16698,38 @@ async function tocoFetch(baseUrl, apiKey, webhookUrl, endpoint, method, body, pr
   }
 }
 
+// ── Card real de ligação (painel Integrações) ───────────────────
+function tocoUpdateConexaoUI(estado, msg) {
+  var ico = document.getElementById('toco2-ico');
+  var st = document.getElementById('toco2-status');
+  if(ico) {
+    ico.style.background = estado==='ok' ? 'rgba(63,207,142,.1)' : estado==='erro' ? 'rgba(239,68,68,.1)' : 'var(--bg3)';
+    ico.textContent = estado==='ok' ? '🟢' : estado==='erro' ? '🔴' : '⚪';
+  }
+  if(st) {
+    st.style.color = estado==='ok' ? 'var(--g)' : estado==='erro' ? '#ef4444' : 'var(--muted)';
+    st.textContent = msg;
+  }
+}
+
+function tocoRestaurarEstadoConexao() {
+  try {
+    var raw = localStorage.getItem('ob-toco-last-sync');
+    if(!raw) { tocoUpdateConexaoUI('off', 'Ainda não sincronizado'); return; }
+    var info = JSON.parse(raw);
+    var quando = new Date(info.ts).toLocaleString('pt-PT', {day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit'});
+    if(info.ok) tocoUpdateConexaoUI('ok', '● Ligado · Sync: ' + quando + ' · ' + (info.total||0) + ' documentos');
+    else tocoUpdateConexaoUI('erro', '● Falha na última sync (' + quando + '): ' + (info.erro||''));
+  } catch(e) { tocoUpdateConexaoUI('off', 'Ainda não sincronizado'); }
+}
+
+async function tocoSincronizarFaturasUI() {
+  tocoUpdateConexaoUI('off', '⏳ A sincronizar...');
+  try {
+    await tocoSincronizarFaturas(false);
+  } catch(e) {}
+}
+
 // ── Sincronizar faturas do TocOnline ────────────────────────────
 // ADD: parâmetro opcional "ano" — quando indicado e a TocOnline suportar paginação,
 // percorre páginas adicionais à procura de documentos desse ano. Os resultados são
@@ -16782,9 +16815,13 @@ async function tocoSincronizarFaturas(silent, ano) {
     if(syncStatus) syncStatus.textContent = '✅ Sincronizado às ' + agora + ' — ' + todos.length + ' documentos';
     if(syncDot) syncDot.classList.remove('active');
     tocoUpdateVencidasBadge(todos);
+    localStorage.setItem('ob-toco-last-sync', JSON.stringify({ ts: Date.now(), ok: true, total: todos.length }));
+    if(typeof tocoUpdateConexaoUI === 'function') tocoUpdateConexaoUI('ok', '● Ligado · Sync: agora · ' + todos.length + ' documentos');
   } catch(e) {
     if(syncStatus) syncStatus.textContent = '❌ Erro: ' + e.message;
     if(syncDot) syncDot.classList.remove('active');
+    localStorage.setItem('ob-toco-last-sync', JSON.stringify({ ts: Date.now(), ok: false, erro: e.message }));
+    if(typeof tocoUpdateConexaoUI === 'function') tocoUpdateConexaoUI('erro', '● Falha na ligação: ' + e.message);
   }
 }
 
