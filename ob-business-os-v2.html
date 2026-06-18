@@ -16062,6 +16062,7 @@ async function tocoFetch(baseUrl, apiKey, webhookUrl, endpoint, method, body, pr
   function chamarProxy() {
     var ctrl2 = new AbortController();
     var t2 = setTimeout(function(){ ctrl2.abort(); }, 15000);
+    console.log('[TocOnline Proxy] URL:', webhookUrl, '| endpoint:', endpoint, '| method:', method);
     return fetch(webhookUrl, {
       method: 'POST',
       signal: ctrl2.signal,
@@ -16069,11 +16070,23 @@ async function tocoFetch(baseUrl, apiKey, webhookUrl, endpoint, method, body, pr
       body: JSON.stringify({ action: 'proxy', endpoint: endpoint, method: method, api_key: apiKey, base_url: baseUrl, body: body || null })
     }).then(function(proxyResp){
       clearTimeout(t2);
-      if(!proxyResp.ok) throw new Error('Proxy HTTP ' + proxyResp.status);
-      return proxyResp.json();
+      console.log('[TocOnline Proxy] HTTP status:', proxyResp.status);
+      return proxyResp.text().then(function(rawText){
+        console.log('[TocOnline Proxy] Resposta:', rawText);
+        if(!proxyResp.ok) {
+          var msg;
+          if(proxyResp.status === 500) msg = 'Erro no servidor do TocOnline/Make. Verifique se o cenário no Make está ativo e sem erros.';
+          else if(proxyResp.status === 401 || proxyResp.status === 403) msg = 'Autenticação expirada. Atualize as credenciais no Make.';
+          else if(proxyResp.status === 404) msg = 'Webhook do Make não encontrado. Verifique a URL configurada.';
+          else msg = 'Proxy HTTP ' + proxyResp.status;
+          throw new Error(msg);
+        }
+        try { return JSON.parse(rawText); } catch(e3) { return rawText; }
+      });
     }).catch(function(e2){
       clearTimeout(t2);
-      throw new Error('Proxy Make falhou: ' + e2.message);
+      if(e2.name === 'AbortError') throw new Error('TocOnline não respondeu. Tente novamente.');
+      throw new Error(e2.message.indexOf('Erro no servidor') === 0 || e2.message.indexOf('Autenticação') === 0 || e2.message.indexOf('Webhook') === 0 || e2.message.indexOf('Proxy HTTP') === 0 ? e2.message : 'Proxy Make falhou: ' + e2.message);
     });
   }
 
