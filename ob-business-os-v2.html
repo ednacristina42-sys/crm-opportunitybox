@@ -647,19 +647,31 @@ var AV_VEND_26=[{n:"Rui Mota",v:11870.00,init:"R",st:{rec:150,nrec:11720}},{n:"P
 var AV_META=1000000, AV_YTD=45438.62;
 var avFmtE=n=>'€'+Math.round(n).toLocaleString('pt-PT');
 var avFmtFull=n=>'€'+n.toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2});
-var _avRendered=false;
+var _avRendered=false; // CORRIGIDO: só controla o binding dos separadores (1x), já não bloqueia a sincronização
+var _avSyncEmCurso=false;
 
 function renderAnaliseVendas(){
-  if(_avRendered) return;
-  _avRendered=true;
-  // ADD: garante dados reais de 2026 ao abrir a página — não depende de outra aba
-  // já ter sincronizado o TocOnline antes. Renderiza primeiro com o que houver em
-  // cache/local (instantâneo) e depois actualiza com os dados mais recentes.
+  // CORRIGIDO: antes, com _avRendered=true permanente, a sincronização com o TocOnline
+  // só corria na PRIMEIRA vez que a página era aberta nessa sessão — se o utilizador
+  // navegasse para outra página e voltasse, os gráficos ficavam sempre com os dados
+  // antigos. Agora sincroniza sempre que a página é aberta.
+  console.log('AV: Renderizando gráficos com anos:', AV_ANOS.map(a=>a.ano));
   if(typeof avTocoIntegrar==='function') avTocoIntegrar();
-  if(typeof avSyncTocOnline==='function') avSyncTocOnline();
   avLine(); avPie(); avBars(); avAnnualTable(); avClients(); avVendedores(); avHeatmap(); avPareto();
   if(typeof avVend25TableRender==='function') avVend25TableRender();
-  // Tab switching
+  if(typeof avSyncTocOnline==='function' && !_avSyncEmCurso){
+    _avSyncEmCurso = true;
+    var tsEl = document.getElementById('av-sb-ts');
+    if(tsEl) tsEl.textContent = '⏳ A sincronizar com TocOnline...';
+    avSyncTocOnline().then(function(){
+      _avSyncEmCurso = false;
+      var ts = document.getElementById('av-sb-ts');
+      if(ts) ts.textContent = '✅ Sincronizado · ' + new Date().toLocaleTimeString('pt-PT',{hour:'2-digit',minute:'2-digit'});
+    }).catch(function(){ _avSyncEmCurso = false; });
+  }
+  if(_avRendered) return;
+  _avRendered=true;
+  // Tab switching (só faz bind 1 vez, para não duplicar listeners em re-renders)
   document.querySelectorAll('.av-tab').forEach(t=>{
     t.onclick=()=>{
       document.querySelectorAll('.av-tab').forEach(x=>x.classList.remove('active'));
@@ -982,6 +994,10 @@ function avTocoIntegrar(){
     porMes2026[m].clientes[cli] = true;
   });
   _avTocoPorMes2026 = porMes2026;
+  console.log('AV: Faturas 2026 encontradas:', faturas.filter(function(f){
+    var dt = new Date(f.Date||f.DocumentDate||f.CreatedAt||'');
+    return !isNaN(dt.getTime()) && dt.getFullYear()===2026;
+  }).length, 'de', docs.length, 'documentos em cache');
 
   var av2026 = AV_ANOS.filter(function(a){return a.ano===2026;})[0];
   if(av2026){
@@ -1009,8 +1025,12 @@ function avTocoIntegrar(){
 
 async function avSyncTocOnline(){
   if(typeof tocoSincronizarFaturas!=='function') return;
+  console.log('AV: Sincronizando TocOnline...');
   try{
-    await tocoSincronizarFaturas(false);
+    // CORRIGIDO: passa '2026' para forçar a sincronização a percorrer páginas
+    // suficientes até cobrir todo o ano em curso (antes só trazia a 1ª página
+    // de 100 documentos, insuficiente com milhares de faturas no TocOnline).
+    await tocoSincronizarFaturas(false, '2026');
   }catch(e){ console.error('[AV] Erro ao sincronizar TocOnline:', e); }
   avTocoIntegrar();
 }
@@ -16800,10 +16820,14 @@ async function tocoSincronizarFaturas(silent, ano) {
     for(var i=0; i<recursos.length; i++) {
       try {
         var pagina = 1;
-        var maxPaginas = ano ? 10 : 1; // ADD: se um ano foi pedido, tenta páginas adicionais para encontrar histórico mais antigo
-        var encontrouAno = !ano;
+        // CORRIGIDO: quando se pede um ano específico, é preciso percorrer TODAS as
+        // páginas desse ano (não parar na primeira página onde aparece 1 fatura), senão
+        // fica-se com dados incompletos. Os documentos vêm ordenados por data descendente
+        // (sort=-date), por isso paramos só quando a página já está claramente ANTES do
+        // início do ano pedido — até aí, continuamos a acumular.
+        var maxPaginas = ano ? 40 : 1;
         while(pagina <= maxPaginas) {
-          var qs = (recursos[i].filtro ? recursos[i].filtro + '&' : '') + 'page[size]=100&page[number]=' + pagina;
+          var qs = (recursos[i].filtro ? recursos[i].filtro + '&' : '') + 'sort=-date&page[size]=100&page[number]=' + pagina;
           var endpoint = recursos[i].path + '?' + qs;
           var data = await tocoFetch(cfg.url, cfg.key, cfg.webhook, endpoint, 'GET', null, cfg.proxy);
           var brutos = Array.isArray(data) ? data : (data && Array.isArray(data.data) ? data.data : []);
@@ -16811,11 +16835,13 @@ async function tocoSincronizarFaturas(silent, ano) {
           var docs = brutos.map(function(item){ return mapearDoc(item, recursos[i].tipo); });
           todos = todos.concat(docs);
           if(ano) {
-            var temAno = docs.some(function(d){
+            var anosPagina = docs.map(function(d){
               var dt = new Date(d.Date || d.DocumentDate || d.CreatedAt || 0);
-              return String(dt.getFullYear()) === ano;
-            });
-            if(temAno) { encontrouAno = true; break; }
+              return dt.getFullYear();
+            }).filter(function(y){ return !isNaN(y) && y>0; });
+            var minAno = anosPagina.length ? Math.min.apply(null, anosPagina) : null;
+            // Já passámos a fronteira do ano pedido (ex: chegámos a 2025 ao procurar 2026) — parar.
+            if(minAno!==null && minAno < Number(ano)) break;
           }
           pagina++;
         }
