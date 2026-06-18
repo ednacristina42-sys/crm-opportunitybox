@@ -664,6 +664,8 @@ function renderAnaliseVendas(){
     var tsEl = document.getElementById('av-sb-ts');
     if(tsEl) tsEl.textContent = '⏳ A sincronizar com TocOnline...';
     avSyncTocOnline().then(function(){
+      if(typeof avSyncVendedoresSheet==='function') return avSyncVendedoresSheet();
+    }).then(function(){
       _avSyncEmCurso = false;
       var ts = document.getElementById('av-sb-ts');
       if(ts) ts.textContent = '✅ Sincronizado · ' + new Date().toLocaleTimeString('pt-PT',{hour:'2-digit',minute:'2-digit'});
@@ -1070,6 +1072,94 @@ async function avSyncTocOnline(){
 }
 window.avSyncTocOnline = avSyncTocOnline;
 window.avTocoIntegrar = avTocoIntegrar;
+
+// ════════════════════════════════════════════════════════════════
+// ANÁLISE DE VENDAS — Vendedores 2026 a partir de Google Sheets
+// ════════════════════════════════════════════════════════════════
+// Folha "Cópia de Mapa de vendas", separador com colunas:
+// Data | Número | Nome | Total líquido | IVA TOTAL | Total com IVA |
+// Mês/Ano | Valor Recebido | Saldo a Receber | Data Recebimento |
+// Status | Vendedor | ...
+var AV_VEND_SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRdQzJWlUwfWXf8GZbOJhRI3LpmfV62Z3fIMVahzcYcpUNUB4wuqWZHWi11DAVzzFwG9TvDYoZF1ljR/pub?output=csv&gid=1231149814';
+
+function avParseCSV(text){
+  var rows=[],row=[],field='',inQuotes=false;
+  for(var i=0;i<text.length;i++){
+    var c=text[i];
+    if(inQuotes){
+      if(c==='"'){
+        if(text[i+1]==='"'){ field+='"'; i++; } else { inQuotes=false; }
+      } else field+=c;
+    } else {
+      if(c==='"') inQuotes=true;
+      else if(c===','){ row.push(field); field=''; }
+      else if(c==='\r'){ }
+      else if(c==='\n'){ row.push(field); rows.push(row); row=[]; field=''; }
+      else field+=c;
+    }
+  }
+  if(field.length||row.length){ row.push(field); rows.push(row); }
+  return rows;
+}
+
+function avParseNumPT(s){
+  if(!s) return 0;
+  s=String(s).trim();
+  if(!s) return 0;
+  s=s.replace(/\./g,'').replace(',', '.');
+  var n=parseFloat(s);
+  return isNaN(n)?0:n;
+}
+
+async function avSyncVendedoresSheet(){
+  try{
+    var resp = await fetch(AV_VEND_SHEET_URL);
+    if(!resp.ok) throw new Error('HTTP '+resp.status);
+    var text = await resp.text();
+    var rows = avParseCSV(text);
+    if(!rows.length) throw new Error('Folha vazia');
+    var header = rows[0].map(function(h){return h.trim().toLowerCase();});
+    var idx = {
+      mesAno: header.indexOf('mês/ano'),
+      totalIVA: header.indexOf('total com iva'),
+      recebido: header.indexOf('valor recebido'),
+      aReceber: header.indexOf('saldo a receber'),
+      vendedor: header.indexOf('vendedor'),
+    };
+    if(idx.vendedor===-1 || idx.totalIVA===-1) throw new Error('Colunas não encontradas');
+    var porVend = {};
+    for(var i=1;i<rows.length;i++){
+      var r = rows[i];
+      if(!r || r.length<2) continue;
+      var mesAno = (r[idx.mesAno]||'').trim();
+      if(!/\/2026$/.test(mesAno)) continue;
+      var vend = (r[idx.vendedor]||'').trim();
+      if(!vend) continue;
+      var v = avParseNumPT(r[idx.totalIVA]);
+      var rec = avParseNumPT(r[idx.recebido]);
+      var nrec = avParseNumPT(r[idx.aReceber]);
+      if(!porVend[vend]) porVend[vend] = {n:vend, v:0, st:{rec:0,nrec:0}};
+      porVend[vend].v += v;
+      porVend[vend].st.rec += rec;
+      porVend[vend].st.nrec += nrec;
+    }
+    var lista = Object.keys(porVend).map(function(k){
+      var d = porVend[k];
+      d.init = d.n.trim().charAt(0).toUpperCase();
+      return d;
+    }).sort(function(a,b){return b.v-a.v;});
+    if(!lista.length) throw new Error('Sem dados de 2026 na folha');
+    AV_VEND_26 = lista;
+    console.log('AV: Vendedores 2026 atualizados a partir do Google Sheets:', AV_VEND_26);
+    if(document.getElementById('av-vend-year') && document.getElementById('av-vend-year').value==='2026' && typeof avVendedoresFiltrar==='function'){
+      avVendedoresFiltrar('2026');
+    }
+    if(typeof avAtualizarMetricasCartoes==='function') avAtualizarMetricasCartoes();
+  }catch(e){
+    console.error('[AV] Erro ao sincronizar vendedores via Google Sheets:', e);
+  }
+}
+window.avSyncVendedoresSheet = avSyncVendedoresSheet;
 
 // ════════════════════════════════════════════════════════════════
 // MÓDULOS: MO, ARTES KANBAN, TESOURARIA MODAL
