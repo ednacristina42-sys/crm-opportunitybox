@@ -5916,6 +5916,7 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
 
     <!-- Tabela A Pagar -->
     <div id="tes-panel-pagar">
+      <div class="cc" style="margin-bottom:14px;max-width:420px"><div class="sh"><h2>Por Categoria</h2></div><canvas id="tesPagarChart" style="max-height:200px"></canvas><div id="tesPagarChart-empty" style="display:none;text-align:center;color:var(--muted);padding:20px 0;font-size:13px">Sem dados para exibir</div></div>
       <div class="tw">
         <table>
           <thead>
@@ -5940,6 +5941,7 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
 
     <!-- Tabela Pagas -->
     <div id="tes-panel-pagas" style="display:none">
+      <div class="cc" style="margin-bottom:14px;max-width:420px"><div class="sh"><h2>Por Categoria</h2></div><canvas id="tesPagasChart" style="max-height:200px"></canvas><div id="tesPagasChart-empty" style="display:none;text-align:center;color:var(--muted);padding:20px 0;font-size:13px">Sem dados para exibir</div></div>
       <div class="tw">
         <table>
           <thead>
@@ -5960,6 +5962,7 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
         </div>
         <button class="tbtn y" onclick="tesNovaReceber()" style="font-size:13px">+ A Receber</button>
       </div>
+      <div class="cc" style="margin-bottom:14px;max-width:420px"><div class="sh"><h2>Por Cliente</h2></div><canvas id="tesReceberChart" style="max-height:200px"></canvas><div id="tesReceberChart-empty" style="display:none;text-align:center;color:var(--muted);padding:20px 0;font-size:13px">Sem dados para exibir</div></div>
       <div class="tw">
         <table>
           <thead>
@@ -5974,6 +5977,7 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
 
     <!-- Tabela Recebidos -->
     <div id="tes-panel-recebidos" style="display:none">
+      <div class="cc" style="margin-bottom:14px;max-width:420px"><div class="sh"><h2>Por Cliente</h2></div><canvas id="tesRecebidosChart" style="max-height:200px"></canvas><div id="tesRecebidosChart-empty" style="display:none;text-align:center;color:var(--muted);padding:20px 0;font-size:13px">Sem dados para exibir</div></div>
       <div class="tw">
         <table>
           <thead>
@@ -5991,6 +5995,7 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
       <div style="margin-bottom:10px;font-size:13px;color:var(--muted);background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:8px 12px">
         ℹ️ Despesas de logística geradas automaticamente ao aprovar orçamentos com deslocação calculada.
       </div>
+      <div class="cc" style="margin-bottom:14px;max-width:420px"><div class="sh"><h2>Por Tipo</h2></div><canvas id="tesLogChart" style="max-height:200px"></canvas><div id="tesLogChart-empty" style="display:none;text-align:center;color:var(--muted);padding:20px 0;font-size:13px">Sem dados para exibir</div></div>
       <div class="tw">
         <table>
           <thead>
@@ -15017,6 +15022,11 @@ function tesRender() {
       '</tr>';
     }).join('') || '<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:16px">Sem despesas de logística.</td></tr>';
   }
+
+  var tabAtiva = ['pagar','pagas','receber','recebidos','log'].find(function(t){
+    var p = document.getElementById('tes-panel-'+t); return p && p.style.display!=='none';
+  }) || 'pagar';
+  setTimeout(function(){ tesRenderCharts(tabAtiva); },50);
 }
 
 // ADD: IVA & Resumo Anual — sincronizado via webhook Make (TOConline)
@@ -15100,6 +15110,47 @@ function tesMostrarTab(tab) {
   // Render tab content
   if(tab==='receber') tesRenderReceber();
   if(tab==='recebidos') tesRenderRecebidos();
+  setTimeout(function(){ tesRenderCharts(tab); },50);
+}
+
+// Pizzas/doughnuts reais por aba da Tesouraria — usa sempre os mesmos dados das tabelas.
+function tesRenderCharts(tab){
+  if(typeof Chart==='undefined') return;
+  var mk=function(id,labels,valores,cores){
+    var canvasEl=document.getElementById(id), emptyEl=document.getElementById(id+'-empty');
+    if(!canvasEl) return;
+    var existing=Chart.getChart(canvasEl); if(existing) existing.destroy();
+    if(!labels.length){ canvasEl.style.display='none'; if(emptyEl) emptyEl.style.display='block'; return; }
+    canvasEl.style.display='block'; if(emptyEl) emptyEl.style.display='none';
+    new Chart(canvasEl,{type:'doughnut',data:{labels:labels,datasets:[{data:valores,backgroundColor:cores,borderWidth:0,spacing:2}]},
+      options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{display:true,position:'bottom',labels:{boxWidth:10,padding:10,color:'#606068'}}}}});
+  };
+  var paletas=['rgba(245,196,0,.85)','rgba(77,148,219,.8)','rgba(63,207,142,.8)','rgba(217,130,43,.8)','rgba(224,85,85,.8)','rgba(107,107,114,.8)','rgba(155,109,214,.8)'];
+  var agruparPor=function(lista,campo,valorCampo){
+    var grupos={};
+    lista.forEach(function(x){ var k=x[campo]||'Outro'; grupos[k]=(grupos[k]||0)+(parseFloat(x[valorCampo])||0); });
+    return grupos;
+  };
+  if(tab==='pagar'){
+    var g=agruparPor((typeof TES_CONTAS!=='undefined'?TES_CONTAS:[]).filter(function(c){return c.estado!=='Paga';}),'categoria','valor');
+    var ks=Object.keys(g); mk('tesPagarChart',ks,ks.map(function(k){return g[k];}),ks.map(function(_,i){return paletas[i%paletas.length];}));
+  }
+  if(tab==='pagas'){
+    var g=agruparPor((typeof TES_CONTAS!=='undefined'?TES_CONTAS:[]).filter(function(c){return c.estado==='Paga';}),'categoria','valor');
+    var ks=Object.keys(g); mk('tesPagasChart',ks,ks.map(function(k){return g[k];}),ks.map(function(_,i){return paletas[i%paletas.length];}));
+  }
+  if(tab==='receber'){
+    var g=agruparPor(TES_RECEBER.filter(function(r){return r.estado!=='Recebido';}),'cliente','total');
+    var ks=Object.keys(g); mk('tesReceberChart',ks,ks.map(function(k){return g[k];}),ks.map(function(_,i){return paletas[i%paletas.length];}));
+  }
+  if(tab==='recebidos'){
+    var g=agruparPor(TES_RECEBER.filter(function(r){return r.estado==='Recebido';}),'cliente','total');
+    var ks=Object.keys(g); mk('tesRecebidosChart',ks,ks.map(function(k){return g[k];}),ks.map(function(_,i){return paletas[i%paletas.length];}));
+  }
+  if(tab==='log'){
+    var g=agruparPor((typeof TES_LOG_DESPESAS!=='undefined'?TES_LOG_DESPESAS:[]),'tipoLog','valor');
+    var ks=Object.keys(g); mk('tesLogChart',ks,ks.map(function(k){return g[k];}),ks.map(function(_,i){return paletas[i%paletas.length];}));
+  }
 }
 
 function tesUpdateKPIs(tab){
