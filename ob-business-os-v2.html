@@ -6012,7 +6012,7 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
     <div id="tes-panel-iva" style="display:none">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px">
         <div style="font-size:13px;color:var(--muted);background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:8px 12px">
-          📊 Dados de IVA e resumo anual. Sincronize com o cenário Make ligado ao TOConline para atualizar.
+          📊 Dados de IVA e resumo anual, calculados a partir das faturas reais do TocOnline e das contas pagas na Tesouraria. Webhook externo é opcional (só para substituir o cálculo automático).
         </div>
         <div style="display:flex;gap:6px">
           <span id="tes-iva-sync-info" style="font-size:12px;color:var(--muted);align-self:center"></span>
@@ -15044,10 +15044,50 @@ function tesIvaConfigurarWebhook(){
   if(TES_IVA_WEBHOOK) alert('✓ Webhook configurado.');
 }
 
+// Calcula IVA/Resumo reais a partir dos dados já sincronizados no CRM:
+// vendas = faturas reais do TocOnline (tocoFaturasCache); despesas/compras = contas pagas + logística paga (Tesouraria).
+// Não depende de nenhum webhook externo — usa sempre os mesmos dados que alimentam as outras abas.
+function tesIvaCalcularReal(){
+  var docs = (typeof tocoFaturasCache==='function') ? tocoFaturasCache() : [];
+  var faturas = docs.filter(function(d){ return (d._tipo||d.DocumentType)==='FT'; });
+  var contasPagas = (typeof TES_CONTAS!=='undefined'?TES_CONTAS:[]).filter(function(c){return c.estado==='Paga';});
+  var logPago = (typeof TES_LOG_DESPESAS!=='undefined'?TES_LOG_DESPESAS:[]).filter(function(d){return d.estado==='Paga';});
+  var meses = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+  var ano = new Date().getFullYear();
+  var paraISO = function(dataPT){ if(!dataPT) return ''; var p=dataPT.split('/'); return p.length===3 ? (p[2]+'-'+p[1]+'-'+p[0]) : dataPT; };
+  var ivaArr=[], resumoArr=[];
+  for(var m=0;m<12;m++){
+    var prefixo = ano+'-'+String(m+1).padStart(2,'0');
+    var vendasMes = faturas.filter(function(d){ return String(d.Date||d.DocumentDate||d.CreatedAt||'').slice(0,7)===prefixo; })
+      .reduce(function(s,d){return s+(parseFloat(d.TotalAmount||d.Total||d.Amount||0)||0);},0);
+    var comprasMes = contasPagas.filter(function(c){ return paraISO(c.dataPagamento||c.data).slice(0,7)===prefixo; }).reduce(function(s,c){return s+(c.valor||0);},0)
+                    + logPago.filter(function(d){ return paraISO(d.dataPagamento||d.data).slice(0,7)===prefixo; }).reduce(function(s,d){return s+(d.valor||0);},0);
+    if(!vendasMes && !comprasMes) continue;
+    var ivaVendas = vendasMes - vendasMes/1.23;
+    var ivaCompras = comprasMes - comprasMes/1.23;
+    var estimativa = ivaVendas - ivaCompras;
+    ivaArr.push({mes:meses[m], vendas:vendasMes, compras:comprasMes, estimativa:estimativa, valorPago:null});
+    resumoArr.push({mes:meses[m], vendas:vendasMes, despesas:comprasMes, impostos:estimativa, iva:estimativa, salarios:0, saldo:vendasMes-comprasMes-estimativa});
+  }
+  return {iva:ivaArr, resumo:resumoArr};
+}
+
 async function tesIvaSincronizar(){
-  if(!TES_IVA_WEBHOOK){ alert('Configure primeiro o webhook (⚙️ Configurar Webhook).'); return; }
   var info = document.getElementById('tes-iva-sync-info');
   if(info) info.textContent = 'A sincronizar…';
+  // Sem webhook configurado: calcula directamente a partir dos dados reais já no CRM (TocOnline + Tesouraria).
+  if(!TES_IVA_WEBHOOK){
+    var calc = tesIvaCalcularReal();
+    if(!calc.iva.length && !calc.resumo.length){
+      if(info) info.textContent = 'Sem dados ainda. Sincronize primeiro as faturas TocOnline (aba Financeiro) e registe contas pagas.';
+      return;
+    }
+    TES_IVA_DATA = {iva:calc.iva, resumo:calc.resumo, ultimaSync: new Date().toLocaleString('pt-PT')};
+    localStorage.setItem('ob-iva-dados', JSON.stringify(TES_IVA_DATA));
+    tesIvaRender();
+    if(info) info.textContent = 'Calculado (dados reais do CRM) às ' + TES_IVA_DATA.ultimaSync;
+    return;
+  }
   try{
     var res = await fetch(TES_IVA_WEBHOOK);
     var data = await res.json();
