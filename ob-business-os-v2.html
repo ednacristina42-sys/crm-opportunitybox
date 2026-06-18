@@ -967,7 +967,41 @@ function avAtualizarKPIs(){
     if(elR) elR.innerHTML = '<span class="cur">€</span>'+Math.round(melhor.v).toLocaleString('pt-PT');
     if(elRD) elRD.textContent = AV_MESES_L[melhor.mes]+' '+melhor.ano;
   }
+  if(typeof avAtualizarMetaCard==='function') avAtualizarMetaCard();
 }
+
+// CORRIGIDO: o cartão "Meta 2026" (aba Vendedores) estava com texto estático no HTML
+// (€45.439, 4,5%, "Jan" fixos para sempre). Agora recalcula tudo a partir do total real
+// já sincronizado do TocOnline (AV_YTD / av2026.meses), sempre que há nova sincronização.
+function avAtualizarMetaCard(){
+  var av2026 = AV_ANOS.filter(function(a){return a.ano===2026;})[0];
+  if(!av2026) return;
+  var ytd = av2026.meses.reduce(function(s,v){return s+(v||0);},0);
+  var ultimoMes = -1;
+  av2026.meses.forEach(function(v,i){ if(v!=null) ultimoMes=i; });
+  var mesLabel = ultimoMes>=0 ? AV_MESES[ultimoMes] : '—';
+  var pct = AV_META>0 ? (ytd/AV_META*100) : 0;
+  var resta = Math.max(AV_META-ytd, 0);
+  var hoje = new Date();
+  var mesesRestantes = hoje.getFullYear()===2026 ? Math.max(12-(hoje.getMonth()+1), 1) : 1;
+  var ritmo = resta/mesesRestantes;
+
+  var elTarget = document.getElementById('av-meta-target');
+  if(elTarget) elTarget.textContent = '€'+Math.round(ytd).toLocaleString('pt-PT')+' / €'+Math.round(AV_META).toLocaleString('pt-PT');
+  var elPct = document.getElementById('av-meta-pct');
+  if(elPct) elPct.textContent = pct.toLocaleString('pt-PT',{minimumFractionDigits:1,maximumFractionDigits:1})+'%';
+  var elPctL = document.getElementById('av-meta-pct-l');
+  if(elPctL) elPctL.textContent = 'Da meta cumprida ('+mesLabel+')';
+  var elResta = document.getElementById('av-meta-resta');
+  if(elResta) elResta.textContent = '€'+Math.round(resta).toLocaleString('pt-PT');
+  var elRitmo = document.getElementById('av-meta-ritmo');
+  if(elRitmo) elRitmo.textContent = '€'+Math.round(ritmo).toLocaleString('pt-PT')+'/mês';
+  var elRitmoL = document.getElementById('av-meta-ritmo-l');
+  if(elRitmoL) elRitmoL.textContent = 'Ritmo necessário ('+mesesRestantes+' meses)';
+  var fill = document.getElementById('av-metaFill');
+  if(fill) fill.style.width = Math.min(pct,100)+'%';
+}
+window.avAtualizarMetaCard = avAtualizarMetaCard;
 
 function avAbrirDetalheMensal(){
   var tabAnual = document.querySelector('.av-tab[data-avtab="anual"]');
@@ -6986,13 +7020,13 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
             <h3>🎯 Meta 2026</h3>
             <div class="av-sub" style="margin-top:3px">Definida na folha "Mapa de vendas Geral"</div>
           </div>
-          <div class="av-meta-target">€45.439 / €1.000.000</div>
+          <div class="av-meta-target" id="av-meta-target">€45.439 / €1.000.000</div>
         </div>
         <div class="av-meta-bar"><div class="av-meta-fill" id="av-metaFill"></div></div>
         <div class="av-meta-stats">
-          <div class="av-ms"><div class="n">4,5%</div><div class="l">Da meta cumprida (Jan)</div></div>
-          <div class="av-ms"><div class="n">€954.561</div><div class="l">Restante para atingir</div></div>
-          <div class="av-ms"><div class="n">€86.778/mês</div><div class="l">Ritmo necessário (11 meses)</div></div>
+          <div class="av-ms"><div class="n" id="av-meta-pct">4,5%</div><div class="l" id="av-meta-pct-l">Da meta cumprida (Jan)</div></div>
+          <div class="av-ms"><div class="n" id="av-meta-resta">€954.561</div><div class="l">Restante para atingir</div></div>
+          <div class="av-ms"><div class="n" id="av-meta-ritmo">€86.778/mês</div><div class="l" id="av-meta-ritmo-l">Ritmo necessário (11 meses)</div></div>
         </div>
       </div>
 
