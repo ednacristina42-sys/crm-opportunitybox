@@ -652,7 +652,9 @@ var _avRendered=false;
 function renderAnaliseVendas(){
   if(_avRendered) return;
   _avRendered=true;
+  if(typeof avTocoIntegrar==='function') avTocoIntegrar();
   avLine(); avPie(); avBars(); avAnnualTable(); avClients(); avVendedores(); avHeatmap(); avPareto();
+  if(typeof avVend25TableRender==='function') avVend25TableRender();
   // Tab switching
   document.querySelectorAll('.av-tab').forEach(t=>{
     t.onclick=()=>{
@@ -680,6 +682,23 @@ function avLine(){
     const d=pts.map((p,i)=>(i?'L':'M')+p.x+' '+p.y).join(' ');
     h+=`<path class="av-line av-line-${a.ano}" d="${d}" stroke="${a.c}" data-ano="${a.ano}"/>`;
     pts.forEach(p=>{h+=`<circle class="av-dot av-dot-${a.ano}" cx="${p.x}" cy="${p.y}" r="3" fill="${a.c}" data-ano="${a.ano}" data-mes="${p.m}" data-val="${p.v}"/>`;});
+    // 2026: projeção pontilhada para os meses ainda sem dados reais (até ao mês actual)
+    if(a.ano===2026 && pts.length>0){
+      const hoje=new Date();
+      const mesAtualIdx = hoje.getFullYear()===2026 ? hoje.getMonth() : 11;
+      const media = pts.reduce((s,p)=>s+p.v,0)/pts.length;
+      const lastReal = pts[pts.length-1];
+      const projPts=[lastReal];
+      for(let i=lastReal.m+1;i<=mesAtualIdx;i++){
+        const x=padL+(W-padL-padR)*(i/11);const y=padT+(H-padT-padB)*(1-media/yMax);
+        projPts.push({x,y,v:media,m:i});
+      }
+      if(projPts.length>1){
+        const dp=projPts.map((p,i)=>(i?'L':'M')+p.x+' '+p.y).join(' ');
+        h+=`<path class="av-line av-line-${a.ano} av-line-proj" d="${dp}" stroke="${a.c}" stroke-dasharray="5 5" opacity="0.5" data-ano="${a.ano}"/>`;
+        projPts.slice(1).forEach(p=>{h+=`<circle class="av-dot av-dot-${a.ano}" cx="${p.x}" cy="${p.y}" r="3" fill="${a.c}" opacity="0.5" data-ano="${a.ano}" data-mes="${p.m}" data-val="${p.v}"/>`;});
+      }
+    }
   });
   svg.innerHTML=h;
   const leg=document.getElementById('av-legend');
@@ -842,6 +861,153 @@ function avPareto(){
 function avVendedores(){
   avVendedoresFiltrar('2025');
 }
+
+// ════════════════════════════════════════════════════════════════
+// ANÁLISE DE VENDAS — Integração TocOnline (dados reais 2026)
+// ════════════════════════════════════════════════════════════════
+var _avTocoPorMes2026 = {}; // {0:{total,n,clientes:{}}, ...} indexado por mês (0=Jan)
+
+function avVend25TableRender(){
+  var t = document.getElementById('av-vend25Table');
+  if(!t) return;
+  var totalAno = AV_VEND_25.reduce(function(s,v){return s+v.v;},0);
+  // Tenta cruzar faturas TocOnline 2025 (se o histórico tiver sido sincronizado) para Faturas/Ticket Médio
+  var docs = (typeof tocoFaturasCache==='function') ? tocoFaturasCache() : [];
+  var ft2025 = docs.filter(function(d){
+    if((d._tipo||d.DocumentType)!=='FT') return false;
+    var dt = new Date(d.Date||d.DocumentDate||d.CreatedAt||'');
+    return !isNaN(dt.getTime()) && dt.getFullYear()===2025;
+  });
+  var temHistorico2025 = ft2025.length>0;
+  var h='<thead><tr><th>Comercial</th><th>Vendas Anuais</th><th>% do Total</th><th>Faturas Emitidas</th><th>Ticket Médio</th></tr></thead><tbody>';
+  AV_VEND_25.forEach(function(v){
+    var pct = Math.round(v.v/totalAno*1000)/10;
+    var nFat='—', ticket='—';
+    if(temHistorico2025){
+      // Sem campo de vendedor nas faturas reais do TocOnline — não é possível atribuir por comercial sem o dado de origem
+      nFat='—'; ticket='—';
+    }
+    h+='<tr><td>'+v.n+'</td><td class="av-total">'+avFmtE(v.v)+'</td><td>'+pct+'%</td><td>'+nFat+'</td><td>'+ticket+'</td></tr>';
+  });
+  h+='<tr><td><strong>Total</strong></td><td class="av-total"><strong>'+avFmtE(totalAno)+'</strong></td><td>100%</td><td>—</td><td>—</td></tr>';
+  h+='</tbody>';
+  t.innerHTML=h;
+}
+
+function avRenderTocoTable(porMes){
+  var t = document.getElementById('av-tocoTable');
+  if(!t) return;
+  var h='<thead><tr><th>Mês</th><th>Faturas Emitidas</th><th>Valor Total</th><th>Clientes</th><th>Ticket Médio</th></tr></thead><tbody>';
+  var hoje = new Date();
+  var mesAtualIdx = (hoje.getFullYear()===2026) ? hoje.getMonth() : -1;
+  for(var m=0;m<6;m++){
+    var d = porMes[m];
+    var nome = AV_MESES_L[m];
+    if(d && d.n>0){
+      var nCli = Object.keys(d.clientes||{}).length;
+      var ticket = d.total/d.n;
+      h+='<tr><td>'+nome+'</td><td>'+d.n+'</td><td class="av-total">'+avFmtFull(d.total)+'</td><td>'+nCli+'</td><td>'+avFmtFull(ticket)+'</td></tr>';
+    } else if(m <= mesAtualIdx || mesAtualIdx===-1){
+      h+='<tr><td>'+nome+'</td><td>0</td><td style="color:var(--muted2)">€0,00</td><td>0</td><td style="color:var(--muted2)">—</td></tr>';
+    } else {
+      h+='<tr><td>'+nome+'</td><td colspan="4" style="color:var(--muted2)">Aguardando faturação</td></tr>';
+    }
+  }
+  h+='</tbody>';
+  t.innerHTML=h;
+}
+
+function avAtualizarKPIs(){
+  var av2026 = AV_ANOS.filter(function(a){return a.ano===2026;})[0];
+  if(!av2026) return;
+  var totalYTD = av2026.meses.reduce(function(s,v){return s+(v||0);},0);
+  av2026.total = totalYTD;
+  var docs = (typeof tocoFaturasCache==='function') ? tocoFaturasCache() : [];
+  var ft2026 = docs.filter(function(d){
+    if((d._tipo||d.DocumentType)!=='FT') return false;
+    var dt = new Date(d.Date||d.DocumentDate||d.CreatedAt||'');
+    return !isNaN(dt.getTime()) && dt.getFullYear()===2026;
+  });
+  var elV = document.getElementById('av-kpi-2026');
+  if(elV) elV.innerHTML = '<span class="cur">€</span>'+Math.round(totalYTD).toLocaleString('pt-PT');
+  var ultimoMes = -1;
+  av2026.meses.forEach(function(v,i){ if(v!=null) ultimoMes=i; });
+  var elD = document.getElementById('av-kpi-2026-delta');
+  if(elD) elD.textContent = (ultimoMes>=0?AV_MESES[ultimoMes]:'—')+' · '+ft2026.length+' faturas emitidas';
+  AV_YTD = totalYTD;
+
+  // Mês recorde absoluto (entre todos os anos com dados reais)
+  var melhor=null;
+  AV_ANOS.forEach(function(a){
+    a.meses.forEach(function(v,i){
+      if(v!=null && (!melhor || v>melhor.v)) melhor = {ano:a.ano, mes:i, v:v};
+    });
+  });
+  if(melhor){
+    var elR = document.getElementById('av-kpi-recorde');
+    var elRD = document.getElementById('av-kpi-recorde-delta');
+    if(elR) elR.innerHTML = '<span class="cur">€</span>'+Math.round(melhor.v).toLocaleString('pt-PT');
+    if(elRD) elRD.textContent = AV_MESES_L[melhor.mes]+' '+melhor.ano;
+  }
+}
+
+function avAbrirDetalheMensal(){
+  var tabAnual = document.querySelector('.av-tab[data-avtab="anual"]');
+  if(tabAnual) tabAnual.click();
+  var tbl = document.getElementById('av-annualTable');
+  if(tbl && tbl.scrollIntoView) tbl.scrollIntoView({behavior:'smooth', block:'center'});
+}
+
+// Agrega as faturas FT reais do tocoFaturasCache() por ano/mês e actualiza
+// AV_ANOS[2026], a tabela "Dados TocOnline", os KPIs e o gráfico de evolução mensal.
+function avTocoIntegrar(){
+  var docs = (typeof tocoFaturasCache==='function') ? tocoFaturasCache() : [];
+  var faturas = docs.filter(function(d){ return (d._tipo||d.DocumentType)==='FT'; });
+  var porMes2026 = {};
+  faturas.forEach(function(f){
+    var dt = new Date(f.Date||f.DocumentDate||f.CreatedAt||'');
+    if(isNaN(dt.getTime()) || dt.getFullYear()!==2026) return;
+    var m = dt.getMonth();
+    if(!porMes2026[m]) porMes2026[m] = {total:0, n:0, clientes:{}};
+    var valor = parseFloat(f.TotalAmount||f.Total||f.Amount||0)||0;
+    porMes2026[m].total += valor;
+    porMes2026[m].n++;
+    var cli = f.CustomerName || f.CustomerTaxNumber || '—';
+    porMes2026[m].clientes[cli] = true;
+  });
+  _avTocoPorMes2026 = porMes2026;
+
+  var av2026 = AV_ANOS.filter(function(a){return a.ano===2026;})[0];
+  if(av2026){
+    var hoje = new Date();
+    var mesAtualIdx = (hoje.getFullYear()===2026) ? hoje.getMonth() : 11;
+    for(var m=0;m<12;m++){
+      if(porMes2026[m] && porMes2026[m].n>0){
+        av2026.meses[m] = Math.round(porMes2026[m].total*100)/100;
+      } else if(m <= mesAtualIdx){
+        av2026.meses[m] = 0; // mês já decorrido sem faturas emitidas
+      } else {
+        av2026.meses[m] = null; // mês futuro · ainda não chegou
+      }
+    }
+  }
+
+  avRenderTocoTable(porMes2026);
+  avAtualizarKPIs();
+  avVend25TableRender();
+  if(typeof avLine==='function') avLine();
+  if(typeof avAnnualTable==='function') avAnnualTable();
+}
+
+async function avSyncTocOnline(){
+  if(typeof tocoSincronizarFaturas!=='function') return;
+  try{
+    await tocoSincronizarFaturas(false);
+  }catch(e){ console.error('[AV] Erro ao sincronizar TocOnline:', e); }
+  avTocoIntegrar();
+}
+window.avSyncTocOnline = avSyncTocOnline;
+window.avTocoIntegrar = avTocoIntegrar;
 
 // ════════════════════════════════════════════════════════════════
 // MÓDULOS: MO, ARTES KANBAN, TESOURARIA MODAL
@@ -6633,6 +6799,7 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
       <div class="pg-title">Análise de Vendas</div>
       <div class="pg-actions">
         <span id="av-sb-ts" style="font-size:12px;color:var(--muted);margin-right:6px"></span>
+        <button class="tbtn" style="font-size:13px" onclick="if(typeof avSyncTocOnline==='function'){avSyncTocOnline();}" title="Vai buscar as faturas reais ao TocOnline e atualiza 2026, gráfico e tabela TocOnline">↻ Sync TocOnline</button>
         <button class="tbtn" style="font-size:13px" onclick="if(typeof avAtualizarMetricasCartoes==='function'){AV_METRICAS_TS=0;avAtualizarMetricasCartoes();}">↻ Sync Supabase</button>
         <span style="font-family:'DM Mono',monospace;font-size:12.5px;color:var(--muted);background:var(--bg3);border:1px solid var(--border);padding:5px 10px;border-radius:6px;display:inline-flex;align-items:center;gap:7px">
           <span style="width:5px;height:5px;border-radius:50%;background:var(--y);box-shadow:0 0 6px var(--y)"></span>
@@ -6650,6 +6817,7 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
       <button class="av-tab" data-avtab="sazonal">🔥 Sazonalidade</button>
       <button class="av-tab" data-avtab="clientes">👥 Top Clientes</button>
       <button class="av-tab" data-avtab="vendedores">🎯 Vendedores</button>
+      <button class="av-tab" data-avtab="toconline">🔄 Dados TocOnline</button>
     </nav>
 
     <!-- PAGE: ANUAL -->
@@ -6658,15 +6826,16 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
       <div class="av-kpi-grid">
         <div class="av-kpi featured">
           <div class="av-kpi-label">💎 Vendas 2025 (fechado)</div>
-          <div class="av-kpi-value"><span class="cur">€</span>1.289.525</div>
+          <div class="av-kpi-value" id="av-kpi-2025"><span class="cur">€</span>1.289.525</div>
           <div class="av-kpi-delta up">↗ +20,3% vs 2024 · recorde histórico</div>
           <div class="av-kpi-foot">Acumulado em 12 meses · pico em Dez (€158.569)</div>
+          <button class="tbtn" style="margin-top:8px;font-size:12px" onclick="if(typeof avAbrirDetalheMensal==='function')avAbrirDetalheMensal();">📊 Ver detalhe mensal</button>
         </div>
         <div class="av-kpi">
           <div class="av-kpi-label">📅 Vendas 2026 YTD</div>
-          <div class="av-kpi-value"><span class="cur">€</span>45.439</div>
-          <div class="av-kpi-delta flat">Jan · 26 faturas emitidas</div>
-          <div class="av-kpi-foot">€36.627 ainda por receber · €8.811 recebido</div>
+          <div class="av-kpi-value" id="av-kpi-2026"><span class="cur">€</span>45.439</div>
+          <div class="av-kpi-delta flat" id="av-kpi-2026-delta">Jan · 26 faturas emitidas</div>
+          <div class="av-kpi-foot" id="av-kpi-2026-foot">€36.627 ainda por receber · €8.811 recebido</div>
         </div>
         <div class="av-kpi">
           <div class="av-kpi-label">📈 Crescimento médio</div>
@@ -6676,9 +6845,9 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
         </div>
         <div class="av-kpi">
           <div class="av-kpi-label">🏆 Mês recorde absoluto</div>
-          <div class="av-kpi-value"><span class="cur">€</span>158.569</div>
-          <div class="av-kpi-delta up">Dezembro 2025</div>
-          <div class="av-kpi-foot">Anterior: €155.174 (Nov 2024)</div>
+          <div class="av-kpi-value" id="av-kpi-recorde"><span class="cur">€</span>158.569</div>
+          <div class="av-kpi-delta up" id="av-kpi-recorde-delta">Dezembro 2025</div>
+          <div class="av-kpi-foot" id="av-kpi-recorde-foot">Anterior: €155.174 (Nov 2024)</div>
         </div>
       </div>
 
@@ -6724,6 +6893,14 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
         <div class="av-section-head" style="margin-bottom:14px"><h2>Comparativo mês a mês</h2><span class="av-sub">● máximo do ano</span></div>
         <div style="overflow-x:auto">
           <table class="av-years" id="av-annualTable"></table>
+        </div>
+      </div>
+
+      <!-- VENDAS POR COMERCIAL 2025 -->
+      <div class="av-chart-card" id="av-card-vend25">
+        <div class="av-section-head" style="margin-bottom:14px"><h2>Vendas por comercial · 2025</h2><span class="av-sub">Google Sheets (histórico) · Faturas/Ticket via TocOnline quando disponível</span></div>
+        <div style="overflow-x:auto">
+          <table class="av-years" id="av-vend25Table"></table>
         </div>
       </div>
     </div>
@@ -6808,6 +6985,19 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
       </div>
       <div id="av-vend-year-label" style="font-size:13px;color:var(--muted);margin-bottom:12px;font-family:'DM Mono',monospace">Ano 2025 · €1.291.241 total · 4 vendedores · ano fechado</div>
       <div class="av-vend-grid" id="av-vendGrid"></div>
+    </div>
+
+    <!-- PAGE: DADOS TOCONLINE -->
+    <div class="av-page" id="av-toconline">
+      <div class="av-section-head">
+        <h2>Dados reais TocOnline · 2026</h2>
+        <span class="av-sub" id="av-toco-sub">Faturas FT sincronizadas via TocOnline</span>
+      </div>
+      <div class="av-chart-card">
+        <div style="overflow-x:auto">
+          <table class="av-years" id="av-tocoTable"></table>
+        </div>
+      </div>
     </div>
 
     <!-- FOOTER -->
@@ -16946,6 +17136,7 @@ tocoSincronizarFaturas = async function(silent, ano) {
   await _tocoSincOrig(silent, ano);
   var vencidas = (_tocoFatCache||[]).filter(function(d){ return tocoGetEstado(d)==='Vencido'; }).length;
   if(vencidas > 0) tocoToast('⚠️ ' + vencidas + ' faturas vencidas no TocOnline', 'warn', 5000);
+  if(typeof avTocoIntegrar==='function') avTocoIntegrar();
 };
 window.tocoSincronizarFaturas = tocoSincronizarFaturas;
 
