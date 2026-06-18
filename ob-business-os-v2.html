@@ -16041,8 +16041,8 @@ async function tocoTestarLigacao() {
   if(!key){ tocoShowStatus('⚠️ Introduz a API Key primeiro', 'warn'); return; }
   tocoShowStatus('⏳ A testar ligação...', 'warn');
   try {
-    var result = await tocoFetch(url, key, webhook, '/api/v1.0/Company', 'GET', null, preferProxy);
-    if(result && (result.Id || result.Name || Array.isArray(result))) {
+    var result = await tocoFetch(url, key, webhook, '/api/customers', 'GET', null, preferProxy);
+    if(result && (result.data || Array.isArray(result))) {
       tocoShowStatus('✅ Ligação OK! TocOnline respondeu com sucesso.', 'ok');
     } else {
       tocoShowStatus('⚠️ Resposta recebida mas formato inesperado. Verifica a API Key.', 'warn');
@@ -16334,14 +16334,15 @@ async function tocoAbrirImportarClientes() {
   if(statusEl) statusEl.textContent = '⏳ A carregar clientes do TocOnline...';
   if(listEl) listEl.innerHTML = '';
   try {
-    var data = await tocoFetch(cfg.url, cfg.key, cfg.webhook, '/api/v1.0/Customers?PageSize=200', 'GET', null, cfg.proxy);
+    var data = await tocoFetch(cfg.url, cfg.key, cfg.webhook, '/api/customers', 'GET', null, cfg.proxy);
     var clientes = Array.isArray(data) ? data : (data.Items || data.Customers || data.data || []);
     localStorage.setItem(TOCO_CLI_KEY, JSON.stringify({ ts: Date.now(), data: clientes }));
     if(!clientes.length) { if(statusEl) statusEl.textContent = 'Nenhum cliente encontrado no TocOnline.'; return; }
     if(statusEl) statusEl.textContent = clientes.length + ' clientes encontrados. Seleciona os que queres importar:';
     if(listEl) listEl.innerHTML = clientes.map(function(c, i){
-      var nome = c.Name || c.CustomerName || '—';
-      var nif = c.TaxNumber || c.Nif || '—';
+      var a = c.attributes || c;
+      var nome = a.business_name || a.contact_name || '—';
+      var nif = a.tax_registration_number || '—';
       var existe = (typeof cliData !== 'undefined' ? cliData : []).some(function(x){ return x.nif && x.nif === nif; });
       return '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)">' +
         '<input type="checkbox" id="toco-cli-'+i+'" value="'+i+'" '+(existe?'disabled title="Já existe (mesmo NIF)"':'') +'/>' +
@@ -16481,7 +16482,7 @@ async function tocoCarregarClientes() {
   if(statusEl) statusEl.textContent = '⏳ A carregar...';
   if(tbody) tbody.innerHTML = '';
   try {
-    var data = await tocoFetch(cfg.url, cfg.key, cfg.webhook, '/api/v1.0/Customers?PageSize=200', 'GET', null, cfg.proxy);
+    var data = await tocoFetch(cfg.url, cfg.key, cfg.webhook, '/api/customers', 'GET', null, cfg.proxy);
     var clientes = Array.isArray(data) ? data : (data.Items || data.Customers || data.data || []);
     localStorage.setItem(TOCO_CLI_KEY, JSON.stringify({ts:Date.now(), data:clientes}));
     window._tocoCliImportList = clientes;
@@ -16489,11 +16490,12 @@ async function tocoCarregarClientes() {
     if(!tbody) return;
     if(!clientes.length) { tbody.innerHTML='<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:20px">Nenhum cliente no TocOnline</td></tr>'; return; }
     tbody.innerHTML = clientes.map(function(c, i){
-      var nome = c.Name || c.CustomerName || '—';
-      var nif = c.TaxNumber || c.Nif || '—';
-      var email = c.Email || '—';
-      var tel = c.Phone || c.PhoneNumber || '—';
-      var morada = c.Address || (c.BillingAddress && c.BillingAddress.AddressDetail) || '—';
+      var a = c.attributes || c;
+      var nome = a.business_name || a.contact_name || '—';
+      var nif = a.tax_registration_number || '—';
+      var email = a.email || '—';
+      var tel = a.phone_number || a.mobile_number || '—';
+      var morada = a.address || '—';
       var normN = function(s){ return (s||'').toString().trim().toLowerCase(); };
       var clienteExistente = (typeof cliData !== 'undefined' ? cliData : []).find(function(x){ return normN(x.n) === normN(nome) || (x.nif && nif!=='—' && x.nif === nif); });
       var completo = clienteExistente && clienteExistente.nif && clienteExistente.email && clienteExistente.tel;
@@ -16524,11 +16526,12 @@ async function tocoCarregarClientes() {
 function tocoImportarUmCliente(i) {
   var lista = window._tocoCliImportList || [];
   var c = lista[i]; if(!c) return;
-  var nome = c.Name || c.CustomerName || 'Cliente TocOnline';
-  var nif = c.TaxNumber || c.Nif || '';
-  var email = c.Email || '';
-  var tel = c.Phone || c.PhoneNumber || '';
-  var morada = c.Address || (c.BillingAddress && c.BillingAddress.AddressDetail) || '';
+  var a = c.attributes || c;
+  var nome = a.business_name || a.contact_name || 'Cliente TocOnline';
+  var nif = a.tax_registration_number || '';
+  var email = a.email || '';
+  var tel = a.phone_number || a.mobile_number || '';
+  var morada = a.address || '';
   var completado = tocoCompletarClienteExistente(nome, {nif:nif, email:email, tel:tel, morada:morada, cont:nome});
   if(!completado && typeof cliData !== 'undefined') {
     cliData.push({ id: Date.now(), n: nome, sec: 'Outro', cont: nome, nif: nif,
