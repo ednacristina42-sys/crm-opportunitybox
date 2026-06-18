@@ -15525,21 +15525,33 @@ function tesUpdateKPIs(tab){
   var v3=document.getElementById('tes-pago-mes'), v4=document.getElementById('tes-total-log');
   var mesAtual=new Date().getMonth(), anoAtual=new Date().getFullYear();
 
-  if(tab==='receber'||tab==='recebidos'){
-    // KPIs de recebimentos
+  if(tab==='receber'){
+    // KPIs de "A Receber" — faturas ainda não cobradas
     var recList=tesGetReceber();
     var totalRec=recList.filter(r=>r.estado!=='Recebido').reduce((s,r)=>s+(parseFloat(r.total)||0),0);
-    var recebMes=tesGetRecebidos().filter(r=>{var d=new Date(r.dataRec||r.data);return d.getMonth()===mesAtual&&d.getFullYear()===anoAtual;}).reduce((s,r)=>s+(parseFloat(r.total)||0),0);
     var vence30=recList.filter(r=>{if(r.estado==='Recebido')return false;var d=new Date(r.vencimento);var diff=Math.round((d-new Date())/86400000);return diff>=0&&diff<=30;}).reduce((s,r)=>s+(parseFloat(r.total)||0),0);
+    var emitMes=recList.filter(r=>{var d=new Date(r.dataEmissao||r.data);return d.getMonth()===mesAtual&&d.getFullYear()===anoAtual;}).reduce((s,r)=>s+(parseFloat(r.total)||0),0);
     if(l1)l1.textContent='A Receber (Total)'; if(s1)s1.textContent='faturas por cobrar';
     if(v1)v1.textContent=fmtEurT?fmtEurT(totalRec):'€'+totalRec.toFixed(2); if(v1)v1.style.color='var(--b)';
     if(l2)l2.textContent='Vence em 30 dias'; if(s2)s2.textContent='urgente';
     if(v2)v2.textContent=fmtEurT?fmtEurT(vence30):'€'+vence30.toFixed(2);
-    if(l3)l3.textContent='Recebido este mês'; if(s3)s3.textContent='liquidadas';
-    if(v3)v3.textContent=fmtEurT?fmtEurT(recebMes):'€'+recebMes.toFixed(2);
-    if(l4)l4.textContent='Total emitido mês'; if(s4)s4.textContent='faturas emitidas';
-    var emitMes=recList.filter(r=>{var d=new Date(r.dataEmissao||r.data);return d.getMonth()===mesAtual&&d.getFullYear()===anoAtual;}).reduce((s,r)=>s+(parseFloat(r.total)||0),0);
-    if(v4)v4.textContent=fmtEurT?fmtEurT(emitMes):'€'+emitMes.toFixed(2);
+    if(l3)l3.textContent='Total emitido mês'; if(s3)s3.textContent='faturas emitidas';
+    if(v3)v3.textContent=fmtEurT?fmtEurT(emitMes):'€'+emitMes.toFixed(2);
+    if(l4)l4.textContent='Nº de faturas pendentes'; if(s4)s4.textContent='ainda por cobrar';
+    if(v4)v4.textContent=recList.filter(r=>r.estado!=='Recebido').length;
+  } else if(tab==='recebidos'){
+    // KPIs de "Recebidos" — faturas já cobradas
+    var recebidosList=tesGetRecebidos();
+    var totalRecebido=recebidosList.reduce((s,r)=>s+(parseFloat(r.total)||0),0);
+    var recebMes=recebidosList.filter(r=>{var d=new Date(r.dataRec||r.data);return d.getMonth()===mesAtual&&d.getFullYear()===anoAtual;}).reduce((s,r)=>s+(parseFloat(r.total)||0),0);
+    if(l1)l1.textContent='Recebido (Total)'; if(s1)s1.textContent='faturas cobradas';
+    if(v1)v1.textContent=fmtEurT?fmtEurT(totalRecebido):'€'+totalRecebido.toFixed(2); if(v1)v1.style.color='var(--g)';
+    if(l2)l2.textContent='Recebido este mês'; if(s2)s2.textContent='liquidadas';
+    if(v2)v2.textContent=fmtEurT?fmtEurT(recebMes):'€'+recebMes.toFixed(2);
+    if(l3)l3.textContent='Nº de faturas recebidas'; if(s3)s3.textContent='total';
+    if(v3)v3.textContent=recebidosList.length;
+    if(l4)l4.textContent='Ticket médio'; if(s4)s4.textContent='por fatura recebida';
+    if(v4)v4.textContent=fmtEurT?fmtEurT(recebidosList.length?totalRecebido/recebidosList.length:0):'€0,00';
   } else {
     // KPIs de despesas (padrão)
     var pendentes=TES_CONTAS.filter(c=>c.estado!=='Paga');
