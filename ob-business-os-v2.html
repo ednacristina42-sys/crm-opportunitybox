@@ -12550,15 +12550,38 @@ function renderDashboardCFO(){
 
 function renderFinanceiro(){
   const el=document.getElementById('fin-tbody');if(!el)return;
-  el.innerHTML=finProjs.map(p=>`<tr>
-    <td><strong style="color:var(--txt2)">${p.n}</strong></td>
-    <td style="color:var(--muted)">${p.c}</td>
-    <td style="font-family:'DM Mono',monospace">${fmt(p.rev)}</td>
-    <td style="font-family:'DM Mono',monospace">${fmt(p.cost)}</td>
-    <td style="font-family:'DM Mono',monospace;font-weight:600;color:${p.mar<15?'var(--r)':p.mar<25?'var(--a)':'var(--g)'}">${pct(p.mar)}</td>
-    <td><div style="display:flex;align-items:center;gap:7px"><div class="prog"><div class="pb ${p.bu>100?'pr2':p.bu>90?'pa2':'py'}" style="width:${Math.min(p.bu,100)}%"></div></div><span style="font-size:12px;font-family:'DM Mono',monospace;color:${p.bu>100?'var(--r)':p.bu>90?'var(--a)':'var(--muted)'}">${p.bu}%</span></div></td>
-    <td><span class="b bg">Activo</span></td>
-  </tr>`).join('');
+  // ADD: usa orçamentos reais (orcData) em vez dos projetos fictícios de demonstração (finProjs).
+  // finProjs é mantido como fallback apenas se não houver nenhum orçamento real com valor.
+  var orcAll = (typeof orcData!=='undefined'?orcData:[]);
+  var realRows = orcAll.filter(function(o){ return o.val>0; });
+  if(realRows.length){
+    el.innerHTML = realRows.map(function(o){
+      var rev = o.val||0;
+      var cost = (o.custoMateriais||0)+(o.custoMO||0)+(o.custoLog||0);
+      var mar = rev>0 ? ((rev-cost)/rev*100) : 0;
+      var st = o.st || 'Pendente';
+      var stClass = st==='Faturado'?'bg':st==='Aprovado'?'bb':st==='Cancelado'?'br':'ba';
+      return `<tr>
+        <td><strong style="color:var(--txt2)">${o.num||'—'}</strong></td>
+        <td style="color:var(--muted)">${o.cli||'—'}</td>
+        <td style="font-family:'DM Mono',monospace">${fmt(rev)}</td>
+        <td style="font-family:'DM Mono',monospace">${fmt(cost)}</td>
+        <td style="font-family:'DM Mono',monospace;font-weight:600;color:${mar<15?'var(--r)':mar<25?'var(--a)':'var(--g)'}">${pct(mar)}</td>
+        <td><span style="font-size:12px;color:var(--muted)">—</span></td>
+        <td><span class="b ${stClass}">${st}</span></td>
+      </tr>`;
+    }).join('');
+  } else {
+    el.innerHTML=finProjs.map(p=>`<tr>
+      <td><strong style="color:var(--txt2)">${p.n}</strong></td>
+      <td style="color:var(--muted)">${p.c}</td>
+      <td style="font-family:'DM Mono',monospace">${fmt(p.rev)}</td>
+      <td style="font-family:'DM Mono',monospace">${fmt(p.cost)}</td>
+      <td style="font-family:'DM Mono',monospace;font-weight:600;color:${p.mar<15?'var(--r)':p.mar<25?'var(--a)':'var(--g)'}">${pct(p.mar)}</td>
+      <td><div style="display:flex;align-items:center;gap:7px"><div class="prog"><div class="pb ${p.bu>100?'pr2':p.bu>90?'pa2':'py'}" style="width:${Math.min(p.bu,100)}%"></div></div><span style="font-size:12px;font-family:'DM Mono',monospace;color:${p.bu>100?'var(--r)':p.bu>90?'var(--a)':'var(--muted)'}">${p.bu}%</span></div></td>
+      <td><span class="b bg">Activo</span></td>
+    </tr>`).join('');
+  }
 }
 
 // ── RELATÓRIOS ────────────────────────────────────────────
