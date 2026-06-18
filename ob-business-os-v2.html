@@ -1111,11 +1111,26 @@ function avParseNumPT(s){
   return isNaN(n)?0:n;
 }
 
-async function avSyncVendedoresSheet(){
+async function avFetchVendSheetCSV(){
+  // Quando o CRM é aberto via file:// (origin null), o Google não devolve
+  // cabeçalhos CORS no export CSV, pelo que é preciso passar por um proxy
+  // que faz o pedido do lado do servidor.
+  var directOk = false;
   try{
     var resp = await fetch(AV_VEND_SHEET_URL);
-    if(!resp.ok) throw new Error('HTTP '+resp.status);
-    var text = await resp.text();
+    if(resp.ok){ directOk = true; return await resp.text(); }
+  }catch(e){ /* bloqueado por CORS, tentar via proxy */ }
+  if(!directOk){
+    var proxyUrl = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(AV_VEND_SHEET_URL);
+    var resp2 = await fetch(proxyUrl);
+    if(!resp2.ok) throw new Error('HTTP '+resp2.status+' (proxy)');
+    return await resp2.text();
+  }
+}
+
+async function avSyncVendedoresSheet(){
+  try{
+    var text = await avFetchVendSheetCSV();
     var rows = avParseCSV(text);
     if(!rows.length) throw new Error('Folha vazia');
     var header = rows[0].map(function(h){return h.trim().toLowerCase();});
