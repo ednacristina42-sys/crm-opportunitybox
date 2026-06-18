@@ -652,7 +652,11 @@ var _avRendered=false;
 function renderAnaliseVendas(){
   if(_avRendered) return;
   _avRendered=true;
+  // ADD: garante dados reais de 2026 ao abrir a página — não depende de outra aba
+  // já ter sincronizado o TocOnline antes. Renderiza primeiro com o que houver em
+  // cache/local (instantâneo) e depois actualiza com os dados mais recentes.
   if(typeof avTocoIntegrar==='function') avTocoIntegrar();
+  if(typeof avSyncTocOnline==='function') avSyncTocOnline();
   avLine(); avPie(); avBars(); avAnnualTable(); avClients(); avVendedores(); avHeatmap(); avPareto();
   if(typeof avVend25TableRender==='function') avVend25TableRender();
   // Tab switching
@@ -726,7 +730,8 @@ function avLine(){
 function avPie(){
   const svg=document.getElementById('av-pieChart');
   const cx=180,cy=180,r=130,rIn=70;
-  const data=AV_ANOS.filter(a=>a.ano>=2020&&a.ano<=2025);
+  // ADD: inclui 2026 (ano em curso) sempre que já tiver vendas reais sincronizadas do TocOnline
+  const data=AV_ANOS.filter(a=>a.ano>=2020&&a.ano<=2026&&(a.ano!==2026||a.total>0));
   const total=data.reduce((s,a)=>s+a.total,0);
   let h='',ang=-Math.PI/2;
   data.forEach((a,i)=>{
@@ -741,8 +746,8 @@ function avPie(){
     ang=a2;
   });
   h+=`<text x="${cx}" y="${cy-6}" text-anchor="middle" fill="var(--txt2)" font-family="Inter,sans-serif" font-weight="800" font-size="20">${avFmtE(total)}</text>`;
-  h+=`<text x="${cx}" y="${cy+12}" text-anchor="middle" fill="var(--muted)" font-family="DM Mono,monospace" font-size="10">6 anos acumulado</text>`;
-  h+=`<text x="${cx}" y="${cy+26}" text-anchor="middle" fill="var(--y)" font-family="DM Mono,monospace" font-size="10">2020 → 2025</text>`;
+  h+=`<text x="${cx}" y="${cy+12}" text-anchor="middle" fill="var(--muted)" font-family="DM Mono,monospace" font-size="10">${data.length} anos acumulado</text>`;
+  h+=`<text x="${cx}" y="${cy+26}" text-anchor="middle" fill="var(--y)" font-family="DM Mono,monospace" font-size="10">${data[0].ano} → ${data[data.length-1].ano}</text>`;
   svg.innerHTML=h;
   const tip=document.getElementById('av-pieTip');
   svg.querySelectorAll('.av-pie-slice').forEach(p=>{
@@ -760,7 +765,8 @@ function avPie(){
 function avBars(){
   const svg=document.getElementById('av-barChart');
   const W=480,H=360,padL=50,padR=20,padT=30,padB=60;
-  const data=AV_ANOS.filter(a=>a.ano>=2020&&a.ano<=2025);
+  // ADD: inclui 2026 (ano em curso) sempre que já tiver vendas reais sincronizadas do TocOnline
+  const data=AV_ANOS.filter(a=>a.ano>=2020&&a.ano<=2026&&(a.ano!==2026||a.total>0));
   const maxV=Math.max(...data.map(a=>a.total)),yMax=Math.ceil(maxV/200000)*200000;
   let h='<g class="av-grid">';
   for(let i=0;i<=5;i++){const y=padT+(H-padT-padB)*(1-i/5);const v=yMax*i/5;h+=`<line x1="${padL}" x2="${W-padR}" y1="${y}" y2="${y}"/><text x="${padL-8}" y="${y+4}" text-anchor="end">${avFmtE(v)}</text>`;}
@@ -997,6 +1003,8 @@ function avTocoIntegrar(){
   avVend25TableRender();
   if(typeof avLine==='function') avLine();
   if(typeof avAnnualTable==='function') avAnnualTable();
+  if(typeof avPie==='function') avPie();
+  if(typeof avBars==='function') avBars();
 }
 
 async function avSyncTocOnline(){
