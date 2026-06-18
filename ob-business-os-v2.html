@@ -6049,8 +6049,8 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
   </div>
   <div class="admin-page">
     <div class="g2">
-      <div class="cc"><div class="sh"><h2>Margem por Projeto (%)</h2></div><canvas id="finMarChart"></canvas></div>
-      <div class="cc"><div class="sh"><h2>Fluxo de Caixa — 90 dias</h2></div><canvas id="cashChart"></canvas></div>
+      <div class="cc"><div class="sh"><h2>Margem por Projeto (%)</h2></div><canvas id="finMarChart"></canvas><div id="finMarChart-empty" style="display:none;text-align:center;color:var(--muted);padding:30px 0;font-size:13px">Sem dados para exibir</div></div>
+      <div class="cc"><div class="sh"><h2>Fluxo de Caixa — 90 dias</h2></div><canvas id="cashChart"></canvas><div id="cashChart-empty" style="display:none;text-align:center;color:var(--muted);padding:30px 0;font-size:13px">Sem dados para exibir</div></div>
     </div>
     <div class="sh"><h2>Projetos — Rentabilidade</h2></div>
     <div class="tw"><table><thead><tr><th>Projeto</th><th>Cliente</th><th>Receita</th><th>Custo</th><th>Margem</th><th>Orçamento</th><th>Estado</th></tr></thead><tbody id="fin-tbody"></tbody></table></div>
@@ -12479,13 +12479,7 @@ function renderDashLeads(){
 }
 
 // ── FINANCEIRO ────────────────────────────────────────────
-var finProjs=[
-  {n:'Totem Hotel Serra da Lua',c:'Hotel Serra da Lua',rev:7200,cost:3800,mar:47.2,bu:72},
-  {n:'Painel LED Pingo Bom',c:'Pingo Bom Terrugem',rev:9200,cost:5400,mar:41.3,bu:88},
-  {n:'Sinalética CC Mira Sintra',c:'CC Mira Sintra',rev:12400,cost:8100,mar:34.7,bu:65},
-  {n:'Letras 3D Auto Premium',c:'Auto Premium Sintra',rev:6800,cost:3200,mar:52.9,bu:80},
-  {n:'Sinalética Clínica D&S',c:'Clínica D&S',rev:2900,cost:2600,mar:10.3,bu:109},
-];
+// (dados fictícios de demonstração removidos — Painel Financeiro usa apenas orcData/TocOnline reais)
 // ── DASHBOARD CFO — dados reais (TocOnline + orçamentos + tesouraria) ──
 function tocoFaturasCache(){
   if(typeof _tocoFatCache!=='undefined' && _tocoFatCache && _tocoFatCache.length) return _tocoFatCache;
@@ -12554,8 +12548,8 @@ function renderDashboardCFO(){
 
 function renderFinanceiro(){
   const el=document.getElementById('fin-tbody');if(!el)return;
-  // ADD: usa orçamentos reais (orcData) em vez dos projetos fictícios de demonstração (finProjs).
-  // finProjs é mantido como fallback apenas se não houver nenhum orçamento real com valor.
+  // Usa apenas orçamentos reais (orcData, vindos do Google Sheets / criados no CRM).
+  // Não há fallback para dados fictícios: sem dados reais, mostra estado vazio.
   var orcAll = (typeof orcData!=='undefined'?orcData:[]);
   var realRows = orcAll.filter(function(o){ return o.val>0; });
   if(realRows.length){
@@ -12576,15 +12570,7 @@ function renderFinanceiro(){
       </tr>`;
     }).join('');
   } else {
-    el.innerHTML=finProjs.map(p=>`<tr>
-      <td><strong style="color:var(--txt2)">${p.n}</strong></td>
-      <td style="color:var(--muted)">${p.c}</td>
-      <td style="font-family:'DM Mono',monospace">${fmt(p.rev)}</td>
-      <td style="font-family:'DM Mono',monospace">${fmt(p.cost)}</td>
-      <td style="font-family:'DM Mono',monospace;font-weight:600;color:${p.mar<15?'var(--r)':p.mar<25?'var(--a)':'var(--g)'}">${pct(p.mar)}</td>
-      <td><div style="display:flex;align-items:center;gap:7px"><div class="prog"><div class="pb ${p.bu>100?'pr2':p.bu>90?'pa2':'py'}" style="width:${Math.min(p.bu,100)}%"></div></div><span style="font-size:12px;font-family:'DM Mono',monospace;color:${p.bu>100?'var(--r)':p.bu>90?'var(--a)':'var(--muted)'}">${p.bu}%</span></div></td>
-      <td><span class="b bg">Activo</span></td>
-    </tr>`).join('');
+    el.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:20px">Nenhum projeto importado. Importe orçamentos da planilha ou sincronize o TocOnline.</td></tr>';
   }
 }
 
@@ -12886,15 +12872,53 @@ function initCharts(){
     datasets:[{data:[2,2,3,2,1],backgroundColor:['rgba(107,107,114,.8)','rgba(77,148,219,.8)',YEL,'rgba(217,130,43,.8)','rgba(63,207,142,.8)'],borderWidth:0,spacing:2}]
   },{plugins:{legend:{display:true,position:'bottom'}}});
 
-  const pnames=finProjs.map(p=>p.n.length>18?p.n.substring(0,18)+'…':p.n);
-  mk('finMarChart','bar',{labels:pnames,datasets:[{data:finProjs.map(p=>p.mar),
-    backgroundColor:finProjs.map(p=>p.mar<15?'rgba(224,85,85,.75)':p.mar<25?'rgba(217,130,43,.75)':YEL),borderRadius:4}]},
-    {indexAxis:'y',plugins:{legend:{display:false}},scales:{x:{grid:{color:GC}}}});
+  // Margem por Projeto: usa apenas orçamentos reais (orcData) com valor > 0.
+  (function(){
+    var orcReal = (typeof orcData!=='undefined'?orcData:[]).filter(function(o){ return o.val>0; });
+    var canvasEl = document.getElementById('finMarChart');
+    var emptyEl = document.getElementById('finMarChart-empty');
+    if(!orcReal.length){
+      var existing = canvasEl && Chart.getChart(canvasEl); if(existing) existing.destroy();
+      if(canvasEl) canvasEl.style.display='none';
+      if(emptyEl) emptyEl.style.display='block';
+      return;
+    }
+    if(canvasEl) canvasEl.style.display='block';
+    if(emptyEl) emptyEl.style.display='none';
+    var pnames=orcReal.map(function(o){ var n=o.cli||o.num||'—'; return n.length>18?n.substring(0,18)+'…':n; });
+    var margens=orcReal.map(function(o){ var cost=(o.custoMateriais||0)+(o.custoMO||0)+(o.custoLog||0); return o.val>0?((o.val-cost)/o.val*100):0; });
+    mk('finMarChart','bar',{labels:pnames,datasets:[{data:margens,
+      backgroundColor:margens.map(function(m){return m<15?'rgba(224,85,85,.75)':m<25?'rgba(217,130,43,.75)':YEL;}),borderRadius:4}]},
+      {indexAxis:'y',plugins:{legend:{display:false}},scales:{x:{grid:{color:GC}}}});
+  })();
 
-  mk('cashChart','line',{labels:['Mai','Jun','Jul','Ago'],datasets:[
-    {label:'Entradas',data:[42800,44200,41600,46800],borderColor:YEL,backgroundColor:'rgba(245,196,0,.06)',tension:.4,fill:true,pointBackgroundColor:YEL},
-    {label:'Saídas',data:[26300,28100,27400,29200],borderColor:'rgba(77,148,219,.8)',backgroundColor:'rgba(77,148,219,.04)',tension:.4,fill:true},
-  ]},{plugins:{legend:{display:true}},scales:{y:{grid:{color:GC}}}});
+  // Fluxo de Caixa — 90 dias: entradas reais (faturas TocOnline) e saídas reais (despesas aprovadas).
+  (function(){
+    var canvasEl = document.getElementById('cashChart');
+    var emptyEl = document.getElementById('cashChart-empty');
+    var docs = (typeof tocoFaturasCache==='function') ? tocoFaturasCache() : [];
+    var despesas = (typeof FIN_DESPESAS!=='undefined') ? FIN_DESPESAS : [];
+    var hoje = new Date();
+    var meses=[], labels=[];
+    for(var i=2;i>=0;i--){ var d=new Date(hoje.getFullYear(),hoje.getMonth()-i,1); meses.push(d.toISOString().slice(0,7)); labels.push(d.toLocaleDateString('pt-PT',{month:'short'})); }
+    var valorDoc = function(d){ return parseFloat(d.TotalAmount||d.Total||d.Amount||0)||0; };
+    var dataDoc = function(d){ return d.Date||d.DocumentDate||d.CreatedAt||''; };
+    var entradas = meses.map(function(m){ return docs.filter(function(d){ return (d._tipo||d.DocumentType)==='FT' && String(dataDoc(d)).slice(0,7)===m; }).reduce(function(s,d){return s+valorDoc(d);},0); });
+    var saidas = meses.map(function(m){ return despesas.filter(function(d){ return d.estado==='Aprovada' && String(d.data||'').slice(0,7)===m; }).reduce(function(s,d){return s+(d.valor||0);},0); });
+    var temDados = entradas.some(function(v){return v>0;}) || saidas.some(function(v){return v>0;});
+    if(!temDados){
+      var existing = canvasEl && Chart.getChart(canvasEl); if(existing) existing.destroy();
+      if(canvasEl) canvasEl.style.display='none';
+      if(emptyEl) emptyEl.style.display='block';
+      return;
+    }
+    if(canvasEl) canvasEl.style.display='block';
+    if(emptyEl) emptyEl.style.display='none';
+    mk('cashChart','line',{labels:labels,datasets:[
+      {label:'Entradas',data:entradas,borderColor:YEL,backgroundColor:'rgba(245,196,0,.06)',tension:.4,fill:true,pointBackgroundColor:YEL},
+      {label:'Saídas',data:saidas,borderColor:'rgba(77,148,219,.8)',backgroundColor:'rgba(77,148,219,.04)',tension:.4,fill:true},
+    ]},{plugins:{legend:{display:true}},scales:{y:{grid:{color:GC}}}});
+  })();
 
   mk('sectorChart','doughnut',{
     labels:['Hotelaria','Retalho','Saúde','Automóvel','Restauração','Outros'],
