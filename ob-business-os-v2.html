@@ -16585,10 +16585,28 @@ async function tocoAbrirImportarClientes() {
   }
 }
 
+// Casa um cliente do TocOnline com um cliente já existente pelo nome (ignorando
+// maiúsculas/espaços) e completa só os campos que estiverem vazios — nunca apaga
+// ou substitui dados já preenchidos. Devolve true se completou um existente,
+// false se não encontrou (caller deve criar um registo novo).
+function tocoCompletarClienteExistente(nome, campos) {
+  if(typeof cliData === 'undefined' || !cliData.length) return false;
+  var norm = function(s){ return (s||'').toString().trim().toLowerCase(); };
+  var alvo = norm(nome);
+  if(!alvo) return false;
+  var existente = cliData.find(function(c){ return norm(c.n) === alvo; });
+  if(!existente) return false;
+  Object.keys(campos).forEach(function(k){
+    if(!existente[k] && campos[k]) existente[k] = campos[k];
+  });
+  if(!existente.origem) existente.origem = 'toconline';
+  return true;
+}
+
 function tocoImportarClientesSelecionados() {
   var lista = window._tocoCliImportList || [];
   if(!lista.length) return;
-  var importados = 0;
+  var importados = 0, completados = 0;
   lista.forEach(function(c, i){
     var cb = document.getElementById('toco-cli-'+i);
     if(!cb || !cb.checked || cb.disabled) return;
@@ -16597,6 +16615,10 @@ function tocoImportarClientesSelecionados() {
     var email = c.Email || c.CustomerEmail || '';
     var tel = c.Phone || c.PhoneNumber || '';
     var morada = c.Address || (c.BillingAddress && c.BillingAddress.AddressDetail) || '';
+    if(tocoCompletarClienteExistente(nome, {nif:nif, email:email, tel:tel, morada:morada, cont:nome})) {
+      completados++;
+      return;
+    }
     var novo = { id: Date.now()+i, n: nome, sec: 'Outro', cont: nome, nif: nif, morada: morada, email: email, tel: tel, origem: 'toconline', st: 'Activo' };
     if(typeof cliData !== 'undefined') cliData.push(novo);
     importados++;
@@ -16604,8 +16626,8 @@ function tocoImportarClientesSelecionados() {
   if(typeof cliSave === 'function') cliSave();
   if(typeof renderClientes === 'function') renderClientes();
   document.getElementById('toco-import-cli-modal').style.display='none';
-  if(importados > 0) {
-    alert('✅ ' + importados + ' clientes importados com sucesso!');
+  if(importados > 0 || completados > 0) {
+    alert('✅ ' + importados + ' clientes novos importados, ' + completados + ' clientes existentes completados com dados do TocOnline!');
   } else {
     alert('Nenhum cliente selecionado.');
   }
@@ -16701,10 +16723,14 @@ async function tocoCarregarClientes() {
       var email = c.Email || '—';
       var tel = c.Phone || c.PhoneNumber || '—';
       var morada = c.Address || (c.BillingAddress && c.BillingAddress.AddressDetail) || '—';
-      var existe = (typeof cliData !== 'undefined' ? cliData : []).some(function(x){ return x.nif && x.nif === nif; });
-      var badge = existe
+      var normN = function(s){ return (s||'').toString().trim().toLowerCase(); };
+      var clienteExistente = (typeof cliData !== 'undefined' ? cliData : []).find(function(x){ return normN(x.n) === normN(nome) || (x.nif && nif!=='—' && x.nif === nif); });
+      var completo = clienteExistente && clienteExistente.nif && clienteExistente.email && clienteExistente.tel;
+      var badge = completo
         ? '<span style="font-size:11px;background:rgba(234,179,8,.15);color:#eab308;border:1px solid rgba(234,179,8,.3);border-radius:10px;padding:1px 7px">Já importado</span>'
-        : '<span style="font-size:11px;background:rgba(63,207,142,.15);color:#3fcf8e;border:1px solid rgba(63,207,142,.3);border-radius:10px;padding:1px 7px">Novo</span>';
+        : (clienteExistente
+          ? '<span style="font-size:11px;background:rgba(96,165,250,.15);color:#60a5fa;border:1px solid rgba(96,165,250,.3);border-radius:10px;padding:1px 7px">Dados incompletos</span>'
+          : '<span style="font-size:11px;background:rgba(63,207,142,.15);color:#3fcf8e;border:1px solid rgba(63,207,142,.3);border-radius:10px;padding:1px 7px">Novo</span>');
       return '<tr>' +
         '<td>' + nome + '</td>' +
         '<td style="font-family:monospace;font-size:12px">' + nif + '</td>' +
@@ -16712,8 +16738,8 @@ async function tocoCarregarClientes() {
         '<td style="font-size:12px">' + tel + '</td>' +
         '<td style="font-size:12px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + morada + '</td>' +
         '<td>' + badge + '</td>' +
-        '<td>' + (existe ? '<span style="color:var(--muted);font-size:11px">—</span>' :
-          '<button class="tbtn" style="font-size:11px;padding:2px 8px" onclick="tocoImportarUmCliente('+i+')">⬇ Importar</button>') + '</td>' +
+        '<td>' + (completo ? '<span style="color:var(--muted);font-size:11px">—</span>' :
+          '<button class="tbtn" style="font-size:11px;padding:2px 8px" onclick="tocoImportarUmCliente('+i+')">⬇ ' + (clienteExistente ? 'Completar' : 'Importar') + '</button>') + '</td>' +
         '</tr>';
     }).join('');
     tocoToast('✅ ' + clientes.length + ' clientes carregados do TocOnline', 'ok');
@@ -16729,13 +16755,17 @@ function tocoImportarUmCliente(i) {
   var c = lista[i]; if(!c) return;
   var nome = c.Name || c.CustomerName || 'Cliente TocOnline';
   var nif = c.TaxNumber || c.Nif || '';
-  if(typeof cliData !== 'undefined') {
+  var email = c.Email || '';
+  var tel = c.Phone || c.PhoneNumber || '';
+  var morada = c.Address || (c.BillingAddress && c.BillingAddress.AddressDetail) || '';
+  var completado = tocoCompletarClienteExistente(nome, {nif:nif, email:email, tel:tel, morada:morada, cont:nome});
+  if(!completado && typeof cliData !== 'undefined') {
     cliData.push({ id: Date.now(), n: nome, sec: 'Outro', cont: nome, nif: nif,
-      morada: c.Address || '', email: c.Email || '', tel: c.Phone || '', origem: 'toconline', st: 'Activo' });
-    if(typeof cliSave === 'function') cliSave();
-    if(typeof renderClientes === 'function') renderClientes();
+      morada: morada, email: email, tel: tel, origem: 'toconline', st: 'Activo' });
   }
-  tocoToast('✅ ' + nome + ' importado!', 'ok');
+  if(typeof cliSave === 'function') cliSave();
+  if(typeof renderClientes === 'function') renderClientes();
+  tocoToast('✅ ' + nome + (completado ? ' completado!' : ' importado!'), 'ok');
   tocoCarregarClientes(); // refresh
 }
 
