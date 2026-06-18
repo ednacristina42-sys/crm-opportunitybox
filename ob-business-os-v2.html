@@ -14950,6 +14950,21 @@ function fmtEurT(v) {
   return 'EUR' + (v||0).toLocaleString('pt-PT', {minimumFractionDigits:2,maximumFractionDigits:2});
 }
 
+// ADD: função que faltava (era chamada mas nunca tinha sido definida) — usada para
+// calcular "vence em 30 dias" tanto em Contas a Pagar (formato pt-PT "DD/MM/AAAA")
+// como nas faturas reais do TocOnline (formato ISO "AAAA-MM-DD"). Sem esta função, o
+// código rebentava (ReferenceError) sempre que havia pelo menos uma linha com data de
+// vencimento — por isso as tabelas de "A Pagar" e "A Receber" ficavam vazias/sem render
+// assim que passaram a ter dados reais.
+function parseVencTes(str) {
+  if (!str) return new Date(NaN);
+  if (str.indexOf('/') > -1) {
+    var p = str.split('/');
+    return new Date(p[2] + '-' + p[1] + '-' + p[0]);
+  }
+  return new Date(str);
+}
+
 function tesRender() {
   // KPIs
   var pendentes = TES_CONTAS.filter(function(c){return c.estado==='Pendente';});
