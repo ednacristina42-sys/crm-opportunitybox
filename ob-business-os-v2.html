@@ -16218,13 +16218,17 @@ var TOCO_WEBHOOK_DEFAULT = 'https://hook.eu2.make.com/d9xfzgzrtlf4w7zqtwy5ip7cbp
 function tocoGetConfig() {
   try {
     var raw = localStorage.getItem(TOCO_CFG_KEY);
-    if (!raw) return null;
+    // ADD: mesmo sem configuração guardada, devolve config por omissão a usar o
+    // proxy Make.com (que já tem as credenciais OAuth do TocOnline do lado do
+    // servidor) — assim a sincronização funciona sem o utilizador ter de abrir
+    // o modal e preencher uma "API Key" que o proxy nem chega a usar.
+    if (!raw) return { key: '', url: 'https://api30.toconline.pt', webhook: TOCO_WEBHOOK_DEFAULT, proxy: true };
     var cfg = JSON.parse(raw);
     cfg.key = cfg.key ? atob(cfg.key) : '';
     if(!cfg.webhook) cfg.webhook = TOCO_WEBHOOK_DEFAULT;
     if(!cfg.proxy) cfg.proxy = true;
     return cfg;
-  } catch(e) { return null; }
+  } catch(e) { return { key: '', url: 'https://api30.toconline.pt', webhook: TOCO_WEBHOOK_DEFAULT, proxy: true }; }
 }
 
 function tocoSaveConfig(cfg) {
@@ -16384,7 +16388,10 @@ async function tocoFetch(baseUrl, apiKey, webhookUrl, endpoint, method, body, pr
 // para não perder histórico de outros anos já sincronizados anteriormente.
 async function tocoSincronizarFaturas(silent, ano) {
   var cfg = tocoGetConfig();
-  if(!cfg || !cfg.key) {
+  // ADD: só bloqueia se não houver NEM API key directa NEM proxy Make configurado.
+  // Com o proxy (caso por omissão), a "API Key" do browser é irrelevante — as
+  // credenciais OAuth reais do TocOnline ficam só no Make, nunca no browser.
+  if(!cfg || (!cfg.key && !(cfg.proxy && cfg.webhook))) {
     if(!silent) tocoAbrirConfig();
     return;
   }
