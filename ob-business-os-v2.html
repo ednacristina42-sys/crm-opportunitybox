@@ -16401,20 +16401,45 @@ async function tocoSincronizarFaturas(silent, ano) {
   if(syncStatus) syncStatus.textContent = '⏳ A sincronizar...';
 
   try {
-    // Buscar faturas FT, RC, NC
-    var tipos = ['FT','RC','NC'];
+    // ADD: a API real do TocOnline é JSON:API (api-docs.toconline.pt). Faturas (FT) e
+    // notas de crédito (NC) vivem no recurso "commercial_sales_documents"; recibos (RC)
+    // vivem em "commercial_sales_receipts". O endpoint antigo "/api/v1.0/Sales/Documents"
+    // não existe na API real — por isso nunca trazia dados (era sempre vazio/404).
+    var recursos = [
+      { tipo: 'FT', path: '/api/v1/commercial_sales_documents', filtro: 'filter[document_type]=FT' },
+      { tipo: 'NC', path: '/api/v1/commercial_sales_documents', filtro: 'filter[document_type]=NC' },
+      { tipo: 'RC', path: '/api/v1/commercial_sales_receipts', filtro: '' }
+    ];
     var todos = [];
-    for(var i=0; i<tipos.length; i++) {
+    // ADD: mapeia o formato JSON:API real (data:[{id,attributes:{...}}]) para os nomes
+    // de campo (Number, CustomerName, Date, DueDate, TotalAmount, Status...) que o
+    // resto do código (tocoRenderFaturas, tocoGetEstado, Tesouraria) já espera.
+    function mapearDoc(item, tipo){
+      var a = item.attributes || item;
+      return Object.assign({}, a, {
+        _tipo: tipo,
+        Id: item.id,
+        Number: a.document_no || a.number || item.id,
+        CustomerName: a.customer_business_name || a.entity_name,
+        CustomerTaxNumber: a.customer_tax_registration_number,
+        Date: a.date,
+        DueDate: a.due_date,
+        TotalAmount: (a.gross_total != null ? a.gross_total : a.net_total) != null ? (a.gross_total != null ? a.gross_total : a.net_total) : a.amount,
+        Status: a.status
+      });
+    }
+    for(var i=0; i<recursos.length; i++) {
       try {
         var pagina = 1;
         var maxPaginas = ano ? 10 : 1; // ADD: se um ano foi pedido, tenta páginas adicionais para encontrar histórico mais antigo
         var encontrouAno = !ano;
         while(pagina <= maxPaginas) {
-          var endpoint = '/api/v1.0/Sales/Documents?DocumentType=' + tipos[i] + '&PageSize=100&Page=' + pagina;
+          var qs = (recursos[i].filtro ? recursos[i].filtro + '&' : '') + 'page[size]=100&page[number]=' + pagina;
+          var endpoint = recursos[i].path + '?' + qs;
           var data = await tocoFetch(cfg.url, cfg.key, cfg.webhook, endpoint, 'GET', null, cfg.proxy);
-          var docs = Array.isArray(data) ? data : (data.Items || data.Documents || data.data || []);
-          if(!docs.length) break;
-          docs.forEach(function(d){ d._tipo = tipos[i]; });
+          var brutos = Array.isArray(data) ? data : (data && Array.isArray(data.data) ? data.data : []);
+          if(!brutos.length) break;
+          var docs = brutos.map(function(item){ return mapearDoc(item, recursos[i].tipo); });
           todos = todos.concat(docs);
           if(ano) {
             var temAno = docs.some(function(d){
