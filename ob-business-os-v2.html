@@ -14221,8 +14221,61 @@ function orcMostrarRelatorioAlocacao(relatorio, orcNum) {
 // ════════════════════════════════════════════════════════════════════════
 var FIN_DESPESAS = JSON.parse(localStorage.getItem('ob-fin-despesas') || '[]');
 var FIN_WEBHOOK_URL = localStorage.getItem('ob-fin-webhook-url') || '';
+var FIN_DESP_TABLE = 'ob_despesas';
+var _finSupaOnline = false;
+var _finRealtimeCh = null;
 
 function finDespSave() { localStorage.setItem('ob-fin-despesas', JSON.stringify(FIN_DESPESAS)); }
+
+// Reaproveita o mesmo cliente Supabase já usado pela Análise de Vendas (avGetSupabase)
+function finGetSupabase() {
+  return (typeof avGetSupabase === 'function') ? avGetSupabase() : null;
+}
+
+function finRowToLocal(r) {
+  return {
+    id: r.id,
+    data: r.data || (r.created_at ? new Date(r.created_at).toLocaleDateString('pt-PT') : '—'),
+    funcionario: r.funcionario || 'Desconhecido',
+    categoria: r.categoria || 'Outro',
+    descricao: r.descricao || '',
+    valor: parseFloat(r.valor) || 0,
+    metodoPagamento: r.metodo_pagamento || '—',
+    estado: r.estado || 'Pendente',
+    sync: 'ok',
+    origem: r.origem || 'Make Webhook'
+  };
+}
+
+// Vai buscar as despesas reais à tabela Supabase "ob_despesas" (gravadas pelo Make ou manualmente)
+async function finFetchDespesasRemoto() {
+  var sb = finGetSupabase();
+  if (!sb) { _finSupaOnline = false; return false; }
+  try {
+    var resp = await sb.from(FIN_DESP_TABLE).select('*').order('created_at', { ascending: false }).limit(200);
+    if (resp.error) throw resp.error;
+    FIN_DESPESAS = (resp.data || []).map(finRowToLocal);
+    finDespSave();
+    _finSupaOnline = true;
+    finRenderDespesas();
+    return true;
+  } catch (e) {
+    console.warn('[Despesas] Supabase indisponível (tabela "ob_despesas" pode não existir ainda), a usar dados locais:', e.message || e);
+    _finSupaOnline = false;
+    return false;
+  }
+}
+
+// Subscreve alterações em tempo real (INSERT/UPDATE) na tabela de despesas
+function finIniciarRealtime() {
+  var sb = finGetSupabase();
+  if (!sb || _finRealtimeCh) return;
+  try {
+    _finRealtimeCh = sb.channel('ob_despesas_rt')
+      .on('postgres_changes', { event: '*', schema: 'public', table: FIN_DESP_TABLE }, function () { finFetchDespesasRemoto(); })
+      .subscribe();
+  } catch (e) { console.warn('[Despesas] Realtime indisponível:', e.message || e); }
+}
 
 function finRenderDespesas() {
   var tbody = document.getElementById('fin-desp-tbody');
@@ -14261,22 +14314,23 @@ function finRenderDespesas() {
   }).join('');
   tbody.innerHTML = rows || '<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:20px">Sem despesas registadas.</td></tr>';
 
-  // Webhook status
+  // Estado da ligação em tempo real (Supabase)
   var dot = document.getElementById('fin-ws-dot');
   var txt = document.getElementById('fin-ws-txt');
   var urlDisp = document.getElementById('fin-webhook-url-display');
-  if (FIN_WEBHOOK_URL) {
+  var sb = finGetSupabase();
+  if (_finSupaOnline && sb) {
     if (dot) dot.style.background = 'var(--g)';
-    if (txt) txt.textContent = 'Webhook Make — activo';
-    if (urlDisp) urlDisp.textContent = FIN_WEBHOOK_URL.substring(0,50) + (FIN_WEBHOOK_URL.length>50?'...':'');
+    if (txt) txt.textContent = 'Supabase — ligado (tempo real)';
+    if (urlDisp) urlDisp.textContent = (sb.supabaseUrl || '') + '/rest/v1/' + FIN_DESP_TABLE;
   } else {
     if (dot) dot.style.background = 'var(--muted)';
-    if (txt) txt.textContent = 'Webhook Make — não configurado';
-    if (urlDisp) urlDisp.textContent = 'URL não configurada';
+    if (txt) txt.textContent = 'Supabase — desligado (dados locais)';
+    if (urlDisp) urlDisp.textContent = 'Clica em "⚙ Configurar Webhook" para ver os dados de ligação';
   }
 }
 
-function finNovaDespesa() {
+async function finNovaDespesa() {
   var func = prompt('Funcionário:');
   if (!func) return;
   var val = parseFloat(prompt('Valor (€):') || '0');
@@ -14284,39 +14338,74 @@ function finNovaDespesa() {
   var desc = prompt('Descrição:') || '';
   // ADD: método de pagamento, campo que faltava no registo de despesas
   var metodo = prompt('Método de Pagamento (Dinheiro / Cartão Pessoal / Cartão Montepio Pré-Pago / Transferência):') || 'Outro';
-  FIN_DESPESAS.unshift({
-    id: 'desp-' + Date.now(),
+  var registo = {
     data: new Date().toLocaleDateString('pt-PT'),
     funcionario: func,
     categoria: cat,
     descricao: desc,
     valor: val,
-    metodoPagamento: metodo,
+    metodo_pagamento: metodo,
     estado: 'Pendente',
-    sync: 'pendente',
     origem: 'Manual'
-  });
+  };
+  var sb = finGetSupabase();
+  if (sb) {
+    try {
+      var resp = await sb.from(FIN_DESP_TABLE).insert(registo);
+      if (resp.error) throw resp.error;
+      await finFetchDespesasRemoto();
+      return;
+    } catch (e) {
+      console.warn('[Despesas] Falha ao gravar no Supabase, a gravar só localmente:', e.message || e);
+    }
+  }
+  // Sem Supabase disponível: guarda só localmente (não sincroniza em tempo real)
+  FIN_DESPESAS.unshift(Object.assign({ id: 'desp-' + Date.now(), metodoPagamento: metodo, sync: 'pendente' }, registo));
   finDespSave();
   finRenderDespesas();
 }
 
-function finAprovarDespesa(id) {
+async function finAprovarDespesa(id) {
   var d = FIN_DESPESAS.find(function(x){return x.id===id;});
   if (d) { d.estado='Aprovada'; finDespSave(); finRenderDespesas(); }
+  var sb = finGetSupabase();
+  if (sb) { try { await sb.from(FIN_DESP_TABLE).update({estado:'Aprovada'}).eq('id', id); } catch(e){ console.warn('[Despesas] Falha ao actualizar no Supabase:', e.message||e); } }
 }
 
-function finRejeitarDespesa(id) {
+async function finRejeitarDespesa(id) {
   var d = FIN_DESPESAS.find(function(x){return x.id===id;});
   if (d) { d.estado='Rejeitada'; finDespSave(); finRenderDespesas(); }
+  var sb = finGetSupabase();
+  if (sb) { try { await sb.from(FIN_DESP_TABLE).update({estado:'Rejeitada'}).eq('id', id); } catch(e){ console.warn('[Despesas] Falha ao actualizar no Supabase:', e.message||e); } }
 }
 
 function finConfigurarWebhook() {
-  var url = prompt('URL do Webhook Make (POST):\n\nCria um webhook no Make → Copy URL e cola aqui:', FIN_WEBHOOK_URL || '');
-  if (url === null) return;
-  FIN_WEBHOOK_URL = url.trim();
-  localStorage.setItem('ob-fin-webhook-url', FIN_WEBHOOK_URL);
-  finRenderDespesas();
-  if (FIN_WEBHOOK_URL) alert('✓ Webhook configurado.\n\nNo Make, configura o módulo HTTP para enviar um JSON com:\n{\n  "funcionario": "...",\n  "valor": 0,\n  "categoria": "...",\n  "descricao": "...",\n  "data": "DD/MM/AAAA"\n}\npara este URL.');
+  var sb = finGetSupabase();
+  var url = (sb && sb.supabaseUrl) ? sb.supabaseUrl : 'https://xtiguuyvotnpwqzmggnc.supabase.co';
+  alert(
+    '🔗 Ligação Make → Supabase (tempo real)\n\n' +
+    'No Make, usa um módulo HTTP "Make a request" com:\n\n' +
+    'Método: POST\n' +
+    'URL: ' + url + '/rest/v1/' + FIN_DESP_TABLE + '\n\n' +
+    'Headers:\n' +
+    '  apikey: <a anon key da app — pede à equipa técnica>\n' +
+    '  Authorization: Bearer <a mesma anon key>\n' +
+    '  Content-Type: application/json\n' +
+    '  Prefer: return=representation\n\n' +
+    'Body (JSON):\n' +
+    '{\n' +
+    '  "funcionario": "{{nome}}",\n' +
+    '  "valor": {{valor}},\n' +
+    '  "categoria": "{{categoria}}",\n' +
+    '  "descricao": "{{descricao}}",\n' +
+    '  "metodo_pagamento": "{{metodo}}",\n' +
+    '  "data": "{{data}}",\n' +
+    '  "estado": "Pendente",\n' +
+    '  "origem": "Make Webhook"\n' +
+    '}\n\n' +
+    'Depois de configurado no Make, clica em "🧪 Testar Webhook" aqui para confirmar que a ligação está a funcionar.\n\n' +
+    '⚠️ É necessário que a tabela "' + FIN_DESP_TABLE + '" exista no Supabase com RLS a permitir insert/select/update anónimos — ver instruções entregues.'
+  );
 }
 
 // Endpoint simulado para receber dados do Make via Webhook
@@ -14349,12 +14438,31 @@ function finReceberWebhookMake(payload) {
 }
 window.finReceberWebhookMake = finReceberWebhookMake;
 
-// Fetch POST simulado (pronto para Netlify Functions ou Make Webhook)
-function finTestWebhook() {
-  var demo = {funcionario:'Paulo Faria',valor:45.00,categoria:'Combustível',descricao:'Gasolina viagem cliente Sintra',data:new Date().toLocaleDateString('pt-PT')};
-  var result = finReceberWebhookMake(demo);
-  alert('🧪 Simulação de Webhook Make\n\nPayload enviado:\n' + JSON.stringify(demo, null, 2) + '\n\nResultado: ' + result.message);
-  finRenderDespesas();
+// Testa a ligação real Make → Supabase: grava uma despesa de teste na tabela "ob_despesas"
+async function finTestWebhook() {
+  var demo = {
+    data: new Date().toLocaleDateString('pt-PT'),
+    funcionario: 'Paulo Faria',
+    categoria: 'Combustível',
+    descricao: 'Gasolina viagem cliente Sintra (teste)',
+    valor: 45.00,
+    metodo_pagamento: 'Cartão Pessoal',
+    estado: 'Pendente',
+    origem: 'Make Webhook (teste)'
+  };
+  var sb = finGetSupabase();
+  if (!sb) {
+    alert('⚠️ Supabase não está disponível neste momento (sem ligação). Não é possível testar a integração em tempo real.');
+    return;
+  }
+  try {
+    var resp = await sb.from(FIN_DESP_TABLE).insert(demo);
+    if (resp.error) throw resp.error;
+    await finFetchDespesasRemoto();
+    alert('✓ Teste gravado com sucesso na tabela "' + FIN_DESP_TABLE + '" do Supabase.\n\nSe a despesa apareceu na tabela abaixo, a ligação Make → Supabase → CRM está pronta para uso real.');
+  } catch (e) {
+    alert('✗ Falha ao gravar o teste no Supabase: ' + (e.message || e) + '\n\nVerifica se a tabela "' + FIN_DESP_TABLE + '" existe e se a RLS permite insert anónimo (ver instruções entregues).');
+  }
 }
 
 function finExportDespesas() {
@@ -16221,6 +16329,9 @@ window.orcChangeStatus = function(orcNum, novoEstado) {
 function initNovosModulos() {
   stockRender();
   finRenderDespesas();
+  if (typeof finFetchDespesasRemoto === 'function') finFetchDespesasRemoto().then(function(){
+    if (typeof finIniciarRealtime === 'function') finIniciarRealtime();
+  });
   tesRender();
 }
 
