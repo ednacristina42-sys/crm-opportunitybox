@@ -6046,6 +6046,10 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
       <div class="pg-space-icon" style="background:var(--y)">★</div>
       <div class="pg-title">Painel Financeiro</div>
     </div>
+    <div class="pg-actions">
+      <button class="tbtn" style="font-size:13px" onclick="tocoSincronizarFaturas(false).then(function(){ renderFinanceiro(); initCharts(); })" title="Vai buscar as faturas mais recentes ao TocOnline">🔄 Sincronizar Faturas TocOnline</button>
+      <button class="tbtn" style="font-size:13px" onclick="if(confirm('Importar orçamentos da planilha (aba Orçamentos 2026)? Isto não substitui dados existentes.')) importarOrcamentos2026()" title="Importar orçamentos da planilha Google Sheets">📥 Importar Orçamentos (Sheets)</button>
+    </div>
   </div>
   <div class="admin-page">
     <div class="g2">
