@@ -17294,8 +17294,6 @@ window.tocoFiltrarPorAno = tocoFiltrarPorAno;
 var _tocoSincOrig = tocoSincronizarFaturas;
 tocoSincronizarFaturas = async function(silent, ano) {
   await _tocoSincOrig(silent, ano);
-  var vencidas = (_tocoFatCache||[]).filter(function(d){ return tocoGetEstado(d)==='Vencido'; }).length;
-  if(vencidas > 0) tocoToast('⚠️ ' + vencidas + ' faturas vencidas no TocOnline', 'warn', 5000);
   if(typeof avTocoIntegrar==='function') avTocoIntegrar();
 };
 window.tocoSincronizarFaturas = tocoSincronizarFaturas;
