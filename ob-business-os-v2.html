@@ -5871,6 +5871,7 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
       <div class="pg-space-icon" style="background:var(--y)">🏦</div>
       <div class="pg-title">Tesouraria</div>
       <div class="pg-actions">
+        <button class="tbtn" style="font-size:13px" onclick="tocoSincronizarFaturas(false).then(function(){ tocoAtualizarTesourariaComFaturas(); })" title="Vai buscar as faturas mais recentes ao TocOnline e atualiza A Receber/Recebidos">🔄 Sincronizar TocOnline</button>
         <button class="tbtn y" onclick="tesNovaContaPagar()">+ Conta a Pagar</button>
         <button class="tbtn" onclick="tesExportar()">⬇ Exportar</button>
       </div>
@@ -6047,7 +6048,7 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
       <div class="pg-title">Painel Financeiro</div>
     </div>
     <div class="pg-actions">
-      <button class="tbtn" style="font-size:13px" onclick="tocoSincronizarFaturas(false).then(function(){ renderFinanceiro(); initCharts(); })" title="Vai buscar as faturas mais recentes ao TocOnline">🔄 Sincronizar Faturas TocOnline</button>
+      <button class="tbtn" style="font-size:13px" onclick="tocoSincronizarFaturas(false).then(function(){ tocoAtualizarTesourariaComFaturas(); renderFinanceiro(); if(typeof renderRelatorios==='function')renderRelatorios(); initCharts(); })" title="Vai buscar as faturas mais recentes ao TocOnline e atualiza Tesouraria/Financeiro/Relatórios">🔄 Sincronizar Faturas TocOnline</button>
       <button class="tbtn" style="font-size:13px" onclick="if(confirm('Importar orçamentos da planilha (aba Orçamentos 2026)? Isto não substitui dados existentes.')) importarOrcamentos2026()" title="Importar orçamentos da planilha Google Sheets">📥 Importar Orçamentos (Sheets)</button>
     </div>
   </div>
@@ -12948,10 +12949,31 @@ function initCharts(){
     ]},{plugins:{legend:{display:true}},scales:{y:{grid:{color:GC}}}});
   })();
 
-  mk('sectorChart','doughnut',{
-    labels:['Hotelaria','Retalho','Saúde','Automóvel','Restauração','Outros'],
-    datasets:[{data:[45200,67300,26300,40800,17600,31000],backgroundColor:[YEL,'rgba(77,148,219,.8)','rgba(63,207,142,.8)','rgba(217,130,43,.8)','rgba(224,85,85,.8)','rgba(107,107,114,.8)'],borderWidth:0,spacing:2}]
-  },{plugins:{legend:{display:true,position:'bottom'}}});
+  // Receita por Sector: usa orçamentos reais (orcData) cruzados com o sector real do cliente (cliData.sec).
+  (function(){
+    var canvasEl = document.getElementById('sectorChart');
+    if(!canvasEl) return;
+    var orcReal = (typeof orcData!=='undefined'?orcData:[]).filter(function(o){ return o.val>0; });
+    var clis = (typeof cliData!=='undefined'?cliData:[]);
+    var porSetor = {};
+    orcReal.forEach(function(o){
+      var cli = clis.find(function(c){ return c.n===o.cli; });
+      var sec = (cli && cli.sec) || 'Outro';
+      porSetor[sec] = (porSetor[sec]||0) + (o.val||0);
+    });
+    var setores = Object.keys(porSetor);
+    if(!setores.length){
+      var existing = Chart.getChart(canvasEl); if(existing) existing.destroy();
+      canvasEl.style.display='none';
+      return;
+    }
+    canvasEl.style.display='block';
+    var cores=[YEL,'rgba(77,148,219,.8)','rgba(63,207,142,.8)','rgba(217,130,43,.8)','rgba(224,85,85,.8)','rgba(107,107,114,.8)','rgba(155,109,214,.8)'];
+    mk('sectorChart','doughnut',{
+      labels:setores,
+      datasets:[{data:setores.map(function(s){return porSetor[s];}),backgroundColor:setores.map(function(s,i){return cores[i%cores.length];}),borderWidth:0,spacing:2}]
+    },{plugins:{legend:{display:true,position:'bottom'}}});
+  })();
 
   mk('prodChart','doughnut',{
     labels:['Aguarda Arte','Em Produção','Pronto','Instalação','Concluído'],
@@ -15127,6 +15149,44 @@ var TES_RECEBER; try{TES_RECEBER=JSON.parse(localStorage.getItem('ob-tes-receber
 function tesSaveReceber(){ localStorage.setItem('ob-tes-receber',JSON.stringify(TES_RECEBER)); }
 function tesGetReceber(){ return TES_RECEBER; }
 function tesGetRecebidos(){ return TES_RECEBER.filter(r=>r.estado==='Recebido'); }
+
+// Liga as faturas reais do TocOnline (tocoFaturasCache) à Tesouraria.
+// Cria/atualiza entradas em TES_RECEBER a partir das faturas (FT) reais — nunca apaga lançamentos manuais.
+function tocoAtualizarTesourariaComFaturas(){
+  var docs = (typeof tocoFaturasCache==='function') ? tocoFaturasCache() : [];
+  var faturas = docs.filter(function(d){ return (d._tipo||d.DocumentType)==='FT'; });
+  var porId = {}; TES_RECEBER.forEach(function(r){ if(r._tocoId) porId[r._tocoId]=r; });
+  faturas.forEach(function(d){
+    var id = d.Id || d.Number || d.DocumentNumber;
+    if(!id) return;
+    var total = parseFloat(d.TotalAmount||d.Total||d.Amount||0)||0;
+    var liq = parseFloat(d.NetAmount||d.Net||0) || (total/1.23);
+    var estado = (typeof tocoGetEstado==='function') ? tocoGetEstado(d) : 'Em Aberto';
+    var pago = estado==='Pago';
+    var existente = porId[id];
+    if(existente){
+      existente.total = total; existente.valorLiq = liq;
+      if(pago && existente.estado!=='Recebido'){ existente.estado='Recebido'; existente.dataRec=new Date().toLocaleDateString('pt-PT'); }
+    } else {
+      TES_RECEBER.unshift({
+        id:'TOCO-'+id, _tocoId:id,
+        data:new Date().toLocaleDateString('pt-PT'),
+        descricao:'Fatura '+(d.Number||d.DocumentNumber||id),
+        cliente: d.CustomerName || (d.Customer && d.Customer.Name) || '—',
+        projeto:'',
+        valorLiq: liq, ivaPct: 23, total: total,
+        vencimento: d.DueDate || d.Date || '',
+        dataEmissao: d.Date || d.DocumentDate || '',
+        estado: pago ? 'Recebido' : 'Pendente',
+        dataRec: pago ? new Date().toLocaleDateString('pt-PT') : undefined
+      });
+    }
+  });
+  tesSaveReceber();
+  if(typeof tesRenderReceber==='function') tesRenderReceber();
+  if(typeof tesRenderRecebidos==='function') tesRenderRecebidos();
+  if(typeof tesRender==='function') tesRender();
+}
 
 function tesNovaReceber(){
   var desc=prompt('Descrição / N.º Fatura:','');
