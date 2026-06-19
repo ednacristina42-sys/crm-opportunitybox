@@ -9447,14 +9447,14 @@ function crmInitials(n){ return n.split(' ').map(w=>w[0]).join('').substring(0,2
 
 // ── LEADS ────────────────────────────────────────────────
 var crmLeads; try{crmLeads=JSON.parse(localStorage.getItem('ob-leads')||'null');}catch(e){crmLeads=null;} crmLeads = crmLeads || [
-  {id:1, n:'Letras 3D Fachada', emp:'Restaurante O Farol', prod:'Letras Monobloco 3D', val:2800, st:'Proposta enviada', ass:'Rui Mota', email:'geral@ofarol.pt', tel:'+351 919 000 001', nota:'', dt:'15/05/2026'},
-  {id:2, n:'Reclamo LED Ginásio', emp:'Fit Studio Lisboa', prod:'Reclamo LED', val:3600, st:'Em negociação', ass:'Humberto Estrelinha', email:'info@fitstudio.pt', tel:'+351 919 000 002', nota:'', dt:'14/05/2026'},
-  {id:3, n:'Totem Entrada Hotel', emp:'Hotel Serra da Lua', prod:'Totem', val:7200, st:'Em negociação', ass:'Rui Mota', email:'reservas@hotelserra.pt', tel:'+351 219 000 003', nota:'', dt:'12/05/2026'},
-  {id:4, n:'Sinalética Clínica', emp:'Clínica D&S', prod:'Sinalética', val:2900, st:'Qualificado', ass:'Humberto Estrelinha', email:'geral@clinicads.pt', tel:'+351 219 000 004', nota:'', dt:'10/05/2026'},
-  {id:5, n:'Painel LED CC Mira', emp:'CC Mira Sintra', prod:'Painel LED', val:12400, st:'Fecho', ass:'Humberto Estrelinha', email:'dir@ccmira.pt', tel:'+351 219 000 005', nota:'', dt:'09/05/2026'},
-  {id:6, n:'Neon Lounge', emp:'Bar Nox Cascais', prod:'Neon Flex', val:1800, st:'Proposta enviada', ass:'Paulo Faria', email:'nox@barnox.pt', tel:'+351 919 000 006', nota:'', dt:'08/05/2026'},
-  {id:7, n:'Caixa Luz Farmácia', emp:'Farmácia Terrugem', prod:'Caixa de Luz', val:1400, st:'Novo Lead', ass:'Rui Mota', email:'farmacia@terrugem.pt', tel:'+351 219 000 007', nota:'', dt:'07/05/2026'},
-  {id:8, n:'Letras Hotel Boa Vista', emp:'Hotel Boa Vista', prod:'Letras Monobloco 3D', val:5400, st:'Proposta enviada', ass:'Paulo Faria', email:'geral@hotelboavista.pt', tel:'+351 219 000 008', nota:'', dt:'06/05/2026'},
+  {id:1, n:'Letras 3D Fachada', emp:'Restaurante O Farol', prod:'Letras Monobloco 3D', val:2800, st:'Proposta enviada', ass:'Rui Mota', email:'geral@ofarol.pt', tel:'+351 919 000 001', nota:'', dt:'15/05/2026', origem:'Instagram'},
+  {id:2, n:'Reclamo LED Ginásio', emp:'Fit Studio Lisboa', prod:'Reclamo LED', val:3600, st:'Em negociação', ass:'Humberto Estrelinha', email:'info@fitstudio.pt', tel:'+351 919 000 002', nota:'', dt:'14/05/2026', origem:'Google Ads'},
+  {id:3, n:'Totem Entrada Hotel', emp:'Hotel Serra da Lua', prod:'Totem', val:7200, st:'Em negociação', ass:'Rui Mota', email:'reservas@hotelserra.pt', tel:'+351 219 000 003', nota:'', dt:'12/05/2026', origem:'Referência / Boca a boca'},
+  {id:4, n:'Sinalética Clínica', emp:'Clínica D&S', prod:'Sinalética', val:2900, st:'Qualificado', ass:'Humberto Estrelinha', email:'geral@clinicads.pt', tel:'+351 219 000 004', nota:'', dt:'10/05/2026', origem:'Site web'},
+  {id:5, n:'Painel LED CC Mira', emp:'CC Mira Sintra', prod:'Painel LED', val:12400, st:'Fecho', ass:'Humberto Estrelinha', email:'dir@ccmira.pt', tel:'+351 219 000 005', nota:'', dt:'09/05/2026', origem:'Feira / Evento'},
+  {id:6, n:'Neon Lounge', emp:'Bar Nox Cascais', prod:'Neon Flex', val:1800, st:'Proposta enviada', ass:'Paulo Faria', email:'nox@barnox.pt', tel:'+351 919 000 006', nota:'', dt:'08/05/2026', origem:'Facebook'},
+  {id:7, n:'Caixa Luz Farmácia', emp:'Farmácia Terrugem', prod:'Caixa de Luz', val:1400, st:'Novo Lead', ass:'Rui Mota', email:'farmacia@terrugem.pt', tel:'+351 219 000 007', nota:'', dt:'07/05/2026', origem:'WhatsApp directo'},
+  {id:8, n:'Letras Hotel Boa Vista', emp:'Hotel Boa Vista', prod:'Letras Monobloco 3D', val:5400, st:'Proposta enviada', ass:'Paulo Faria', email:'geral@hotelboavista.pt', tel:'+351 219 000 008', nota:'', dt:'06/05/2026', origem:'Google Orgânico'},
 ];
 leads = crmLeads; // alias para Dashboard
 var crmLeadIdCounter = Math.max(...crmLeads.map(l=>l.id), 0) + 1;
