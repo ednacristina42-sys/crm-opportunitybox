@@ -5500,17 +5500,16 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
             <div class="copiloto-header">
               <span style="font-size:17px">🤖</span>
               <span>Copiloto IA — Orçamentar por Imagem</span>
-              <span style="margin-left:auto;font-size:12px;font-weight:400;color:var(--muted)">Claude Vision · GPT-4o</span>
+              <span style="margin-left:auto;font-size:12px;font-weight:400;color:var(--muted)">GPT-4o</span>
               <button class="tbtn" style="font-size:12px;padding:2px 7px;margin-left:4px" onclick="copilotoToggle()">▲ Recolher</button>
             </div>
 
             <!-- Config API Key -->
             <div class="cop-api-key-row" title="Introduz a tua API key para activar a análise por IA. Fica guardada localmente.">
               <span style="font-size:12px;color:var(--muted);white-space:nowrap">🔑 API Key:</span>
-              <input type="password" id="cop-api-key" placeholder="sk-ant-... ou sk-...  (Claude / OpenAI)" oninput="copilotoSaveKey()"/>
+              <input type="password" id="cop-api-key" placeholder="sk-... (OpenAI)" oninput="copilotoSaveKey()"/>
               <span id="cop-api-key-indicator" title="Estado da chave" style="font-size:11px;white-space:nowrap">🔴</span>
               <select id="cop-api-provider" onchange="copilotoSaveKey()" style="background:var(--bg2);border:1px solid var(--border);border-radius:4px;color:var(--muted);font-size:12px;padding:2px 5px;font-family:Inter,sans-serif">
-                <option value="claude">Claude (Anthropic)</option>
                 <option value="openai">GPT-4o (OpenAI)</option>
                 <option value="demo">Demo (sem API)</option>
               </select>
@@ -6725,16 +6724,14 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
           <div class="cico" id="apik-ico" style="background:rgba(139,92,246,.1)">🔑</div>
           <div style="flex:1">
             <div class="cname">Chaves de API — Copiloto IA</div>
-            <div class="cst" id="apik-status" style="color:var(--muted)">Configura as chaves para usar Claude ou OpenAI no Copiloto</div>
+            <div class="cst" id="apik-status" style="color:var(--muted)">Configura a chave para usar OpenAI no Copiloto</div>
           </div>
         </div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-          <input type="password" class="form-input" id="apik-claude-key" placeholder="Claude API Key (sk-ant-...)" style="font-size:13px;flex:1;min-width:200px"/>
           <input type="password" class="form-input" id="apik-openai-key" placeholder="OpenAI API Key (sk-...)" style="font-size:13px;flex:1;min-width:200px"/>
         </div>
         <div style="display:flex;gap:8px;align-items:center">
           <select id="apik-provider" class="form-input" style="font-size:13px;max-width:220px">
-            <option value="claude">Claude (Anthropic)</option>
             <option value="openai">GPT-4o (OpenAI)</option>
             <option value="demo">Demo (sem API)</option>
           </select>
@@ -16565,7 +16562,7 @@ function tesInjectarLogisticaOrçamento(orc) {
 // COPILOTO IA — Motor de Análise Visual
 // ════════════════════════════════════════════════════════════════
 // ════════════════════════════════════════════════════════════════════
-// COPILOTO IA — Orçamentação por Visão (Claude Vision / GPT-4o)
+// COPILOTO IA — Orçamentação por Visão (GPT-4o)
 // OpportunityBox Business OS — Módulo não-invasivo
 // ════════════════════════════════════════════════════════════════════
 
@@ -16580,12 +16577,11 @@ var _cop = {
 
 // ── Chaves de API — leitura unificada (localStorage por provedor) ──
 function copilotoGetProvider() {
-  return localStorage.getItem('ob-llm-provider') || localStorage.getItem('ob-cop-provider') || 'claude';
+  return localStorage.getItem('ob-llm-provider') || localStorage.getItem('ob-cop-provider') || 'openai';
 }
 function copilotoGetKeyForProvider(provider) {
-  if (provider === 'claude') return localStorage.getItem('ob-claude-key') || localStorage.getItem('ob-cop-key') || '';
   if (provider === 'openai') return localStorage.getItem('ob-openai-key') || localStorage.getItem('ob-cop-key') || '';
-  return '';
+  return null;
 }
 function copilotoUpdateIndicator() {
   var ind = document.getElementById('cop-api-key-indicator');
@@ -16610,10 +16606,9 @@ function copilotoUpdateIndicator() {
 
 function copilotoSaveKey() {
   var key = (document.getElementById('cop-api-key') || {}).value || '';
-  var prov = (document.getElementById('cop-api-provider') || {}).value || 'claude';
+  var prov = (document.getElementById('cop-api-provider') || {}).value || 'openai';
   if (key) localStorage.setItem('ob-cop-key', key);
   localStorage.setItem('ob-cop-provider', prov);
-  if (key && prov === 'claude') localStorage.setItem('ob-claude-key', key);
   if (key && prov === 'openai') localStorage.setItem('ob-openai-key', key);
   localStorage.setItem('ob-llm-provider', prov);
   copilotoUpdateIndicator();
@@ -16621,32 +16616,26 @@ function copilotoSaveKey() {
 
 // ── Painel Integrações — Guardar Chaves de API ──────────────────
 function apiKeysInit() {
-  var claudeEl = document.getElementById('apik-claude-key');
   var openaiEl = document.getElementById('apik-openai-key');
   var provEl = document.getElementById('apik-provider');
   var statusEl = document.getElementById('apik-status');
-  var claudeKey = localStorage.getItem('ob-claude-key') || localStorage.getItem('ob-cop-key') || '';
   var openaiKey = localStorage.getItem('ob-openai-key') || '';
-  if (claudeEl) claudeEl.value = claudeKey;
   if (openaiEl) openaiEl.value = openaiKey;
   if (provEl) provEl.value = copilotoGetProvider();
   if (statusEl) {
-    var n = (claudeKey?1:0) + (openaiKey?1:0);
-    statusEl.textContent = n ? n + ' chave(s) configurada(s)' : 'Configura as chaves para usar Claude ou OpenAI no Copiloto';
+    statusEl.textContent = openaiKey ? 'Chave configurada' : 'Configura a chave para usar OpenAI no Copiloto';
   }
 }
 function apiKeysGuardar() {
-  var claudeKey = (document.getElementById('apik-claude-key') || {}).value || '';
   var openaiKey = (document.getElementById('apik-openai-key') || {}).value || '';
-  var prov = (document.getElementById('apik-provider') || {}).value || 'claude';
-  if (claudeKey) localStorage.setItem('ob-claude-key', claudeKey);
+  var prov = (document.getElementById('apik-provider') || {}).value || 'openai';
   if (openaiKey) localStorage.setItem('ob-openai-key', openaiKey);
   localStorage.setItem('ob-llm-provider', prov);
   // Sincronizar com o Copiloto (se visível)
   var copKeyEl = document.getElementById('cop-api-key');
   var copProvEl = document.getElementById('cop-api-provider');
   if (copProvEl) copProvEl.value = prov;
-  if (copKeyEl) copKeyEl.value = copilotoGetKeyForProvider(prov);
+  if (copKeyEl) copKeyEl.value = copilotoGetKeyForProvider(prov) || '';
   copilotoUpdateIndicator();
   apiKeysInit();
   if (typeof showToast === 'function') showToast('✓ Chaves de API guardadas');
@@ -16742,36 +16731,7 @@ async function analisarDesignComIA(file) {
   if (!key) throw new Error('API Key não configurada. Introduz a chave ou escolhe "Demo".');
   if (!_cop.b64) throw new Error('Nenhuma imagem carregada.');
 
-  if (provider === 'claude') {
-    var resp = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': key,
-        'anthropic-version': '2023-06-01'
-      },
-      body: JSON.stringify({
-        model: 'claude-opus-4-20250514',
-        max_tokens: 2048,
-        system: _copSystemPrompt(),
-        messages: [{
-          role: 'user',
-          content: [
-            { type: 'image', source: { type: 'base64', media_type: _cop.mimeType, data: _cop.b64 } },
-            { type: 'text', text: 'Analisa esta maquete/imagem de sinalética e devolve o JSON de orçamento.' }
-          ]
-        }]
-      })
-    });
-    if (!resp.ok) {
-      var errTxt = await resp.text();
-      throw new Error('Claude API ' + resp.status + ': ' + errTxt.slice(0, 200));
-    }
-    var data = await resp.json();
-    var raw = (data.content || []).filter(function(c){return c.type==='text';}).map(function(c){return c.text;}).join('');
-    return JSON.parse(raw.trim().replace(/^```json\s*/,'').replace(/```$/,''));
-
-  } else if (provider === 'openai') {
+  if (provider === 'openai') {
     var resp = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
@@ -17039,20 +16999,6 @@ async function copilotoEnviarChat() {
       var demo = JSON.parse(JSON.stringify(_cop.lastAnalysis));
       demo.observacoes = 'Refinamento aplicado (DEMO): "' + msg + '". Activa a API key para refinamento real com IA.';
       resposta = demo;
-    } else if (provider === 'claude') {
-      var r = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
-        body: JSON.stringify({
-          model: 'claude-opus-4-20250514',
-          max_tokens: 2048,
-          system: _copSystemPrompt(),
-          messages: _cop.chatHistory.concat([{ role: 'user', content: contexto }])
-        })
-      });
-      var d = await r.json();
-      var raw = (d.content||[]).filter(function(c){return c.type==='text';}).map(function(c){return c.text;}).join('');
-      resposta = JSON.parse(raw.trim().replace(/^```json\s*/,'').replace(/```$/,''));
     } else {
       var r = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
@@ -17585,6 +17531,7 @@ async function tocoSincronizarFaturasUI() {
 // MESCLADOS com a cache existente (por Id/Number), nunca substituídos por completo,
 // para não perder histórico de outros anos já sincronizados anteriormente.
 async function tocoSincronizarFaturas(silent, ano) {
+  console.log('TocOnline: a sincronizar faturas...');
   var cfg = tocoGetConfig();
   // ADD: só bloqueia se não houver NEM API key directa NEM proxy Make configurado.
   // Com o proxy (caso por omissão), a "API Key" do browser é irrelevante — as
@@ -17667,7 +17614,12 @@ async function tocoSincronizarFaturas(silent, ano) {
     localStorage.setItem(TOCO_FAT_KEY, JSON.stringify({ ts: Date.now(), data: todos }));
     tocoRenderFaturas(todos);
     var agora = new Date().toLocaleTimeString('pt-PT', {hour:'2-digit',minute:'2-digit'});
-    if(syncStatus) syncStatus.textContent = '✅ Sincronizado às ' + agora + ' — ' + todos.length + ' documentos';
+    if(!todos.length){
+      console.log('TocOnline: sincronização concluída sem documentos.');
+      if(syncStatus) syncStatus.textContent = 'ℹ️ Sem documentos — última verificação às ' + agora;
+    } else {
+      if(syncStatus) syncStatus.textContent = '✅ Sincronizado às ' + agora + ' — ' + todos.length + ' documentos';
+    }
     if(syncDot) syncDot.classList.remove('active');
     tocoUpdateVencidasBadge(todos);
     localStorage.setItem('ob-toco-last-sync', JSON.stringify({ ts: Date.now(), ok: true, total: todos.length }));
@@ -18015,6 +17967,7 @@ window.fatSwitchTab = fatSwitchTab;
 
 // ── Carregar clientes TocOnline na tab ───────────────────────────
 async function tocoCarregarClientes() {
+  console.log('TocOnline: a carregar clientes...');
   var cfg = tocoGetConfig();
   if(!cfg || !cfg.key) { tocoAbrirConfig(); return; }
   var statusEl = document.getElementById('toco-cli-status');
