@@ -5488,8 +5488,9 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
           <!-- ADD: Imagem associada ao orçamento (vinda do Copiloto IA, apenas visualização) -->
           <div class="form-row" style="margin-bottom:10px">
             <div class="form-group">
-              <label class="form-label">Imagem do Orçamento</label>
-              <div id="orc-imagem-preview" style="font-size:12px;color:var(--muted)">Nenhuma imagem associada a este orçamento.</div>
+              <label class="form-label">Imagem da Obra</label>
+              <input type="file" accept="image/*" id="orc-imagem-obra" class="form-input" onchange="orcImagemObraUpload(this)"/>
+              <div id="orc-imagem-preview" style="font-size:12px;color:var(--muted);margin-top:6px">Nenhuma imagem associada a este orçamento.</div>
             </div>
           </div>
 
@@ -12519,12 +12520,12 @@ function orcGetData(){
   const saldo = pagamento50 ? Math.round((totais.total-sinal)*100)/100 : null;
   const imagem = window._orcImagemAtual || null;
   return {num, cli, prazo, prazoEntrega, morada, nif, val, linhas, totais, vendedor, email,
-    cliEmail, cliWA, pagamento50, sinal, saldo, imagem,
+    cliEmail, cliWA, pagamento50, sinal, saldo, imagem, imagemObra: imagem,
     data: new Date().toLocaleDateString('pt-PT',{day:'2-digit',month:'2-digit',year:'numeric'})
   };
 }
 
-// ADD: Imagem associada ao orçamento (preenchida pelo Copiloto IA) — apenas visualização
+// ADD: Imagem associada ao orçamento (preenchida pelo Copiloto IA ou upload manual "Imagem da Obra") — apenas visualização
 window._orcImagemAtual = window._orcImagemAtual || null;
 function orcSetImagemPreview(dataUrl){
   window._orcImagemAtual = dataUrl || null;
@@ -12535,6 +12536,16 @@ function orcSetImagemPreview(dataUrl){
     : 'Nenhuma imagem associada a este orçamento.';
 }
 window.orcSetImagemPreview = orcSetImagemPreview;
+
+// ADD: Upload manual da "Imagem da Obra" — converte para base64 e usa o mesmo mecanismo de preview/persistência
+function orcImagemObraUpload(input){
+  const file = input && input.files && input.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = function(e){ orcSetImagemPreview(e.target.result); };
+  reader.readAsDataURL(file);
+}
+window.orcImagemObraUpload = orcImagemObraUpload;
 
 function orcGuardar(){
   const d = orcGetData();
@@ -12805,19 +12816,19 @@ function orcPDF(){
 body{font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#222;background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact;counter-reset:page}
 @page{size:A4;margin:15mm}
 @media print{.no-print{display:none!important}body{padding:0}}
-.header{display:flex;justify-content:space-between;align-items:flex-start;padding-bottom:8px;border-bottom:3px solid #FFD600;margin-bottom:10px}
+.header{display:flex;justify-content:space-between;align-items:flex-start;padding-bottom:8px;border-bottom:3px solid #F5C400;margin-bottom:10px}
 .logo-area img{height:40px;width:auto}
 .co-info{text-align:right;font-size:11px;color:#555;line-height:1.4;white-space:nowrap}
 .co-info strong{color:#222;font-size:11px;white-space:nowrap}
 .co-info .nipc{color:#888;font-size:9px}
 .doc-table{width:100%;border-collapse:collapse;margin-bottom:12px}
-.doc-table th{background:#222;color:#FFD600;padding:5px 8px;font-size:10.5px;text-align:left;text-transform:uppercase;letter-spacing:.06em}
+.doc-table th{background:#222;color:#F5C400;padding:5px 8px;font-size:10.5px;text-align:left;text-transform:uppercase;letter-spacing:.06em}
 .doc-table td{padding:5px 8px;font-size:11.5px;border-bottom:1px solid #eee}
 .title-block{text-align:center;margin:10px 0 12px}
 .title-block h1{font-size:17px;font-weight:700;letter-spacing:.03em;color:#111;text-transform:uppercase}
 .title-block .sub{font-size:12px;color:#555;margin-top:3px}
 .section-label{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#888;margin-bottom:4px}
-.client-box{background:#f8f8f8;border-left:4px solid #FFD600;padding:7px 10px;margin-bottom:12px}
+.client-box{background:#f8f8f8;border-left:4px solid #F5C400;padding:7px 10px;margin-bottom:12px}
 .client-box .name{font-size:13px;font-weight:700;color:#111}
 .client-box .details{font-size:11px;color:#555;margin-top:2px}
 .lines-table{width:100%;border-collapse:collapse;margin-bottom:10px}
@@ -12831,15 +12842,15 @@ body{font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#222;background
 .lines-table tbody td:nth-child(4),.lines-table tbody td:nth-child(5){text-align:right}
 .totais-block{margin-left:auto;width:260px}
 .totais-row{display:flex;justify-content:space-between;padding:3px 0;font-size:11.5px;color:#555;border-bottom:1px dashed #eee}
-.totais-row.total{border-bottom:none;border-top:2px solid #FFD600;padding-top:5px;margin-top:3px}
+.totais-row.total{border-bottom:none;border-top:2px solid #F5C400;padding-top:5px;margin-top:3px}
 .totais-row.total .lbl{font-weight:700;font-size:13px;color:#111}
 .totais-row.total .val{font-weight:700;font-size:16px;color:#111}
 .totais-row.disc{color:#c0392b}
-.notes-box{margin-top:10px;padding:7px 10px;background:#fffbea;border:1px solid #FFD600;border-radius:4px;font-size:10.5px;color:#555;line-height:1.45}
-.footer{position:fixed;bottom:0;left:15mm;right:15mm;border-top:2px solid #FFD600;padding-top:6px;display:flex;justify-content:space-between;align-items:center;font-size:9.5px;color:#888}
-.footer .brand{color:#FFD600;font-weight:700;font-size:10px;letter-spacing:.03em}
+.notes-box{margin-top:10px;padding:7px 10px;background:#fffbea;border:1px solid #F5C400;border-radius:4px;font-size:10.5px;color:#555;line-height:1.45}
+.footer{position:fixed;bottom:0;left:15mm;right:15mm;border-top:2px solid #F5C400;padding-top:6px;display:flex;justify-content:space-between;align-items:center;font-size:9.5px;color:#888}
+.footer .brand{color:#F5C400;font-weight:700;font-size:10px;letter-spacing:.03em}
 .footer .pagenum:after{content:counter(page)}
-.print-btn{position:fixed;top:16px;right:20px;background:#FFD600;color:#000;border:none;border-radius:8px;padding:10px 22px;font-size:15px;font-weight:700;cursor:pointer;z-index:99;display:flex;align-items:center;gap:8px;font-family:Arial}
+.print-btn{position:fixed;top:16px;right:20px;background:#F5C400;color:#000;border:none;border-radius:8px;padding:10px 22px;font-size:15px;font-weight:700;cursor:pointer;z-index:99;display:flex;align-items:center;gap:8px;font-family:Arial}
 .print-btn:hover{filter:brightness(1.08)}
 @media print{.print-btn{display:none!important}}
 .ven-row{display:flex;gap:20px;margin-bottom:10px}
@@ -12926,6 +12937,12 @@ body{font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#222;background
     </div>
   </div>
 </div>
+
+${d.imagemObra ? `
+<div class="section-label" style="margin-top:14px">Imagem de Referência</div>
+<div style="margin-bottom:10px">
+  <img src="${d.imagemObra}" alt="Imagem de referência da obra" style="max-width:220px;max-height:220px;border-radius:6px;border:1px solid #ddd"/>
+</div>` : ''}
 
 <div class="footer">
   <div>
@@ -16222,6 +16239,7 @@ function orcSolicitarAprovacao() {
   var d = orcGetData();
   if (!d.cli || !d.cli.trim()) { alert('⚠️ Indica o cliente antes de solicitar aprovação.'); return; }
   if (!d.linhas || !d.linhas.length) { alert('⚠️ Adiciona pelo menos uma linha ao orçamento antes de solicitar aprovação.'); return; }
+  if (!d.linhas.some(function(l){ return (l.sub || (l.qty*l.preco) || 0) > 0; })) { alert('⚠️ As linhas do orçamento têm de ter valor superior a zero.'); return; }
   if (!d.totais || !d.totais.total) { alert('⚠️ O orçamento não tem valor total. Verifica as linhas.'); return; }
 
   var NL = String.fromCharCode(10);
@@ -17290,8 +17308,8 @@ function copilotoAplicarTudo() {
       'Estes podem ser adicionados manualmente ao stock e o copiloto irá reconhecê-los.';
     alert(msg);
   }
-  if (typeof showToast === 'function') showToast('✅ Orçamento atualizado com análise IA e imagem guardada.');
-  else alert('✅ Orçamento atualizado com análise IA e imagem guardada.');
+  if (typeof showToast === 'function') showToast('✅ Orçamento atualizado com os materiais sugeridos pelo Copiloto.');
+  else alert('✅ Orçamento atualizado com os materiais sugeridos pelo Copiloto.');
 }
 
 // ── Chat de refinamento ───────────────────────────────────────────
