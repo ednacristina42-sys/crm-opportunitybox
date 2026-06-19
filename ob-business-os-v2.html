@@ -17288,13 +17288,15 @@ function copilotoAplicar() {
     }
   }
 
-  // ADD: Atualiza a primeira linha de produto com o valor total estimado pela IA
+  // ADD: Atualiza a primeira linha de produto com o valor final sugerido pela IA
+  // (preço final = analysis.preco_estimado_total, já calculado com markup; fallback para o preço sugerido pelos materiais)
   var produtoNome = analysis.tipoReclamo || 'Reclamo personalizado';
-  var precoTotal = window._orcPrecoSugerido || analysis.preco_estimado_total || 0;
+  var precoTotal = analysis.preco_estimado_total || window._orcPrecoSugerido || 0;
   var descTexto = 'Composição baseada em análise IA' + (analysis.observacoes ? ' – ' + analysis.observacoes : '');
   var linesCont = document.getElementById('orc-lines-container');
   if (linesCont) {
-    var primeiraLinha = linesCont.querySelector('.orc-line');
+    var todasLinhas = linesCont.querySelectorAll('.orc-line');
+    var primeiraLinha = todasLinhas[0];
     if (!primeiraLinha && typeof orcAddLine === 'function') { orcAddLine(); primeiraLinha = linesCont.querySelector('.orc-line'); }
     if (primeiraLinha) {
       var selProd = primeiraLinha.querySelector('[id^=sel-]');
@@ -17309,6 +17311,13 @@ function copilotoAplicar() {
       var precoInp = primeiraLinha.querySelector('[id^=preco-]');
       if (precoInp) precoInp.value = precoTotal;
     }
+    // Zera as restantes linhas de produto para que o total fique igual ao valor sugerido
+    for (var li = 1; li < todasLinhas.length; li++) {
+      var precoOutraLinha = todasLinhas[li].querySelector('[id^=preco-]');
+      if (precoOutraLinha) precoOutraLinha.value = 0;
+      var qtyOutraLinha = todasLinhas[li].querySelector('[id^=qty-]');
+      if (qtyOutraLinha) qtyOutraLinha.value = 0;
+    }
   }
   orcCalcTotal();
   var badge = document.getElementById('orc-num-badge');
@@ -17321,8 +17330,9 @@ function copilotoAplicar() {
       'Estes podem ser adicionados manualmente ao stock e o copiloto irá reconhecê-los.';
     alert(msg);
   }
-  if (typeof showToast === 'function') showToast('✅ Orçamento atualizado com os materiais sugeridos pelo Copiloto.');
-  else alert('✅ Orçamento atualizado com os materiais sugeridos pelo Copiloto.');
+  var msgToast = '✅ Orçamento atualizado com o valor sugerido pelo Copiloto: €' + (typeof orcFmt === 'function' ? orcFmt(precoTotal) : precoTotal.toFixed(2));
+  if (typeof showToast === 'function') showToast(msgToast);
+  else alert(msgToast);
 }
 
 // ── Chat de refinamento ───────────────────────────────────────────
