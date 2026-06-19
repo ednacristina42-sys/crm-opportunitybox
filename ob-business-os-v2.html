@@ -12544,8 +12544,9 @@ function orcGetData(){
   const sinal = pagamento50 ? Math.round(totais.total*50)/100 : null;
   const saldo = pagamento50 ? Math.round((totais.total-sinal)*100)/100 : null;
   const imagem = window._orcImagemAtual || null;
+  const imagemFachadaGerada = window._orcImagemFachadaGerada || null;
   return {num, cli, prazo, prazoEntrega, morada, nif, val, linhas, totais, vendedor, email,
-    cliEmail, cliWA, pagamento50, sinal, saldo, imagem, imagemObra: imagem,
+    cliEmail, cliWA, pagamento50, sinal, saldo, imagem, imagemObra: imagem, imagemFachadaGerada,
     data: new Date().toLocaleDateString('pt-PT',{day:'2-digit',month:'2-digit',year:'numeric'})
   };
 }
@@ -12561,6 +12562,13 @@ function orcSetImagemPreview(dataUrl){
     : 'Nenhuma imagem associada a este orçamento.';
 }
 window.orcSetImagemPreview = orcSetImagemPreview;
+
+// ADD: Imagem da fachada gerada por IA (DALL·E 3, via Copiloto) — mostrada em destaque no PDF
+window._orcImagemFachadaGerada = window._orcImagemFachadaGerada || null;
+function orcSetImagemFachadaGerada(dataUrl){
+  window._orcImagemFachadaGerada = dataUrl || null;
+}
+window.orcSetImagemFachadaGerada = orcSetImagemFachadaGerada;
 
 // ADD: Upload manual da "Imagem da Obra" — converte para base64 e usa o mesmo mecanismo de preview/persistência
 function orcImagemObraUpload(input){
@@ -12964,6 +12972,15 @@ ${d.imagemObra ? `
 <div style="margin-bottom:10px">
   <img src="${d.imagemObra}" alt="Imagem de referência da obra" style="max-width:220px;max-height:220px;border-radius:6px;border:1px solid #ddd"/>
 </div>` : ''}
+
+${d.imagemFachadaGerada ? `
+<div style="margin-top:20px; border-top:2px solid #F5C400; padding-top:16px;">
+  <h3 style="font-size:14px; color:#F5C400; text-transform:uppercase; letter-spacing:0.05em;">Visualização da Fachada</h3>
+  <div style="margin-top:8px; border:1px solid #eee; border-radius:6px; overflow:hidden;">
+    <img src="${d.imagemFachadaGerada}" alt="Fachada proposta" style="max-width:100%; height:auto; display:block;">
+  </div>
+</div>
+` : ''}
 
 <div class="footer">
   <div>
@@ -17188,7 +17205,7 @@ function copilotoGuardarImagemOrcamento() {
   var imgEl = document.getElementById('copiloto-imagem-gerada');
   var dataUrl = imgEl && imgEl.src;
   if (!dataUrl) return;
-  if (typeof orcSetImagemPreview === 'function') orcSetImagemPreview(dataUrl);
+  if (typeof orcSetImagemFachadaGerada === 'function') orcSetImagemFachadaGerada(dataUrl);
   var status = document.getElementById('copiloto-descricao-status');
   if (status) status.innerHTML = '<span style="color:var(--g)">✓ Imagem adicionada ao orçamento.</span>';
   var wrap = document.getElementById('copiloto-imagem-preview');
