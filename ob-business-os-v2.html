@@ -5376,6 +5376,7 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
         <button class="tbtn" style="font-size:13px" onclick="tocoConfigurar()" title="Configurar webhook TocOnline">🧾 TocOnline</button>
         <!-- ADD: Item 2 — botão configurar webhook ClickUp -->
         <button class="tbtn" style="font-size:13px" onclick="orcConfigCKWebhook()" title="Configurar webhook ClickUp (Make.com)">⚙️ ClickUp</button>
+        <button class="tbtn" style="font-size:13px" onclick="orcConfigApprovWebhook()" title="Configurar webhook de Aprovação (Make.com)">⚙️ Aprovação</button>
         <span id="orc-num-badge" style="font-family:'DM Mono',monospace;font-size:13px;background:var(--bg3);border:1px solid var(--border);padding:4px 10px;border-radius:6px;color:var(--y)">ORC-2026-001</span>
         <!-- ADD: botão de importação de orçamentos 2026 da planilha Google Sheets -->
         <button class="tbtn" style="font-size:13px" onclick="if(confirm('Importar orçamentos da planilha (aba Orçamentos 2026)? Isto não substitui dados existentes.'))importarOrcamentos2026()" title="Importar orçamentos da planilha Google Sheets">📥 Importar Planilha</button>
@@ -5449,6 +5450,13 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
             </div>
             <div class="form-group" style="display:flex;align-items:flex-end">
               <div style="font-size:12px;color:var(--muted);padding-bottom:8px;line-height:1.4">Pré-preenchido a partir do cliente. Pode ser alterado por orçamento.</div>
+            </div>
+          </div>
+
+          <div class="form-row" style="margin-bottom:10px">
+            <div class="form-group">
+              <label class="form-label">Prazo de Entrega (dias úteis)</label>
+              <input type="text" id="orc-prazo-entrega" class="form-input" value="25" placeholder="25"/>
             </div>
           </div>
 
@@ -5771,6 +5779,9 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
             <button class="tbtn" style="flex:1" data-action="orcWhatsApp">📱 WhatsApp</button>
             <button class="tbtn" style="flex:1" data-action="orcEmail">📧 Email</button>
             <button class="tbtn" style="flex:1;background:rgba(77,148,219,.12);border-color:rgba(77,148,219,.3);color:#4d94db" data-action="orcPDF">📄 PDF</button>
+          </div>
+          <div style="display:flex;gap:7px;margin-top:7px">
+            <button class="tbtn" id="orc-aprovar-btn" style="flex:1;background:var(--y);border-color:var(--y);color:#000;font-weight:700" data-action="orcSolicitarAprovacao">📨 Solicitar Aprovação</button>
           </div>
 
           <div id="orc-save-msg" style="display:none;margin-top:8px;font-size:13.5px;color:var(--g);text-align:center;font-family:'DM Mono',monospace"></div>
@@ -12459,6 +12470,7 @@ function orcGetData(){
   const num      = document.getElementById('orc-num-badge')?.textContent || orcNextNum();
   const cli      = document.getElementById('orc-cliente')?.value||'';
   const prazo    = document.getElementById('orc-prazo')?.value||'';
+  const prazoEntrega = document.getElementById('orc-prazo-entrega')?.value||'25';
   const morada   = document.getElementById('orc-morada')?.value||'';
   const nif      = document.getElementById('orc-nif')?.value||'';
   const cliEmail = document.getElementById('orc-email')?.value||'';
@@ -12472,7 +12484,7 @@ function orcGetData(){
   const pagamento50 = prazo === '50% adjudicação + 50% entrega';
   const sinal = pagamento50 ? Math.round(totais.total*50)/100 : null;
   const saldo = pagamento50 ? Math.round((totais.total-sinal)*100)/100 : null;
-  return {num, cli, prazo, morada, nif, val, linhas, totais, vendedor, email,
+  return {num, cli, prazo, prazoEntrega, morada, nif, val, linhas, totais, vendedor, email,
     cliEmail, cliWA, pagamento50, sinal, saldo,
     data: new Date().toLocaleDateString('pt-PT',{day:'2-digit',month:'2-digit',year:'numeric'})
   };
@@ -12661,6 +12673,59 @@ document.addEventListener('DOMContentLoaded', function(){
   if(adjSubmitBtn) adjSubmitBtn.addEventListener('click', crmSubmeterAdjudicacao);
 });
 
+// Converte um valor monetário (0 a 999.999,99) para texto por extenso em português
+function numeroPorExtenso(valor){
+  valor = Math.round((Number(valor)||0)*100)/100;
+  var inteiro = Math.floor(valor);
+  var centimos = Math.round((valor - inteiro)*100);
+
+  var UNID = ['','um','dois','três','quatro','cinco','seis','sete','oito','nove'];
+  var DEZ10A19 = ['dez','onze','doze','treze','catorze','quinze','dezasseis','dezassete','dezoito','dezanove'];
+  var DEZENAS = ['','','vinte','trinta','quarenta','cinquenta','sessenta','setenta','oitenta','noventa'];
+  var CENTENAS = ['','cem','duzentos','trezentos','quatrocentos','quinhentos','seiscentos','setecentos','oitocentos','novecentos'];
+
+  function extensoCentena(n){
+    n = Math.floor(n);
+    if(n===0) return '';
+    if(n===100) return 'cem';
+    var partes = [];
+    var c = Math.floor(n/100), r = n%100;
+    if(c>0) partes.push(CENTENAS[c]);
+    if(r>0){
+      if(r<10) partes.push(UNID[r]);
+      else if(r<20) partes.push(DEZ10A19[r-10]);
+      else {
+        var d = Math.floor(r/10), u = r%10;
+        partes.push(u>0 ? (DEZENAS[d]+' e '+UNID[u]) : DEZENAS[d]);
+      }
+    }
+    return partes.join(' e ');
+  }
+
+  function extensoInteiro(n){
+    n = Math.floor(n);
+    if(n===0) return 'zero';
+    var milhares = Math.floor(n/1000), resto = n%1000;
+    var partes = [];
+    if(milhares>0){
+      partes.push(milhares===1 ? 'mil' : extensoCentena(milhares)+' mil');
+    }
+    if(resto>0){
+      partes.push(extensoCentena(resto));
+    }
+    var usaE = milhares>0 && resto>0 && resto<100;
+    return partes.join(usaE ? ' e ' : ' ');
+  }
+
+  var euros = extensoInteiro(inteiro);
+  var txtEuros = euros + ' euro' + (inteiro===1?'':'s');
+  if(centimos===0) return ('('+txtEuros.charAt(0).toUpperCase()+txtEuros.slice(1)+')');
+  var txtCentimos = extensoInteiro(centimos) + ' cêntimo' + (centimos===1?'':'s');
+  var full = txtEuros + ' e ' + txtCentimos;
+  return ('('+full.charAt(0).toUpperCase()+full.slice(1)+')');
+}
+window.numeroPorExtenso = numeroPorExtenso;
+
 function orcPDF(){
   const d = orcGetData();
   if(!d.cli){ alert('Preenche o cliente antes de gerar o PDF.'); return; }
@@ -12785,9 +12850,24 @@ body{font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#222;background
   <div class="totais-row"><span class="lbl">Sinal (50% adjudicação)</span><span class="val">€${orcFmt(d.sinal)}</span></div>
   <div class="totais-row"><span class="lbl">Saldo (50% entrega)</span><span class="val">€${orcFmt(d.saldo)}</span></div>` : ''}
 </div>
+<div style="font-size:11.5px;color:#888;text-align:right;margin:-8px 0 18px;font-style:italic">${(typeof numeroPorExtenso==='function')?numeroPorExtenso(d.totais.total):''}</div>
 
 <div class="notes-box">
-  <strong>Condições:</strong> Orçamento válido até ${valFmt}. Após confirmação, o prazo de produção e entrega será acordado. ${d.prazo?`Prazo de pagamento: <strong>${d.prazo}</strong>.`:'Pagamento conforme condições negociadas.'} O presente orçamento não constitui compromisso de entrega até confirmação formal.
+  <strong>Condições:</strong> Orçamento válido até ${valFmt}. Prazo de entrega: <strong>${d.prazoEntrega||'25'} dias úteis</strong> após confirmação. ${d.prazo?`Prazo de pagamento: <strong>${d.prazo}</strong>.`:'Pagamento conforme condições negociadas.'} O presente orçamento não constitui compromisso de entrega até confirmação formal.
+</div>
+
+<div class="ven-row" style="margin-top:30px">
+  <div class="ven-item" style="text-align:center">
+    <div style="border-top:1px solid #888;margin-top:40px;padding-top:6px;font-size:12.5px;color:#222">
+      <strong>${d.vendedor||'Equipa OpportunityBox'}</strong><br>
+      <span style="font-size:11px;color:#888">Responsável Comercial</span>
+    </div>
+  </div>
+  <div class="ven-item" style="text-align:center">
+    <div class="sign-box" style="border-top:1px solid #888;margin-top:40px;padding-top:6px;font-size:12.5px;color:#222">
+      Assinatura do cliente
+    </div>
+  </div>
 </div>
 
 <div class="footer">
@@ -13075,7 +13155,7 @@ function orcRenderList(){
     var tooltip = orcTooltipLinhas(o);
     return `<tr style="${rowStyle}">
     <td style="font-family:'DM Mono',monospace;font-size:13px" ${tooltip?`title="${tooltip.replace(/"/g,'&quot;')}"`:''}>${o.num}</td>
-    <td><strong style="color:var(--txt2)">${o.cli}</strong>${hasFicha?'<span title="Ficha técnica gerada" style="margin-left:4px;font-size:12px;color:var(--y)">📋</span>':''}</td>
+    <td><strong style="color:var(--txt2)">${o.cli}</strong>${hasFicha?'<span title="Ficha técnica gerada" style="margin-left:4px;font-size:12px;color:var(--y)">📋</span>':''}${o.aprovado_em?`<div style="font-size:10.5px;color:var(--g);margin-top:2px">✓ Aprovado por ${o.aprovado_por||'—'} em ${o.aprovado_em}</div>`:''}</td>
     <td style="font-family:'DM Mono',monospace;color:var(--y)">€${orcFmt(orcGetValorTotal(o))}</td>
     <td style="font-size:13px;color:var(--muted)">${o.vendedor||'—'}</td>
     <td>
@@ -15353,6 +15433,10 @@ function orcChangeStatus(orcId, novoEstado) {
   // ADD: Item 2 — enviar para ClickUp via Make.com quando aprovado (só uma vez)
   if (novoEstado === 'Aprovado' && estadoAnterior !== 'Aprovado') {
     if (typeof orcEnviarClickUp === 'function') orcEnviarClickUp(orc);
+    // ADD: Item 5 — registar histórico de aprovação
+    orc.aprovado_em = new Date().toLocaleDateString('pt-PT');
+    orc.aprovado_por = (typeof CU !== 'undefined' && CU) ? CU.name : 'Equipa OpportunityBox';
+    localStorage.setItem('ob-orcamentos', JSON.stringify(orcData.slice(0,5000)));
   }
   // Baixa de stock ao entrar em produção (apenas uma vez)
   var jaFezBaixa = orc.fichasTecnicas && orc.fichasTecnicas.length > 0;
@@ -16064,6 +16148,70 @@ async function orcEnviarClickUp(orc) {
   }
 }
 window.orcEnviarClickUp = orcEnviarClickUp;
+
+// ADD: Solicitar Aprovação — Webhook Make.com para enviar email de aprovação com PDF anexo
+var ORC_APROV_WEBHOOK = localStorage.getItem('ob-orc-aprov-webhook') || '';
+
+function orcConfigApprovWebhook() {
+  var url = prompt('URL do Webhook Make.com (Aprovação):\n\nQuando se solicita aprovação de um orçamento, o Make.com envia um email a Paulo Faria com o PDF anexo.', ORC_APROV_WEBHOOK || '');
+  if (url === null) return;
+  ORC_APROV_WEBHOOK = url.trim();
+  localStorage.setItem('ob-orc-aprov-webhook', ORC_APROV_WEBHOOK);
+  alert(ORC_APROV_WEBHOOK ? '✅ Webhook de Aprovação configurado.' : 'Webhook limpo.');
+}
+window.orcConfigApprovWebhook = orcConfigApprovWebhook;
+
+// ADD: Item 4 — Solicitar Aprovação do orçamento (PDF + email/webhook para Paulo Faria)
+function orcSolicitarAprovacao() {
+  var d = orcGetData();
+  if (!d.cli || !d.cli.trim()) { alert('⚠️ Indica o cliente antes de solicitar aprovação.'); return; }
+  if (!d.linhas || !d.linhas.length) { alert('⚠️ Adiciona pelo menos uma linha ao orçamento antes de solicitar aprovação.'); return; }
+  if (!d.totais || !d.totais.total) { alert('⚠️ O orçamento não tem valor total. Verifica as linhas.'); return; }
+
+  var NL = String.fromCharCode(10);
+  var corpo = 'Olá Paulo,' + NL + NL +
+    'Foi solicitada a aprovação do seguinte orçamento:' + NL + NL +
+    'Nº Orçamento: ' + d.num + NL +
+    'Cliente: ' + d.cli + NL +
+    'Valor Total: €' + orcFmt(d.totais.total) + NL +
+    'Vendedor: ' + (d.vendedor || 'Equipa OpportunityBox') + NL +
+    'Data: ' + d.data + NL + NL +
+    'Por favor, valida o orçamento no CRM OpportunityBox.' + NL + NL +
+    '— Enviado automaticamente pelo CRM OpportunityBox';
+
+  if (ORC_APROV_WEBHOOK) {
+    var payload = {
+      num_orc: d.num,
+      cliente: d.cli,
+      valor: d.totais.total,
+      vendedor: d.vendedor || '',
+      data: d.data,
+      assunto: 'Aprovação de Orçamento – ' + d.num,
+      corpo: corpo,
+      destinatario: 'paulo@opportunitybox.pt'
+    };
+    fetch(ORC_APROV_WEBHOOK, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    }).then(function(){
+      if (typeof orcToast === 'function') orcToast('📨 Pedido de aprovação enviado a Paulo Faria.');
+      else alert('📨 Pedido de aprovação enviado a Paulo Faria.');
+    }).catch(function(err){
+      console.warn('[Aprovação] Erro ao enviar webhook:', err);
+      alert('⚠️ Erro ao enviar pedido de aprovação. Verifica o webhook configurado.');
+    });
+  } else {
+    var mailto = 'mailto:paulo@opportunitybox.pt' +
+      '?subject=' + encodeURIComponent('Aprovação de Orçamento – ' + d.num) +
+      '&body=' + encodeURIComponent(corpo + NL + NL + '(Nota: por favor anexa manualmente o PDF do orçamento gerado.)');
+    window.location.href = mailto;
+    if (typeof orcPDF === 'function') orcPDF();
+    if (typeof orcToast === 'function') orcToast('📨 Email de aprovação preparado. Anexa o PDF manualmente.');
+    else alert('📨 Email de aprovação preparado. Anexa o PDF manualmente.');
+  }
+}
+window.orcSolicitarAprovacao = orcSolicitarAprovacao;
 
 // ADD: Item 1 — Auto-preenchimento de Razão Social / NIF / Morada na fatura
 function fatAutoFillCliente(valor) {
@@ -17346,6 +17494,7 @@ document.addEventListener('click', function(e){
     case 'orcAddLine': safe(orcAddLine); break;
     case 'orcWhatsApp': safe(orcWhatsApp); break;
     case 'orcPDF': safe(orcPDF); break;
+    case 'orcSolicitarAprovacao': safe(orcSolicitarAprovacao); break;
     case 'orcEmail': safe(orcEmail); break;
     case 'homeOpenNewTask': safe(homeOpenNewTask); break;
     case 'homeSaveTask': safe(homeSaveTask); break;
