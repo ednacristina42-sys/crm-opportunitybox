@@ -5245,11 +5245,25 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
     </div>
   </div>
   <div class="filters-bar">
-    <button class="filter-btn">👤 Responsável</button>
-    <button class="filter-btn">🏷 Estado</button>
-    <button class="filter-btn">⚡ Prioridade</button>
-    <button class="filter-btn">📅 Data</button>
-    <button class="filter-btn active">👁 Os meus filtros</button>
+    <select class="filter-btn" id="hflt-resp" onchange="HOME_FILTERS.responsavel=this.value;homeApplyFilters()">
+      <option value="">👤 Responsável</option>
+    </select>
+    <select class="filter-btn" id="hflt-estado" onchange="HOME_FILTERS.estado=this.value;homeApplyFilters()">
+      <option value="">🏷 Estado</option>
+      <option>A fazer</option>
+      <option>Em progresso</option>
+      <option>Em revisão</option>
+      <option>Concluído</option>
+    </select>
+    <select class="filter-btn" id="hflt-prio" onchange="HOME_FILTERS.prioridade=this.value;homeApplyFilters()">
+      <option value="">⚡ Prioridade</option>
+      <option>Urgente</option>
+      <option>Alta</option>
+      <option>Normal</option>
+      <option>Baixa</option>
+    </select>
+    <input class="filter-btn" type="date" id="hflt-data" onchange="HOME_FILTERS.data=this.value;homeApplyFilters()" style="width:auto"/>
+    <button class="filter-btn" id="hflt-meus" onclick="homeToggleMeusFiltros()">👁 Os meus filtros</button>
   </div>
   <div id="tasks-list-view" class="task-content"></div>
   <div id="tasks-board-view" class="kanban-wrap" style="display:none"></div>
@@ -8823,8 +8837,49 @@ function homeGetFilteredTasks(){
   else if(homeOriginFilter==='crm') all = crm;
   if(homeDeptFilter) all = all.filter(t=>t.group===homeDeptFilter || t.dept===homeDeptFilter);
   if(homePersonFilter) all = all.filter(t=>(t.assNome||'').toLowerCase()===homePersonFilter.toLowerCase());
+  if(HOME_FILTERS.responsavel) all = all.filter(t=>(t.assNome||'').toLowerCase()===HOME_FILTERS.responsavel.toLowerCase());
+  if(HOME_FILTERS.estado) all = all.filter(t=>t.status===HOME_FILTERS.estado);
+  if(HOME_FILTERS.prioridade) all = all.filter(t=>t.prio===HOME_FILTERS.prioridade);
+  if(HOME_FILTERS.data) all = all.filter(t=>t.dateEndIso===HOME_FILTERS.data);
   return all;
 }
+
+// ── FILTROS DA BARRA (Home) ──────────────────────────────
+var HOME_FILTERS = { responsavel:'', estado:'', prioridade:'', data:'' };
+var _homeMeusFiltrosAtivo = false;
+
+function homeApplyFilters(){
+  renderTasksList(); renderTasksBoard();
+}
+window.homeApplyFilters = homeApplyFilters;
+
+function homePopularFiltroResponsavel(){
+  const sel = document.getElementById('hflt-resp');
+  if(!sel) return;
+  const nomes = typeof USERS!=='undefined' ? USERS.map(u=>u.name) : (crmComerciais||[]).map(c=>c.nome);
+  const atual = sel.value;
+  sel.innerHTML = '<option value="">👤 Responsável</option>' + [...new Set(nomes)].map(n=>`<option value="${n}">${n}</option>`).join('');
+  sel.value = atual;
+}
+
+function homeToggleMeusFiltros(){
+  const btn = document.getElementById('hflt-meus');
+  _homeMeusFiltrosAtivo = !_homeMeusFiltrosAtivo;
+  if(_homeMeusFiltrosAtivo){
+    btn.classList.add('active');
+    HOME_FILTERS.responsavel = (CU && CU.name) || '';
+    HOME_FILTERS.estado = 'Em progresso';
+    const respSel=document.getElementById('hflt-resp'); if(respSel) respSel.value=HOME_FILTERS.responsavel;
+    const estSel=document.getElementById('hflt-estado'); if(estSel) estSel.value=HOME_FILTERS.estado;
+  } else {
+    btn.classList.remove('active');
+    HOME_FILTERS.responsavel = ''; HOME_FILTERS.estado = '';
+    const respSel=document.getElementById('hflt-resp'); if(respSel) respSel.value='';
+    const estSel=document.getElementById('hflt-estado'); if(estSel) estSel.value='';
+  }
+  homeApplyFilters();
+}
+window.homeToggleMeusFiltros = homeToggleMeusFiltros;
 
 function getMyTasks(){
   if(CU.admin) return homeTasksData;
@@ -8843,6 +8898,7 @@ function homeSortTasks(arr){
 
 // ── RENDER TASKS LIST ─────────────────────────────────────
 function renderTasksList(){
+  homePopularFiltroResponsavel();
   const tasks=homeGetFilteredTasks();
   const groups=[...new Set(tasks.map(t=>t.group))];
   const el=document.getElementById('tasks-list-view');
@@ -9057,6 +9113,12 @@ function homeOpenFullEdit(id){
   const PRIO_BY_LABEL={'Urgente':'urgent','Alta':'high','Normal':'normal','Baixa':'low'};
   const ex=t.extras||{};
 
+  _homeCapaB64=ex.capa||null;
+  const capaWrap=document.getElementById('hf-capa-preview-wrap');
+  const capaImg=document.getElementById('hf-capa-preview');
+  if(_homeCapaB64){ if(capaImg) capaImg.src=_homeCapaB64; if(capaWrap) capaWrap.style.display='block'; }
+  else if(capaWrap) capaWrap.style.display='none';
+
   document.getElementById('hf-orc').value=ex.orc||'';
   document.getElementById('hf-title').value=t.title||'';
   document.getElementById('hf-status').value=t.status||'A fazer';
@@ -9104,6 +9166,96 @@ function homeOpenFullEdit(id){
   m.classList.add('open');
 }
 
+// ── CAPA ──────────────────────────────────────────────────
+var _homeCapaB64=null;
+
+function homeCapaSelecionada(e){
+  const file = e.target.files && e.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = function(){
+    _homeCapaB64 = reader.result;
+    const wrap = document.getElementById('hf-capa-preview-wrap');
+    const img = document.getElementById('hf-capa-preview');
+    if(img) img.src = _homeCapaB64;
+    if(wrap) wrap.style.display = 'block';
+  };
+  reader.readAsDataURL(file);
+}
+window.homeCapaSelecionada = homeCapaSelecionada;
+
+// ── ESCREVER COM IA ───────────────────────────────────────
+async function homeEscreverComIA(){
+  if(!_homeCapaB64){
+    alert('Carregue uma imagem primeiro (Adicionar capa).');
+    return;
+  }
+  if(typeof copilotoAnalisar!=='function'){
+    alert('Copiloto IA não está disponível.');
+    return;
+  }
+  try{
+    _cop.b64 = _homeCapaB64.split(',')[1];
+    _cop.file = null;
+    await copilotoAnalisar();
+    const analysis = _cop.lastAnalysis;
+    const descEl = document.getElementById('hf-desc');
+    if(analysis && descEl){
+      const partes = [];
+      if(analysis.tipoReclamo) partes.push(analysis.tipoReclamo);
+      if(analysis.subtipos && analysis.subtipos.length) partes.push(analysis.subtipos.join(', '));
+      if(analysis.materiais && analysis.materiais.length) partes.push('Materiais: '+analysis.materiais.map(m=>m.nome||m).join(', '));
+      descEl.value = partes.join(' — ');
+    }
+  }catch(e){
+    console.error('[homeEscreverComIA]', e);
+    alert('Erro ao analisar com IA: '+(e.message||e));
+  }
+}
+window.homeEscreverComIA = homeEscreverComIA;
+
+// ── SUGERIR SUBTAREFAS ────────────────────────────────────
+var HOME_SUGESTOES_DEPT={
+  'Dep. Design':['Revisão de briefing','Criar mockup','Aprovação do cliente'],
+  'Dep. Comercial':['Contactar cliente','Preparar proposta','Follow-up'],
+  'Chão da Fábrica':['Encomendar materiais','Produção','Controlo de qualidade','Expedição'],
+  'Dep. Administrativo':['Emitir documento','Validar dados','Arquivar']
+};
+
+function homeSugerirSubtarefas(){
+  if(!_homeFullEditId){ alert('Guarde a tarefa primeiro.'); return; }
+  const t = homeTasksData.find(t=>t.id===_homeFullEditId);
+  if(!t) return;
+  const dept = t.dept || t.group || '';
+  const sugestoes = HOME_SUGESTOES_DEPT[dept] || ['Planeamento','Execução','Validação'];
+  if(!t.subtarefas) t.subtarefas = [];
+  sugestoes.forEach(function(titulo){
+    t.subtarefas.push({id:Date.now()+Math.floor(Math.random()*1000), titulo, concluida:false});
+  });
+  saveHomeTasksData();
+  if(typeof showToast==='function') showToast('✓ Subtarefas sugeridas adicionadas');
+  else alert('✓ Subtarefas sugeridas adicionadas');
+}
+window.homeSugerirSubtarefas = homeSugerirSubtarefas;
+
+// ── TELA CHEIA ─────────────────────────────────────────────
+function homeToggleFullscreen(){
+  const modal = document.getElementById('home-full-modal');
+  const btn = document.getElementById('hf-fullscreen-btn');
+  if(!document.fullscreenElement){
+    (modal.requestFullscreen ? modal.requestFullscreen() : document.documentElement.requestFullscreen())
+      .then(function(){ if(btn) btn.textContent='⛶ Sair de tela cheia'; })
+      .catch(function(e){ console.warn('[Fullscreen]', e); });
+  } else {
+    document.exitFullscreen().then(function(){ if(btn) btn.textContent='⛶ Tela cheia'; });
+  }
+}
+window.homeToggleFullscreen = homeToggleFullscreen;
+document.addEventListener('fullscreenchange', function(){
+  const btn = document.getElementById('hf-fullscreen-btn');
+  if(btn) btn.textContent = document.fullscreenElement ? '⛶ Sair de tela cheia' : '⛶ Tela cheia';
+});
+
 function homeCloseFullEdit(){
   if(_homeTrackInterval){ clearInterval(_homeTrackInterval); _homeTrackInterval=null; }
   const m=document.getElementById('home-full-modal');
@@ -9111,6 +9263,7 @@ function homeCloseFullEdit(){
   m.classList.remove('open');
   m.classList.remove('fullscreen');
   _homeFullEditId=null;
+  _homeCapaB64=null;
 }
 
 function homeSaveFullEdit(){
@@ -9155,6 +9308,7 @@ function homeSaveFullEdit(){
   t.dateEndIso=dateEnd||null;
 
   t.extras=t.extras||{};
+  t.extras.capa=_homeCapaB64||null;
   t.extras.orc=document.getElementById('hf-orc').value.trim();
   t.extras.responsaveis=responsaveis;
   t.extras.estimativaH=document.getElementById('hf-est-h').value;
@@ -17776,8 +17930,10 @@ function importarConfiguracao() {
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
       <input class="form-input" id="hf-orc" placeholder="ORC-0000" style="width:120px;flex-shrink:0;font-family:'DM Mono',monospace"/>
       <input class="form-input" id="hf-title" placeholder="Título da tarefa..." style="flex:1;font-size:16px;font-weight:600"/>
-      <button class="tbtn" type="button" onclick="alert('Funcionalidade de capa em breve.')">🖼️ Adicionar capa</button>
+      <input type="file" id="home-capa-input" accept="image/*" style="display:none" onchange="homeCapaSelecionada(event)"/>
+      <button class="tbtn" type="button" onclick="document.getElementById('home-capa-input').click()">🖼️ Adicionar capa</button>
     </div>
+    <div id="hf-capa-preview-wrap" style="display:none;margin:-6px 0 14px"><img id="hf-capa-preview" style="max-height:120px;border-radius:8px;border:1px solid var(--border2)"/></div>
 
     <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
       <button class="tbtn" type="button" disabled>Teste</button>
@@ -17874,7 +18030,7 @@ function importarConfiguracao() {
       <div class="form-group">
         <label class="form-label">Descrição</label>
         <textarea class="form-input" id="hf-desc" rows="3" style="resize:vertical"></textarea>
-        <button class="tbtn" type="button" style="align-self:flex-start;margin-top:6px" onclick="alert('Escrever com IA em breve.')">✨ Escrever com IA</button>
+        <button class="tbtn" type="button" style="align-self:flex-start;margin-top:6px" onclick="homeEscreverComIA()">✨ Escrever com IA</button>
       </div>
     </div>
 
@@ -17973,11 +18129,11 @@ function importarConfiguracao() {
 
     <div style="display:flex;gap:8px;margin:16px 0;flex-wrap:wrap">
       <button class="tbtn" type="button" onclick="if(_homeFullEditId)subchkOpenModal('home',_homeFullEditId)">➕ Adicionar subtarefa</button>
-      <button class="tbtn" type="button" onclick="alert('Sugestões em breve.')">💡 Sugerir</button>
+      <button class="tbtn" type="button" onclick="homeSugerirSubtarefas()">💡 Sugerir</button>
       <button class="tbtn" type="button" onclick="if(_homeFullEditId)subchkOpenModal('home',_homeFullEditId)">☑️ Criar checklist</button>
       <button class="tbtn" type="button" onclick="document.getElementById('hf-file').click()">📎 Anexar arquivo</button>
       <input type="file" id="hf-file" style="display:none"/>
-      <button class="tbtn" type="button" onclick="document.getElementById('home-full-modal').classList.add('fullscreen')">⛶ Tela cheia</button>
+      <button class="tbtn" type="button" id="hf-fullscreen-btn" onclick="homeToggleFullscreen()">⛶ Tela cheia</button>
     </div>
 
     <div class="crm-modal-btns">
