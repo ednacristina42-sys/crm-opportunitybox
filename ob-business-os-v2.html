@@ -5508,6 +5508,7 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
             <div class="cop-api-key-row" title="Introduz a tua API key para activar a análise por IA. Fica guardada localmente.">
               <span style="font-size:12px;color:var(--muted);white-space:nowrap">🔑 API Key:</span>
               <input type="password" id="cop-api-key" placeholder="sk-ant-... ou sk-...  (Claude / OpenAI)" oninput="copilotoSaveKey()"/>
+              <span id="cop-api-key-indicator" title="Estado da chave" style="font-size:11px;white-space:nowrap">🔴</span>
               <select id="cop-api-provider" onchange="copilotoSaveKey()" style="background:var(--bg2);border:1px solid var(--border);border-radius:4px;color:var(--muted);font-size:12px;padding:2px 5px;font-family:Inter,sans-serif">
                 <option value="claude">Claude (Anthropic)</option>
                 <option value="openai">GPT-4o (OpenAI)</option>
@@ -6717,6 +6718,28 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
           <button class="bsm bon" id="ck2-save-btn" style="white-space:nowrap;cursor:pointer" data-action="ckSalvarToken">💾 Guardar e Ligar</button>
         </div>
         <div style="font-size:12px;color:var(--muted)">Última sincronização: <span id="ck2-last-sync">nunca</span> · Sync automático a cada 30 min · Espaços: Comercial, Design, Fábrica, Admin</div>
+      </div>
+      <!-- ── CHAVES DE API — COPILOTO IA ── -->
+      <div class="conn" style="flex-direction:column;align-items:stretch;gap:10px">
+        <div style="display:flex;align-items:center;gap:11px">
+          <div class="cico" id="apik-ico" style="background:rgba(139,92,246,.1)">🔑</div>
+          <div style="flex:1">
+            <div class="cname">Chaves de API — Copiloto IA</div>
+            <div class="cst" id="apik-status" style="color:var(--muted)">Configura as chaves para usar Claude ou OpenAI no Copiloto</div>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <input type="password" class="form-input" id="apik-claude-key" placeholder="Claude API Key (sk-ant-...)" style="font-size:13px;flex:1;min-width:200px"/>
+          <input type="password" class="form-input" id="apik-openai-key" placeholder="OpenAI API Key (sk-...)" style="font-size:13px;flex:1;min-width:200px"/>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <select id="apik-provider" class="form-input" style="font-size:13px;max-width:220px">
+            <option value="claude">Claude (Anthropic)</option>
+            <option value="openai">GPT-4o (OpenAI)</option>
+            <option value="demo">Demo (sem API)</option>
+          </select>
+          <button class="bsm bon" id="apik-save-btn" style="white-space:nowrap;cursor:pointer" data-action="apiKeysGuardar">💾 Guardar Chaves</button>
+        </div>
       </div>
       <div class="conn"><div class="cico" style="background:var(--bg3)">⚪</div><div><div class="cname">Google Calendar</div><div class="cst" style="color:var(--muted)">Sincronizar agenda</div></div><div style="margin-left:auto"><button class="bsm bon">Ligar</button></div></div>
 
@@ -16555,14 +16578,34 @@ var _cop = {
   isLoading: false
 };
 
+// ── Chaves de API — leitura unificada (localStorage por provedor) ──
+function copilotoGetProvider() {
+  return localStorage.getItem('ob-llm-provider') || localStorage.getItem('ob-cop-provider') || 'claude';
+}
+function copilotoGetKeyForProvider(provider) {
+  if (provider === 'claude') return localStorage.getItem('ob-claude-key') || localStorage.getItem('ob-cop-key') || '';
+  if (provider === 'openai') return localStorage.getItem('ob-openai-key') || localStorage.getItem('ob-cop-key') || '';
+  return '';
+}
+function copilotoUpdateIndicator() {
+  var ind = document.getElementById('cop-api-key-indicator');
+  if (!ind) return;
+  var prov = (document.getElementById('cop-api-provider') || {}).value || copilotoGetProvider();
+  var key = copilotoGetKeyForProvider(prov) || (document.getElementById('cop-api-key') || {}).value || '';
+  if (prov === 'demo') { ind.textContent = '🟢'; ind.title = 'Modo Demo — sem chave necessária'; return; }
+  if (key) { ind.textContent = '🟢'; ind.title = '🔑 Configurada'; }
+  else { ind.textContent = '🔴'; ind.title = 'Sem chave configurada'; }
+}
+
 // ── Configuração ─────────────────────────────────────────────────
 (function copilotoInit() {
-  var saved = localStorage.getItem('ob-cop-key');
-  var prov = localStorage.getItem('ob-cop-provider') || 'claude';
+  var prov = copilotoGetProvider();
+  var key = copilotoGetKeyForProvider(prov);
   var keyEl = document.getElementById('cop-api-key');
   var provEl = document.getElementById('cop-api-provider');
-  if (keyEl && saved) keyEl.value = saved;
+  if (keyEl && key) keyEl.value = key;
   if (provEl) provEl.value = prov;
+  copilotoUpdateIndicator();
 })();
 
 function copilotoSaveKey() {
@@ -16570,7 +16613,46 @@ function copilotoSaveKey() {
   var prov = (document.getElementById('cop-api-provider') || {}).value || 'claude';
   if (key) localStorage.setItem('ob-cop-key', key);
   localStorage.setItem('ob-cop-provider', prov);
+  if (key && prov === 'claude') localStorage.setItem('ob-claude-key', key);
+  if (key && prov === 'openai') localStorage.setItem('ob-openai-key', key);
+  localStorage.setItem('ob-llm-provider', prov);
+  copilotoUpdateIndicator();
 }
+
+// ── Painel Integrações — Guardar Chaves de API ──────────────────
+function apiKeysInit() {
+  var claudeEl = document.getElementById('apik-claude-key');
+  var openaiEl = document.getElementById('apik-openai-key');
+  var provEl = document.getElementById('apik-provider');
+  var statusEl = document.getElementById('apik-status');
+  var claudeKey = localStorage.getItem('ob-claude-key') || localStorage.getItem('ob-cop-key') || '';
+  var openaiKey = localStorage.getItem('ob-openai-key') || '';
+  if (claudeEl) claudeEl.value = claudeKey;
+  if (openaiEl) openaiEl.value = openaiKey;
+  if (provEl) provEl.value = copilotoGetProvider();
+  if (statusEl) {
+    var n = (claudeKey?1:0) + (openaiKey?1:0);
+    statusEl.textContent = n ? n + ' chave(s) configurada(s)' : 'Configura as chaves para usar Claude ou OpenAI no Copiloto';
+  }
+}
+function apiKeysGuardar() {
+  var claudeKey = (document.getElementById('apik-claude-key') || {}).value || '';
+  var openaiKey = (document.getElementById('apik-openai-key') || {}).value || '';
+  var prov = (document.getElementById('apik-provider') || {}).value || 'claude';
+  if (claudeKey) localStorage.setItem('ob-claude-key', claudeKey);
+  if (openaiKey) localStorage.setItem('ob-openai-key', openaiKey);
+  localStorage.setItem('ob-llm-provider', prov);
+  // Sincronizar com o Copiloto (se visível)
+  var copKeyEl = document.getElementById('cop-api-key');
+  var copProvEl = document.getElementById('cop-api-provider');
+  if (copProvEl) copProvEl.value = prov;
+  if (copKeyEl) copKeyEl.value = copilotoGetKeyForProvider(prov);
+  copilotoUpdateIndicator();
+  apiKeysInit();
+  if (typeof showToast === 'function') showToast('✓ Chaves de API guardadas');
+}
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', apiKeysInit);
+else apiKeysInit();
 
 function copilotoToggle() {
   var el = document.getElementById('copiloto-dropzone');
@@ -16653,8 +16735,8 @@ function _copSystemPrompt() {
 
 // ── Chamada à API Vision ──────────────────────────────────────────
 async function analisarDesignComIA(file) {
-  var key = (document.getElementById('cop-api-key') || {}).value || localStorage.getItem('ob-cop-key') || '';
-  var provider = (document.getElementById('cop-api-provider') || {}).value || localStorage.getItem('ob-cop-provider') || 'claude';
+  var provider = (document.getElementById('cop-api-provider') || {}).value || copilotoGetProvider();
+  var key = copilotoGetKeyForProvider(provider) || (document.getElementById('cop-api-key') || {}).value || '';
 
   if (provider === 'demo') return _copDemoAnalysis();
   if (!key) throw new Error('API Key não configurada. Introduz a chave ou escolhe "Demo".');
@@ -16749,8 +16831,8 @@ async function copilotoAnalisar() {
     _cop.b64 = 'demo';
   }
 
-  var provider = (document.getElementById('cop-api-provider') || {}).value || localStorage.getItem('ob-cop-provider') || 'demo';
-  var key = (document.getElementById('cop-api-key') || {}).value || localStorage.getItem('ob-cop-key') || '';
+  var provider = (document.getElementById('cop-api-provider') || {}).value || copilotoGetProvider();
+  var key = copilotoGetKeyForProvider(provider) || (document.getElementById('cop-api-key') || {}).value || '';
   if (provider !== 'demo' && !key) {
     if (status) status.innerHTML = '<span style="color:var(--a)">⚠️ Configura uma API Key em Integrações ou seleciona \'Demo\'.</span>';
     return;
@@ -16933,8 +17015,8 @@ async function copilotoEnviarChat() {
   if (inp) inp.value = '';
 
   _copAdicionarMsgChat('user', msg);
-  var key = localStorage.getItem('ob-cop-key') || '';
-  var provider = localStorage.getItem('ob-cop-provider') || 'demo';
+  var provider = (document.getElementById('cop-api-provider') || {}).value || copilotoGetProvider();
+  var key = copilotoGetKeyForProvider(provider) || (document.getElementById('cop-api-key') || {}).value || '';
   var NL = String.fromCharCode(10);
 
   if (!_cop.lastAnalysis) {
@@ -17255,6 +17337,7 @@ document.addEventListener('click', function(e){
     case 'ckSalvarToken': safe(ckSalvarToken); break;
     case 'ckSincronizarAgora': safe(ckSincronizarAgora); break;
     case 'gsSalvarURL': safe(gsSalvarURL); break;
+    case 'apiKeysGuardar': safe(apiKeysGuardar); break;
     case 'gsTestarUI': safe(gsTestarUI); break;
     case 'showImport': safe(showImport); break;
     case 'closeImport': safe(closeImport); break;
