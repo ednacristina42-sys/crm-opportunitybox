@@ -5323,12 +5323,25 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
     </select>
     <button class="tbtn" style="font-size:13px;padding:3px 10px" onclick="crmAplicarFiltroMeu()" id="crm-filtro-meu" title="Ver apenas os meus leads">👤 Os meus</button>
     <span id="crm-filtro-label" style="font-size:12px;color:var(--y);display:none"></span>
+    <span style="font-size:13px;color:var(--muted);margin-left:8px">Origem:</span>
+    <select id="crm-filtro-origem" class="form-select" style="width:auto;padding:4px 10px;font-size:13px" onchange="crmAplicarFiltrosAvancados()">
+      <option value="">— Todas as origens —</option>
+    </select>
+    <span style="font-size:13px;color:var(--muted)">Valor:</span>
+    <select id="crm-filtro-valor" class="form-select" style="width:auto;padding:4px 10px;font-size:13px" onchange="crmAplicarFiltrosAvancados()">
+      <option value="">Todos</option>
+      <option value="<1000">&lt; €1000</option>
+      <option value="1000-5000">€1000-€5000</option>
+      <option value=">5000">&gt; €5000</option>
+    </select>
   </div>
   <div class="crm-stats">
     <div class="crm-stat"><div class="n" id="crm-total">—</div><div class="l">Leads activos</div></div>
     <div class="crm-stat pip"><div class="n" id="crm-pip">—</div><div class="l">Pipeline</div></div>
     <div class="crm-stat ok"><div class="n" id="crm-conv">—</div><div class="l">Conversão</div></div>
     <div class="crm-stat"><div class="n" id="crm-dias">18d</div><div class="l">Ciclo médio</div></div>
+    <div class="crm-stat"><div class="n" id="crm-parados">—</div><div class="l">Leads Parados</div></div>
+    <div class="crm-stat"><div class="n" id="crm-top-comercial" style="font-size:14px">—</div><div class="l">Top Comercial</div></div>
   </div>
   <div class="crm-kanban" id="crm-kanban"></div>
 </div>
@@ -7693,6 +7706,17 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
     </div>
     <div class="form-row">
       <div class="form-group">
+        <label class="form-label">Prioridade</label>
+        <select class="form-select" id="clm-prioridade">
+          <option value="">— Sem prioridade —</option>
+          <option value="Normal">Normal</option>
+          <option value="Alta">Alta</option>
+          <option value="Urgente">Urgente</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
         <label class="form-label">Notas</label>
         <textarea class="form-input" id="clm-nota" rows="3" placeholder="Observações internas..." style="resize:vertical"></textarea>
       </div>
@@ -7744,9 +7768,18 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
       </div>
     </div>
 
+    <!-- Sugestão de próximo passo -->
+    <div id="clm-sugestao" style="display:none;margin:14px 0;background:rgba(245,196,0,.08);border:1px solid rgba(245,196,0,.3);border-radius:8px;padding:10px 14px;font-size:13px;color:var(--y)"></div>
+
+    <!-- Histórico -->
+    <div id="clm-historico-wrap" style="display:none;margin:14px 0 0">
+      <div style="font-size:13px;font-weight:600;color:var(--y);letter-spacing:.05em;border-top:1px solid var(--border);padding-top:14px;margin-bottom:8px">HISTÓRICO</div>
+      <div id="clm-historico" style="max-height:160px;overflow-y:auto"></div>
+    </div>
+
     <div class="crm-modal-btns" style="flex-wrap:wrap;gap:6px">
       <button class="tbtn" id="clm-del-btn" data-action="crmDeleteLead" style="color:var(--r);border-color:var(--r);margin-right:auto;display:none">🗑️ Eliminar</button>
-      <button class="tbtn" id="clm-adjud-btn" data-action="crmAbrirAdjudicacao" style="display:none;background:rgba(245,196,0,.1);border-color:rgba(245,196,0,.4);color:var(--y)" title="Gerar formulário de adjudicação para enviar ao cliente">📋 Adjudicação</button>
+      <button class="tbtn" id="clm-adjud-btn" onclick="crmAbrirAdjudicacaoModal(crmEditingId)" style="display:none;background:rgba(245,196,0,.1);border-color:rgba(245,196,0,.4);color:var(--y)" title="Gerar formulário de adjudicação para enviar ao cliente">📋 Adjudicação</button>
       <button class="tbtn" data-action="crmCloseLeadModal">Cancelar</button>
       <button class="tbtn y" data-action="crmSaveLead">💾 Guardar</button>
     </div>
@@ -9500,16 +9533,51 @@ function crmPopulateFiltroVendedor(){
   if(_crmFiltroVendedor) sel.value=_crmFiltroVendedor;
 }
 
+// ── Filtros avançados: origem e valor ──────────────────────────
+var CRM_FILTERS = { origem:'', valor:'' };
+
+function crmPopulateFiltroOrigem(){
+  const sel=document.getElementById('crm-filtro-origem');
+  if(!sel) return;
+  const origens = [...new Set((crmLeads||[]).map(l=>l.origem).filter(Boolean))].sort();
+  const atual = sel.value;
+  sel.innerHTML='<option value="">— Todas as origens —</option>'+
+    origens.map(o=>`<option value="${o}">${o}</option>`).join('');
+  sel.value = CRM_FILTERS.origem || atual || '';
+}
+
+function crmAplicarFiltrosAvancados(){
+  const selO=document.getElementById('crm-filtro-origem');
+  const selV=document.getElementById('crm-filtro-valor');
+  CRM_FILTERS.origem = selO?selO.value:'';
+  CRM_FILTERS.valor = selV?selV.value:'';
+  renderCRMKanban('crm-kanban');
+}
+
+function crmLeadPassaFiltroValor(val){
+  if(!CRM_FILTERS.valor) return true;
+  if(CRM_FILTERS.valor==='<1000') return val<1000;
+  if(CRM_FILTERS.valor==='1000-5000') return val>=1000 && val<=5000;
+  if(CRM_FILTERS.valor==='>5000') return val>5000;
+  return true;
+}
+
 function renderCRMKanban(elId){
   const el = document.getElementById(elId);
   if(!el) return;
   // Populate vendor filter if this is the pipeline kanban
-  if(elId==='crm-kanban') crmPopulateFiltroVendedor();
+  if(elId==='crm-kanban'){ crmPopulateFiltroVendedor(); crmPopulateFiltroOrigem(); }
   el.innerHTML = CRM_COLS.map(col=>{
     let colLeads = crmLeads.filter(l=>l.st===col.key);
     // Apply vendor filter only on pipeline kanban
     if(elId==='crm-kanban' && _crmFiltroVendedor){
       colLeads = colLeads.filter(l=>l.ass===_crmFiltroVendedor);
+    }
+    if(elId==='crm-kanban' && CRM_FILTERS.origem){
+      colLeads = colLeads.filter(l=>l.origem===CRM_FILTERS.origem);
+    }
+    if(elId==='crm-kanban' && CRM_FILTERS.valor){
+      colLeads = colLeads.filter(l=>crmLeadPassaFiltroValor(l.val));
     }
     return `<div class="k-col" ondragover="crmDragOver(event,'${col.key}')" ondragleave="crmDragLeave(event)" ondrop="crmDrop(event,'${col.key}')">
       <div class="k-col-hdr" style="background:${col.cor}18;border-bottom:1px solid ${col.cor}30">
@@ -9524,16 +9592,35 @@ function renderCRMKanban(elId){
           const assStack = assArr.slice(0,3).map(a=>{ const c=crmGetComercial(a); return avHtml(a,c.cor); }).join('');
           const assMore = assArr.length>3 ? `<div class="av-more">+${assArr.length-3}</div>` : '';
           const assAddBtn = `<div class="k-card-ass-add" onclick="event.stopPropagation();crmAddAssignee(${l.id})" title="Adicionar comercial">＋</div>`;
+          // Badge de tempo (dias desde a criação/início)
+          const diasOrigemStr = l.dtInicio || l.dt;
+          let diasParse = null;
+          if(l.dtInicio){ diasParse = new Date(l.dtInicio); }
+          else if(l.dt){ const p=l.dt.split('/'); if(p.length===3) diasParse = new Date(p[2],p[1]-1,p[0]); }
+          const diasDesde = diasParse ? Math.max(0,Math.round((new Date()-diasParse)/86400000)) : null;
+          const tempoBadge = diasDesde!==null ? `<span style="font-size:11px;color:var(--muted);background:var(--bg3);border-radius:4px;padding:1px 6px">há ${diasDesde} dia${diasDesde===1?'':'s'}</span>` : '';
+
+          // Badge de prioridade
+          const prioCores = {'Urgente':'#e05555','Alta':'#d9822b','Normal':'#6b6b72'};
+          const prioBadge = l.prioridade ? `<span style="font-size:11px;color:${prioCores[l.prioridade]||'#6b6b72'};background:${(prioCores[l.prioridade]||'#6b6b72')}20;border:1px solid ${(prioCores[l.prioridade]||'#6b6b72')}40;border-radius:4px;padding:1px 6px">${l.prioridade}</span>` : '';
+
+          // Badge de origem
+          const origBadge = l.origem ? `<span style="font-size:11px;color:var(--y);background:rgba(245,196,0,.1);border:1px solid rgba(245,196,0,.3);border-radius:4px;padding:1px 6px">${l.origem}</span>` : '';
+
           return `<div class="k-card" id="kcard-${l.id}" draggable="true"
             ondragstart="crmDragStart(event,${l.id})" ondragend="crmDragEnd(event)"
             onclick="crmOpenEdit(${l.id})">
             <div class="k-card-title">${l.n}</div>
             <div class="k-card-sub">${l.emp}</div>
-            <div style="margin-bottom:8px"><span class="b bm" style="font-size:12px">${l.prod}</span></div>
+            <div style="margin-bottom:8px;display:flex;gap:5px;flex-wrap:wrap;align-items:center">
+              <span class="b bm" style="font-size:12px">${l.prod}</span>
+              ${tempoBadge}${prioBadge}${origBadge}
+            </div>
             <div class="k-card-meta">
               <div class="av-stack" style="gap:0">${assStack}${assMore}${assAddBtn}</div>
               <div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px">
                 ${l.tel?`<a href="tel:${l.tel}" onclick="event.stopPropagation()" style="font-size:13px;color:var(--muted);text-decoration:none;font-family:'DM Mono',monospace">📞 ${l.tel}</a>`:''}
+                ${l.email?`<a href="mailto:${l.email}" onclick="event.stopPropagation()" style="font-size:13px;color:var(--muted);text-decoration:none;font-family:'DM Mono',monospace">✉ ${l.email}</a>`:''}
                 <span class="k-card-val">${fmt(l.val)}</span>
               </div>
             </div>
@@ -9607,6 +9694,23 @@ function crmUpdateStats(){
   set('crm-pip', fmt(pip));
   set('crm-conv', conv+'%');
   set('crm-dias', '18d');
+
+  // Leads Parados: mais de 15 dias sem actualização
+  const agora = new Date();
+  const parados = ativos.filter(l=>{
+    let base = null;
+    if(l.dtInicio) base = new Date(l.dtInicio);
+    else if(l.dt){ const p=l.dt.split('/'); if(p.length===3) base = new Date(p[2],p[1]-1,p[0]); }
+    if(!base) return false;
+    return Math.round((agora-base)/86400000) > 15;
+  });
+  set('crm-parados', parados.length);
+
+  // Top Comercial: quem tem mais leads activos
+  const contagem = {};
+  ativos.forEach(l=>{ if(l.ass) contagem[l.ass]=(contagem[l.ass]||0)+1; });
+  const top = Object.entries(contagem).sort((a,b)=>b[1]-a[1])[0];
+  set('crm-top-comercial', top ? `${top[0]} (${top[1]})` : '—');
 }
 
 // ── MODAL NOVO/EDITAR LEAD ───────────────────────────────
@@ -9627,6 +9731,7 @@ function crmOpenNew(stInicial){
   const fp=document.getElementById('clm-files-preview');if(fp)fp.innerHTML='📎 Clica para anexar (imagens, PDF, AI, PSD...)';
   const fi=document.getElementById('clm-file-input');if(fi)fi.value='';
   document.getElementById('clm-st').value = stInicial||'Novo Lead';
+  const prioN=document.getElementById('clm-prioridade'); if(prioN) prioN.value='';
   // data de início automática
   const dtInicio=document.getElementById('clm-dt-inicio');
   if(dtInicio) dtInicio.value=new Date().toISOString().split('T')[0];
@@ -9642,6 +9747,10 @@ function crmOpenNew(stInicial){
   if(delBtn2) delBtn2.style.display='none';
   const adjBtn = document.getElementById('clm-adjud-btn');
   if(adjBtn) adjBtn.style.display='none';
+  const sugEl2 = document.getElementById('clm-sugestao');
+  if(sugEl2) sugEl2.style.display='none';
+  const histWrap2 = document.getElementById('clm-historico-wrap');
+  if(histWrap2) histWrap2.style.display='none';
 }
 
 function crmOpenEdit(id){
@@ -9659,6 +9768,7 @@ function crmOpenEdit(id){
   document.getElementById('clm-val').value = lead.val;
   document.getElementById('clm-nota').value = lead.nota||'';
   document.getElementById('clm-st').value = lead.st;
+  const prioE=document.getElementById('clm-prioridade'); if(prioE) prioE.value=lead.prioridade||'';
   crmPopulateAssSelect(lead.ass);
   // Datas e Marketing
   const dtI=document.getElementById('clm-dt-inicio');
@@ -9673,7 +9783,33 @@ function crmOpenEdit(id){
   if(adjBtnE) adjBtnE.style.display='inline-flex';
   const delBtnE = document.getElementById('clm-del-btn');
   if(delBtnE) delBtnE.style.display='block';
+
+  // Sugestão de próximo passo
+  const sugEl = document.getElementById('clm-sugestao');
+  if(sugEl){
+    const sugestao = crmSugerirProximoPasso(lead);
+    if(sugestao){ sugEl.style.display='block'; sugEl.innerHTML = '💡 ' + sugestao; }
+    else sugEl.style.display='none';
+  }
+
+  // Histórico
+  const histWrap = document.getElementById('clm-historico-wrap');
+  if(histWrap){ histWrap.style.display='block'; crmRenderHistorico(id); }
+
   m.classList.add('open');
+}
+
+// ── SUGESTÃO DE PRÓXIMO PASSO (estilo IA) ──────────────────────
+function crmSugerirProximoPasso(lead){
+  let base = null;
+  if(lead.dtInicio) base = new Date(lead.dtInicio);
+  else if(lead.dt){ const p=lead.dt.split('/'); if(p.length===3) base = new Date(p[2],p[1]-1,p[0]); }
+  if(!base) return null;
+  const dias = Math.round((new Date()-base)/86400000);
+  if(lead.st==='Novo Lead' && dias>3) return 'Sugestão: Qualificar este lead (contactar cliente).';
+  if(lead.st==='Proposta enviada' && dias>7) return 'Sugestão: Fazer follow-up.';
+  if(lead.st==='Em negociação' && dias>14) return 'Sugestão: Rever condições ou fechar.';
+  return null;
 }
 
 function crmPopulateAssSelect(selNome){
@@ -9784,6 +9920,7 @@ function crmSaveLead(){
     dtInicio: dtInicioVal,
     dtFecho: dtFechoVal,
     origem: document.getElementById('clm-origem')?.value||'',
+    prioridade: document.getElementById('clm-prioridade')?.value||'',
     dt:   new Date().toLocaleDateString('pt-PT',{day:'2-digit',month:'2-digit',year:'numeric'})
   };
   if(crmEditingId){
@@ -9797,6 +9934,7 @@ function crmSaveLead(){
       if(data.ass && !newAssignees.includes(data.ass)) newAssignees = [data.ass, ...newAssignees];
       else if(data.ass && newAssignees[0]!==data.ass){ newAssignees = newAssignees.filter(a=>a!==data.ass); newAssignees.unshift(data.ass); }
       data.assignees = newAssignees;
+      crmRegistarHistorico(existing, data);
       crmLeads[idx] = {...existing, ...data};
     }
   } else {
@@ -9806,6 +9944,37 @@ function crmSaveLead(){
   saveCrmLeads();
   crmRenderAll();
   crmCloseLeadModal();
+}
+
+// ── HISTÓRICO DE ALTERAÇÕES ──────────────────────────────
+var crmHistorico; try{ crmHistorico=JSON.parse(localStorage.getItem('ob-crm-historico')||'null'); }catch(e){ crmHistorico=null; } crmHistorico = crmHistorico || [];
+function saveCrmHistorico(){ localStorage.setItem('ob-crm-historico', JSON.stringify(crmHistorico.slice(0,500))); }
+
+function crmRegistarHistorico(existing, data){
+  const campos = ['n','emp','email','tel','prod','val','st','ass','nota','origem','prioridade'];
+  const autor = (typeof CU!=='undefined'&&CU&&CU.name) ? CU.name : 'Sistema';
+  campos.forEach(campo=>{
+    const valorAntigo = existing[campo];
+    const valorNovo = data[campo];
+    if((valorAntigo||'')!==(valorNovo||'')){
+      crmHistorico.unshift({ leadId: existing.id, data: new Date().toISOString(), campo, valorAntigo, valorNovo, autor });
+    }
+  });
+  saveCrmHistorico();
+}
+
+function crmRenderHistorico(leadId){
+  const el = document.getElementById('clm-historico');
+  if(!el) return;
+  const entradas = crmHistorico.filter(h=>h.leadId===leadId);
+  if(!entradas.length){ el.innerHTML = '<div style="color:var(--muted);font-size:13px;font-style:italic">Sem alterações registadas.</div>'; return; }
+  el.innerHTML = entradas.map(h=>{
+    const dt = new Date(h.data).toLocaleString('pt-PT');
+    return `<div style="border-bottom:1px solid var(--border);padding:6px 0;font-size:13px">
+      <div style="color:var(--muted);font-size:11px">${dt} · ${h.autor}</div>
+      <div><strong>${h.campo}</strong>: <span style="color:var(--muted)">${h.valorAntigo||'—'}</span> → <span style="color:var(--y)">${h.valorNovo||'—'}</span></div>
+    </div>`;
+  }).join('');
 }
 
 function crmDeleteLead(){
@@ -12226,21 +12395,17 @@ function orcEmail(){
 
 
 // ══════════════════════════════════════════════════════════════════
-// FORMULÁRIO DE ADJUDICAÇÃO
+// FORMULÁRIO DE ADJUDICAÇÃO (modal interno)
 // ══════════════════════════════════════════════════════════════════
-function crmAbrirAdjudicacao(){
-  const id = crmEditingId;
+function crmAbrirAdjudicacaoModal(leadId){
+  const id = leadId || crmEditingId;
   if(!id) return;
   const lead = crmLeads.find(l=>l.id===id);
   if(!lead) return;
 
-  // Tentar encontrar cliente no cadastro para pré-preencher
   const cli = (cliData||[]).find(c=>c.n.toLowerCase()===lead.emp.toLowerCase())||{};
+  const orc = (typeof orcData!=='undefined' ? (orcData||[]).find(o=>o.cli===lead.emp) : null)||{};
 
-  // Orçamento mais recente deste cliente (se existir)
-  const orc = (orcData||[]).find(o=>o.cli===lead.emp)||{};
-
-  // Dados pré-preenchidos (exceto Morada de Montagem — cliente preenche)
   const pre = {
     finNome:    cli.finNome||'',
     finTel:     cli.finTel||cli.tel||'',
@@ -12249,233 +12414,65 @@ function crmAbrirAdjudicacao(){
     empresa:    lead.emp||'',
     moradaFiscal: cli.morada||orc.morada||'',
     orcNum:     orc.num||'',
-    produto:    lead.prod||'',
-    val:        lead.val||''
+    produto:    lead.prod||''
   };
 
-  const html = `<!DOCTYPE html>
-<html lang="pt">
-<head>
-<meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Formulário de Adjudicação — OpportunityBox</title>
-<style>
-*{box-sizing:border-box;margin:0;padding:0}
-body{font-family:'Segoe UI',Arial,sans-serif;background:#111;color:#e0e0e0;min-height:100vh;padding:0}
-.adj-page{max-width:720px;margin:0 auto;padding:40px 24px 60px}
-.logo-bar{display:flex;align-items:center;gap:12px;margin-bottom:32px;padding-bottom:20px;border-bottom:1px solid #333}
-.brand{font-size:19px;font-weight:700;color:#fff}.brand span{color:#F5C400}
-.tag{font-size:13px;color:#777;margin-top:2px}
-h1{font-size:22px;font-weight:700;color:#fff;margin-bottom:12px}
-.intro{font-size:15px;color:#aaa;line-height:1.6;margin-bottom:20px}
-.alert{background:rgba(245,196,0,.12);border:1px solid rgba(245,196,0,.4);border-radius:8px;padding:12px 16px;font-size:14px;color:#F5C400;font-weight:600;margin-bottom:16px}
-.contact-info{font-size:14px;color:#aaa;margin-bottom:32px}
-.contact-info strong{color:#ddd}
-.section-title{font-size:12px;font-weight:700;letter-spacing:.08em;color:#F5C400;text-transform:uppercase;margin:28px 0 12px;padding-top:20px;border-top:1px solid #2a2a2a}
-.section-title:first-of-type{border-top:none;margin-top:0;padding-top:0}
-.row{display:flex;gap:16px;margin-bottom:14px}
-.row .field{flex:1}
-.field{margin-bottom:14px}
-label{display:block;font-size:12px;font-weight:600;letter-spacing:.06em;color:#888;text-transform:uppercase;margin-bottom:5px}
-label .req{color:#F5C400}
-input,select,textarea{width:100%;background:#1c1c1e;border:1px solid #333;border-radius:7px;padding:10px 13px;font-size:15px;color:#e8e8ec;outline:none;font-family:inherit;transition:border-color .2s}
-input:focus,select:focus,textarea:focus{border-color:#F5C400}
-textarea{resize:vertical;min-height:80px}
-.file-drop{background:#1c1c1e;border:1px dashed #444;border-radius:8px;padding:24px;text-align:center;cursor:pointer;font-size:14px;color:#666;transition:border-color .2s}
-.file-drop:hover{border-color:#F5C400;color:#F5C400}
-.file-list{margin-top:8px;font-size:13px;color:#aaa;text-align:left}
-.submit-btn{display:block;width:100%;background:#F5C400;color:#111;font-size:16px;font-weight:700;border:none;border-radius:9px;padding:15px;cursor:pointer;margin-top:28px;letter-spacing:.04em;transition:opacity .2s}
-.submit-btn:hover{opacity:.9}
-.submit-btn:disabled{opacity:.5;cursor:not-allowed}
-.success{display:none;background:rgba(63,207,142,.12);border:1px solid rgba(63,207,142,.4);border-radius:10px;padding:24px;text-align:center;margin-top:20px}
-.success h2{color:#3fcf8e;margin-bottom:8px}
-.success p{color:#aaa;font-size:13px}
-.orc-ref{display:inline-block;background:rgba(245,196,0,.1);border:1px solid rgba(245,196,0,.3);border-radius:6px;padding:4px 10px;font-size:13px;color:#F5C400;font-family:monospace;margin-bottom:20px}
-@media(max-width:600px){.row{flex-direction:column;gap:0}}
-</style>
-</head>
-<body>
-<div class="adj-page">
-  <div class="logo-bar">
-    <div>
-      <div class="brand">Opportunity<span>Box</span></div>
-      <div class="tag">Formulário de Adjudicação</div>
-    </div>
-  </div>
+  const set = (id,v)=>{ const el=document.getElementById(id); if(el) el.value=v; };
+  set('adj-fin-nome', pre.finNome);
+  set('adj-fin-tel', pre.finTel);
+  set('adj-fin-email', pre.finEmail);
+  set('adj-nif', pre.nif);
+  set('adj-empresa', pre.empresa);
+  set('adj-morada-fiscal', pre.moradaFiscal);
+  set('adj-morada-montagem', '');
+  set('adj-os', '');
+  set('adj-cabimento', '');
+  set('adj-eng', '');
+  set('adj-produto', pre.produto);
+  set('adj-obs', '');
+  const ref = document.getElementById('adj-orc-ref');
+  if(ref){ ref.style.display = pre.orcNum?'inline-block':'none'; ref.textContent = pre.orcNum?('Ref. '+pre.orcNum):''; }
 
-  <h1>Formulário de Adjudicação</h1>
-  ${pre.orcNum?`<div class="orc-ref">Ref. ${pre.orcNum}</div>`:''}
-  <div class="intro">
-    Por favor complete as informações abaixo, para que possamos dar continuidade ao seu pedido.
-    Estas informações serão utilizadas somente para fins administrativos.<br><br>
-    Se você possui alguma dúvida, estamos disponíveis para melhor atendê-lo.
-  </div>
-  <div class="alert">⚠️ Atenção: Estas informações são de extrema importância para o início de produção do seu projeto!</div>
-  <div class="contact-info">
-    Pode nos enviar um email, ou fazer uma chamada!<br>
-    <strong>apoiocomercial@opportunitybox.pt</strong> | <strong>+351 215 874 779</strong>
-  </div>
-
-  <form id="adj-form" onsubmit="return submitForm(event)">
-
-    <div class="section-title">Área Financeira</div>
-    <div class="row">
-      <div class="field">
-        <label>Nome (Área Financeira) <span class="req">*</span></label>
-        <input type="text" id="f-fin-nome" value="${pre.finNome}" placeholder="Nome do responsável financeiro" required/>
-      </div>
-      <div class="field">
-        <label>Contacto (Área Financeira) <span class="req">*</span></label>
-        <input type="tel" id="f-fin-tel" value="${pre.finTel}" placeholder="+351 9XX XXX XXX" required/>
-      </div>
-    </div>
-    <div class="row">
-      <div class="field">
-        <label>Email (Área Financeira) <span class="req">*</span></label>
-        <input type="email" id="f-fin-email" value="${pre.finEmail}" placeholder="financeiro@empresa.pt" required/>
-      </div>
-      <div class="field">
-        <label>NIF <span class="req">*</span></label>
-        <input type="text" id="f-nif" value="${pre.nif}" placeholder="PT 000 000 000" required/>
-      </div>
-    </div>
-
-    <div class="section-title">Dados da Empresa</div>
-    <div class="row">
-      <div class="field">
-        <label>Nome de Empresa <span class="req">*</span></label>
-        <input type="text" id="f-empresa" value="${pre.empresa}" placeholder="Designação social da empresa" required/>
-      </div>
-      <div class="field">
-        <label>Morada Fiscal <span class="req">*</span></label>
-        <input type="text" id="f-morada-fiscal" value="${pre.moradaFiscal}" placeholder="Rua, Nº, Código Postal, Cidade" required/>
-      </div>
-    </div>
-
-    <div class="section-title">Localização da Instalação</div>
-    <div class="field">
-      <label>Morada de Montagem <span class="req">*</span></label>
-      <input type="text" id="f-morada-montagem" value="" placeholder="Morada onde o trabalho será instalado (pode diferir da sede)" required/>
-    </div>
-
-    <div class="section-title">Informação da Encomenda</div>
-    <div class="row">
-      <div class="field">
-        <label>N.º Ordem de Serviço / PO</label>
-        <input type="text" id="f-os" placeholder="Ex: OS-2026-001"/>
-      </div>
-      <div class="field">
-        <label>N.º de Cabimento</label>
-        <input type="text" id="f-cabimento" placeholder="Ex: CAB-2026-XXX"/>
-      </div>
-    </div>
-    <div class="row">
-      <div class="field">
-        <label>Engenheiro / Responsável Técnico</label>
-        <input type="text" id="f-eng" placeholder="Nome do engenheiro responsável"/>
-      </div>
-      <div class="field">
-        <label>Produto / Serviço</label>
-        <input type="text" id="f-produto" value="${pre.produto}" readonly style="opacity:.6;cursor:not-allowed"/>
-      </div>
-    </div>
-
-    <div class="section-title">Documentação</div>
-    <div class="field">
-      <label>Notas de Encomenda / Anexos</label>
-      <div class="file-drop" onclick="document.getElementById('f-files').click()">
-        📎 Clique para anexar ficheiros (Notas de Encomenda, PDF, imagens...)
-        <input type="file" id="f-files" multiple accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx" style="display:none" onchange="updateFileList(this)"/>
-        <div class="file-list" id="f-file-list"></div>
-      </div>
-    </div>
-    <div class="field">
-      <label>Observações</label>
-      <textarea id="f-obs" placeholder="Indicações especiais, restrições de acesso, horários de montagem, etc."></textarea>
-    </div>
-
-    <button type="submit" class="submit-btn" id="f-submit">✓ Submeter Formulário de Adjudicação</button>
-  </form>
-
-  <div class="success" id="f-success">
-    <h2>✓ Formulário recebido!</h2>
-    <p>Obrigado. A nossa equipa vai processar a sua adjudicação e entrará em contacto brevemente.<br>
-    Para qualquer questão: <strong>apoiocomercial@opportunitybox.pt</strong></p>
-  </div>
-</div>
-<scr'+'ipt>
-function updateFileList(input){
-  const list=document.getElementById('f-file-list');
-  list.innerHTML=[...input.files].map(f=>'<div>📄 '+f.name+'</div>').join('');
+  const m = document.getElementById('adj-modal');
+  if(!m) return;
+  m.dataset.leadId = id;
+  m.classList.add('open');
 }
-function submitForm(e){
-  e.preventDefault();
-  const btn=document.getElementById('f-submit');
-  btn.disabled=true; btn.textContent='A enviar...';
-  // Recolher dados
-  const dados={
-    finNome:document.getElementById('f-fin-nome').value,
-    finTel:document.getElementById('f-fin-tel').value,
-    finEmail:document.getElementById('f-fin-email').value,
-    nif:document.getElementById('f-nif').value,
-    empresa:document.getElementById('f-empresa').value,
-    moradaFiscal:document.getElementById('f-morada-fiscal').value,
-    moradaMontagem:document.getElementById('f-morada-montagem').value,
-    os:document.getElementById('f-os').value,
-    cabimento:document.getElementById('f-cabimento').value,
-    eng:document.getElementById('f-eng').value,
-    obs:document.getElementById('f-obs').value,
+
+function crmFecharAdjudicacaoModal(){
+  const m = document.getElementById('adj-modal');
+  if(m) m.classList.remove('open');
+}
+
+function crmSubmeterAdjudicacao(){
+  const m = document.getElementById('adj-modal');
+  if(!m) return;
+  const leadId = parseInt(m.dataset.leadId);
+  const get = (id)=>{ const el=document.getElementById(id); return el?el.value.trim():''; };
+  const dados = {
+    leadId,
+    finNome: get('adj-fin-nome'),
+    finTel: get('adj-fin-tel'),
+    finEmail: get('adj-fin-email'),
+    nif: get('adj-nif'),
+    empresa: get('adj-empresa'),
+    moradaFiscal: get('adj-morada-fiscal'),
+    moradaMontagem: get('adj-morada-montagem'),
+    os: get('adj-os'),
+    cabimento: get('adj-cabimento'),
+    eng: get('adj-eng'),
+    produto: get('adj-produto'),
+    obs: get('adj-obs')
   };
-  // Envio simulado — em produção enviar para webhook/email
-  console.log('Adjudicação submetida:', dados);
-  setTimeout(()=>{
-    document.getElementById('adj-form').style.display='none';
-    document.getElementById('f-success').style.display='block';
-  },800);
-  return false;
-}
-</'+'script>
-<!-- ─── MINI-MODAL NOVO CLIENTE (via Orçamentos) -->
-<div id="orc-novo-cli-modal" style="display:none;position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,.7);backdrop-filter:blur(4px);align-items:center;justify-content:center">
-  <div style="background:var(--bg2);border:1px solid var(--border2);border-radius:12px;padding:24px;width:100%;max-width:440px;margin:20px;box-shadow:0 20px 60px rgba(0,0,0,.5)">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px">
-      <div style="font-size:16px;font-weight:700;color:var(--txt2)">➕ Novo Cliente</div>
-      <button onclick="orcNovoCliClose()" style="background:none;border:none;color:var(--muted);font-size:19px;cursor:pointer;line-height:1">×</button>
-    </div>
-    <div class="form-group" style="margin-bottom:10px">
-      <label class="form-label">Nome do cliente <span style="color:var(--r)">*</span></label>
-      <input class="form-input" id="oncli-nome" placeholder="Ex: Hotel Serra da Lua"/>
-    </div>
-    <div class="form-group" style="margin-bottom:10px">
-      <label class="form-label">NIF</label>
-      <input class="form-input" id="oncli-nif" placeholder="500 000 000"/>
-    </div>
-    <div class="form-group" style="margin-bottom:10px">
-      <label class="form-label">Morada</label>
-      <input class="form-input" id="oncli-morada" placeholder="Rua, nº, Localidade"/>
-    </div>
-    <div class="form-group" style="margin-bottom:10px">
-      <label class="form-label">Email</label>
-      <input class="form-input" type="email" id="oncli-email" placeholder="geral@empresa.pt"/>
-    </div>
-    <div class="form-group" style="margin-bottom:18px">
-      <label class="form-label">Telefone</label>
-      <input class="form-input" id="oncli-tel" placeholder="+351 912 345 678"/>
-    </div>
-    <div style="display:flex;gap:8px">
-      <button class="tbtn y" style="flex:1;padding:10px" onclick="orcNovoCliSave()">💾 Criar e seleccionar</button>
-      <button class="tbtn" onclick="orcNovoCliClose()">Cancelar</button>
-    </div>
-  </div>
-</div>
-
-
-</body>
-</html>`;
-
-  const win = window.open('','_blank');
-  if(win){ win.document.write(html); win.document.close(); }
-  else{ alert('Activa pop-ups para gerar o formulário.'); }
+  if(!dados.finNome || !dados.finTel || !dados.finEmail || !dados.nif || !dados.empresa || !dados.moradaFiscal || !dados.moradaMontagem){
+    alert('Preenche os campos obrigatórios da adjudicação.');
+    return;
+  }
+  if(typeof OB_WEBHOOK_ADJUDICACAO === 'string' && OB_WEBHOOK_ADJUDICACAO){
+    fetch(OB_WEBHOOK_ADJUDICACAO, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(dados)}).catch(()=>{});
+  }
+  showToast('✓ Adjudicação submetida com sucesso!');
+  crmFecharAdjudicacaoModal();
 }
 
 function orcPDF(){
@@ -17018,7 +17015,6 @@ document.addEventListener('click', function(e){
     case 'cliDelete': safe(cliDelete); break;
     case 'crmSaveLead': safe(crmSaveLead); break;
     case 'crmDeleteLead': safe(crmDeleteLead); break;
-    case 'crmAbrirAdjudicacao': safe(crmAbrirAdjudicacao); break;
     case 'crmCloseLeadModal': safe(crmCloseLeadModal); break;
     case 'crmOpenComerciais': safe(crmOpenComerciais); break;
     case 'crmCloseComerciais': safe(crmCloseComerciais); break;
@@ -18139,6 +18135,124 @@ function importarConfiguracao() {
     <div class="crm-modal-btns">
       <button class="tbtn" type="button" onclick="homeCloseFullEdit()">Cancelar</button>
       <button class="tbtn y" type="button" onclick="homeSaveFullEdit()">💾 Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ─── MINI-MODAL NOVO CLIENTE (via Orçamentos) -->
+<div id="orc-novo-cli-modal" style="display:none;position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,.7);backdrop-filter:blur(4px);align-items:center;justify-content:center">
+  <div style="background:var(--bg2);border:1px solid var(--border2);border-radius:12px;padding:24px;width:100%;max-width:440px;margin:20px;box-shadow:0 20px 60px rgba(0,0,0,.5)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px">
+      <div style="font-size:16px;font-weight:700;color:var(--txt2)">➕ Novo Cliente</div>
+      <button onclick="orcNovoCliClose()" style="background:none;border:none;color:var(--muted);font-size:19px;cursor:pointer;line-height:1">×</button>
+    </div>
+    <div class="form-group" style="margin-bottom:10px">
+      <label class="form-label">Nome do cliente <span style="color:var(--r)">*</span></label>
+      <input class="form-input" id="oncli-nome" placeholder="Ex: Hotel Serra da Lua"/>
+    </div>
+    <div class="form-group" style="margin-bottom:10px">
+      <label class="form-label">NIF</label>
+      <input class="form-input" id="oncli-nif" placeholder="500 000 000"/>
+    </div>
+    <div class="form-group" style="margin-bottom:10px">
+      <label class="form-label">Morada</label>
+      <input class="form-input" id="oncli-morada" placeholder="Rua, nº, Localidade"/>
+    </div>
+    <div class="form-group" style="margin-bottom:10px">
+      <label class="form-label">Email</label>
+      <input class="form-input" type="email" id="oncli-email" placeholder="geral@empresa.pt"/>
+    </div>
+    <div class="form-group" style="margin-bottom:18px">
+      <label class="form-label">Telefone</label>
+      <input class="form-input" id="oncli-tel" placeholder="+351 912 345 678"/>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="tbtn y" style="flex:1;padding:10px" onclick="orcNovoCliSave()">💾 Criar e seleccionar</button>
+      <button class="tbtn" onclick="orcNovoCliClose()">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ─── MODAL FORMULÁRIO DE ADJUDICAÇÃO ─── -->
+<div id="adj-modal" class="crm-modal-overlay">
+  <div class="crm-modal" style="max-width:620px">
+    <h2>📋 Formulário de Adjudicação <span id="adj-orc-ref" style="display:none;font-size:12px;font-weight:600;color:var(--y);background:rgba(245,196,0,.1);border:1px solid rgba(245,196,0,.3);border-radius:6px;padding:2px 8px;margin-left:8px"></span></h2>
+
+    <div style="margin:4px 0 8px;font-size:12px;font-weight:700;letter-spacing:.06em;color:var(--y);text-transform:uppercase">Área Financeira</div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Nome (Área Financeira) *</label>
+        <input class="form-input" id="adj-fin-nome" placeholder="Nome do responsável financeiro"/>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Contacto *</label>
+        <input class="form-input" id="adj-fin-tel" placeholder="+351 9XX XXX XXX"/>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Email *</label>
+        <input class="form-input" id="adj-fin-email" type="email" placeholder="financeiro@empresa.pt"/>
+      </div>
+      <div class="form-group">
+        <label class="form-label">NIF *</label>
+        <input class="form-input" id="adj-nif" placeholder="PT 000 000 000"/>
+      </div>
+    </div>
+
+    <div style="margin:14px 0 8px;font-size:12px;font-weight:700;letter-spacing:.06em;color:var(--y);text-transform:uppercase;border-top:1px solid var(--border);padding-top:14px">Dados da Empresa</div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Nome de Empresa *</label>
+        <input class="form-input" id="adj-empresa" placeholder="Designação social"/>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Morada Fiscal *</label>
+        <input class="form-input" id="adj-morada-fiscal" placeholder="Rua, Nº, Código Postal, Cidade"/>
+      </div>
+    </div>
+
+    <div style="margin:14px 0 8px;font-size:12px;font-weight:700;letter-spacing:.06em;color:var(--y);text-transform:uppercase;border-top:1px solid var(--border);padding-top:14px">Localização da Instalação</div>
+    <div class="form-row full">
+      <div class="form-group">
+        <label class="form-label">Morada de Montagem *</label>
+        <input class="form-input" id="adj-morada-montagem" placeholder="Morada onde o trabalho será instalado"/>
+      </div>
+    </div>
+
+    <div style="margin:14px 0 8px;font-size:12px;font-weight:700;letter-spacing:.06em;color:var(--y);text-transform:uppercase;border-top:1px solid var(--border);padding-top:14px">Informação da Encomenda</div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">N.º Ordem de Serviço / PO</label>
+        <input class="form-input" id="adj-os" placeholder="Ex: OS-2026-001"/>
+      </div>
+      <div class="form-group">
+        <label class="form-label">N.º de Cabimento</label>
+        <input class="form-input" id="adj-cabimento" placeholder="Ex: CAB-2026-XXX"/>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Engenheiro / Responsável Técnico</label>
+        <input class="form-input" id="adj-eng" placeholder="Nome do engenheiro responsável"/>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Produto / Serviço</label>
+        <input class="form-input" id="adj-produto" readonly style="opacity:.6;cursor:not-allowed"/>
+      </div>
+    </div>
+
+    <div style="margin:14px 0 8px;font-size:12px;font-weight:700;letter-spacing:.06em;color:var(--y);text-transform:uppercase;border-top:1px solid var(--border);padding-top:14px">Documentação</div>
+    <div class="form-row full">
+      <div class="form-group">
+        <label class="form-label">Observações</label>
+        <textarea class="form-input" id="adj-obs" rows="3" placeholder="Indicações especiais, restrições de acesso, horários de montagem, etc." style="resize:vertical"></textarea>
+      </div>
+    </div>
+
+    <div class="crm-modal-btns">
+      <button class="tbtn" onclick="crmFecharAdjudicacaoModal()">Cancelar</button>
+      <button class="tbtn y" onclick="crmSubmeterAdjudicacao()">✓ Submeter</button>
     </div>
   </div>
 </div>
