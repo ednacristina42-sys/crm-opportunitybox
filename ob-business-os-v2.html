@@ -8862,7 +8862,7 @@ function renderTasksList(){
             <th style="width:40%">Tarefa</th><th>Estado</th><th>Prioridade</th><th>Responsável</th><th>Prazo</th>
           </tr></thead>
           <tbody>
-          ${gtasks.map(t=>`<tr>
+          ${gtasks.map(t=>`<tr onclick="homeEditTask(${t.id})" style="cursor:pointer">
             <td><div class="task-name-cell"><div class="task-check"></div><div class="task-name">${t.title}</div></div></td>
             <td><span class="status" style="background:${t.statusC}20;color:${t.statusC};border:1px solid ${t.statusC}40">${t.status}</span></td>
             <td><div class="prio"><div class="prio-dot" style="background:${t.prioBg}"></div>${t.prio}</div></td>
@@ -8904,7 +8904,7 @@ function renderTasksBoard(){
           <div class="k-col-name" style="color:${dc}">👤 ${person}</div>
           <div class="k-col-count" style="background:${dc}25;color:${dc}">${ptasks.length}</div>
         </div>
-        ${ptasks.map(t=>`<div class="k-card" id="htask-${t.id}">
+        ${ptasks.map(t=>`<div class="k-card" id="htask-${t.id}" onclick="homeEditTask(${t.id})">
           <div class="k-card-title">${t.title}</div>
           <div class="k-card-sub" style="color:${dc}">${t.status}</div>
           <div class="k-card-meta">
@@ -8938,6 +8938,7 @@ function renderTasksBoard(){
       ${stasks.map(t=>{
         const dc=HOME_DEPTS[t.group]||'#888';
         return `<div class="k-card" id="htask-${t.id}" draggable="true"
+          onclick="homeEditTask(${t.id})"
           ondragstart="homeDragId=${t.id};event.dataTransfer.effectAllowed='move';setTimeout(()=>{const e=document.getElementById('htask-${t.id}');if(e)e.classList.add('dragging');},0)"
           ondragend="document.querySelectorAll('.k-card.dragging,.k-col.drag-over').forEach(e=>{e.classList.remove('dragging');e.classList.remove('drag-over');})">
           <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:4px"><div class="k-card-title" style="flex:1">${t.title}</div>${t.origem==='app'?'<span style="font-size:10px;background:rgba(77,148,219,.15);color:#4d94db;border:1px solid rgba(77,148,219,.3);border-radius:4px;padding:1px 4px;white-space:nowrap;flex-shrink:0">📱 App</span>':''}</div>
@@ -8983,7 +8984,31 @@ function homeOpenNewTask(defaultStatus){
   m.classList.add('open');
 }
 
+function homeEditTask(id){
+  const t=homeTasksData.find(t=>t.id===id);
+  if(!t)return;
+  const m=document.getElementById('home-task-modal');
+  if(!m){alert('Modal não encontrado!');return;}
+  const PRIO_BY_LABEL={'Urgente':'urgent','Alta':'high','Normal':'normal','Baixa':'low'};
+  document.getElementById('ht-title').value=t.title||'';
+  document.getElementById('ht-dept').value=t.dept||t.group||'Dep. Comercial';
+  document.getElementById('ht-status').value=t.status||'A fazer';
+  document.getElementById('ht-prio').value=PRIO_BY_LABEL[t.prio]||'normal';
+  const aSel=document.getElementById('ht-assignee');
+  const allTeam=[...(crmComerciais||[]).map(c=>c.nome),'Sara Antunes','Tomás Figueiredo','Ricardo Faria','Pedro Silva'];
+  aSel.innerHTML=[...new Set(allTeam)].map(n=>`<option value="${n}">${n}</option>`).join('');
+  if(t.assNome) aSel.value=t.assNome;
+  const htDateEl=document.getElementById('ht-date');
+  if(htDateEl) htDateEl.value=t.dateIso||'';
+  const htDateEndEl=document.getElementById('ht-date-end');
+  if(htDateEndEl) htDateEndEl.value=t.dateEndIso||'';
+  m.dataset.editId=id;
+  m.classList.add('open');
+}
+
 function homeSaveTask(){
+  const modal=document.getElementById('home-task-modal');
+  const editId=modal.dataset.editId;
   const title=document.getElementById('ht-title').value.trim();
   if(!title){alert('Preenche o título da tarefa.');return;}
   const dept=document.getElementById('ht-dept').value;
@@ -9007,18 +9032,32 @@ function homeSaveTask(){
     else if(dp.getTime()===tomorrow.getTime()) dueTxt='Amanhã';
     else { const dd=dp.getDate(); const mm=dp.getMonth()+1; const yy=dp.getFullYear(); dueTxt=dd+'/'+mm+'/'+yy; }
   }
-  const newTask={
-    id:Date.now(), title, group:dept, dept,
-    status, statusC:HOME_ST_COLORS[status]||'#6b6b72',
-    prio:PRIO_LABELS[prio], prioBg:PRIO_COLORS[prio],
-    ass:assInitials, assC:DEPT_COLORS[dept]||'#4d94db',
-    due:dueTxt, dueType:'soon',
-    dateIso:htDateVal||null,
-    dateEndIso:htDateEndVal||null
-  };
-  homeTasksData.unshift(newTask);
+  if(editId){
+    const t=homeTasksData.find(t=>t.id===Number(editId));
+    if(t){
+      t.title=title; t.group=dept; t.dept=dept;
+      t.status=status; t.statusC=HOME_ST_COLORS[status]||'#6b6b72';
+      t.prio=PRIO_LABELS[prio]; t.prioBg=PRIO_COLORS[prio];
+      t.ass=assInitials; t.assC=DEPT_COLORS[dept]||'#4d94db'; t.assNome=assignee;
+      t.due=dueTxt; t.dueType='soon';
+      t.dateIso=htDateVal||null;
+      t.dateEndIso=htDateEndVal||null;
+    }
+  } else {
+    const newTask={
+      id:Date.now(), title, group:dept, dept,
+      status, statusC:HOME_ST_COLORS[status]||'#6b6b72',
+      prio:PRIO_LABELS[prio], prioBg:PRIO_COLORS[prio],
+      ass:assInitials, assC:DEPT_COLORS[dept]||'#4d94db', assNome:assignee,
+      due:dueTxt, dueType:'soon',
+      dateIso:htDateVal||null,
+      dateEndIso:htDateEndVal||null
+    };
+    homeTasksData.unshift(newTask);
+  }
   saveHomeTasksData();
-  document.getElementById('home-task-modal').classList.remove('open');
+  delete modal.dataset.editId;
+  modal.classList.remove('open');
   renderTasksBoard(); renderTasksList();
 }
 
