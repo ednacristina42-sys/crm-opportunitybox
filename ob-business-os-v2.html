@@ -12754,11 +12754,18 @@ window.numeroPorExtenso = numeroPorExtenso;
 function orcPDF(){
   const d = orcGetData();
   if(!d.cli){ alert('Preenche o cliente antes de gerar o PDF.'); return; }
+  // ADD: se não houver totais (ou estiverem vazios), recalcula a partir das linhas
+  if(!d.totais || (!d.totais.sub && !d.totais.total)){
+    const subR = (d.linhas||[]).reduce((s,l)=>s+(l.sub||(l.qty*l.preco)||0),0);
+    const ivaPctR = d.totais && d.totais.ivaPct ? d.totais.ivaPct : 23;
+    const ivaValR = subR*ivaPctR/100;
+    d.totais = { sub: subR, descPct:0, descVal:0, ivaPct: ivaPctR, ivaVal: ivaValR, total: subR+ivaValR };
+  }
   const valFmt = d.val ? d.val.split('-').reverse().join('/') : '—';
   const linhasHTML = d.linhas.map((l,i)=>`
     <tr>
-      <td style="font-size:13px;color:#555;text-align:center">${i+1}</td>
-      <td><strong>${l.produto}</strong>${l.desc?'<br><span style="font-size:12px;color:#888">'+l.desc+'</span>':''}</td>
+      <td style="font-size:12px;color:#555;text-align:center">${i+1}</td>
+      <td><strong>${l.produto}</strong>${l.desc?'<br><span style="font-size:11px;color:#888">'+l.desc+'</span>':''}</td>
       <td style="text-align:center">${l.qty}</td>
       <td style="text-align:right">€${orcFmt(l.preco)}</td>
       <td style="text-align:right;font-weight:600">€${orcFmt(l.sub)}</td>
@@ -12771,46 +12778,47 @@ function orcPDF(){
 <title>Orçamento ${d.num} — OpportunityBox</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#222;background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}
-@page{size:A4;margin:15mm 15mm 18mm 15mm}
+body{font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#222;background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact;counter-reset:page}
+@page{size:A4;margin:15mm}
 @media print{.no-print{display:none!important}body{padding:0}}
-.header{display:flex;justify-content:space-between;align-items:flex-start;padding-bottom:12px;border-bottom:3px solid #FFD600;margin-bottom:16px}
-.logo-area img{height:55px;width:auto}
-.co-info{text-align:right;font-size:12.5px;color:#555;line-height:1.5}
-.co-info strong{color:#222;font-size:11.5px}
-.co-info .nipc{color:#888;font-size:10px}
-.doc-table{width:100%;border-collapse:collapse;margin-bottom:20px}
-.doc-table th{background:#222;color:#FFD600;padding:7px 10px;font-size:12px;text-align:left;text-transform:uppercase;letter-spacing:.08em}
-.doc-table td{padding:7px 10px;font-size:13px;border-bottom:1px solid #eee}
-.title-block{text-align:center;margin:20px 0 22px}
-.title-block h1{font-size:21px;font-weight:700;letter-spacing:.04em;color:#111;text-transform:uppercase}
-.title-block .sub{font-size:14px;color:#555;margin-top:5px}
-.section-label{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:#888;margin-bottom:6px}
-.client-box{background:#f8f8f8;border-left:4px solid #FFD600;padding:10px 14px;margin-bottom:20px}
-.client-box .name{font-size:16px;font-weight:700;color:#111}
-.client-box .details{font-size:12.5px;color:#555;margin-top:3px}
-.lines-table{width:100%;border-collapse:collapse;margin-bottom:18px}
+.header{display:flex;justify-content:space-between;align-items:flex-start;padding-bottom:8px;border-bottom:3px solid #FFD600;margin-bottom:10px}
+.logo-area img{height:40px;width:auto}
+.co-info{text-align:right;font-size:11px;color:#555;line-height:1.4;white-space:nowrap}
+.co-info strong{color:#222;font-size:11px;white-space:nowrap}
+.co-info .nipc{color:#888;font-size:9px}
+.doc-table{width:100%;border-collapse:collapse;margin-bottom:12px}
+.doc-table th{background:#222;color:#FFD600;padding:5px 8px;font-size:10.5px;text-align:left;text-transform:uppercase;letter-spacing:.06em}
+.doc-table td{padding:5px 8px;font-size:11.5px;border-bottom:1px solid #eee}
+.title-block{text-align:center;margin:10px 0 12px}
+.title-block h1{font-size:17px;font-weight:700;letter-spacing:.03em;color:#111;text-transform:uppercase}
+.title-block .sub{font-size:12px;color:#555;margin-top:3px}
+.section-label{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#888;margin-bottom:4px}
+.client-box{background:#f8f8f8;border-left:4px solid #FFD600;padding:7px 10px;margin-bottom:12px}
+.client-box .name{font-size:13px;font-weight:700;color:#111}
+.client-box .details{font-size:11px;color:#555;margin-top:2px}
+.lines-table{width:100%;border-collapse:collapse;margin-bottom:10px}
 .lines-table thead tr{background:#222}
-.lines-table thead th{color:#fff;padding:8px 10px;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em}
+.lines-table thead th{color:#fff;padding:6px 8px;font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.04em}
 .lines-table thead th:nth-child(3),.lines-table thead th:nth-child(4),.lines-table thead th:nth-child(5){text-align:right}
 .lines-table thead th:nth-child(3){text-align:center}
 .lines-table tbody tr:nth-child(even){background:#fafafa}
-.lines-table tbody td{padding:9px 10px;font-size:13px;border-bottom:1px solid #eee;vertical-align:middle}
+.lines-table tbody td{padding:5px 8px;font-size:11.5px;border-bottom:1px solid #eee;vertical-align:middle}
 .lines-table tbody td:nth-child(3){text-align:center}
 .lines-table tbody td:nth-child(4),.lines-table tbody td:nth-child(5){text-align:right}
-.totais-block{margin-left:auto;width:300px}
-.totais-row{display:flex;justify-content:space-between;padding:5px 0;font-size:13.5px;color:#555;border-bottom:1px dashed #eee}
-.totais-row.total{border-bottom:none;border-top:2px solid #FFD600;padding-top:8px;margin-top:4px}
-.totais-row.total .lbl{font-weight:700;font-size:15px;color:#111}
-.totais-row.total .val{font-weight:700;font-size:19px;color:#111}
+.totais-block{margin-left:auto;width:260px}
+.totais-row{display:flex;justify-content:space-between;padding:3px 0;font-size:11.5px;color:#555;border-bottom:1px dashed #eee}
+.totais-row.total{border-bottom:none;border-top:2px solid #FFD600;padding-top:5px;margin-top:3px}
+.totais-row.total .lbl{font-weight:700;font-size:13px;color:#111}
+.totais-row.total .val{font-weight:700;font-size:16px;color:#111}
 .totais-row.disc{color:#c0392b}
-.notes-box{margin-top:20px;padding:10px 14px;background:#fffbea;border:1px solid #FFD600;border-radius:4px;font-size:12.5px;color:#555;line-height:1.6}
-.footer{position:fixed;bottom:0;left:15mm;right:15mm;border-top:2px solid #FFD600;padding-top:8px;display:flex;justify-content:space-between;align-items:center;font-size:11.5px;color:#888}
-.footer .brand{color:#FFD600;font-weight:700;font-size:12px;letter-spacing:.04em}
+.notes-box{margin-top:10px;padding:7px 10px;background:#fffbea;border:1px solid #FFD600;border-radius:4px;font-size:10.5px;color:#555;line-height:1.45}
+.footer{position:fixed;bottom:0;left:15mm;right:15mm;border-top:2px solid #FFD600;padding-top:6px;display:flex;justify-content:space-between;align-items:center;font-size:9.5px;color:#888}
+.footer .brand{color:#FFD600;font-weight:700;font-size:10px;letter-spacing:.03em}
+.footer .pagenum:after{content:counter(page)}
 .print-btn{position:fixed;top:16px;right:20px;background:#FFD600;color:#000;border:none;border-radius:8px;padding:10px 22px;font-size:15px;font-weight:700;cursor:pointer;z-index:99;display:flex;align-items:center;gap:8px;font-family:Arial}
 .print-btn:hover{filter:brightness(1.08)}
 @media print{.print-btn{display:none!important}}
-.ven-row{display:flex;gap:20px;margin-bottom:16px}
+.ven-row{display:flex;gap:20px;margin-bottom:10px}
 .ven-item{flex:1}
 </style>
 </head>
@@ -12897,10 +12905,9 @@ body{font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#222;background
 
 <div class="footer">
   <div>
-    OPPORTUNITYBOX – Design &amp; Store Concept Unipessoal Lda · Parque Industrial Alcopark I, Estrada da Ribeirinha, Armazém E · 2705-778 Terrugem · Sintra, Portugal<br>
-    Tel. +351 215 874 779 · geral@opportunitybox.pt · www.opportunitybox.pt · NIPC 510 575 170
+    Documento elaborado por computador, válido sem assinatura. · Tel. +351 215 874 779 · geral@opportunitybox.pt · NIPC 510 575 170<br>
+    <span class="brand">BETTER · FASTER · STRONGER</span> · Pág. <span class="pagenum"></span>
   </div>
-  <div class="brand">BETTER · FASTER · STRONGER</div>
 </div>
 
 <script>
@@ -17214,6 +17221,31 @@ function copilotoAplicarTudo() {
   // Aplicar tipo de reclamo no campo tipo de produto (se existir)
   var tipoInp = document.getElementById('orc-tipo');
   if (tipoInp && analysis.tipoReclamo) tipoInp.value = analysis.tipoReclamo;
+
+  // ADD: Atualiza a primeira linha de produto com o valor total estimado pela IA
+  var produtoNome = analysis.tipoReclamo || 'Reclamo personalizado';
+  var precoTotal = analysis.preco_estimado_total || window._orcPrecoSugerido || 0;
+  var linesCont = document.getElementById('orc-lines-container');
+  if (linesCont) {
+    var primeiraLinha = linesCont.querySelector('.orc-line');
+    if (!primeiraLinha && typeof orcAddLine === 'function') { orcAddLine(); primeiraLinha = linesCont.querySelector('.orc-line'); }
+    if (primeiraLinha) {
+      var selProd = primeiraLinha.querySelector('[id^=sel-]');
+      if (selProd) {
+        var opt = Array.from(selProd.options).find(function(o){ return o.value === produtoNome; });
+        selProd.value = opt ? opt.value : (selProd.options[0] ? selProd.options[0].value : '');
+      }
+      var descInp = primeiraLinha.querySelector('[id^=desc-]');
+      if (descInp) descInp.value = 'Composição baseada em análise IA';
+      var qtyInp2 = primeiraLinha.querySelector('[id^=qty-]');
+      if (qtyInp2) qtyInp2.value = 1;
+      var precoInp = primeiraLinha.querySelector('[id^=preco-]');
+      if (precoInp) precoInp.value = precoTotal;
+    }
+  }
+  orcCalcTotal();
+  var badge = document.getElementById('orc-num-badge');
+  if (badge && !badge.textContent.trim() && typeof orcNextNum === 'function') badge.textContent = orcNextNum();
 
   var NL = String.fromCharCode(10);
   var msg = 'Copiloto IA aplicou ' + aplicados + ' de ' + mats.length + ' materiais.' + NL;
