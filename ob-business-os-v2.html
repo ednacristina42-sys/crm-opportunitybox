@@ -5603,6 +5603,15 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
               <button class="tbtn" style="font-size:13px;flex:1" onclick="copilotoLimpar()">✕ Limpar</button>
             </div>
 
+            <!-- Preview da imagem gerada por DALL-E -->
+            <div id="copiloto-imagem-preview" style="display:none; margin-top: 10px;">
+              <img id="copiloto-imagem-gerada" src="" alt="Fachada gerada" style="max-width:100%; border-radius:8px; border:1px solid var(--border);">
+              <div style="margin-top:8px; display:flex; gap:8px; flex-wrap:wrap;">
+                <button class="tbtn" onclick="copilotoGuardarImagemOrcamento()">📥 Adicionar Imagem ao Orçamento</button>
+                <button class="tbtn" onclick="copilotoRejeitarImagem()">✕ Descartar</button>
+              </div>
+            </div>
+
             <!-- Resultado da análise -->
             <div id="copiloto-resultado">
               <div class="copiloto-header" style="margin-bottom:8px;font-size:13px">
@@ -17160,22 +17169,42 @@ async function copilotoGerarImagem() {
     _cop.mimeType = 'image/png';
     _cop.file = null;
 
-    var previewImg = document.getElementById('cop-preview-img');
-    var fileName = document.getElementById('cop-file-name');
-    var dropIdle = document.getElementById('cop-drop-idle');
-    var dropPreview = document.getElementById('cop-drop-preview');
-    if (previewImg) previewImg.src = 'data:image/png;base64,' + b64;
-    if (fileName) fileName.textContent = 'Imagem gerada por IA (DALL·E 3)';
-    if (dropIdle) dropIdle.style.display = 'none';
-    if (dropPreview) dropPreview.style.display = '';
+    var imgPreviewWrap = document.getElementById('copiloto-imagem-preview');
+    var imgPreviewEl = document.getElementById('copiloto-imagem-gerada');
+    if (imgPreviewEl) imgPreviewEl.src = 'data:image/png;base64,' + b64;
+    if (imgPreviewWrap) imgPreviewWrap.style.display = '';
 
-    if (status) status.innerHTML = '<span style="color:var(--g)">✓ Imagem gerada com sucesso! Muda para "Analisar Imagem/Maquete" e clica em "Analisar com IA" para orçamentar.</span>';
+    if (status) status.innerHTML = '<span style="color:var(--g)">✓ Imagem gerada com sucesso! Podes adicioná-la ao orçamento ou descartá-la.</span>';
   } catch(e) {
     if (status) status.innerHTML = '<span style="color:var(--r)">✗ Erro: ' + (e.message || e).slice(0, 120) + '</span>';
     console.error('[CopilotoIA] gerarImagem', e);
   } finally {
     _cop.isLoading = false;
   }
+}
+
+// ── Adicionar a imagem gerada por DALL·E como imagem do orçamento ──
+function copilotoGuardarImagemOrcamento() {
+  var imgEl = document.getElementById('copiloto-imagem-gerada');
+  var dataUrl = imgEl && imgEl.src;
+  if (!dataUrl) return;
+  if (typeof orcSetImagemPreview === 'function') orcSetImagemPreview(dataUrl);
+  var status = document.getElementById('copiloto-descricao-status');
+  if (status) status.innerHTML = '<span style="color:var(--g)">✓ Imagem adicionada ao orçamento.</span>';
+  var wrap = document.getElementById('copiloto-imagem-preview');
+  if (wrap) wrap.style.display = 'none';
+}
+
+// ── Descartar a imagem gerada por DALL·E ───────────────────────────
+function copilotoRejeitarImagem() {
+  var wrap = document.getElementById('copiloto-imagem-preview');
+  var imgEl = document.getElementById('copiloto-imagem-gerada');
+  if (imgEl) imgEl.src = '';
+  if (wrap) wrap.style.display = 'none';
+  _cop.b64 = null;
+  _cop.mimeType = 'image/jpeg';
+  var status = document.getElementById('copiloto-descricao-status');
+  if (status) status.innerHTML = '';
 }
 
 // ── Análise demo (sem API) ────────────────────────────────────────
