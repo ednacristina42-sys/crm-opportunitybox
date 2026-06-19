@@ -5591,7 +5591,8 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
             <div id="copiloto-resultado">
               <div class="copiloto-header" style="margin-bottom:8px;font-size:13px">
                 📋 Análise do Copiloto
-                <button class="tbtn y" style="margin-left:auto;font-size:12px;padding:2px 8px" onclick="copilotoAplicar()">↑ Aplicar materiais ao orçamento</button>
+                <button id="cop-encomenda-btn" class="tbtn" style="display:none;margin-left:auto;font-size:12px;padding:2px 8px;background:#e67e22;color:#fff" onclick="simuladorCriarEncomenda()">📦 Criar Encomenda</button>
+                <button class="tbtn y" style="font-size:12px;padding:2px 8px" onclick="copilotoAplicar()">↑ Aplicar materiais ao orçamento</button>
               </div>
               <div id="cop-tipo-reclamo" style="margin-bottom:8px"></div>
               <div id="cop-medidas" style="margin-bottom:8px;font-size:13px;color:var(--muted)"></div>
@@ -17129,6 +17130,41 @@ async function copilotoAnalisar() {
 }
 
 // ── Renderizar resultado ──────────────────────────────────────────
+// ── Preços médios estimados por categoria, usados quando um material não tem preço definido ──
+var SIMUL_PRECO_CATEGORIA = {
+  'Acrílico': 25.00, 'LED': 12.00, 'Estrutura': 15.00, 'Transformador': 25.00,
+  'Alumínio': 18.00, 'Chapa': 9.00, 'Vinil': 4.00, 'Perfil': 5.00, 'Cabo': 40.00
+};
+
+// ── Similaridade simples de texto (Jaccard sobre palavras) ──────────
+function _simulSimilaridade(a, b) {
+  var wa = a.toLowerCase().split(/\s+/).filter(Boolean);
+  var wb = b.toLowerCase().split(/\s+/).filter(Boolean);
+  var setA = new Set(wa), setB = new Set(wb);
+  var inter = 0;
+  setA.forEach(function(w){ if (setB.has(w)) inter++; });
+  var uniao = new Set(wa.concat(wb)).size;
+  return uniao ? inter / uniao : 0;
+}
+
+// ── Sugere até 3 materiais do stock que podem substituir um material em falta ──
+function simuladorSugerirAlternativas(material) {
+  var nome = (material && material.nome) || material || '';
+  var categoria = material && material.categoria;
+  var stock = (typeof STK_STOCK !== 'undefined' ? STK_STOCK : []);
+  return stock
+    .map(function(s) {
+      var simNome = _simulSimilaridade(nome, s.nome);
+      var simCat = categoria && s.cat && s.cat.toLowerCase() === categoria.toLowerCase() ? 0.4 : 0;
+      return { item: s, score: simNome + simCat };
+    })
+    .filter(function(r) { return r.score > 0; })
+    .sort(function(a, b) { return b.score - a.score; })
+    .slice(0, 3)
+    .map(function(r) { return r.item; });
+}
+window.simuladorSugerirAlternativas = simuladorSugerirAlternativas;
+
 function _copRenderResultado(analysis) {
   var res = document.getElementById('copiloto-resultado');
   if (!res) return;
@@ -17157,23 +17193,42 @@ function _copRenderResultado(analysis) {
   var matEl = document.getElementById('cop-materiais-list');
   if (matEl && analysis.materiais) {
     var totalCusto = 0;
+    var temForaStock = false;
     matEl.innerHTML = '<div style="font-size:12px;font-weight:700;color:var(--txt2);margin-bottom:6px;text-transform:uppercase;letter-spacing:.06em">Materiais estimados</div>' +
       analysis.materiais.map(function(mat) {
-        var subtotal = (mat.qtd || 0) * (mat.precoEstimado || 0);
+        var stockItem = (typeof STK_STOCK !== 'undefined' ? STK_STOCK : []).find(function(s){return s.nome.toLowerCase().includes(mat.nome.toLowerCase().slice(0,10)) || mat.nome.toLowerCase().includes(s.nome.toLowerCase().slice(0,10));});
+        var noStock = !stockItem;
+        if (noStock) temForaStock = true;
+        // ADD: se não houver preço definido, estima por categoria (com marcação 🔶)
+        var precoEstimado = !!mat.precoEstimado;
+        var preco = mat.precoEstimado || SIMUL_PRECO_CATEGORIA[mat.categoria] || 15.00;
+        if (!mat.precoEstimado) precoEstimado = false;
+        var subtotal = (mat.qtd || 0) * preco;
         totalCusto += subtotal;
-        var noStock = !(typeof STK_STOCK !== 'undefined' && STK_STOCK.find(function(s){return s.nome.toLowerCase().includes(mat.nome.toLowerCase().slice(0,10));}));
-        return '<div class="copiloto-mat-row">' +
-          '<div>' +
-            '<span style="color:var(--txt2)">' + mat.nome + '</span>' +
-            '<span style="font-size:11px;color:var(--muted);margin-left:4px">' + mat.categoria + '</span>' +
-            (noStock ? '<span style="font-size:11px;color:var(--a);margin-left:4px">· fora do stock</span>' : '') +
+        var alternativas = noStock ? simuladorSugerirAlternativas(mat) : [];
+        var alternativasHTML = alternativas.length ? '<div style="margin:4px 0 6px 0;padding:6px 8px;background:#f4f4f6;border-radius:6px">' +
+          alternativas.map(function(alt) {
+            return '<div style="font-size:12px;color:#555">💡 Sugestão: <strong>' + alt.nome + '</strong> (€' + alt.preco.toFixed(2) + '/' + alt.un + ')</div>';
+          }).join('') + '</div>' : '';
+        return '<div class="copiloto-mat-row" style="' + (noStock ? 'border-left:3px solid #e67e22;padding-left:6px' : '') + '">' +
+          '<div style="display:flex;justify-content:space-between;align-items:baseline">' +
+            '<div>' +
+              '<span style="color:var(--txt2)">' + mat.nome + '</span>' +
+              '<span style="font-size:11px;color:var(--muted);margin-left:4px">' + mat.categoria + '</span>' +
+              (noStock ? '<span style="font-size:11px;color:#e67e22;font-weight:700;margin-left:4px">⚠️ Fora de Stock</span>' : '<span style="font-size:11px;color:var(--g);margin-left:4px">✅ Em stock</span>') +
+            '</div>' +
+            '<div style="text-align:right;white-space:nowrap">' +
+              '<span style="color:var(--muted);font-size:12px">' + mat.qtd + ' ' + mat.unidade + ' × EUR' + preco.toFixed(2) + ' = </span>' +
+              '<strong style="color:var(--y)">EUR' + subtotal.toFixed(2) + '</strong>' +
+              (!precoEstimado ? ' <span title="Preço estimado por categoria">🔶</span>' : '') +
+            '</div>' +
           '</div>' +
-          '<div style="text-align:right;white-space:nowrap">' +
-            '<span style="color:var(--muted);font-size:12px">' + mat.qtd + ' ' + mat.unidade + ' × EUR' + (mat.precoEstimado||0).toFixed(2) + ' = </span>' +
-            '<strong style="color:var(--y)">EUR' + subtotal.toFixed(2) + '</strong>' +
-          '</div>' +
+          alternativasHTML +
         '</div>';
       }).join('');
+    window._copTemForaStock = temForaStock;
+    var encBtn = document.getElementById('cop-encomenda-btn');
+    if (encBtn) encBtn.style.display = temForaStock ? 'inline-block' : 'none';
     // Resumo financeiro
     var mk = analysis.markup_sugerido || 2.5;
     var pvenda = totalCusto * mk;
@@ -17187,6 +17242,35 @@ function _copRenderResultado(analysis) {
   var obsEl = document.getElementById('cop-obs');
   if (obsEl) obsEl.textContent = analysis.observacoes || '';
 }
+
+// ── Cria uma tarefa de encomenda no Home para o departamento de Compras ──
+function simuladorCriarEncomenda() {
+  var analysis = _cop.lastAnalysis;
+  if (!analysis || !analysis.materiais) { alert('Nenhuma análise disponível.'); return; }
+  var foraStock = analysis.materiais.filter(function(mat) {
+    return !(typeof STK_STOCK !== 'undefined' && STK_STOCK.find(function(s){return s.nome.toLowerCase().includes(mat.nome.toLowerCase().slice(0,10)) || mat.nome.toLowerCase().includes(s.nome.toLowerCase().slice(0,10));}));
+  });
+  if (!foraStock.length) { alert('Não há materiais fora de stock para encomendar.'); return; }
+  var listaMateriais = foraStock.map(function(m){ return m.nome + ' (' + m.qtd + ' ' + m.unidade + ')'; }).join(', ');
+  var novoId = (typeof homeTasksData !== 'undefined' && homeTasksData.length) ? Math.max.apply(null, homeTasksData.map(function(t){return t.id||0;})) + 1 : Date.now();
+  var tarefa = {
+    id: novoId,
+    title: 'Encomendar materiais: ' + listaMateriais,
+    group: 'Compras', dept: 'Compras',
+    status: 'A fazer', statusC: '#6b6b72',
+    prio: 'Alta', prioBg: '#e67e22',
+    ass: 'Compras', assC: '#e67e22',
+    due: 'Hoje', dueType: 'soon',
+    badge: 'Encomenda'
+  };
+  if (typeof homeTasksData !== 'undefined') {
+    homeTasksData.push(tarefa);
+    if (typeof saveHomeTasksData === 'function') saveHomeTasksData();
+  }
+  var msg = '📦 Tarefa de encomenda criada para o departamento de Compras:\n' + listaMateriais;
+  if (typeof showToast === 'function') showToast('📦 Encomenda criada para Compras'); else alert(msg);
+}
+window.simuladorCriarEncomenda = simuladorCriarEncomenda;
 
 // ── Apenas mostrar a sugestão (não altera o orçamento) ─────────────
 function copilotoSugerir() {
@@ -17255,6 +17339,8 @@ function copilotoAplicar() {
         aplicados++;
       }
     } else {
+      // ADD: material fora de stock — aplicado como "estimado", sem reserva de stock
+      mat.estimado = true;
       naoEncontrados.push(mat.nome + ' (' + mat.qtd + ' ' + mat.unidade + ')');
     }
   });
@@ -17332,6 +17418,8 @@ function copilotoAplicar() {
       'Não encontrados no stock:' + NL + naoEncontrados.join(NL) + NL + NL +
       'Estes podem ser adicionados manualmente ao stock e o copiloto irá reconhecê-los.';
     alert(msg);
+    // ADD: notificação de materiais estimados/fora de stock (item 4 do Simulador)
+    if (typeof showToast === 'function') showToast('⚠️ Alguns materiais estão fora de stock. Foram adicionados como estimativa e deverão ser encomendados.');
   }
   var msgToast = '✅ Orçamento atualizado com o valor sugerido pelo Copiloto: €' + (typeof orcFmt === 'function' ? orcFmt(precoTotal) : precoTotal.toFixed(2));
   if (typeof showToast === 'function') showToast(msgToast);
