@@ -11817,26 +11817,25 @@ function cliToggleIvaIsento(){
 function cliRenderRecebimentos(c){
   const panel=document.getElementById('cli-recebimentos-panel');
   if(!panel||!c) return;
-  // Buscar orçamentos pendentes deste cliente
+  // Buscar orçamentos deste cliente em estados que geram obrigação de pagamento
   const hoje=new Date(); hoje.setHours(0,0,0,0);
-  const orcsPend=(orcData||[]).filter(o=>o.cli===c.n && o.st!=='Cancelado');
+  const ESTADOS_PAGAMENTO=['Aprovado','Em Produção','Em Producao','Concluído','Concluido','Faturado'];
+  const orcsPend=(orcData||[]).filter(o=>o.cli===c.n && ESTADOS_PAGAMENTO.includes(o.st));
   if(!orcsPend.length){ panel.style.display='none'; return; }
   panel.style.display='flex';
-  // Calcular buckets
+  // Calcular buckets — apenas orçamentos com data de validade válida
   let venc=0,a30=0,a60=0,mais60=0;
   const lista=[];
   orcsPend.forEach(o=>{
     const val=o.totais?.total||0;
     const vd=o.val?new Date(o.val):null;
-    if(!vd||isNaN(vd)){mais60+=val;}
-    else{
-      const dias=Math.round((vd-hoje)/86400000);
-      if(dias<0){venc+=val;}
-      else if(dias<=30){a30+=val;}
-      else if(dias<=60){a60+=val;}
-      else{mais60+=val;}
-      lista.push({num:o.num,val,dias,vd,cli:o.cli,st:o.st});
-    }
+    if(!vd||isNaN(vd)) return; // sem data de validade válida — não entra nos buckets nem na lista
+    const dias=Math.round((vd-hoje)/86400000);
+    if(dias<0){venc+=val;}
+    else if(dias<=30){a30+=val;}
+    else if(dias<=60){a60+=val;}
+    else{mais60+=val;}
+    lista.push({num:o.num,val,dias,vd,cli:o.cli,st:o.st});
   });
   const total=venc+a30+a60+mais60;
   // Donut
@@ -11857,12 +11856,13 @@ function cliRenderRecebimentos(c){
   setArc('cli-donut-mais60',mais60,'#3fcf8e');
   const totEl=document.getElementById('cli-donut-total');
   if(totEl) totEl.textContent='€'+Math.round(total).toLocaleString('pt-PT');
-  // Lista
+  // Lista — apenas vencidos ou a vencer nos próximos 30 dias
   const listaEl=document.getElementById('cli-receb-lista');
   if(!listaEl)return;
-  lista.sort((a,b)=>a.dias-b.dias);
-  if(!lista.length){listaEl.innerHTML='<div style="color:var(--muted);font-style:italic">Sem orçamentos com data de validade definida.</div>';return;}
-  listaEl.innerHTML=lista.slice(0,6).map(o=>{
+  const listaVisivel=lista.filter(o=>o.dias<=30);
+  listaVisivel.sort((a,b)=>a.dias-b.dias);
+  if(!listaVisivel.length){listaEl.innerHTML='<div style="color:var(--muted);font-style:italic">Sem orçamentos vencidos ou a vencer em breve.</div>';return;}
+  listaEl.innerHTML=listaVisivel.slice(0,6).map(o=>{
     const color=o.dias<0?'var(--r)':o.dias<=30?'var(--y)':o.dias<=60?'var(--b)':'var(--g)';
     const label=o.dias<0?'Vencido há '+Math.abs(o.dias)+' dias':o.dias===0?'Vence hoje':'Vence em '+o.dias+' dias';
     return '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:7px;padding:8px 10px">'
