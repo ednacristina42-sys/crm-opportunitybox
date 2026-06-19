@@ -3602,6 +3602,7 @@ function nbTestarConexao() {
 }
 html{font-size:13px}
 body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--txt);min-height:100vh;overflow:hidden}
+.admin-hidden{display:none !important}
 
 /* ═══════════════════════════════════════════════════════
    LOGIN SCREEN
@@ -5447,7 +5448,7 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
           </div>
 
           <!-- ── COMPOSIÇÃO DO RECLAMO ── -->
-          <div style="background:var(--bg3);border:1px solid var(--yb);border-radius:8px;padding:14px;margin-bottom:14px">
+          <div class="admin-only" style="background:var(--bg3);border:1px solid var(--yb);border-radius:8px;padding:14px;margin-bottom:14px">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
               <div style="font-size:14px;font-weight:600;color:var(--y);display:flex;align-items:center;gap:6px">
                 📦 Composição do Reclamo (Materiais do Stock)
@@ -5566,7 +5567,7 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
           </div>
 
           <!-- ── LOGÍSTICA / DESLOCAÇÃO ── -->
-          <div style="background:var(--bg3);border:1px solid rgba(77,148,219,.3);border-radius:8px;padding:14px;margin-bottom:14px" id="orc-logistica-bloco">
+          <div class="admin-only" style="background:var(--bg3);border:1px solid rgba(77,148,219,.3);border-radius:8px;padding:14px;margin-bottom:14px" id="orc-logistica-bloco">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
               <div style="font-size:14px;font-weight:600;color:#4d94db;display:flex;align-items:center;gap:6px">
                 🚚 Logística &amp; Deslocação
@@ -5694,7 +5695,7 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
           </div>
 
           <!-- ── MÃO DE OBRA E PRODUÇÃO ── -->
-          <div style="background:var(--bg3);border:1px solid rgba(139,92,246,.3);border-radius:8px;padding:14px;margin-bottom:14px" id="orc-mao-obra-bloco">
+          <div class="admin-only" style="background:var(--bg3);border:1px solid rgba(139,92,246,.3);border-radius:8px;padding:14px;margin-bottom:14px" id="orc-mao-obra-bloco">
             <div style="font-size:14px;font-weight:600;color:#8b5cf6;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between">
               <span style="display:flex;align-items:center;gap:6px">Mao de Obra &amp; Producao</span>
               <span style="font-size:12px;color:var(--muted);font-weight:400">11 categorias de tarefas</span>
@@ -8231,7 +8232,7 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
     </div>
 
     <!-- coluna direita — previsão de recebimentos (só visível em edição) -->
-    <div id="cli-recebimentos-panel" style="width:280px;background:var(--bg3);border-left:1px solid var(--border);padding:20px;display:none;flex-direction:column;gap:14px;max-height:90vh;overflow-y:auto">
+    <div id="cli-recebimentos-panel" class="admin-only" style="width:280px;background:var(--bg3);border-left:1px solid var(--border);padding:20px;display:none;flex-direction:column;gap:14px;max-height:90vh;overflow-y:auto">
       <div style="font-size:13px;font-weight:700;color:var(--y);letter-spacing:.06em;margin-bottom:4px">PREVISÃO DE RECEBIMENTOS</div>
 
       <!-- mini donut chart -->
@@ -8682,6 +8683,15 @@ function setupApp(){
   goPage('home');
 }
 
+// ── VISIBILIDADE DE DADOS SENSÍVEIS (custos, margens, previsões) ──
+function toggleAdminSensitiveFields(){
+  var isAdmin = !!(CU && CU.admin === true);
+  document.querySelectorAll('.admin-only').forEach(function(el){
+    el.classList.toggle('admin-hidden', !isAdmin);
+  });
+}
+window.toggleAdminSensitiveFields = toggleAdminSensitiveFields;
+
 // ── NAV ──────────────────────────────────────────────────
 window.goPage=function goPage(id){
   // Access check for non-admins
@@ -8737,6 +8747,7 @@ window.goPage=function goPage(id){
   if(id==='alerts')              { try{ renderAlerts(); }catch(e){} }
   if(id==='chat')                { try{ renderChat(); }catch(e){} }
   if(id==='wa')                  { try{ renderWA(); }catch(e){} }
+  toggleAdminSensitiveFields();
 }
 
 window.toggleSpace=function toggleSpace(id){
@@ -12043,6 +12054,7 @@ var clientes=[
 function renderClientes(){
   const el=document.getElementById('clientes-tbody');if(!el)return;
   const data=(typeof cliData!=='undefined'&&cliData)?cliData:clientes;
+  const isAdmin = !!(CU && CU.admin === true);
   el.innerHTML=data.map(c=>`<tr style="cursor:pointer" onclick="cliOpenEdit(${c.id||0})">
     <td><strong style="color:var(--txt2)">${c.n}</strong><br><span style="font-size:12px;color:var(--muted)">${c.nif||''}</span></td>
     <td><span class="b bm">${c.sec||'—'}</span></td>
@@ -12050,7 +12062,7 @@ function renderClientes(){
     <td style="font-size:13px">${c.email?`<a href="mailto:${c.email}" onclick="event.stopPropagation()" style="color:var(--muted);text-decoration:none" title="${c.email}">✉ ${c.email}</a>`:'—'}</td>
     <td style="font-family:'DM Mono',monospace;font-size:13px">${c.tel?`<a href="tel:${c.tel}" onclick="event.stopPropagation()" style="color:var(--muted);text-decoration:none">📞 ${c.tel}</a>`:'—'}</td>
     <td style="text-align:center">${c.projs||0}</td>
-    <td style="font-family:'DM Mono',monospace;color:var(--y)">${fmt(c.rev||0)}</td>
+    <td style="font-family:'DM Mono',monospace;color:var(--y)">${isAdmin?fmt(c.rev||0):'—'}</td>
     <td style="color:var(--muted)">${c.last||'—'}</td>
     <td>${c.st==='active'?'<span class="b bg">Activo</span>':'<span class="b br">Em risco</span>'}</td>
   </tr>`).join('');
@@ -12255,9 +12267,17 @@ function orcNextNum(){
   return `ORC-${year}-${next}`;
 }
 
+function orcToggleAdminFields(){
+  var isAdmin = !!(CU && CU.admin === true);
+  document.querySelectorAll('#page-comercial-orcamentos .admin-only').forEach(function(el){
+    el.classList.toggle('admin-hidden', !isAdmin);
+  });
+}
+
 function orcInitPage(){
   // ADD: Correção botão +Novo — garantir tab Orçamentos activa ao abrir página
   if(typeof orcSwitchTab==='function') orcSwitchTab('orcamentos');
+  orcToggleAdminFields();
   // Inicializar datalist de validade (30 dias a partir de hoje)
   const val = document.getElementById('orc-validade');
   if(val){
@@ -12978,6 +12998,7 @@ function orcRenderList(){
     var th = document.createElement('th'); th.textContent = 'TocOnline'; th.style.width='80px';
     thead.appendChild(th);
   }
+  var isAdmin = !!(CU && CU.admin === true);
   el.innerHTML = all.map(function(o){
     var hasFicha = o.fichasTecnicas && o.fichasTecnicas.length;
     var destacar = (o.st==='Aprovado'||o.st==='Em Produção'||o.st==='Em Producao');
@@ -12994,7 +13015,7 @@ function orcRenderList(){
       </select>
     </td>
     <td style="color:var(--muted);font-size:13px">${o.dt||o.data||'—'}</td>
-    ${hasFicha?`<td><button class="tbtn" style="font-size:11px;padding:2px 6px" onclick="orcVerFichaTecnica('${o.num}')">📋 Ficha</button></td>`:'<td></td>'}
+    ${(hasFicha&&isAdmin)?`<td><button class="tbtn" style="font-size:11px;padding:2px 6px" onclick="orcVerFichaTecnica('${o.num}')">📋 Ficha</button></td>`:'<td></td>'}
     <td>
       ${(o.st==='Aprovado'||o.st==='Concluido'||o.st==='Concluído')?
         `<button class="tbtn y" style="font-size:11px;padding:2px 7px;white-space:nowrap" data-toco-orc="${o.num}" onclick="enviarParaTocOnline('${o.num}')">${o.tocoStatus?'✓ Rascunho':'🧾 TocOnline'}</button>
@@ -13548,6 +13569,7 @@ function renderFinanceiro(){
 
 // ── RELATÓRIOS ────────────────────────────────────────────
 function renderRelatorios(){
+  var isAdmin = !!(CU && CU.admin === true);
   var el=document.getElementById('top-clientes');
   var orcParaMargem = (typeof orcData!=='undefined'?orcData:[]);
   var topClis = (typeof cliData!=='undefined'?cliData:[]).slice().sort(function(a,b){return (b.rev||0)-(a.rev||0);}).slice(0,10);
@@ -13564,7 +13586,7 @@ function renderRelatorios(){
     return '<tr><td><strong style="color:var(--txt2)">'+c.n+'</strong></td>'+
            '<td><span class="b bm">'+(c.sec||'—')+'</span></td>'+
            '<td style="color:var(--y)">'+fmt(c.rev||0)+'</td>'+
-           '<td style="color:var(--g)">'+margemTxt+'</td>'+
+           '<td style="color:var(--g)">'+(isAdmin?margemTxt:'—')+'</td>'+
            '<td>'+(c.projs||0)+'</td></tr>';
   }).join('');
 
@@ -13624,12 +13646,12 @@ function renderRelatorios(){
         '<td style="font-size:12px;color:var(--y)">'+o.num+'</td>'+
         '<td>'+o.cli+'</td>'+
         '<td style="color:var(--g);font-weight:600">'+fmt(o.val)+'</td>'+
-        '<td style="color:var(--muted)">'+fmt(cMat)+'</td>'+
-        '<td style="color:#8b5cf6">'+fmt(cMO)+'</td>'+
-        '<td style="color:#4d94db">'+fmt(cLog)+'</td>'+
-        '<td style="font-weight:600">'+fmt(cTotal)+'</td>'+
-        '<td class="'+cls+'">'+fmt(margem)+'</td>'+
-        '<td class="'+cls+'">'+margemPct+'%</td>'+
+        '<td style="color:var(--muted)">'+(isAdmin?fmt(cMat):'—')+'</td>'+
+        '<td style="color:#8b5cf6">'+(isAdmin?fmt(cMO):'—')+'</td>'+
+        '<td style="color:#4d94db">'+(isAdmin?fmt(cLog):'—')+'</td>'+
+        '<td style="font-weight:600">'+(isAdmin?fmt(cTotal):'—')+'</td>'+
+        '<td class="'+cls+'">'+(isAdmin?fmt(margem):'—')+'</td>'+
+        '<td class="'+cls+'">'+(isAdmin?margemPct+'%':'—')+'</td>'+
         '<td><span class="b '+(o.stc||'ba')+'">'+o.st+'</span></td>'+
       '</tr>';
     }).join('');
@@ -13643,7 +13665,7 @@ function renderRelatorios(){
     },0);
     var margemMedia = projs.length>0?(margemTotal/projs.length).toFixed(1):'—';
     var _mm = document.getElementById('rel-margem-media');
-    if(_mm) _mm.textContent = margemMedia+'%';
+    if(_mm) _mm.textContent = isAdmin?(margemMedia+'%'):'—';
   }
 
   // Volume YTD
