@@ -12249,6 +12249,18 @@ function orcInitPage(){
   if(badge) badge.textContent = orcNextNum();
   // Renderizar lista
   orcRenderList();
+  // ── Sincronização inicial automática TocOnline (apenas uma vez por sessão) ──
+  if(!sessionStorage.getItem('ob-toco-auto-sync-done')){
+    sessionStorage.setItem('ob-toco-auto-sync-done', '1');
+    try{
+      var cfgToco = (typeof tocoGetConfig==='function') ? tocoGetConfig() : null;
+      var tocoConfigurado = !!(cfgToco && (cfgToco.key || cfgToco.webhook));
+      var cacheVazia = !(_tocoFatCache && _tocoFatCache.length);
+      if(tocoConfigurado && cacheVazia && typeof tocoSincronizarFaturas==='function'){
+        tocoSincronizarFaturas(true).catch(function(){});
+      }
+    }catch(e){}
+  }
   // Adicionar 2 linhas iniciais
   const cont = document.getElementById('orc-lines-container');
   if(cont && cont.children.length === 0){
@@ -16737,12 +16749,19 @@ async function copilotoAnalisar() {
     _cop.b64 = 'demo';
   }
 
+  var provider = (document.getElementById('cop-api-provider') || {}).value || localStorage.getItem('ob-cop-provider') || 'demo';
+  var key = (document.getElementById('cop-api-key') || {}).value || localStorage.getItem('ob-cop-key') || '';
+  if (provider !== 'demo' && !key) {
+    if (status) status.innerHTML = '<span style="color:var(--a)">⚠️ Configura uma API Key em Integrações ou seleciona \'Demo\'.</span>';
+    return;
+  }
+
   _cop.isLoading = true;
   if (status) status.innerHTML = '<span class="copiloto-spinner"></span> A analisar com IA...';
   if (res) res.style.display = 'none';
 
   try {
-    var analysis = await analisarDesignComIA(_cop.file);
+    var analysis = provider === 'demo' ? _copDemoAnalysis() : await analisarDesignComIA(_cop.file);
     _cop.lastAnalysis = analysis;
     _copRenderResultado(analysis);
     if (status) status.innerHTML = '<span style="color:var(--g)">✓ Análise concluída · Confiança: ' + (analysis.confianca || '—') + '</span>';
@@ -17573,6 +17592,8 @@ async function tocoSincronizarFaturas(silent, ano) {
   } catch(e) {
     if(syncStatus) syncStatus.textContent = '❌ Erro: ' + e.message;
     if(syncDot) syncDot.classList.remove('active');
+    var tbodyErr = document.getElementById('toco-fat-tbody');
+    if(tbodyErr) tbodyErr.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--r);padding:30px">❌ Falha ao sincronizar: ' + (e.message||e) + '</td></tr>';
     localStorage.setItem('ob-toco-last-sync', JSON.stringify({ ts: Date.now(), ok: false, erro: e.message }));
     if(typeof tocoUpdateConexaoUI === 'function') tocoUpdateConexaoUI('erro', '● Falha na ligação: ' + e.message);
   }
@@ -17610,7 +17631,10 @@ function tocoRenderFaturas(docs) {
   setKpi('toco-kpi-total',total); setKpi('toco-kpi-pago',pago); setKpi('toco-kpi-aberto',aberto); setKpi('toco-kpi-vencido',vencido);
 
   if(!filtered.length) {
-    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:30px">Nenhum documento encontrado</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:30px">'
+      + 'Nenhuma fatura encontrada. Sincroniza com o TocOnline ou cria uma fatura manualmente.<br>'
+      + '<button class="tbtn y" style="margin-top:10px;font-size:12px" onclick="fatAbrirModal()">+ Criar Fatura Manual</button>'
+      + '</td></tr>';
     return;
   }
   tbody.innerHTML = filtered.map(function(d){
@@ -17921,7 +17945,13 @@ async function tocoCarregarClientes() {
     window._tocoCliImportList = clientes;
     if(statusEl) statusEl.textContent = clientes.length + ' clientes encontrados';
     if(!tbody) return;
-    if(!clientes.length) { tbody.innerHTML='<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:20px">Nenhum cliente no TocOnline</td></tr>'; return; }
+    if(!clientes.length) {
+      tbody.innerHTML='<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:20px">'
+        + 'Nenhum cliente encontrado no TocOnline. Verifica a ligação ou adiciona clientes manualmente.<br>'
+        + '<button class="tbtn y" style="margin-top:10px;font-size:12px" onclick="cliOpenNew()">+ Adicionar cliente manual</button>'
+        + '</td></tr>';
+      return;
+    }
     tbody.innerHTML = clientes.map(function(c, i){
       var a = c.attributes || c;
       var d = tocoExtrairDadosCliente(a);
@@ -17953,6 +17983,7 @@ async function tocoCarregarClientes() {
   } catch(e) {
     var msg = tocoHandleError(e);
     if(statusEl) statusEl.textContent = '❌ ' + msg;
+    if(tbody) tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--r);padding:20px">❌ ' + msg + '</td></tr>';
     tocoToast('❌ ' + msg, 'err');
   }
 }
