@@ -17286,10 +17286,26 @@ function copilotoAplicar() {
     }
   }
 
+  // ADD: garantir que _orcCustoMateriais não fica a 0 mesmo que orcRecalcMateriais() não exista/falhe
+  if (!window._orcCustoMateriais) {
+    var custoMatFallback = mats.reduce(function(s, mat) {
+      var p = (mat.precoEstimado || mat.preco || 0) * (mat.qtd || 0);
+      return s + p;
+    }, 0);
+    if (custoMatFallback) window._orcCustoMateriais = custoMatFallback;
+  }
+
   // ADD: Atualiza a primeira linha de produto com o valor final sugerido pela IA
-  // (preço final = analysis.preco_estimado_total, já calculado com markup; fallback para o preço sugerido pelos materiais)
+  // (preço final = analysis.preco_estimado_total, já calculado com markup; fallback = custo_materiais * markup_sugerido)
   var produtoNome = analysis.tipoReclamo || 'Reclamo personalizado';
-  var precoTotal = analysis.preco_estimado_total || window._orcPrecoSugerido || 0;
+  var precoTotal = analysis.preco_estimado_total;
+  if (!precoTotal) {
+    var custoMateriaisCalc = window._orcCustoMateriais || mats.reduce(function(s, mat) {
+      return s + (mat.precoEstimado || mat.preco || 0) * (mat.qtd || 0);
+    }, 0);
+    var markupSugerido = analysis.markup_sugerido || 2.5;
+    precoTotal = window._orcPrecoSugerido || (custoMateriaisCalc * markupSugerido) || 0;
+  }
   var descTexto = 'Composição baseada em análise IA' + (analysis.observacoes ? ' – ' + analysis.observacoes : '');
   var linesCont = document.getElementById('orc-lines-container');
   if (linesCont) {
