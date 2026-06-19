@@ -5096,6 +5096,11 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
     <div class="t-icon notif-wrap" data-action="goPage" data-page="alerts">🔔<div class="t-ndot" id="notif-dot"></div></div>
     <div class="t-icon" data-action="goPage" data-page="chat">💬</div>
     <div class="t-icon" id="import-btn" data-action="showImport" style="display:none">⬆</div>
+    <div id="user-switch-badge" style="display:none;align-items:center;gap:6px;background:var(--y);color:#000;font-weight:700;font-size:12px;border-radius:6px;padding:4px 9px;white-space:nowrap">
+      <span id="user-switch-badge-label">🔁 Modo: —</span>
+      <button class="tbtn" style="font-size:11px;padding:1px 7px;background:#000;color:var(--y);border:none" onclick="switchUserRestore()">Voltar</button>
+    </div>
+    <select id="user-switcher" onchange="switchUser(this.value)" style="display:none;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--txt2);font-size:12px;padding:4px 7px;cursor:pointer;font-family:'Inter',sans-serif"></select>
     <div class="t-user" id="tb-user">
       <div class="t-uava" id="tb-ava"></div>
       <div class="t-uinfo">
@@ -8519,6 +8524,7 @@ var DEPT_PAGES={
 
 var CU=null; // current user
 var selectedUser=null;
+var _adminUser=null; // utilizador admin original, quando em modo "ver como"
 
 // ── RENDER LOGIN ──────────────────────────────────────────
 
@@ -8583,6 +8589,15 @@ function loginComSenha() {
   if (erro) erro.style.display = 'none';
   CU = selectedUser || USERS.find(function(u){ return u.id === userId; });
   selectedUser = CU;
+  _adminUser = CU.admin === true ? CU : null;
+  // Restaurar modo "ver como" se existia antes de recarregar a página
+  try{
+    var _imp = JSON.parse(localStorage.getItem('ob-impersonate') || 'null');
+    if(_imp && _adminUser && _imp.adminId === _adminUser.id && _imp.userId !== _adminUser.id){
+      var _impUser = USERS.find(function(u){ return u.id === _imp.userId; });
+      if(_impUser) CU = _impUser;
+    }
+  }catch(e){}
   document.getElementById('login').style.display = 'none';
   document.getElementById('app').style.display = 'flex';
   if (typeof setupApp === 'function') setupApp();
@@ -8638,7 +8653,8 @@ function doLogin(){
 window._activeChatRoom='geral';
 
 function doLogout(){
-  CU=null;selectedUser=null;
+  CU=null;selectedUser=null;_adminUser=null;
+  localStorage.removeItem('ob-impersonate');
   document.getElementById('app').style.display='none';
   document.getElementById('login').style.display='flex';
   document.querySelectorAll('.ucard').forEach(c=>c.classList.remove('sel'));
@@ -8681,7 +8697,60 @@ function setupApp(){
 
   // Go to home
   goPage('home');
+
+  // Seletor de utilizadores (modo "ver como") — só visível para o admin original
+  renderUserSwitcher();
 }
+
+// ── TROCA TEMPORÁRIA DE UTILIZADOR (modo "ver como") — apenas admins ──
+function renderUserSwitcher(){
+  var sel = document.getElementById('user-switcher');
+  var badge = document.getElementById('user-switch-badge');
+  var badgeLabel = document.getElementById('user-switch-badge-label');
+  if(!sel || !badge || !badgeLabel) return;
+  if(!_adminUser){
+    sel.style.display='none';
+    badge.style.display='none';
+    return;
+  }
+  sel.style.display='inline-block';
+  sel.innerHTML = USERS.map(function(u){
+    return '<option value="'+u.id+'" '+(u.id===CU.id?'selected':'')+'>'+u.name+(u.id===_adminUser.id?' (eu)':'')+'</option>';
+  }).join('');
+  if(CU.id !== _adminUser.id){
+    badge.style.display='flex';
+    badgeLabel.textContent = '🔁 Modo: ' + CU.name;
+  } else {
+    badge.style.display='none';
+  }
+}
+window.renderUserSwitcher = renderUserSwitcher;
+
+function switchUser(newUserId){
+  if(!_adminUser) return;
+  var novo = USERS.find(function(u){ return u.id === newUserId; });
+  if(!novo) return;
+  if(newUserId === _adminUser.id){
+    switchUserRestore();
+    return;
+  }
+  CU = novo;
+  selectedUser = CU;
+  localStorage.setItem('ob-impersonate', JSON.stringify({adminId:_adminUser.id, userId:CU.id}));
+  setupApp();
+  if(typeof renderAll === 'function') renderAll();
+}
+window.switchUser = switchUser;
+
+function switchUserRestore(){
+  if(!_adminUser) return;
+  CU = _adminUser;
+  selectedUser = CU;
+  localStorage.removeItem('ob-impersonate');
+  setupApp();
+  if(typeof renderAll === 'function') renderAll();
+}
+window.switchUserRestore = switchUserRestore;
 
 // ── VISIBILIDADE DE DADOS SENSÍVEIS (custos, margens, previsões) ──
 function toggleAdminSensitiveFields(){
