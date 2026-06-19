@@ -4146,6 +4146,8 @@ tbody td{padding:9px 13px;font-size:14px;vertical-align:middle}
 .form-input:focus{border-color:var(--y)}
 .form-select{background:var(--bg3);border:1px solid var(--border2);border-radius:6px;padding:8px 11px;font-family:'Inter',sans-serif;font-size:14.5px;color:var(--txt2);outline:none;width:100%}
 .form-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+#hf-extra-fields.hidden{display:none}
+#home-full-modal.fullscreen .crm-modal{max-width:100vw;width:100vw;height:100vh;max-height:100vh;border-radius:0}
 
 /* Settings */
 .sg{background:var(--bg2);border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:14px}
@@ -8862,7 +8864,7 @@ function renderTasksList(){
             <th style="width:40%">Tarefa</th><th>Estado</th><th>Prioridade</th><th>Responsável</th><th>Prazo</th>
           </tr></thead>
           <tbody>
-          ${gtasks.map(t=>`<tr onclick="homeEditTask(${t.id})" style="cursor:pointer">
+          ${gtasks.map(t=>`<tr onclick="homeOpenFullEdit(${t.id})" style="cursor:pointer">
             <td><div class="task-name-cell"><div class="task-check"></div><div class="task-name">${t.title}</div></div></td>
             <td><span class="status" style="background:${t.statusC}20;color:${t.statusC};border:1px solid ${t.statusC}40">${t.status}</span></td>
             <td><div class="prio"><div class="prio-dot" style="background:${t.prioBg}"></div>${t.prio}</div></td>
@@ -8904,7 +8906,7 @@ function renderTasksBoard(){
           <div class="k-col-name" style="color:${dc}">👤 ${person}</div>
           <div class="k-col-count" style="background:${dc}25;color:${dc}">${ptasks.length}</div>
         </div>
-        ${ptasks.map(t=>`<div class="k-card" id="htask-${t.id}" onclick="homeEditTask(${t.id})">
+        ${ptasks.map(t=>`<div class="k-card" id="htask-${t.id}" onclick="homeOpenFullEdit(${t.id})">
           <div class="k-card-title">${t.title}</div>
           <div class="k-card-sub" style="color:${dc}">${t.status}</div>
           <div class="k-card-meta">
@@ -8938,7 +8940,7 @@ function renderTasksBoard(){
       ${stasks.map(t=>{
         const dc=HOME_DEPTS[t.group]||'#888';
         return `<div class="k-card" id="htask-${t.id}" draggable="true"
-          onclick="homeEditTask(${t.id})"
+          onclick="homeOpenFullEdit(${t.id})"
           ondragstart="homeDragId=${t.id};event.dataTransfer.effectAllowed='move';setTimeout(()=>{const e=document.getElementById('htask-${t.id}');if(e)e.classList.add('dragging');},0)"
           ondragend="document.querySelectorAll('.k-card.dragging,.k-col.drag-over').forEach(e=>{e.classList.remove('dragging');e.classList.remove('drag-over');})">
           <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:4px"><div class="k-card-title" style="flex:1">${t.title}</div>${t.origem==='app'?'<span style="font-size:10px;background:rgba(77,148,219,.15);color:#4d94db;border:1px solid rgba(77,148,219,.3);border-radius:4px;padding:1px 4px;white-space:nowrap;flex-shrink:0">📱 App</span>':''}</div>
@@ -9004,6 +9006,182 @@ function homeEditTask(id){
   if(htDateEndEl) htDateEndEl.value=t.dateEndIso||'';
   m.dataset.editId=id;
   m.classList.add('open');
+}
+
+// ── MODAL COMPLETO DE TAREFA (Home) ──────────────────────
+var _homeFullEditId=null;
+var _homeTrackInterval=null;
+var _homeTrackStartTs=null;
+
+function homeFormatHMS(totalSec){
+  var h=Math.floor(totalSec/3600);
+  var m=Math.floor((totalSec%3600)/60);
+  var s=Math.floor(totalSec%60);
+  function pad(n){ return (n<10?'0':'')+n; }
+  return pad(h)+':'+pad(m)+':'+pad(s);
+}
+
+function homeTrackToggle(){
+  var btn=document.getElementById('hf-track-btn');
+  var disp=document.getElementById('hf-track-display');
+  if(_homeTrackInterval){
+    clearInterval(_homeTrackInterval);
+    _homeTrackInterval=null;
+    var t=homeTasksData.find(function(t){return t.id===_homeFullEditId;});
+    if(t){
+      var elapsed=Math.floor((Date.now()-_homeTrackStartTs)/1000);
+      t.extras=t.extras||{};
+      t.extras.tempoRastreado=(t.extras.tempoRastreado||0)+elapsed;
+      saveHomeTasksData();
+    }
+    btn.textContent='▶️ Iniciar';
+    return;
+  }
+  _homeTrackStartTs=Date.now();
+  var t2=homeTasksData.find(function(t){return t.id===_homeFullEditId;});
+  var base=(t2&&t2.extras&&t2.extras.tempoRastreado)||0;
+  btn.textContent='⏸️ Parar';
+  _homeTrackInterval=setInterval(function(){
+    var sec=base+Math.floor((Date.now()-_homeTrackStartTs)/1000);
+    disp.textContent=homeFormatHMS(sec);
+  },1000);
+}
+
+function homeOpenFullEdit(id){
+  const t=homeTasksData.find(t=>t.id===id);
+  if(!t)return;
+  const m=document.getElementById('home-full-modal');
+  if(!m){alert('Modal não encontrado!');return;}
+  if(_homeTrackInterval){ clearInterval(_homeTrackInterval); _homeTrackInterval=null; }
+  _homeFullEditId=id;
+  const PRIO_BY_LABEL={'Urgente':'urgent','Alta':'high','Normal':'normal','Baixa':'low'};
+  const ex=t.extras||{};
+
+  document.getElementById('hf-orc').value=ex.orc||'';
+  document.getElementById('hf-title').value=t.title||'';
+  document.getElementById('hf-status').value=t.status||'A fazer';
+  document.getElementById('hf-prio').value=PRIO_BY_LABEL[t.prio]||'normal';
+  document.getElementById('hf-dept').value=t.dept||t.group||'Dep. Comercial';
+
+  const aSel=document.getElementById('hf-assignee');
+  const allTeam=typeof USERS!=='undefined' ? USERS.map(function(u){return u.name;}) : [...(crmComerciais||[]).map(c=>c.nome)];
+  aSel.innerHTML=[...new Set(allTeam)].map(n=>`<option value="${n}">${n}</option>`).join('');
+  const sel=ex.responsaveis||(t.assNome?[t.assNome]:[]);
+  Array.prototype.forEach.call(aSel.options,function(o){ o.selected=sel.indexOf(o.value)!==-1; });
+
+  document.getElementById('hf-date-start').value=t.dateIso||'';
+  document.getElementById('hf-date-end').value=t.dateEndIso||'';
+
+  document.getElementById('hf-est-h').value=ex.estimativaH||'';
+  document.getElementById('hf-est-m').value=ex.estimativaM||'';
+  document.getElementById('hf-track-btn').textContent='▶️ Iniciar';
+  document.getElementById('hf-track-display').textContent=homeFormatHMS(ex.tempoRastreado||0);
+
+  document.getElementById('hf-start').value=ex.start||'';
+  document.getElementById('hf-tags').value=(ex.tags||[]).join(', ');
+  document.getElementById('hf-desc').value=ex.descricao||'';
+
+  document.getElementById('hf-cli-tel').value=ex.cliTelefone||'';
+  document.getElementById('hf-cli-email').value=ex.cliEmail||'';
+  document.getElementById('hf-cli-nif').value=ex.cliNif||'';
+  document.getElementById('hf-cli-nome').value=ex.cliNome||'';
+  document.getElementById('hf-cli-morada').value=ex.cliMorada||'';
+  document.getElementById('hf-cli-pagamento').value=ex.cliPagamento||'';
+
+  document.getElementById('hf-fin-p1').value=ex.finPrioridade1||'';
+  document.getElementById('hf-fin-p2').value=ex.finPrioridade2||'';
+  document.getElementById('hf-fin-p3').value=ex.finPrioridade3||'';
+  document.getElementById('hf-fin-valor').value=ex.finValorLiquido||'';
+  document.getElementById('hf-fin-email').value=ex.finEmail||'';
+  document.getElementById('hf-fin-empresa').value=ex.finEmpresa||'';
+
+  document.getElementById('hf-doc-assistencia').value=ex.docAssistencia||'';
+  document.getElementById('hf-doc-encomenda').value=ex.docEncomenda||'';
+  document.getElementById('hf-doc-pick').checked=!!ex.docPickAssinado;
+  document.getElementById('hf-doc-segmentacao').value=ex.docSegmentacao||'';
+
+  m.dataset.editId=id;
+  m.classList.add('open');
+}
+
+function homeCloseFullEdit(){
+  if(_homeTrackInterval){ clearInterval(_homeTrackInterval); _homeTrackInterval=null; }
+  const m=document.getElementById('home-full-modal');
+  delete m.dataset.editId;
+  m.classList.remove('open');
+  m.classList.remove('fullscreen');
+  _homeFullEditId=null;
+}
+
+function homeSaveFullEdit(){
+  const m=document.getElementById('home-full-modal');
+  const editId=m.dataset.editId;
+  if(!editId)return;
+  const t=homeTasksData.find(t=>t.id===Number(editId));
+  if(!t){ homeCloseFullEdit(); return; }
+
+  const title=document.getElementById('hf-title').value.trim();
+  if(!title){alert('Preenche o título da tarefa.');return;}
+  const dept=document.getElementById('hf-dept').value;
+  const status=document.getElementById('hf-status').value;
+  const prio=document.getElementById('hf-prio').value;
+  const PRIO_LABELS={urgent:'Urgente',high:'Alta',normal:'Normal',low:'Baixa'};
+  const PRIO_COLORS={urgent:'#e74c3c',high:'#e67e22',normal:'#6b6b72',low:'#94a3b8'};
+  const DEPT_COLORS={'Dep. Comercial':'#e74c3c','Dep. Design':'#e67e22','Chão da Fábrica':'#3b82f6','Dep. Administrativo':'#8b5cf6'};
+
+  const aSel=document.getElementById('hf-assignee');
+  const responsaveis=Array.prototype.filter.call(aSel.options,function(o){return o.selected;}).map(function(o){return o.value;});
+  const assignee=responsaveis[0]||'';
+  const assInitials=assignee?assignee.split(' ').map(w=>w[0]).join('').substring(0,2).toUpperCase():'';
+
+  const dateStart=document.getElementById('hf-date-start').value;
+  const dateEnd=document.getElementById('hf-date-end').value;
+  let dueTxt='Hoje';
+  if(dateEnd){
+    const dp=new Date(dateEnd+'T00:00:00');
+    const today=new Date(); today.setHours(0,0,0,0);
+    const tomorrow=new Date(today); tomorrow.setDate(tomorrow.getDate()+1);
+    if(dp.getTime()===today.getTime()) dueTxt='Hoje';
+    else if(dp.getTime()===tomorrow.getTime()) dueTxt='Amanhã';
+    else { const dd=dp.getDate(); const mm=dp.getMonth()+1; const yy=dp.getFullYear(); dueTxt=dd+'/'+mm+'/'+yy; }
+  }
+
+  t.title=title; t.group=dept; t.dept=dept;
+  t.status=status; t.statusC=HOME_ST_COLORS[status]||'#6b6b72';
+  t.prio=PRIO_LABELS[prio]; t.prioBg=PRIO_COLORS[prio];
+  t.ass=assInitials; t.assC=DEPT_COLORS[dept]||'#4d94db'; t.assNome=assignee;
+  t.due=dueTxt; t.dueType='soon';
+  t.dateIso=dateStart||null;
+  t.dateEndIso=dateEnd||null;
+
+  t.extras=t.extras||{};
+  t.extras.orc=document.getElementById('hf-orc').value.trim();
+  t.extras.responsaveis=responsaveis;
+  t.extras.estimativaH=document.getElementById('hf-est-h').value;
+  t.extras.estimativaM=document.getElementById('hf-est-m').value;
+  t.extras.start=document.getElementById('hf-start').value;
+  t.extras.tags=document.getElementById('hf-tags').value.split(',').map(function(s){return s.trim();}).filter(Boolean);
+  t.extras.descricao=document.getElementById('hf-desc').value;
+  t.extras.cliTelefone=document.getElementById('hf-cli-tel').value.trim();
+  t.extras.cliEmail=document.getElementById('hf-cli-email').value.trim();
+  t.extras.cliNif=document.getElementById('hf-cli-nif').value.trim();
+  t.extras.cliNome=document.getElementById('hf-cli-nome').value.trim();
+  t.extras.cliMorada=document.getElementById('hf-cli-morada').value.trim();
+  t.extras.cliPagamento=document.getElementById('hf-cli-pagamento').value;
+  t.extras.finPrioridade1=document.getElementById('hf-fin-p1').value;
+  t.extras.finPrioridade2=document.getElementById('hf-fin-p2').value;
+  t.extras.finPrioridade3=document.getElementById('hf-fin-p3').value;
+  t.extras.finValorLiquido=document.getElementById('hf-fin-valor').value;
+  t.extras.finEmail=document.getElementById('hf-fin-email').value.trim();
+  t.extras.finEmpresa=document.getElementById('hf-fin-empresa').value.trim();
+  t.extras.docAssistencia=document.getElementById('hf-doc-assistencia').value.trim();
+  t.extras.docEncomenda=document.getElementById('hf-doc-encomenda').value.trim();
+  t.extras.docPickAssinado=document.getElementById('hf-doc-pick').checked;
+  t.extras.docSegmentacao=document.getElementById('hf-doc-segmentacao').value;
+
+  saveHomeTasksData();
+  homeCloseFullEdit();
+  renderTasksBoard(); renderTasksList();
 }
 
 function homeSaveTask(){
@@ -17591,5 +17769,223 @@ function importarConfiguracao() {
 }
 
 </script>
+
+<div id="home-full-modal" class="crm-modal-overlay">
+  <div class="crm-modal" style="max-width:800px;max-height:88vh;overflow-y:auto">
+
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+      <input class="form-input" id="hf-orc" placeholder="ORC-0000" style="width:120px;flex-shrink:0;font-family:'DM Mono',monospace"/>
+      <input class="form-input" id="hf-title" placeholder="Título da tarefa..." style="flex:1;font-size:16px;font-weight:600"/>
+      <button class="tbtn" type="button" onclick="alert('Funcionalidade de capa em breve.')">🖼️ Adicionar capa</button>
+    </div>
+
+    <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+      <button class="tbtn" type="button" disabled>Teste</button>
+      <button class="tbtn" type="button" disabled>Teste</button>
+      <button class="tbtn" type="button" disabled>🧠 Ask Brain² for apresentation</button>
+      <button class="tbtn" type="button" disabled>📄 document</button>
+      <button class="tbtn" type="button" disabled>🧩 prototype</button>
+    </div>
+
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Status</label>
+        <select class="form-select" id="hf-status">
+          <option>A fazer</option>
+          <option>Em progresso</option>
+          <option>Em revisão</option>
+          <option>Concluído</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Prioridade</label>
+        <select class="form-select" id="hf-prio">
+          <option value="urgent">🔴 Urgente</option>
+          <option value="high">🟠 Alta</option>
+          <option value="normal" selected>🟡 Normal</option>
+          <option value="low">⚪ Baixa</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Departamento</label>
+        <select class="form-select" id="hf-dept">
+          <option>Dep. Comercial</option>
+          <option>Dep. Design</option>
+          <option>Chão da Fábrica</option>
+          <option>Dep. Administrativo</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Responsáveis</label>
+        <select class="form-select" id="hf-assignee" multiple style="min-height:62px"></select>
+      </div>
+    </div>
+
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Data de início</label>
+        <input class="form-input" type="date" id="hf-date-start"/>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Data de vencimento</label>
+        <input class="form-input" type="date" id="hf-date-end"/>
+      </div>
+    </div>
+
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Estimativa de tempo</label>
+        <div style="display:flex;gap:6px">
+          <input class="form-input" type="number" min="0" id="hf-est-h" placeholder="h" style="width:70px"/>
+          <input class="form-input" type="number" min="0" max="59" id="hf-est-m" placeholder="min" style="width:70px"/>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Rastrear tempo</label>
+        <div style="display:flex;align-items:center;gap:8px">
+          <button class="tbtn" type="button" id="hf-track-btn" onclick="homeTrackToggle()">▶️ Iniciar</button>
+          <span id="hf-track-display" style="font-family:'DM Mono',monospace;color:var(--muted)">00:00:00</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="group-hdr" style="cursor:pointer;margin:14px 0 8px" onclick="document.getElementById('hf-extra-fields').classList.toggle('hidden')">
+      <div class="group-name">Campos adicionais</div>
+      <div class="group-chevron">▾ Recolher campos vazios</div>
+    </div>
+    <div id="hf-extra-fields">
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Start</label>
+          <select class="form-select" id="hf-start">
+            <option value="">—</option>
+            <option value="sim">Sim</option>
+            <option value="nao">Não</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Etiquetas</label>
+          <input class="form-input" id="hf-tags" placeholder="ex: urgente, cliente-vip (separadas por vírgula)"/>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Descrição</label>
+        <textarea class="form-input" id="hf-desc" rows="3" style="resize:vertical"></textarea>
+        <button class="tbtn" type="button" style="align-self:flex-start;margin-top:6px" onclick="alert('Escrever com IA em breve.')">✨ Escrever com IA</button>
+      </div>
+    </div>
+
+    <div class="group-hdr" style="margin:18px 0 8px"><div class="group-name">Contacto Cliente</div></div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Telefone</label>
+        <div style="display:flex;gap:6px">
+          <span class="form-input" style="width:56px;text-align:center;flex-shrink:0">+351</span>
+          <input class="form-input" id="hf-cli-tel" placeholder="912 345 678"/>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Email</label>
+        <input class="form-input" type="email" id="hf-cli-email"/>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">NIF</label>
+        <input class="form-input" id="hf-cli-nif"/>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Nome do Cliente</label>
+        <input class="form-input" id="hf-cli-nome"/>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Morada de Montagem</label>
+        <input class="form-input" id="hf-cli-morada"/>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Forma de Pagamento</label>
+        <select class="form-select" id="hf-cli-pagamento">
+          <option value="">—</option>
+          <option>50% ADJ</option>
+          <option>Transferência</option>
+          <option>Numerário</option>
+          <option>Cheque</option>
+          <option>Multibanco</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="group-hdr" style="margin:18px 0 8px"><div class="group-name">Dados Financeiros</div></div>
+    <div class="form-group">
+      <label class="form-label">Prioridade Monetária</label>
+      <div style="display:flex;gap:6px">
+        <input class="form-input" type="number" id="hf-fin-p1" placeholder="🔥"/>
+        <input class="form-input" type="number" id="hf-fin-p2" placeholder="🔥"/>
+        <input class="form-input" type="number" id="hf-fin-p3" placeholder="🔥"/>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Valor Líquido</label>
+        <input class="form-input" type="number" step="0.01" id="hf-fin-valor"/>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Email Financeiro</label>
+        <input class="form-input" type="email" id="hf-fin-email"/>
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Nome de Empresa</label>
+      <input class="form-input" id="hf-fin-empresa"/>
+    </div>
+
+    <div class="group-hdr" style="margin:18px 0 8px"><div class="group-name">Documentos</div></div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Nº Assistência</label>
+        <input class="form-input" id="hf-doc-assistencia"/>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Nota de Encomenda</label>
+        <input class="form-input" id="hf-doc-encomenda"/>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Pick Assinado</label>
+        <input type="checkbox" id="hf-doc-pick" style="width:18px;height:18px;align-self:flex-start"/>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Segmentação</label>
+        <select class="form-select" id="hf-doc-segmentacao">
+          <option value="">—</option>
+          <option>Residencial</option>
+          <option>Comercial</option>
+          <option>Industrial</option>
+        </select>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:8px;margin:16px 0;flex-wrap:wrap">
+      <button class="tbtn" type="button" onclick="if(_homeFullEditId)subchkOpenModal('home',_homeFullEditId)">➕ Adicionar subtarefa</button>
+      <button class="tbtn" type="button" onclick="alert('Sugestões em breve.')">💡 Sugerir</button>
+      <button class="tbtn" type="button" onclick="if(_homeFullEditId)subchkOpenModal('home',_homeFullEditId)">☑️ Criar checklist</button>
+      <button class="tbtn" type="button" onclick="document.getElementById('hf-file').click()">📎 Anexar arquivo</button>
+      <input type="file" id="hf-file" style="display:none"/>
+      <button class="tbtn" type="button" onclick="document.getElementById('home-full-modal').classList.add('fullscreen')">⛶ Tela cheia</button>
+    </div>
+
+    <div class="crm-modal-btns">
+      <button class="tbtn" type="button" onclick="homeCloseFullEdit()">Cancelar</button>
+      <button class="tbtn y" type="button" onclick="homeSaveFullEdit()">💾 Guardar</button>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>
