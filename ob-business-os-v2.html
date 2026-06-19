@@ -5591,7 +5591,7 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
             <div id="copiloto-resultado">
               <div class="copiloto-header" style="margin-bottom:8px;font-size:13px">
                 📋 Análise do Copiloto
-                <button class="tbtn y" style="margin-left:auto;font-size:12px;padding:2px 8px" onclick="copilotoAplicarTudo()">↑ Aplicar tudo ao orçamento</button>
+                <button class="tbtn y" style="margin-left:auto;font-size:12px;padding:2px 8px" onclick="copilotoAplicar()">↑ Aplicar materiais ao orçamento</button>
               </div>
               <div id="cop-tipo-reclamo" style="margin-bottom:8px"></div>
               <div id="cop-medidas" style="margin-bottom:8px;font-size:13px;color:var(--muted)"></div>
@@ -12334,10 +12334,17 @@ function importarOrcamentos2026() {
 }
 window.importarOrcamentos2026 = importarOrcamentos2026;
 
-var ORC_LOGO_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 80" width="220" height="44">
-  <text x="0" y="38" font-family="'Segoe UI', Arial, sans-serif" font-size="28" font-weight="800" fill="#1a1a1a" letter-spacing="0.5">opportunity</text>
-  <text x="185" y="38" font-family="'Segoe UI', Arial, sans-serif" font-size="28" font-weight="800" fill="#F5C400" letter-spacing="0.5">box</text>
-  <text x="0" y="58" font-family="'Segoe UI', Arial, sans-serif" font-size="11" font-weight="600" fill="#888" letter-spacing="2">BETTER · FASTER · STRONGER</text>
+var ORC_LOGO_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 90" width="260" height="45">
+  <g>
+    <circle cx="42" cy="42" r="34" fill="#F5C400" stroke="#2b2b2b" stroke-width="6"/>
+    <path d="M 42 18 C 30 18, 18 28, 18 42" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" opacity="0.55"/>
+    <path d="M 28 36 C 24 30, 30 24, 36 30 C 40 34, 36 40, 42 44 C 48 40, 44 34, 48 30 C 54 24, 60 30, 56 36 C 52 42, 44 46, 42 54" fill="none" stroke="#2b2b2b" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/>
+    <line x1="32" x2="44" y1="68" y2="80" stroke="#2b2b2b" stroke-width="6" stroke-linecap="round"/>
+    <line x1="44" x2="56" y1="68" y2="80" stroke="#2b2b2b" stroke-width="6" stroke-linecap="round"/>
+  </g>
+  <text x="92" y="50" font-family="'Segoe UI', Arial, sans-serif" font-size="30" font-weight="800" fill="#1a1a1a" letter-spacing="0.5">opportunity</text>
+  <text x="287" y="50" font-family="'Segoe UI', Arial, sans-serif" font-size="30" font-weight="800" fill="#F5C400" letter-spacing="0.5">box</text>
+  <text x="92" y="70" font-family="'Segoe UI', Arial, sans-serif" font-size="11" font-weight="600" fill="#888" letter-spacing="2">BETTER · FASTER · STRONGER</text>
 </svg>`;
 
 var orcData; try{orcData=JSON.parse(localStorage.getItem('ob-orcamentos')||'[]');}catch(e){orcData=[];}
@@ -17191,8 +17198,16 @@ function _copRenderResultado(analysis) {
   if (obsEl) obsEl.textContent = analysis.observacoes || '';
 }
 
-// ── Aplicar tudo ao orçamento ─────────────────────────────────────
-function copilotoAplicarTudo() {
+// ── Apenas mostrar a sugestão (não altera o orçamento) ─────────────
+function copilotoSugerir() {
+  var analysis = _cop.lastAnalysis;
+  if (!analysis) { alert('Nenhuma análise disponível. Clica em "Analisar com IA" primeiro.'); return; }
+  _copRenderResultado(analysis);
+}
+window.copilotoSugerir = copilotoSugerir;
+
+// ── Aplicar materiais ao orçamento (só corre quando o utilizador clica) ──
+function copilotoAplicar() {
   var analysis = _cop.lastAnalysis;
   if (!analysis || !analysis.materiais) {
     alert('Nenhuma análise disponível. Clica em "Analisar com IA" primeiro.');
@@ -17413,7 +17428,7 @@ function copilotoLimpar() {
 
 // Expor para event delegation
 window.copilotoAnalisar = copilotoAnalisar;
-window.copilotoAplicarTudo = copilotoAplicarTudo;
+window.copilotoAplicar = copilotoAplicar;
 window.copilotoEnviarChat = copilotoEnviarChat;
 window.copilotoLimpar = copilotoLimpar;
 window.copilotoToggle = copilotoToggle;
