@@ -7779,7 +7779,7 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
 
     <div class="crm-modal-btns" style="flex-wrap:wrap;gap:6px">
       <button class="tbtn" id="clm-del-btn" data-action="crmDeleteLead" style="color:var(--r);border-color:var(--r);margin-right:auto;display:none">🗑️ Eliminar</button>
-      <button class="tbtn" id="clm-adjud-btn" onclick="crmAbrirAdjudicacaoModal(crmEditingId)" style="display:none;background:rgba(245,196,0,.1);border-color:rgba(245,196,0,.4);color:var(--y)" title="Gerar formulário de adjudicação para enviar ao cliente">📋 Adjudicação</button>
+      <button class="tbtn" id="clm-adjud-btn" style="display:none;background:rgba(245,196,0,.1);border-color:rgba(245,196,0,.4);color:var(--y)" title="Gerar formulário de adjudicação para enviar ao cliente">📋 Adjudicação</button>
       <button class="tbtn" data-action="crmCloseLeadModal">Cancelar</button>
       <button class="tbtn y" data-action="crmSaveLead">💾 Guardar</button>
     </div>
@@ -12474,6 +12474,16 @@ function crmSubmeterAdjudicacao(){
   showToast('✓ Adjudicação submetida com sucesso!');
   crmFecharAdjudicacaoModal();
 }
+
+// Liga eventos dos botões do modal de adjudicação e do botão "Adjudicação" do lead (sem onclick inline)
+document.addEventListener('DOMContentLoaded', function(){
+  const adjBtn = document.getElementById('clm-adjud-btn');
+  if(adjBtn) adjBtn.addEventListener('click', function(){ crmAbrirAdjudicacaoModal(crmEditingId); });
+  const adjCancelBtn = document.getElementById('adj-cancel-btn');
+  if(adjCancelBtn) adjCancelBtn.addEventListener('click', crmFecharAdjudicacaoModal);
+  const adjSubmitBtn = document.getElementById('adj-submit-btn');
+  if(adjSubmitBtn) adjSubmitBtn.addEventListener('click', crmSubmeterAdjudicacao);
+});
 
 function orcPDF(){
   const d = orcGetData();
@@ -18251,8 +18261,8 @@ function importarConfiguracao() {
     </div>
 
     <div class="crm-modal-btns">
-      <button class="tbtn" onclick="crmFecharAdjudicacaoModal()">Cancelar</button>
-      <button class="tbtn y" onclick="crmSubmeterAdjudicacao()">✓ Submeter</button>
+      <button class="tbtn" id="adj-cancel-btn">Cancelar</button>
+      <button class="tbtn y" id="adj-submit-btn">✓ Submeter</button>
     </div>
   </div>
 </div>
