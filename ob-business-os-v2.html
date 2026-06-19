@@ -5563,6 +5563,15 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
               </select>
             </div>
 
+            <!-- Seletor de modo -->
+            <div style="margin-bottom:8px">
+              <select id="copiloto-modo" class="form-input" style="width:100%;font-size:13px" onchange="copilotoModoChange()">
+                <option value="imagem">📐 Analisar Imagem/Maquete</option>
+                <option value="descricao">✍️ Descrição Manual</option>
+                <option value="gerar_imagem">🎨 Gerar Imagem</option>
+              </select>
+            </div>
+
             <!-- Dropzone Upload -->
             <div id="copiloto-dropzone" onclick="document.getElementById('cop-file-inp').click()"
                  ondragover="event.preventDefault();this.classList.add('drag-over')"
@@ -5581,9 +5590,16 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
               <div id="copiloto-status"></div>
             </div>
 
+            <!-- Descrição manual / prompt para gerar imagem -->
+            <div id="copiloto-descricao-wrap" style="display:none;margin-bottom:10px">
+              <textarea id="copiloto-descricao" class="form-input" rows="3" style="width:100%;resize:vertical" placeholder="Descreve a fachada/reclamo (ex: Fachada com letras 3D em acrílico leitoso, 4m de largura, 0.7m de altura)"></textarea>
+              <div id="copiloto-descricao-status" style="font-size:12px;margin-top:4px"></div>
+            </div>
+
             <!-- Botões de acção -->
             <div style="display:flex;gap:6px;margin-bottom:10px">
-              <button class="tbtn" style="background:#8b5cf6;color:#fff;font-size:13px;flex:2" onclick="copilotoAnalisar()">🔍 Analisar com IA</button>
+              <button id="cop-btn-analisar" class="tbtn" style="background:#8b5cf6;color:#fff;font-size:13px;flex:2" onclick="copilotoAnalisar()">🔍 Analisar com IA</button>
+              <button id="cop-btn-gerar" class="tbtn" style="display:none;background:#8b5cf6;color:#fff;font-size:13px;flex:2" onclick="copilotoGerarImagem()">🎨 Gerar Imagem da Fachada</button>
               <button class="tbtn" style="font-size:13px;flex:1" onclick="copilotoLimpar()">✕ Limpar</button>
             </div>
 
@@ -17035,12 +17051,23 @@ function _copSystemPrompt() {
 async function analisarDesignComIA(file) {
   var provider = (document.getElementById('cop-api-provider') || {}).value || copilotoGetProvider();
   var key = copilotoGetKeyForProvider(provider) || (document.getElementById('cop-api-key') || {}).value || '';
+  var modo = (document.getElementById('copiloto-modo') || {}).value || 'imagem';
 
   if (provider === 'demo') return _copDemoAnalysis();
   if (!key) throw new Error('API Key não configurada. Introduz a chave ou escolhe "Demo".');
-  if (!_cop.b64) throw new Error('Nenhuma imagem carregada.');
+  if (modo !== 'descricao' && !_cop.b64) throw new Error('Nenhuma imagem carregada.');
 
   if (provider === 'openai') {
+    var userContent;
+    if (modo === 'descricao') {
+      var descricao = (document.getElementById('copiloto-descricao') || {}).value || '';
+      userContent = 'Descrição da fachada/reclamo fornecida pelo cliente: "' + descricao + '". Com base nesta descrição, devolve o JSON de orçamento.';
+    } else {
+      userContent = [
+        { type: 'image_url', image_url: { url: 'data:' + _cop.mimeType + ';base64,' + _cop.b64 } },
+        { type: 'text', text: 'Analisa esta maquete/imagem e devolve o JSON de orçamento.' }
+      ];
+    }
     var resp = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
@@ -17049,10 +17076,7 @@ async function analisarDesignComIA(file) {
         max_tokens: 2048,
         messages: [
           { role: 'system', content: _copSystemPrompt() },
-          { role: 'user', content: [
-            { type: 'image_url', image_url: { url: 'data:' + _cop.mimeType + ';base64,' + _cop.b64 } },
-            { type: 'text', text: 'Analisa esta maquete/imagem e devolve o JSON de orçamento.' }
-          ]}
+          { role: 'user', content: userContent }
         ]
       })
     });
@@ -17060,6 +17084,97 @@ async function analisarDesignComIA(file) {
     var data = await resp.json();
     var raw = data.choices[0].message.content || '';
     return JSON.parse(raw.trim().replace(/^```json\s*/,'').replace(/```$/,''));
+  }
+}
+
+// ── Alternar modo do Copiloto (imagem / descrição / gerar imagem) ──
+function copilotoModoChange() {
+  var modo = (document.getElementById('copiloto-modo') || {}).value || 'imagem';
+  var dropzone = document.getElementById('copiloto-dropzone');
+  var descWrap = document.getElementById('copiloto-descricao-wrap');
+  var btnAnalisar = document.getElementById('cop-btn-analisar');
+  var btnGerar = document.getElementById('cop-btn-gerar');
+
+  if (modo === 'imagem') {
+    if (dropzone) dropzone.style.display = '';
+    if (descWrap) descWrap.style.display = 'none';
+    if (btnAnalisar) btnAnalisar.style.display = '';
+    if (btnGerar) btnGerar.style.display = 'none';
+  } else if (modo === 'descricao') {
+    if (dropzone) dropzone.style.display = 'none';
+    if (descWrap) descWrap.style.display = '';
+    if (btnAnalisar) btnAnalisar.style.display = '';
+    if (btnGerar) btnGerar.style.display = 'none';
+  } else if (modo === 'gerar_imagem') {
+    if (dropzone) dropzone.style.display = 'none';
+    if (descWrap) descWrap.style.display = '';
+    if (btnAnalisar) btnAnalisar.style.display = 'none';
+    if (btnGerar) btnGerar.style.display = '';
+  }
+}
+
+// ── Gerar imagem da fachada com DALL·E 3 ───────────────────────────
+async function copilotoGerarImagem() {
+  if (_cop.isLoading) return;
+  var status = document.getElementById('copiloto-descricao-status');
+  var descricao = (document.getElementById('copiloto-descricao') || {}).value || '';
+
+  if (!descricao.trim()) {
+    if (status) status.innerHTML = '<span style="color:var(--a)">⚠ Escreve uma descrição da fachada/reclamo primeiro.</span>';
+    return;
+  }
+
+  var provider = (document.getElementById('cop-api-provider') || {}).value || copilotoGetProvider();
+  var key = copilotoGetKeyForProvider(provider) || (document.getElementById('cop-api-key') || {}).value || '';
+  if (provider === 'demo' || !key) {
+    if (status) status.innerHTML = '<span style="color:var(--a)">⚠️ A geração de imagem requer uma API Key OpenAI válida (não disponível em modo Demo).</span>';
+    return;
+  }
+
+  var prompt = 'Gera uma imagem realista de uma fachada de loja com base na seguinte descrição: ' + descricao +
+    '. Estilo: arquitetónico, realista, com iluminação natural. A imagem deve mostrar a fachada completa com as letras 3D ou reclamo luminoso proposto. Fundo: ambiente urbano. Resolução: 1024x1024.';
+
+  _cop.isLoading = true;
+  if (status) status.innerHTML = '<span class="copiloto-spinner"></span> A gerar imagem com DALL·E 3...';
+
+  try {
+    var resp = await fetch('https://api.openai.com/v1/images/generations', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
+      body: JSON.stringify({
+        model: 'dall-e-3',
+        prompt: prompt,
+        n: 1,
+        size: '1024x1024',
+        quality: 'standard',
+        response_format: 'b64_json'
+      })
+    });
+    if (!resp.ok) throw new Error('OpenAI API ' + resp.status);
+    var data = await resp.json();
+    var b64 = data.data && data.data[0] && data.data[0].b64_json;
+    if (!b64) throw new Error('Resposta sem imagem.');
+
+    // Carregar a imagem gerada no estado do Copiloto, para poder ser analisada a seguir
+    _cop.b64 = b64;
+    _cop.mimeType = 'image/png';
+    _cop.file = null;
+
+    var previewImg = document.getElementById('cop-preview-img');
+    var fileName = document.getElementById('cop-file-name');
+    var dropIdle = document.getElementById('cop-drop-idle');
+    var dropPreview = document.getElementById('cop-drop-preview');
+    if (previewImg) previewImg.src = 'data:image/png;base64,' + b64;
+    if (fileName) fileName.textContent = 'Imagem gerada por IA (DALL·E 3)';
+    if (dropIdle) dropIdle.style.display = 'none';
+    if (dropPreview) dropPreview.style.display = '';
+
+    if (status) status.innerHTML = '<span style="color:var(--g)">✓ Imagem gerada com sucesso! Muda para "Analisar Imagem/Maquete" e clica em "Analisar com IA" para orçamentar.</span>';
+  } catch(e) {
+    if (status) status.innerHTML = '<span style="color:var(--r)">✗ Erro: ' + (e.message || e).slice(0, 120) + '</span>';
+    console.error('[CopilotoIA] gerarImagem', e);
+  } finally {
+    _cop.isLoading = false;
   }
 }
 
@@ -17090,7 +17205,15 @@ async function copilotoAnalisar() {
   var status = document.getElementById('copiloto-status');
   var res = document.getElementById('copiloto-resultado');
 
-  if (!_cop.b64) {
+  var modo = (document.getElementById('copiloto-modo') || {}).value || 'imagem';
+
+  if (modo === 'descricao') {
+    var descricaoTxt = (document.getElementById('copiloto-descricao') || {}).value || '';
+    if (!descricaoTxt.trim()) {
+      if (status) status.innerHTML = '<span style="color:var(--a)">⚠ Escreve uma descrição da fachada/reclamo primeiro.</span>';
+      return;
+    }
+  } else if (!_cop.b64) {
     var provider = (document.getElementById('cop-api-provider') || {}).value || 'demo';
     if (provider !== 'demo') {
       if (status) status.innerHTML = '<span style="color:var(--a)">⚠ Carrega uma imagem primeiro.</span>';
