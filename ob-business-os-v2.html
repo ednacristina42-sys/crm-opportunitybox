@@ -5774,11 +5774,46 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
       <!-- ── LISTA ── -->
       <div>
         <div class="sh"><h2>Orçamentos recentes</h2></div>
+
+        <!-- KPIs -->
+        <div class="g4" style="margin-bottom:14px">
+          <div class="mn"><div class="mnl">Total</div><div class="mnv" id="orc-kpi-total">—</div><div class="mns">orçamentos</div></div>
+          <div class="mn" style="border-color:rgba(63,207,142,.2)"><div class="mnl">Aprovados</div><div class="mnv" style="color:var(--g)" id="orc-kpi-aprovados">—</div><div class="mns">€<span id="orc-kpi-aprovados-val">0</span></div></div>
+          <div class="mn" style="border-color:rgba(245,196,0,.2)"><div class="mnl">Pendentes</div><div class="mnv" style="color:var(--y)" id="orc-kpi-pendentes">—</div><div class="mns">em aberto</div></div>
+          <div class="mn" style="border-color:rgba(77,148,219,.2)"><div class="mnl">Faturados</div><div class="mnv" style="color:#4d94db" id="orc-kpi-faturados">—</div><div class="mns">em faturação</div></div>
+        </div>
+
+        <!-- Filtros -->
+        <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
+          <input type="text" id="orc-filtro-busca" placeholder="🔎 Cliente ou Nº orçamento..." style="background:var(--bg3);border:1px solid var(--border);color:var(--txt2);border-radius:7px;padding:5px 10px;font-size:14px;flex:1;min-width:180px"/>
+          <select id="orc-filtro-estado" style="background:var(--bg3);border:1px solid var(--border);color:var(--txt2);border-radius:7px;padding:5px 10px;font-size:14px">
+            <option value="">— Todos os estados —</option>
+            <option value="Pendente">Pendente</option>
+            <option value="Em análise">Em análise</option>
+            <option value="Aprovado">Aprovado</option>
+            <option value="Em Produção">Em Produção</option>
+            <option value="Concluído">Concluído</option>
+            <option value="Faturado">Faturado</option>
+            <option value="Cancelado">Cancelado</option>
+          </select>
+          <select id="orc-filtro-vendedor" style="background:var(--bg3);border:1px solid var(--border);color:var(--txt2);border-radius:7px;padding:5px 10px;font-size:14px">
+            <option value="">— Todos os vendedores —</option>
+          </select>
+          <input type="date" id="orc-filtro-data" style="background:var(--bg3);border:1px solid var(--border);color:var(--txt2);border-radius:7px;padding:5px 10px;font-size:14px"/>
+          <button class="tbtn" id="orc-filtro-limpar" style="font-size:13px">✕ Limpar</button>
+          <button class="tbtn y" id="orc-exportar-csv" style="font-size:13px">⬇ Exportar CSV</button>
+        </div>
+
         <div class="tw">
           <table>
             <thead><tr><th>Nº</th><th>Cliente</th><th>Valor</th><th>Vendedor</th><th>Estado</th><th>Data</th></tr></thead>
             <tbody id="orc-tbody"></tbody>
           </table>
+        </div>
+        <div style="display:flex;justify-content:center;align-items:center;gap:10px;margin-top:10px">
+          <button class="tbtn" id="orc-pag-prev" style="font-size:13px">← Anterior</button>
+          <span id="orc-pag-info" style="color:var(--muted);font-size:13px"></span>
+          <button class="tbtn" id="orc-pag-next" style="font-size:13px">Próximo →</button>
         </div>
       </div>
 
@@ -9416,14 +9451,32 @@ function homeSaveTask(){
       ass:assInitials, assC:DEPT_COLORS[dept]||'#4d94db', assNome:assignee,
       due:dueTxt, dueType:'soon',
       dateIso:htDateVal||null,
-      dateEndIso:htDateEndVal||null
+      dateEndIso:htDateEndVal||null,
+      subtarefas:[]
     };
+    homeDistribuirSubtarefas(newTask);
     homeTasksData.unshift(newTask);
   }
   saveHomeTasksData();
   delete modal.dataset.editId;
   modal.classList.remove('open');
   renderTasksBoard(); renderTasksList();
+}
+
+// ── DISTRIBUIÇÃO AUTOMÁTICA DE SUBTAREFAS POR DEPARTAMENTO ──
+var HOME_DEPT_SUBTAREFAS = {
+  'Dep. Comercial': ['Contactar cliente', 'Enviar proposta', 'Follow-up'],
+  'Dep. Design': ['Briefing', 'Criar mockup', 'Aprovação do cliente'],
+  'Chão da Fábrica': ['Encomendar materiais', 'Produção', 'Controlo de qualidade', 'Expedição'],
+  'Dep. Administrativo': ['Criar ficha de projeto', 'Faturação', 'Arquivo']
+};
+function homeDistribuirSubtarefas(task){
+  const titulos = HOME_DEPT_SUBTAREFAS[task.dept];
+  if(!titulos || !titulos.length) return;
+  if(task.subtarefas && task.subtarefas.length) return;
+  const resp = task.assNome || 'Equipa OpportunityBox';
+  task.subtarefas = titulos.map(titulo=>({ id:'sub-'+Date.now()+'-'+Math.floor(Math.random()*1000), titulo, concluida:false, responsavel:resp }));
+  if(typeof showToast==='function') showToast('✓ Tarefa distribuída por '+task.dept+' ('+titulos.length+' subtarefas criadas)');
 }
 
 // ── LEADS / CRM ───────────────────────────────────────────
@@ -11829,12 +11882,14 @@ function cliRenderRecebimentos(c){
   orcsPend.forEach(o=>{
     const val=o.totais?.total||0;
     const vd=o.val?new Date(o.val):null;
-    if(!vd||isNaN(vd)) return; // sem data de validade válida — não entra nos buckets nem na lista
-    const dias=Math.round((vd-hoje)/86400000);
-    if(dias<0){venc+=val;}
-    else if(dias<=30){a30+=val;}
-    else if(dias<=60){a60+=val;}
-    else{mais60+=val;}
+    const valido=!!vd&&!isNaN(vd);
+    const dias=valido?Math.round((vd-hoje)/86400000):null;
+    if(valido){
+      if(dias<0){venc+=val;}
+      else if(dias<=30){a30+=val;}
+      else if(dias<=60){a60+=val;}
+      else{mais60+=val;}
+    }
     lista.push({num:o.num,val,dias,vd,cli:o.cli,st:o.st});
   });
   const total=venc+a30+a60+mais60;
@@ -11859,12 +11914,12 @@ function cliRenderRecebimentos(c){
   // Lista — apenas vencidos ou a vencer nos próximos 30 dias
   const listaEl=document.getElementById('cli-receb-lista');
   if(!listaEl)return;
-  const listaVisivel=lista.filter(o=>o.dias<=30);
-  listaVisivel.sort((a,b)=>a.dias-b.dias);
+  const listaVisivel=lista.filter(o=>o.dias===null||o.dias<=30);
+  listaVisivel.sort((a,b)=>{ if(a.dias===null) return 1; if(b.dias===null) return -1; return a.dias-b.dias; });
   if(!listaVisivel.length){listaEl.innerHTML='<div style="color:var(--muted);font-style:italic">Sem orçamentos vencidos ou a vencer em breve.</div>';return;}
   listaEl.innerHTML=listaVisivel.slice(0,6).map(o=>{
-    const color=o.dias<0?'var(--r)':o.dias<=30?'var(--y)':o.dias<=60?'var(--b)':'var(--g)';
-    const label=o.dias<0?'Vencido há '+Math.abs(o.dias)+' dias':o.dias===0?'Vence hoje':'Vence em '+o.dias+' dias';
+    const color=o.dias===null?'var(--muted)':o.dias<0?'var(--r)':o.dias<=30?'var(--y)':o.dias<=60?'var(--b)':'var(--g)';
+    const label=o.dias===null?'Sem data de vencimento':o.dias<0?'Vencido há '+Math.abs(o.dias)+' dias':o.dias===0?'Vence hoje':'Vence em '+o.dias+' dias';
     return '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:7px;padding:8px 10px">'
       +'<div style="color:'+color+';font-weight:700;font-size:13px">'+o.num+' — €'+Math.round(o.val).toLocaleString('pt-PT')+'</div>'
       +'<div style="color:var(--muted);font-size:12px;margin-top:2px">'+o.cli+'</div>'
@@ -12766,13 +12821,124 @@ if(document.readyState==='loading'){
   win.document.close();
 }
 
+var ORC_FILTERS = { search:'', estado:'', vendedor:'', data:'' };
+var ORC_PAGE = 1;
+var ORC_PAGE_SIZE = 20;
+
+function orcGetValorTotal(o){ return o.totais && typeof o.totais.total==='number' ? o.totais.total : (typeof o.val==='number'?o.val:0); }
+
+function orcFiltrarLista(){
+  var search = (ORC_FILTERS.search||'').trim().toLowerCase();
+  return (orcData||[]).filter(function(o){
+    if(search && !((o.cli||'').toLowerCase().includes(search) || (o.num||'').toLowerCase().includes(search))) return false;
+    if(ORC_FILTERS.estado && o.st!==ORC_FILTERS.estado) return false;
+    if(ORC_FILTERS.vendedor && o.vendedor!==ORC_FILTERS.vendedor) return false;
+    if(ORC_FILTERS.data){
+      var dt = o.dt||o.data||'';
+      var iso = orcDataParaIso(dt);
+      if(iso!==ORC_FILTERS.data) return false;
+    }
+    return true;
+  });
+}
+
+function orcDataParaIso(dt){
+  if(!dt) return '';
+  var m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(dt);
+  if(m) return m[3]+'-'+m[2]+'-'+m[1];
+  return dt;
+}
+
+function orcAtualizarKPIs(lista){
+  var total = lista.length;
+  var aprovados = lista.filter(function(o){return o.st==='Aprovado';});
+  var pendentes = lista.filter(function(o){return o.st==='Pendente';});
+  var faturados = lista.filter(function(o){return o.st==='Faturado';});
+  var valorAprovados = aprovados.reduce(function(s,o){return s+orcGetValorTotal(o);},0);
+  var setTxt=function(id,v){ var el=document.getElementById(id); if(el) el.textContent=v; };
+  setTxt('orc-kpi-total', total);
+  setTxt('orc-kpi-aprovados', aprovados.length);
+  setTxt('orc-kpi-aprovados-val', orcFmt(valorAprovados));
+  setTxt('orc-kpi-pendentes', pendentes.length);
+  setTxt('orc-kpi-faturados', faturados.length);
+}
+
+function orcPopularVendedores(){
+  var sel = document.getElementById('orc-filtro-vendedor');
+  if(!sel) return;
+  var vendedores = Array.from(new Set((orcData||[]).map(function(o){return o.vendedor;}).filter(Boolean))).sort();
+  var atual = sel.value;
+  sel.innerHTML = '<option value="">— Todos os vendedores —</option>' + vendedores.map(function(v){return '<option value="'+v+'">'+v+'</option>';}).join('');
+  sel.value = atual;
+}
+
+function orcApplyFilters(){
+  var busca = document.getElementById('orc-filtro-busca');
+  var estado = document.getElementById('orc-filtro-estado');
+  var vendedor = document.getElementById('orc-filtro-vendedor');
+  var data = document.getElementById('orc-filtro-data');
+  ORC_FILTERS.search = busca ? busca.value : '';
+  ORC_FILTERS.estado = estado ? estado.value : '';
+  ORC_FILTERS.vendedor = vendedor ? vendedor.value : '';
+  ORC_FILTERS.data = data ? data.value : '';
+  ORC_PAGE = 1;
+  orcRenderList();
+}
+
+function orcLimparFiltros(){
+  ORC_FILTERS = { search:'', estado:'', vendedor:'', data:'' };
+  var busca = document.getElementById('orc-filtro-busca'); if(busca) busca.value='';
+  var estado = document.getElementById('orc-filtro-estado'); if(estado) estado.value='';
+  var vendedor = document.getElementById('orc-filtro-vendedor'); if(vendedor) vendedor.value='';
+  var data = document.getElementById('orc-filtro-data'); if(data) data.value='';
+  ORC_PAGE = 1;
+  orcRenderList();
+}
+
+function orcExportarCSV(){
+  var lista = orcFiltrarLista();
+  var linhas = [['Nº','Cliente','Valor','Vendedor','Estado','Data']];
+  lista.forEach(function(o){
+    linhas.push([o.num, o.cli, orcGetValorTotal(o).toFixed(2), o.vendedor||'', o.st||'', o.dt||o.data||'']);
+  });
+  var csv = linhas.map(function(l){
+    return l.map(function(v){ var s=String(v==null?'':v); return '"'+s.replace(/"/g,'""')+'"'; }).join(';');
+  }).join('\n');
+  var blob = new Blob(['﻿'+csv], {type:'text/csv;charset=utf-8;'});
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url; a.download = 'orcamentos.csv';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function orcTooltipLinhas(o){
+  if(!o.linhas || !o.linhas.length) return '';
+  return o.linhas.map(function(l){ return (l.desc||l.descricao||'item'); }).join(', ');
+}
+
 function orcRenderList(){
   const el = document.getElementById('orc-tbody');
   if(!el) return;
   // ADD: removidos 5 orçamentos de exemplo (hardcoded) que apareciam sempre na lista
   // misturados com os reais — não existiam em orcData, por isso o dropdown de estado
   // deles parecia interativo mas não tinha qualquer efeito (orcChangeStatus não os encontrava).
-  const all = [...orcData];
+  orcPopularVendedores();
+  var filtrados = orcFiltrarLista();
+  orcAtualizarKPIs(filtrados);
+  // Ordenar por data, mais recente primeiro
+  filtrados = filtrados.slice().sort(function(a,b){
+    var da = orcDataParaIso(a.dt||a.data||''); var db = orcDataParaIso(b.dt||b.data||'');
+    return db.localeCompare(da);
+  });
+  var totalPaginas = Math.max(1, Math.ceil(filtrados.length/ORC_PAGE_SIZE));
+  if(ORC_PAGE>totalPaginas) ORC_PAGE=totalPaginas;
+  var inicio = (ORC_PAGE-1)*ORC_PAGE_SIZE;
+  var all = filtrados.slice(inicio, inicio+ORC_PAGE_SIZE);
+  var infoEl = document.getElementById('orc-pag-info');
+  if(infoEl) infoEl.textContent = 'Página '+ORC_PAGE+' de '+totalPaginas+' ('+filtrados.length+' orçamentos)';
+  var prevBtn = document.getElementById('orc-pag-prev'); if(prevBtn) prevBtn.disabled = ORC_PAGE<=1;
+  var nextBtn = document.getElementById('orc-pag-next'); if(nextBtn) nextBtn.disabled = ORC_PAGE>=totalPaginas;
   var ESTADOS_ORC = ['Pendente','Em análise','Aprovado','Em Produção','Concluído','Faturado','Cancelado'];
   // Garantir que a tabela tem a coluna TocOnline
   var thead = document.querySelector('#page-comercial-orcamentos table thead tr');
@@ -12780,12 +12946,15 @@ function orcRenderList(){
     var th = document.createElement('th'); th.textContent = 'TocOnline'; th.style.width='80px';
     thead.appendChild(th);
   }
-  el.innerHTML = all.slice(0,20).map(o=>{
+  el.innerHTML = all.map(function(o){
     var hasFicha = o.fichasTecnicas && o.fichasTecnicas.length;
-    return `<tr>
-    <td style="font-family:'DM Mono',monospace;font-size:13px">${o.num}</td>
+    var destacar = (o.st==='Aprovado'||o.st==='Em Produção'||o.st==='Em Producao');
+    var rowStyle = destacar ? 'border-left:3px solid '+(o.st==='Aprovado'?'var(--g)':'#4d94db') : '';
+    var tooltip = orcTooltipLinhas(o);
+    return `<tr style="${rowStyle}">
+    <td style="font-family:'DM Mono',monospace;font-size:13px" ${tooltip?`title="${tooltip.replace(/"/g,'&quot;')}"`:''}>${o.num}</td>
     <td><strong style="color:var(--txt2)">${o.cli}</strong>${hasFicha?'<span title="Ficha técnica gerada" style="margin-left:4px;font-size:12px;color:var(--y)">📋</span>':''}</td>
-    <td style="font-family:'DM Mono',monospace;color:var(--y)">€${typeof o.val==='number'?orcFmt(o.val):o.val}</td>
+    <td style="font-family:'DM Mono',monospace;color:var(--y)">€${orcFmt(orcGetValorTotal(o))}</td>
     <td style="font-size:13px;color:var(--muted)">${o.vendedor||'—'}</td>
     <td>
       <select onchange="orcChangeStatus('${o.num}',this.value)" style="background:var(--bg3);border:1px solid var(--border);border-radius:5px;color:var(--txt2);font-size:12px;padding:2px 5px;cursor:pointer;font-family:'Inter',sans-serif">
@@ -12802,6 +12971,28 @@ function orcRenderList(){
     </td>
   </tr>`;}).join('');
 }
+
+(function orcWireFiltros(){
+  function wire(){
+    var ids = ['orc-filtro-busca','orc-filtro-estado','orc-filtro-vendedor','orc-filtro-data'];
+    ids.forEach(function(id){
+      var el = document.getElementById(id);
+      if(!el) return;
+      var evt = (id==='orc-filtro-busca') ? 'input' : 'change';
+      el.addEventListener(evt, orcApplyFilters);
+    });
+    var limpar = document.getElementById('orc-filtro-limpar');
+    if(limpar) limpar.addEventListener('click', orcLimparFiltros);
+    var csv = document.getElementById('orc-exportar-csv');
+    if(csv) csv.addEventListener('click', orcExportarCSV);
+    var prev = document.getElementById('orc-pag-prev');
+    if(prev) prev.addEventListener('click', function(){ if(ORC_PAGE>1){ ORC_PAGE--; orcRenderList(); } });
+    var next = document.getElementById('orc-pag-next');
+    if(next) next.addEventListener('click', function(){ ORC_PAGE++; orcRenderList(); });
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', wire);
+  else wire();
+})();
 
 
 // ── DESIGN TASKS ──────────────────────────────────────────
