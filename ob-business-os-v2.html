@@ -23,6 +23,31 @@ window.addEventListener('unhandledrejection', function(e) {
 });
 
 // ══════════════════════════════════════════════════════════════
+// EVENT BUS — Barramento de eventos central para agentes colaborativos
+// ══════════════════════════════════════════════════════════════
+var EventBus = {
+  _listeners: {},
+  subscribe: function(evento, callback) {
+    if (!this._listeners[evento]) this._listeners[evento] = [];
+    this._listeners[evento].push(callback);
+    return callback;
+  },
+  publish: function(evento, dados) {
+    var ouvintes = this._listeners[evento];
+    if (!ouvintes || !ouvintes.length) return;
+    ouvintes.slice().forEach(function(cb) {
+      try { cb(dados); } catch (err) { console.error('[EventBus] Erro no ouvinte de "' + evento + '":', err); }
+    });
+  },
+  unsubscribe: function(evento, callback) {
+    var ouvintes = this._listeners[evento];
+    if (!ouvintes) return;
+    this._listeners[evento] = ouvintes.filter(function(cb) { return cb !== callback; });
+  }
+};
+window.EventBus = EventBus;
+
+// ══════════════════════════════════════════════════════════════
 // SUBTAREFAS + CHECKLISTS — Sistema unificado para todos os kanbans
 // ══════════════════════════════════════════════════════════════
 
