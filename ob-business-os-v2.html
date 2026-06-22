@@ -19881,5 +19881,271 @@ function importarConfiguracao() {
 })();
 </script>
 
+<script>
+// ═══════════════════════════════════════════════════════════════════
+// CORREÇÃO MÓDULO DE FATURAS — linhas em falta no modo manual,
+// total a zero, PDF a ignorar valores editados, falta de validação.
+//
+// Não altera fatAbrirModal/fatGerarPDF/fatEmitir diretamente: guarda
+// referência à versão original e redefine-as (wrapper), para não
+// quebrar o fluxo já existente "Fatura a partir de Orçamento".
+// ═══════════════════════════════════════════════════════════════════
+(function(){
+
+  var _fatAbrirModalOriginal = window.fatAbrirModal;
+
+  // ── HTML do cabeçalho de colunas das linhas ─────────────────────
+  function _fatLinhasHeaderHTML() {
+    return '<div class="fat-linhas-header" style="display:grid;grid-template-columns:auto 1fr 64px 64px 72px 28px;gap:6px;padding:2px 8px 4px;font-size:11.5px;color:var(--muted)">' +
+      '<span></span><span>Descrição</span><span style="text-align:right">Qty</span>' +
+      '<span style="text-align:right">€ Unit</span><span style="text-align:right">Total</span><span></span></div>';
+  }
+
+  // ── HTML de uma linha editável (desc / qty / preço / subtotal) ──
+  function _fatLinhaRowHTML(idx, desc, qty, punit) {
+    qty = parseFloat(qty || 1) || 1;
+    punit = parseFloat(punit || 0) || 0;
+    var sub = (qty * punit).toFixed(2);
+    return '<div class="fat-linha-row" data-idx="' + idx + '" style="display:grid;grid-template-columns:auto 1fr 64px 64px 72px 28px;gap:6px;align-items:center;padding:6px 8px;background:var(--bg3);border-radius:6px;margin-bottom:4px">' +
+      '<input type="checkbox" checked data-idx="' + idx + '" onchange="fatCalcTotal()" style="accent-color:var(--y);width:14px;height:14px;flex-shrink:0"/>' +
+      '<input type="text"   class="form-input fat-edit-desc"  data-idx="' + idx + '" value="' + String(desc || '').replace(/"/g,'&quot;') + '" placeholder="Descrição" style="font-size:13px;padding:3px 6px;height:28px" oninput="fatCalcTotal()"/>' +
+      '<input type="number" class="form-input fat-edit-qty"   data-idx="' + idx + '" value="' + qty + '" min="0.01" step="any" placeholder="Qty" style="font-size:13px;padding:3px 6px;height:28px;text-align:right" oninput="fatRecalcLinha(this)"/>' +
+      '<input type="number" class="form-input fat-edit-price" data-idx="' + idx + '" value="' + punit + '" min="0" step="any" placeholder="€ unit" style="font-size:13px;padding:3px 6px;height:28px;text-align:right" oninput="fatRecalcLinha(this)"/>' +
+      '<span class="fat-linha-sub" data-idx="' + idx + '" style="font-family:DM Mono,monospace;color:var(--y);font-size:13px;text-align:right">€' + sub + '</span>' +
+      '<button type="button" title="Remover linha" onclick="fatRemoverLinha(this)" style="background:none;border:none;color:var(--r);cursor:pointer;font-size:14px;padding:0">✕</button>' +
+    '</div>';
+  }
+
+  function _fatProximoIdx() {
+    var max = -1;
+    document.querySelectorAll('#fat-linhas-list input[type=checkbox]').forEach(function(c) {
+      var i = parseInt(c.dataset.idx, 10);
+      if (!isNaN(i) && i > max) max = i;
+    });
+    return max + 1;
+  }
+
+  function _fatMostrarVazioSeNecessario() {
+    var liEl = document.getElementById('fat-linhas-list');
+    if (!liEl) return;
+    var temLinhas = liEl.querySelectorAll('input[type=checkbox]').length > 0;
+    var vazio = liEl.querySelector('.fat-linhas-vazio');
+    if (!temLinhas && !vazio) {
+      liEl.insertAdjacentHTML('beforeend', '<div class="fat-linhas-vazio" style="color:var(--muted);font-size:13px;padding:8px">Sem linhas. Clique em "+ Linha" para adicionar.</div>');
+    } else if (temLinhas && vazio) {
+      vazio.remove();
+    }
+  }
+
+  // ── Adicionar linha em branco (fatura manual ou extra) ──────────
+  window.fatAddLinha = function() {
+    var liEl = document.getElementById('fat-linhas-list');
+    if (!liEl) return;
+    var vazio = liEl.querySelector('.fat-linhas-vazio');
+    if (vazio) vazio.remove();
+    if (!liEl.querySelector('.fat-linhas-header')) {
+      liEl.insertAdjacentHTML('afterbegin', _fatLinhasHeaderHTML());
+    }
+    var idx = _fatProximoIdx();
+    liEl.insertAdjacentHTML('beforeend', _fatLinhaRowHTML(idx, '', 1, 0));
+    if (typeof fatCalcTotal === 'function') fatCalcTotal();
+  };
+
+  // ── Remover linha editável ───────────────────────────────────────
+  window.fatRemoverLinha = function(btn) {
+    var row = btn.closest('.fat-linha-row');
+    if (row) row.remove();
+    _fatMostrarVazioSeNecessario();
+    if (typeof fatCalcTotal === 'function') fatCalcTotal();
+  };
+
+  // ── Garantir botão "+ Linha" visível junto ao título das linhas ─
+  function _fatGarantirBotaoAddLinha() {
+    if (document.getElementById('fat-btn-add-linha')) return;
+    var liEl = document.getElementById('fat-linhas-list');
+    if (!liEl) return;
+    var headerDiv = liEl.previousElementSibling;
+    if (!headerDiv) return;
+    headerDiv.style.display = 'flex';
+    headerDiv.style.justifyContent = 'space-between';
+    headerDiv.style.alignItems = 'center';
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.id = 'fat-btn-add-linha';
+    btn.className = 'tbtn';
+    btn.style.cssText = 'font-size:11px;padding:2px 8px;color:var(--g);border-color:rgba(63,207,142,.3)';
+    btn.textContent = '+ Linha';
+    btn.onclick = function(){ fatAddLinha(); };
+    headerDiv.appendChild(btn);
+  }
+
+  // ── Reabrir modal: corrige o caso de fatura manual (sem orçamento) ──
+  window.fatAbrirModal = function(orcNum) {
+    _fatAbrirModalOriginal(orcNum);
+    var orc = (typeof orcData !== 'undefined') && orcData.find(function(o) { return o.num === orcNum; });
+    var liEl = document.getElementById('fat-linhas-list');
+    if (!orc && liEl) {
+      // Fatura manual: a função original não preenche linhas — criar estado vazio + cabeçalho
+      liEl.innerHTML = _fatLinhasHeaderHTML() +
+        '<div class="fat-linhas-vazio" style="color:var(--muted);font-size:13px;padding:8px">Sem linhas. Clique em "+ Linha" para adicionar a primeira.</div>';
+      if (typeof fatCalcTotal === 'function') fatCalcTotal();
+    }
+    _fatGarantirBotaoAddLinha();
+  };
+
+  // ── Ler as linhas ativas diretamente dos inputs do modal ────────
+  function _fatLinhasAtivasDOM() {
+    var rows = [];
+    document.querySelectorAll('#fat-linhas-list input[type=checkbox]').forEach(function(c) {
+      if (!c.checked) return;
+      var i = c.dataset.idx;
+      var descEl  = document.querySelector('#fat-linhas-list .fat-edit-desc[data-idx="'  + i + '"]');
+      var qtyEl   = document.querySelector('#fat-linhas-list .fat-edit-qty[data-idx="'   + i + '"]');
+      var priceEl = document.querySelector('#fat-linhas-list .fat-edit-price[data-idx="' + i + '"]');
+      if (!descEl) return;
+      var qty = parseFloat(qtyEl ? qtyEl.value : 1) || 0;
+      var punit = parseFloat(priceEl ? priceEl.value : 0) || 0;
+      rows.push({ prod: descEl.value || 'Serviço', qty: qty, unit: punit, sub: qty * punit, subtotal: qty * punit });
+    });
+    return rows;
+  }
+
+  function _fatContarLinhasValidas() {
+    var n = 0;
+    _fatLinhasAtivasDOM().forEach(function(l) {
+      if (l.qty > 0 && l.unit > 0) n++;
+    });
+    return n;
+  }
+
+  // ── Emitir fatura: agora valida linhas e total antes de gravar ──
+  window.fatEmitir = function() {
+    if (_fatContarLinhasValidas() === 0) {
+      alert('Adicione pelo menos uma linha com quantidade e preço superiores a 0 antes de emitir a fatura.');
+      return;
+    }
+    var total = fatCalcTotal();
+    if (!(total > 0)) {
+      alert('O total da fatura tem de ser superior a 0 €.');
+      return;
+    }
+    var fat = fatGuardar('Emitida');
+    fatCloseModal();
+    if (typeof TOCO_WEBHOOK_URL !== 'undefined' && TOCO_WEBHOOK_URL) {
+      fatEnviarToco(fat.num);
+    }
+    fatRenderList();
+    orcSwitchTab('faturas');
+  };
+
+  // ── PDF: usar os valores realmente editados nos inputs do modal ─
+  window.fatGerarPDF = function() {
+    var num = document.getElementById('fat-num').value;
+    var cli = document.getElementById('fat-cli').value;
+    var nif = document.getElementById('fat-nif').value;
+    var morada = document.getElementById('fat-morada').value;
+    var pagamento = document.getElementById('fat-pagamento').value;
+    var prazo = document.getElementById('fat-prazo').value;
+    var orcNum = document.getElementById('fat-modal').dataset.orcNum || '';
+    var obs = document.getElementById('fat-obs').value;
+    var desconto = parseFloat(document.getElementById('fat-desconto').value || 0);
+    var iva = parseFloat(document.getElementById('fat-iva').value || 23);
+    var total = fatCalcTotal();
+    var subtotal = total / (1 + iva/100) / (1 - desconto/100);
+    var ivaVal = total - subtotal * (1 - desconto/100);
+    var descVal = subtotal * desconto / 100;
+    var dataEmissao = document.getElementById('fat-data-emissao').value;
+    var linhasAtivas = _fatLinhasAtivasDOM();
+
+    if (linhasAtivas.length === 0) {
+      alert('Adicione pelo menos uma linha antes de gerar o PDF.');
+      return;
+    }
+
+    var html = '<!DOCTYPE html><html lang="pt"><head><meta charset="UTF-8"/><title>'+num+'</title>' +
+    '<style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif;font-size:14px;color:#1a1a1a;background:#fff;padding:40px}' +
+    'h1{font-size:22px;color:#1a1a1a}.y{color:#c9922a}.muted{color:#666}.small{font-size:10px}' +
+    'table{width:100%;border-collapse:collapse;margin:14px 0}th{background:#f5f5f5;padding:7px 10px;text-align:left;font-size:13px;border-bottom:2px solid #ddd}' +
+    'td{padding:7px 10px;border-bottom:1px solid #eee;font-size:11px}.right{text-align:right}.bold{font-weight:700}' +
+    '.total-box{background:#f9f5e9;border:2px solid #c9922a;border-radius:8px;padding:14px;text-align:right;margin-top:16px}' +
+    '.badge{display:inline-block;background:#e8f5e9;color:#2e7d32;border-radius:4px;padding:2px 8px;font-size:12px;font-weight:600}' +
+    '</style></head><body>' +
+    '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:28px">' +
+    '<div><div style="font-size:24px;font-weight:900;color:#1a1a1a">Opportunity<span style="color:#c9922a">Box</span></div>' +
+    '<div class="small muted" style="margin-top:4px">OpportunityBox — Sinalética e Comunicação Visual<br>' +
+    'NIPC: 510 575 170 · geral@opportunitybox.pt · +351 215 874 779<br>Terrugem, Sintra, Portugal</div></div>' +
+    '<div style="text-align:right"><div style="font-size:22px;font-weight:800;color:#c9922a">FATURA</div>' +
+    '<div style="font-size:16px;font-weight:700;margin-top:2px">' + num + '</div>' +
+    '<div class="small muted" style="margin-top:4px">Data: ' + (dataEmissao || new Date().toLocaleDateString('pt-PT')) + '</div>' +
+    (orcNum ? '<div class="small muted">Ref. Orçamento: ' + orcNum + '</div>' : '') +
+    '</div></div>' +
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px;padding:14px;background:#f9f9f9;border-radius:8px">' +
+    '<div><div style="font-size:12px;font-weight:700;color:#666;letter-spacing:.1em;margin-bottom:6px">EMITIDA PARA</div>' +
+    '<div style="font-weight:700;font-size:15px">' + cli + '</div>' +
+    (nif ? '<div class="small muted">NIF: ' + nif + '</div>' : '') +
+    (morada ? '<div class="small muted">' + morada + '</div>' : '') + '</div>' +
+    '<div><div style="font-size:12px;font-weight:700;color:#666;letter-spacing:.1em;margin-bottom:6px">PAGAMENTO</div>' +
+    '<div class="small">' + pagamento + '</div>' +
+    '<div class="small muted">Prazo: ' + prazo + '</div>' +
+    '</div></div>' +
+    '<table><thead><tr><th>Descrição</th><th class="right">Qtd</th><th class="right">Preço Unit.</th><th class="right">Subtotal</th></tr></thead><tbody>' +
+    linhasAtivas.map(function(l) {
+      return '<tr><td>' + (l.prod||'Serviço') + '</td>' +
+      '<td class="right">' + (l.qty||1) + '</td>' +
+      '<td class="right">€' + parseFloat(l.unit||0).toFixed(2) + '</td>' +
+      '<td class="right bold">€' + parseFloat(l.sub||l.subtotal||0).toFixed(2) + '</td></tr>';
+    }).join('') +
+    '</tbody></table>' +
+    '<div class="total-box">' +
+    (desconto > 0 ? '<div style="margin-bottom:4px"><span class="muted">Subtotal: </span>€' + subtotal.toFixed(2) + '</div>' +
+    '<div style="margin-bottom:4px;color:#c0392b"><span class="muted">Desconto (' + desconto + '%): </span>-€' + descVal.toFixed(2) + '</div>' : '') +
+    '<div style="margin-bottom:4px"><span class="muted">IVA (' + iva + '%): </span>€' + ivaVal.toFixed(2) + '</div>' +
+    '<div style="font-size:19px;font-weight:800;color:#c9922a">TOTAL: €' + total.toLocaleString('pt-PT',{minimumFractionDigits:2}) + '</div></div>' +
+    (obs ? '<div style="margin-top:16px;font-size:13px;color:#666;border-top:1px solid #eee;padding-top:10px">'+obs+'</div>' : '') +
+    '<div style="margin-top:24px;text-align:center;font-size:12px;color:#999;border-top:1px solid #eee;padding-top:12px">' +
+    'OpportunityBox · NIPC 510 575 170 · geral@opportunitybox.pt · www.opportunitybox.pt · +351 215 874 779</div>' +
+    '\n</body></html>';
+
+    var win = window.open('', '_blank');
+    win.document.write(html);
+    win.document.close();
+    win.print();
+  };
+
+  // ── Reabrir fatura já guardada para gerar PDF: usar fat.linhas ──
+  // (a versão original ia sempre buscar linhas ao orçamento, ignorando
+  // edições e falhando sempre para faturas manuais sem orçamento)
+  window.fatGerarPDFNum = function(fatNum) {
+    var fat = fatData.find(function(f) { return f.num === fatNum; });
+    if (!fat) return;
+    document.getElementById('fat-num').value = fat.num;
+    document.getElementById('fat-cli').value = fat.cli || '';
+    document.getElementById('fat-nif').value = fat.nif || '';
+    document.getElementById('fat-morada').value = fat.morada || '';
+    document.getElementById('fat-pagamento').value = fat.pagamento || 'Transferência Bancária';
+    document.getElementById('fat-prazo').value = fat.prazo || '30 dias';
+    document.getElementById('fat-data-emissao').value = fat.dataEmissao || '';
+    document.getElementById('fat-iva').value = fat.iva || 23;
+    document.getElementById('fat-desconto').value = fat.desconto || 0;
+    document.getElementById('fat-obs').value = fat.obs || '';
+    document.getElementById('fat-modal').dataset.orcNum = fat.orcNum || '';
+
+    var linhas = fat.linhas || [];
+    var liEl = document.getElementById('fat-linhas-list');
+    if (liEl) {
+      liEl.innerHTML = _fatLinhasHeaderHTML() + linhas.map(function(l, i) {
+        var desc = l.prod || l.desc || ('Linha ' + (i+1));
+        var qty = parseFloat(l.qty || l.quant || 1) || 1;
+        var punit = parseFloat(l.preco || l.unit || ((l.sub || l.subtotal || 0) / Math.max(qty,1))) || 0;
+        return _fatLinhaRowHTML(i, desc, qty, punit);
+      }).join('');
+    }
+    if (typeof fatCalcTotal === 'function') fatCalcTotal();
+    fatGerarPDF();
+  };
+
+})();
+</script>
+
 </body>
 </html>
