@@ -17152,7 +17152,8 @@ function _copSystemPrompt(exemplos) {
     '\n3. Inclui sempre: estrutura de suporte (perfil alumínio), sistema de fixação, cabos e transformador LED.' +
     '\n4. O markup_sugerido deve ser entre 2.0 e 3.5 consoante a complexidade.' +
     '\n5. Unidades aceites: m, m², unid, rolo, folha.' +
-    '\n6. Responde em português de Portugal.';
+    '\n6. Responde em português de Portugal.' +
+    '\n7. O campo "preco_estimado_total" deve ser SEMPRE o valor final de venda sem IVA, já com o markup_sugerido aplicado sobre o custo dos materiais (nunca o custo dos materiais sem markup).';
 }
 
 // ── Exemplos de orçamentos anteriores (RAG simples por categoria/tipo de reclamo) ──
@@ -17669,15 +17670,19 @@ function copilotoAplicar() {
   }
 
   // ADD: Atualiza a primeira linha de produto com o valor final sugerido pela IA
-  // (preço final = analysis.preco_estimado_total, já calculado com markup; fallback = custo_materiais * markup_sugerido)
+  // (preço final = analysis.preco_estimado_total_com_markup ou preco_estimado_total, já com markup; fallback = custo_materiais * markup_sugerido)
   var produtoNome = analysis.tipoReclamo || 'Reclamo personalizado';
-  var precoTotal = analysis.preco_estimado_total;
+  var custoMateriaisCalc = window._orcCustoMateriais || mats.reduce(function(s, mat) {
+    return s + (mat.precoEstimado || mat.preco || 0) * (mat.qtd || 0);
+  }, 0);
+  var markupSugerido = analysis.markup_sugerido || 2.5;
+  var precoTotal = analysis.preco_estimado_total_com_markup || analysis.preco_estimado_total || 0;
+  // Se a IA devolveu o custo dos materiais sem markup (valor igual/inferior ao custo), aplica o markup
+  if (precoTotal && custoMateriaisCalc && precoTotal <= custoMateriaisCalc * 1.05) {
+    precoTotal = precoTotal * markupSugerido;
+  }
   if (!precoTotal) {
-    var custoMateriaisCalc = window._orcCustoMateriais || mats.reduce(function(s, mat) {
-      return s + (mat.precoEstimado || mat.preco || 0) * (mat.qtd || 0);
-    }, 0);
-    var markupSugerido = analysis.markup_sugerido || 2.5;
-    precoTotal = window._orcPrecoSugerido || (custoMateriaisCalc * markupSugerido) || 0;
+    precoTotal = (window._orcPrecoSugerido || (custoMateriaisCalc * markupSugerido)) || 0;
   }
   var descTexto = 'Composição baseada em análise IA' + (analysis.observacoes ? ' – ' + analysis.observacoes : '');
   var linesCont = document.getElementById('orc-lines-container');
