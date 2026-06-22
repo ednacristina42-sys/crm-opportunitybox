@@ -19603,6 +19603,43 @@ function importarConfiguracao() {
   } else {
     agentesInit();
   }
+
+  window.agentesInjectarHTML = agentesInjectarHTML;
+  window.agentesPainelRender = agentesPainelRender;
+})();
+</script>
+
+<script>
+// ════════════════════════════════════════════════════════════════════════
+// GARANTIA DE INJEÇÃO DO CARTÃO DE AGENTES NA PÁGINA INTEGRAÇÕES
+// ════════════════════════════════════════════════════════════════════════
+(function(){
+  function tentarInjetar(){
+    if (typeof window.agentesInjectarHTML === 'function') window.agentesInjectarHTML();
+    if (typeof window.agentesLogRender === 'function') window.agentesLogRender();
+  }
+
+  if (typeof window.goPage === 'function') {
+    var _origGoPageAg = window.goPage;
+    window.goPage = function(id){
+      _origGoPageAg.apply(this, arguments);
+      if (id === 'integracoes') tentarInjetar();
+    };
+  }
+
+  var integObs = document.getElementById('page-integracoes');
+  if (integObs && typeof MutationObserver !== 'undefined') {
+    var mo = new MutationObserver(function(){
+      if (!document.getElementById('agentes-config-card')) tentarInjetar();
+    });
+    mo.observe(integObs, { childList: true, subtree: false });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', tentarInjetar);
+  } else {
+    tentarInjetar();
+  }
 })();
 </script>
 
