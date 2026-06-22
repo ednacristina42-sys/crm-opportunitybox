@@ -17528,6 +17528,9 @@ function _copRenderResultado(analysis) {
     // Resumo financeiro
     var mk = analysis.markup_sugerido || 2.5;
     var pvenda = totalCusto * mk;
+    // ADD: guardar os valores exatamente como mostrados aqui, para "Aplicar ao orçamento" usar o mesmo número
+    analysis._custoCalculado = totalCusto;
+    analysis._precoVendaCalculado = pvenda;
     matEl.innerHTML += '<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border);display:flex;justify-content:space-between;font-size:14px">' +
       '<span style="color:var(--muted)">Custo materiais: <strong style="color:var(--txt2)">EUR' + totalCusto.toFixed(2) + '</strong></span>' +
       '<span style="color:var(--muted)">Markup ×' + mk + ': <strong style="color:var(--g)">EUR' + pvenda.toFixed(2) + '</strong></span>' +
@@ -17670,13 +17673,13 @@ function copilotoAplicar() {
   }
 
   // ADD: Atualiza a primeira linha de produto com o valor final sugerido pela IA
-  // (preço final = analysis.preco_estimado_total_com_markup ou preco_estimado_total, já com markup; fallback = custo_materiais * markup_sugerido)
+  // (usa SEMPRE o mesmo valor mostrado em "Markup ×N" no painel de análise, para nunca diferir do que o utilizador viu)
   var produtoNome = analysis.tipoReclamo || 'Reclamo personalizado';
   var custoMateriaisCalc = window._orcCustoMateriais || mats.reduce(function(s, mat) {
     return s + (mat.precoEstimado || mat.preco || 0) * (mat.qtd || 0);
   }, 0);
   var markupSugerido = analysis.markup_sugerido || 2.5;
-  var precoTotal = analysis.preco_estimado_total_com_markup || analysis.preco_estimado_total || 0;
+  var precoTotal = analysis._precoVendaCalculado || analysis.preco_estimado_total_com_markup || analysis.preco_estimado_total || 0;
   // Se a IA devolveu o custo dos materiais sem markup (valor igual/inferior ao custo), aplica o markup
   if (precoTotal && custoMateriaisCalc && precoTotal <= custoMateriaisCalc * 1.05) {
     precoTotal = precoTotal * markupSugerido;
