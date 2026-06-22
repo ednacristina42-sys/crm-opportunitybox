@@ -17648,9 +17648,7 @@ function copilotoAplicar() {
   if (typeof orcRecalcMateriais === 'function') orcRecalcMateriais();
   if (typeof orcMaoObraCalc === 'function') orcMaoObraCalc();
 
-  // Aplicar tipo de reclamo no campo tipo de produto (se existir)
-  var tipoInp = document.getElementById('orc-tipo');
-  if (tipoInp && analysis.tipoReclamo) tipoInp.value = analysis.tipoReclamo;
+
 
   // ADD: Guardar a imagem analisada no orçamento (limite de 200KB em base64)
   if (_cop.b64 && _cop.b64 !== 'demo') {
