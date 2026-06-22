@@ -19668,5 +19668,218 @@ function importarConfiguracao() {
 })();
 </script>
 
+<script>
+// ═══════════════════════════════════════════════════════════════════
+// AGENTE FINANCEIRO (Integração TocOnline + Equipa + Pica-ponto)
+// ═══════════════════════════════════════════════════════════════════
+(function(){
+
+  // ── Estado do agente ────────────────────────────────────────────
+  var _finAgenteAtivo = true;
+  var _finIntervalo = null;
+  var _finUltimaSync = null;
+
+  // ── Carregar config do agente ──────────────────────────────────
+  function _finCarregarConfig() {
+    try {
+      var cfg = JSON.parse(localStorage.getItem('ob-agentes-config')||'{}');
+      if (cfg.financeiro === false) _finAgenteAtivo = false;
+      else _finAgenteAtivo = true;
+    } catch(e) { _finAgenteAtivo = true; }
+  }
+  _finCarregarConfig();
+
+  // ── Função principal de sincronização ──────────────────────────
+  async function _finSincronizar() {
+    if (!_finAgenteAtivo) return;
+    var status = document.getElementById('fin-agente-status');
+    if (status) status.textContent = '⏳ A sincronizar...';
+
+    try {
+      // 1. Sincronizar faturas do TocOnline (via proxy Make)
+      if (typeof tocoSincronizarFaturas === 'function') {
+        await tocoSincronizarFaturas(true); // silent = true
+      }
+
+      // 2. Sincronizar despesas de funcionários (Supabase)
+      if (typeof finFetchDespesasRemoto === 'function') {
+        await finFetchDespesasRemoto();
+      }
+
+      // 3. Carregar dados do Pica-ponto (horas)
+      if (typeof wdLoad === 'function') {
+        // A função wdLoad atualiza a tabela interna, mas não retorna dados
+        // Vamos chamá-la para garantir que os dados estão frescos
+        await wdLoad();
+      }
+
+      // 4. Atualizar o Dashboard CFO (KPIs)
+      if (typeof renderDashboardCFO === 'function') {
+        renderDashboardCFO();
+      }
+
+      // 5. Atualizar a página Financeiro, se estiver visível
+      var pageFin = document.getElementById('page-financeiro');
+      if (pageFin && pageFin.classList.contains('on')) {
+        if (typeof renderFinanceiro === 'function') renderFinanceiro();
+        if (typeof initCharts === 'function') setTimeout(initCharts, 100);
+      }
+
+      // 6. Atualizar a página Tesouraria, se visível
+      var pageTes = document.getElementById('page-tesouraria');
+      if (pageTes && pageTes.classList.contains('on')) {
+        if (typeof tesRender === 'function') tesRender();
+      }
+
+      // 7. Publicar evento
+      if (typeof EventBus !== 'undefined' && EventBus.publish) {
+        EventBus.publish('dados_financeiros_atualizados', {
+          timestamp: new Date().toISOString(),
+          fonte: 'Agente Financeiro'
+        });
+      }
+
+      _finUltimaSync = new Date().toLocaleTimeString('pt-PT');
+      if (status) status.textContent = '✅ Sincronizado às ' + _finUltimaSync;
+
+    } catch(e) {
+      console.error('[Agente Financeiro] Erro na sincronização:', e);
+      if (status) status.textContent = '❌ Erro: ' + (e.message || e);
+    }
+  }
+
+  // ── Expor a função para uso manual ─────────────────────────────
+  window.finAgenteSincronizar = _finSincronizar;
+
+  // ── Iniciar sincronização automática (a cada 5 min) ────────────
+  function _finIniciarAutoSync() {
+    if (_finIntervalo) clearInterval(_finIntervalo);
+    _finIntervalo = setInterval(function() {
+      _finSincronizar();
+    }, 5 * 60 * 1000); // 5 minutos
+  }
+
+  // ── Parar sincronização automática ─────────────────────────────
+  window.finAgenteParar = function() {
+    if (_finIntervalo) {
+      clearInterval(_finIntervalo);
+      _finIntervalo = null;
+    }
+    var status = document.getElementById('fin-agente-status');
+    if (status) status.textContent = '⏸️ Sincronização automática desligada';
+  };
+
+  // ── Ligar/desligar o agente via configuração ────────────────────
+  window.finAgenteToggle = function(checkbox) {
+    _finAgenteAtivo = checkbox.checked;
+    // Guardar no localStorage
+    try {
+      var cfg = JSON.parse(localStorage.getItem('ob-agentes-config')||'{}');
+      cfg.financeiro = _finAgenteAtivo;
+      localStorage.setItem('ob-agentes-config', JSON.stringify(cfg));
+    } catch(e) {}
+    if (_finAgenteAtivo) {
+      _finIniciarAutoSync();
+      _finSincronizar(); // executa imediatamente
+    } else {
+      if (_finIntervalo) {
+        clearInterval(_finIntervalo);
+        _finIntervalo = null;
+      }
+      var status = document.getElementById('fin-agente-status');
+      if (status) status.textContent = '⏸️ Agente desligado';
+    }
+  };
+
+  // ── Adicionar painel de controlo na página Integrações ──────────
+  function _finInjectPainel() {
+    var integ = document.getElementById('page-integracoes');
+    if (!integ) return;
+    // Evita duplicados
+    if (document.getElementById('fin-agente-card')) return;
+
+    var sg = integ.querySelector('.sg') || integ.querySelector('.admin-page') || integ;
+    var card = document.createElement('div');
+    card.id = 'fin-agente-card';
+    card.className = 'conn';
+    card.style.cssText = 'flex-direction:column;align-items:stretch;gap:10px;margin-top:14px;border-color:rgba(63,207,142,0.3)';
+    card.innerHTML = `
+      <div style="display:flex;align-items:center;gap:11px">
+        <div class="cico" style="background:rgba(63,207,142,0.1)">💰</div>
+        <div style="flex:1">
+          <div class="cname">Agente Financeiro (Integração)</div>
+          <div class="cst" style="color:var(--muted)">Sincroniza TocOnline, Despesas e Horas da Equipa automaticamente</div>
+        </div>
+        <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--txt2)">
+          <input type="checkbox" id="fin-agente-toggle" ${_finAgenteAtivo?'checked':''} onchange="finAgenteToggle(this)"/>
+          Ativo
+        </label>
+      </div>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <button class="bsm bon" onclick="finAgenteSincronizar()">🔄 Sincronizar agora</button>
+        <span id="fin-agente-status" style="font-size:12px;color:var(--muted)">${_finUltimaSync ? '✅ Sincronizado às ' + _finUltimaSync : 'Aguardando primeira execução...'}</span>
+      </div>
+      <div style="font-size:12px;color:var(--muted);border-top:1px solid var(--border);padding-top:8px">
+        ⏱️ Sincroniza automaticamente a cada 5 minutos. <span id="fin-agente-prox" style="color:var(--y)">Próxima execução em breve...</span>
+      </div>
+    `;
+    sg.appendChild(card);
+
+    // Atualizar contagem regressiva
+    setInterval(function() {
+      var prox = document.getElementById('fin-agente-prox');
+      if (!prox) return;
+      if (!_finIntervalo) { prox.textContent = '⏸️ Automático desligado'; return; }
+      // Não temos o momento exato, mas podemos mostrar "a cada 5 min"
+      prox.textContent = '⏱️ A cada 5 minutos';
+    }, 10000);
+  }
+
+  // ── Detetar quando a página Integrações é aberta ──────────────
+  if (typeof window.goPage === 'function') {
+    var _origGoPageFin = window.goPage;
+    window.goPage = function(id) {
+      _origGoPageFin(id);
+      if (id === 'integracoes') {
+        setTimeout(_finInjectPainel, 200);
+      }
+    };
+  }
+
+  // Injetar também no carregamento inicial, se já estiver em Integrações
+  if (document.readyState === 'complete' || document.readyState === 'interactive') {
+    if (document.getElementById('page-integracoes') && document.getElementById('page-integracoes').classList.contains('on')) {
+      setTimeout(_finInjectPainel, 300);
+    }
+  }
+
+  // ── Iniciar agente se estiver ativo ────────────────────────────
+  if (_finAgenteAtivo) {
+    _finIniciarAutoSync();
+    // Primeira execução com pequeno atraso para não bloquear o carregamento
+    setTimeout(_finSincronizar, 2000);
+  }
+
+  // ── Escutar eventos de stock, leads, orçamentos para reagir ──
+  if (typeof EventBus !== 'undefined' && EventBus.subscribe) {
+    EventBus.subscribe('stock_atualizado', function() {
+      // Reagir a alterações de stock que afetam custos (ex: baixa de materiais)
+      if (_finAgenteAtivo) _finSincronizar();
+    });
+    EventBus.subscribe('orcamento_guardado', function() {
+      if (_finAgenteAtivo) _finSincronizar();
+    });
+    EventBus.subscribe('lead_atualizado', function() {
+      // Leads podem afetar previsões de receita
+      if (_finAgenteAtivo) _finSincronizar();
+    });
+  }
+
+  // ── Expor a função de injeção para uso manual ──────────────────
+  window.finAgenteInjectPainel = _finInjectPainel;
+
+})();
+</script>
+
 </body>
 </html>
