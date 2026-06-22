@@ -15029,9 +15029,9 @@ function stockRender() {
       '<td><span class="stk-badge stk-' + status + '">' + stLabel + '</span></td>' +
       '<td style="font-size:12px;color:var(--muted)">' + (s.loc||'—') + '</td>' +
       '<td style="display:flex;gap:4px">' +
-        '<button class="tbtn" style="font-size:12px;padding:2px 7px" onclick="stockEdit(' + JSON.stringify(s.id) + ')">✏</button>' +
-        '<button class="tbtn" style="font-size:12px;padding:2px 7px" onclick="stockEntrada(' + JSON.stringify(s.id) + ')">↑</button>' +
-        '<button class="tbtn" style="font-size:12px;padding:2px 7px;color:var(--r)" onclick="stockSaida(' + JSON.stringify(s.id) + ')">↓</button>' +
+        '<button class="tbtn" style="font-size:12px;padding:2px 7px" data-stock-action="stockEdit" data-id="' + s.id + '" onclick="stockEdit(' + JSON.stringify(s.id) + ')">✏</button>' +
+        '<button class="tbtn" style="font-size:12px;padding:2px 7px" data-stock-action="stockEntrada" data-id="' + s.id + '" onclick="stockEntrada(' + JSON.stringify(s.id) + ')">↑</button>' +
+        '<button class="tbtn" style="font-size:12px;padding:2px 7px;color:var(--r)" data-stock-action="stockSaida" data-id="' + s.id + '" onclick="stockSaida(' + JSON.stringify(s.id) + ')">↓</button>' +
       '</td>' +
     '</tr>';
   }).join('');
@@ -19640,6 +19640,31 @@ function importarConfiguracao() {
   } else {
     tentarInjetar();
   }
+})();
+</script>
+
+<script>
+// ════════════════════════════════════════════════════════════════════════
+// CORREÇÃO: BOTÕES DE AÇÃO DO STOCK (Editar / Entrada / Saída)
+// ════════════════════════════════════════════════════════════════════════
+(function(){
+  try { if (typeof stockEdit === 'function') window.stockEdit = stockEdit; } catch(e){}
+  try { if (typeof stockEntrada === 'function') window.stockEntrada = stockEntrada; } catch(e){}
+  try { if (typeof stockSaida === 'function') window.stockSaida = stockSaida; } catch(e){}
+  try { if (typeof stockCloseModal === 'function') window.stockCloseModal = stockCloseModal; } catch(e){}
+  try { if (typeof stockSave === 'function') window.stockSave = stockSave; } catch(e){}
+  try { if (typeof stockOpenNew === 'function') window.stockOpenNew = stockOpenNew; } catch(e){}
+  try { if (typeof stockRender === 'function') window.stockRender = stockRender; } catch(e){}
+
+  document.addEventListener('click', function(ev){
+    var btn = ev.target.closest && ev.target.closest('[data-stock-action]');
+    if (!btn) return;
+    var acao = btn.getAttribute('data-stock-action');
+    var id = btn.getAttribute('data-id');
+    if (acao === 'stockEdit' && typeof window.stockEdit === 'function') window.stockEdit(id);
+    else if (acao === 'stockEntrada' && typeof window.stockEntrada === 'function') window.stockEntrada(id);
+    else if (acao === 'stockSaida' && typeof window.stockSaida === 'function') window.stockSaida(id);
+  });
 })();
 </script>
 
