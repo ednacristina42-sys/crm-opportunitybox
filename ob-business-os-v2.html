@@ -19300,5 +19300,311 @@ function importarConfiguracao() {
   </div>
 </div>
 
+<script>
+// ════════════════════════════════════════════════════════════════════════
+// SISTEMA DE AGENTES COLABORATIVOS — EventBus + 5 agentes autónomos
+// ════════════════════════════════════════════════════════════════════════
+(function(){
+
+  // ── 1. BARRAMENTO DE EVENTOS ───────────────────────────────────────────
+  var EventBus = (function(){
+    var listeners = {};
+    var wildcard = [];
+    var eventLog;
+    try { eventLog = JSON.parse(localStorage.getItem('ob-event-log')||'[]') || []; } catch(e){ eventLog = []; }
+
+    function persist(){
+      try { localStorage.setItem('ob-event-log', JSON.stringify(eventLog.slice(0,100))); } catch(e){}
+    }
+    return {
+      subscribe: function(evento, callback){
+        if (evento === '*') { wildcard.push(callback); return; }
+        if (!listeners[evento]) listeners[evento] = [];
+        listeners[evento].push(callback);
+      },
+      unsubscribe: function(evento, callback){
+        if (evento === '*') { wildcard = wildcard.filter(function(cb){ return cb !== callback; }); return; }
+        if (!listeners[evento]) return;
+        listeners[evento] = listeners[evento].filter(function(cb){ return cb !== callback; });
+      },
+      publish: function(evento, dados){
+        var entry = { evento: evento, dados: dados, ts: new Date().toISOString() };
+        eventLog.unshift(entry);
+        if (eventLog.length > 100) eventLog = eventLog.slice(0,100);
+        persist();
+        (listeners[evento]||[]).forEach(function(cb){ try{ cb(dados, evento); }catch(e){ console.error('[EventBus] erro no listener de "'+evento+'":', e); } });
+        wildcard.forEach(function(cb){ try{ cb(dados, evento); }catch(e){ console.error('[EventBus] erro no listener wildcard:', e); } });
+      },
+      getLog: function(){ return eventLog; }
+    };
+  })();
+  window.EventBus = EventBus;
+
+  // ── CONFIGURAÇÃO DE ATIVAÇÃO DOS AGENTES ───────────────────────────────
+  var AGENTES_DEFAULT = { stock:true, leads:true, orcamentos:true, tarefas:true, notificacoes:true };
+  var agentesConfig;
+  try { agentesConfig = JSON.parse(localStorage.getItem('ob-agentes-config')||'null'); } catch(e){ agentesConfig = null; }
+  agentesConfig = Object.assign({}, AGENTES_DEFAULT, agentesConfig||{});
+  function agentesConfigSave(){ try{ localStorage.setItem('ob-agentes-config', JSON.stringify(agentesConfig)); }catch(e){} }
+  function agenteAtivo(nome){ return !!agentesConfig[nome]; }
+  function agToast(msg){ if (typeof showToast === 'function') showToast(msg); }
+
+  // ── AGENTE 1 — STOCK CRÍTICO ────────────────────────────────────────────
+  function agenteStockAvaliar(){
+    if (!agenteAtivo('stock')) return;
+    if (typeof STK_STOCK === 'undefined' || !STK_STOCK) return;
+    STK_STOCK.forEach(function(s){
+      if (s.qty === 0) {
+        EventBus.publish('stock_esgotado', s);
+      } else if (s.qty > 0 && s.qty < (s.qtyMin||0)) {
+        EventBus.publish('stock_critico', s);
+        EventBus.publish('sugerir_encomenda', { material: s, fornecedor: s.forn||'' });
+      }
+    });
+  }
+  EventBus.subscribe('stock_atualizado', agenteStockAvaliar);
+  if (typeof window.stkSave === 'function') {
+    var _origStkSaveAg = window.stkSave;
+    window.stkSave = function(){ _origStkSaveAg.apply(this, arguments); EventBus.publish('stock_atualizado', null); };
+  }
+
+  // ── AGENTE 2 — FOLLOW-UP DE LEADS ───────────────────────────────────────
+  function agDiasDesde(dataStr){
+    if (!dataStr) return null;
+    var partes = String(dataStr).split('/');
+    if (partes.length !== 3) return null;
+    var d = new Date(Number(partes[2]), Number(partes[1])-1, Number(partes[0]));
+    if (isNaN(d.getTime())) return null;
+    return Math.floor((Date.now() - d.getTime()) / 86400000);
+  }
+  function agenteLeadsAvaliar(){
+    if (!agenteAtivo('leads')) return;
+    if (typeof crmLeads === 'undefined' || !crmLeads) return;
+    crmLeads.forEach(function(lead){
+      var dias = agDiasDesde(lead.dtInicio || lead.dt);
+      if (dias === null) return;
+      if (dias > 7) EventBus.publish('lead_parado', lead);
+      else if (dias < 2) EventBus.publish('lead_quente', lead);
+    });
+  }
+  EventBus.subscribe('lead_atualizado', agenteLeadsAvaliar);
+  EventBus.subscribe('lead_parado', function(lead){
+    if (!agenteAtivo('leads')) return;
+    if (typeof homeTasksData === 'undefined' || !homeTasksData) return;
+    var iniciais = String(lead.ass||'').trim().split(/\s+/).map(function(p){ return p[0]||''; }).join('').slice(0,2).toUpperCase() || 'CO';
+    var task = {
+      id: Date.now() + Math.floor(Math.random()*1000),
+      title: 'Follow-up: ' + (lead.n || lead.emp || 'lead parado'),
+      group: 'Dep. Comercial', dept: 'Dep. Comercial',
+      status: 'A fazer', statusC: '#6b6b72',
+      prio: 'Alta', prioBg: '#e67e22',
+      ass: iniciais, assC: '#4d94db', assNome: lead.ass || 'Equipa OpportunityBox',
+      due: 'Hoje', dueType: 'soon',
+      subtarefas: []
+    };
+    if (typeof homeDistribuirSubtarefas === 'function') homeDistribuirSubtarefas(task);
+    homeTasksData.unshift(task);
+    if (typeof saveHomeTasksData === 'function') saveHomeTasksData();
+    if (typeof renderTasksBoard === 'function') renderTasksBoard();
+    if (typeof renderTasksList === 'function') renderTasksList();
+    EventBus.publish('tarefa_criada', task);
+  });
+  if (typeof window.saveCrmLeads === 'function') {
+    var _origSaveCrmLeadsAg = window.saveCrmLeads;
+    window.saveCrmLeads = function(){ _origSaveCrmLeadsAg.apply(this, arguments); EventBus.publish('lead_atualizado', null); };
+  }
+
+  // ── AGENTE 3 — ORÇAMENTOS (MARGEM) ──────────────────────────────────────
+  EventBus.subscribe('orcamento_guardado', function(orc){
+    if (!agenteAtivo('orcamentos') || !orc) return;
+    var custo = (orc.custoMateriais||0) + (orc.custoMO||0) + (orc.custoLog||0);
+    var valor = (orc.totais && orc.totais.total) || orc.val || 0;
+    if (!valor) return;
+    var margem = ((valor - custo) / valor) * 100;
+    if (margem < 25) EventBus.publish('orcamento_margem_baixa', { orc: orc, margem: margem });
+    else if (margem > 45) EventBus.publish('orcamento_margem_boa', { orc: orc, margem: margem });
+  });
+  EventBus.subscribe('orcamento_margem_baixa', function(info){
+    if (!agenteAtivo('orcamentos')) return;
+    EventBus.publish('sugerir_revisao', info);
+  });
+  if (typeof window.orcGuardar === 'function') {
+    var _origOrcGuardarAg = window.orcGuardar;
+    window.orcGuardar = function(){
+      _origOrcGuardarAg.apply(this, arguments);
+      if (typeof orcData !== 'undefined' && orcData && orcData.length) {
+        EventBus.publish('orcamento_guardado', orcData[0]);
+      }
+    };
+  }
+
+  // ── AGENTE 4 — TAREFAS (DISTRIBUIÇÃO AUTOMÁTICA) ────────────────────────
+  EventBus.subscribe('tarefa_criada', function(task){
+    if (!agenteAtivo('tarefas') || !task || !task.subtarefas || !task.subtarefas.length) return;
+    task.subtarefas.forEach(function(sub){ EventBus.publish('subtarefa_criada', sub); });
+  });
+  EventBus.subscribe('sugerir_encomenda', function(info){
+    if (!agenteAtivo('tarefas')) return;
+    if (typeof homeTasksData === 'undefined' || !homeTasksData) return;
+    var mat = (info && info.material) || {};
+    var task = {
+      id: Date.now() + Math.floor(Math.random()*1000),
+      title: 'Encomendar ' + (mat.nome||'material') + ' ao fornecedor ' + (info.fornecedor||''),
+      group: 'Compras', dept: 'Compras',
+      status: 'A fazer', statusC: '#6b6b72',
+      prio: 'Alta', prioBg: '#e67e22',
+      ass: 'CP', assC: '#e67e22', assNome: 'Compras',
+      due: 'Hoje', dueType: 'soon',
+      badge: 'Encomenda',
+      subtarefas: []
+    };
+    homeTasksData.unshift(task);
+    if (typeof saveHomeTasksData === 'function') saveHomeTasksData();
+    if (typeof renderTasksBoard === 'function') renderTasksBoard();
+    if (typeof renderTasksList === 'function') renderTasksList();
+    EventBus.publish('tarefa_criada', task);
+  });
+  if (typeof window.homeSaveTask === 'function') {
+    var _origHomeSaveTaskAg = window.homeSaveTask;
+    window.homeSaveTask = function(){
+      var antes = (typeof homeTasksData !== 'undefined' && homeTasksData) ? homeTasksData.length : 0;
+      _origHomeSaveTaskAg.apply(this, arguments);
+      if (typeof homeTasksData !== 'undefined' && homeTasksData && homeTasksData.length > antes) {
+        EventBus.publish('tarefa_criada', homeTasksData[0]);
+      }
+    };
+  }
+
+  // ── AGENTE 5 — NOTIFICAÇÕES (DASHBOARD) ─────────────────────────────────
+  var AGENTE5_ICONES = {
+    stock_critico:'🟡', stock_esgotado:'🔴', sugerir_encomenda:'🟡',
+    lead_parado:'🟡', lead_quente:'🟢',
+    orcamento_margem_baixa:'🟡', orcamento_margem_boa:'🟢', sugerir_revisao:'🟡',
+    tarefa_criada:'🟢', subtarefa_criada:'🟢'
+  };
+  var AGENTE5_NIVEL = {
+    stock_esgotado:'crit', stock_critico:'warn', sugerir_encomenda:'warn',
+    lead_parado:'warn', lead_quente:'ok',
+    orcamento_margem_baixa:'warn', orcamento_margem_boa:'ok', sugerir_revisao:'warn',
+    tarefa_criada:'ok', subtarefa_criada:'ok'
+  };
+  var AGENTE5_MSG = {
+    stock_critico: function(d){ return 'Stock baixo: ' + ((d&&d.nome)||'material'); },
+    stock_esgotado: function(d){ return 'Stock esgotado: ' + ((d&&d.nome)||'material'); },
+    sugerir_encomenda: function(d){ return 'Sugerir encomenda: ' + ((d&&d.material&&d.material.nome)||'material'); },
+    lead_parado: function(d){ return 'Lead parado: ' + ((d&&(d.n||d.emp))||''); },
+    lead_quente: function(d){ return 'Lead quente: ' + ((d&&(d.n||d.emp))||''); },
+    orcamento_margem_baixa: function(d){ return 'Margem baixa ('+((d&&d.margem!=null)?d.margem.toFixed(1):'?')+'%) — orçamento ' + ((d&&d.orc&&d.orc.num)||''); },
+    orcamento_margem_boa: function(d){ return 'Margem boa ('+((d&&d.margem!=null)?d.margem.toFixed(1):'?')+'%) — orçamento ' + ((d&&d.orc&&d.orc.num)||''); },
+    sugerir_revisao: function(d){ return 'Sugerir revisão de custos — orçamento ' + ((d&&d.orc&&d.orc.num)||''); },
+    tarefa_criada: function(d){ return 'Tarefa criada: ' + ((d&&d.title)||''); },
+    subtarefa_criada: function(d){ return 'Subtarefa criada: ' + ((d&&d.titulo)||''); }
+  };
+  function agentesPainelRender(){
+    var painel = document.getElementById('agentes-painel-alertas');
+    if (!painel) return;
+    var log = EventBus.getLog();
+    if (!log.length) { painel.innerHTML = '<div style="font-size:12px;color:var(--muted)">Sem alertas de agentes.</div>'; return; }
+    var crit = 0, warn = 0;
+    log.forEach(function(ev){
+      var niv = AGENTE5_NIVEL[ev.evento];
+      if (niv === 'crit') crit++; else if (niv === 'warn') warn++;
+    });
+    var resumo = '<div style="font-size:12px;font-weight:700;margin-bottom:6px">' +
+      (crit ? '🔴 ' + crit + ' alertas críticos&nbsp; ' : '') +
+      (warn ? '🟡 ' + warn + ' avisos' : '') +
+      (!crit && !warn ? '🟢 Tudo em ordem' : '') + '</div>';
+    var itens = log.slice(0,5).map(function(ev){
+      var ico = AGENTE5_ICONES[ev.evento] || '⚡';
+      var fn = AGENTE5_MSG[ev.evento];
+      var txt = fn ? fn(ev.dados) : ev.evento;
+      var hora = ''; try { hora = new Date(ev.ts).toLocaleTimeString('pt-PT',{hour:'2-digit',minute:'2-digit'}); } catch(e){}
+      return '<div style="display:flex;gap:8px;padding:5px 0;border-top:1px solid var(--border);font-size:12px">' +
+        '<span>'+ico+'</span><span style="flex:1;color:var(--txt2)">'+txt+'</span><span style="color:var(--muted)">'+hora+'</span></div>';
+    }).join('');
+    painel.innerHTML = resumo + itens;
+  }
+  EventBus.subscribe('*', function(){
+    if (!agenteAtivo('notificacoes')) return;
+    agentesPainelRender();
+  });
+
+  // ── PAINEL DE CONFIGURAÇÃO DOS AGENTES (Integrações) ────────────────────
+  var AGENTES_NOMES = { stock:'🟦 Stock Crítico', leads:'🟧 Follow-up de Leads', orcamentos:'🟨 Orçamentos (Margem)', tarefas:'🟩 Tarefas (Distribuição)', notificacoes:'🟪 Notificações (Dashboard)' };
+  function agentesConfigPainelHTML(){
+    return Object.keys(AGENTES_NOMES).map(function(k){
+      return '<label style="display:flex;align-items:center;gap:8px;font-size:13px;padding:4px 0">' +
+        '<input type="checkbox" data-agente="'+k+'" '+(agentesConfig[k]?'checked':'')+' onchange="window.agenteToggle(this)"/>' + AGENTES_NOMES[k] + '</label>';
+    }).join('');
+  }
+  window.agenteToggle = function(checkbox){
+    var k = checkbox.getAttribute('data-agente');
+    agentesConfig[k] = checkbox.checked;
+    agentesConfigSave();
+    agToast((checkbox.checked ? '✓ Agente ativado: ' : '✗ Agente desativado: ') + (AGENTES_NOMES[k]||k));
+  };
+
+  // ── LOG DE AGENTES ───────────────────────────────────────────────────────
+  window.agentesLogRender = function(){
+    var el = document.getElementById('agentes-log-lista');
+    if (!el) return;
+    var log = EventBus.getLog();
+    if (!log.length) { el.innerHTML = '<div style="font-size:13px;color:var(--muted)">Sem eventos registados.</div>'; return; }
+    el.innerHTML = log.map(function(ev){
+      var data; try { data = new Date(ev.ts).toLocaleString('pt-PT'); } catch(e){ data = ev.ts; }
+      return '<div style="padding:6px 0;border-top:1px solid var(--border);font-size:12px">' +
+        '<strong style="color:var(--txt2)">' + ev.evento + '</strong>' +
+        ' <span style="color:var(--muted)">— ' + data + '</span>' +
+        '<pre style="margin:4px 0 0;white-space:pre-wrap;color:var(--muted);font-size:11px">' + JSON.stringify(ev.dados) + '</pre></div>';
+    }).join('');
+  };
+
+  // ── INJEÇÃO DE HTML: painel no dashboard + painel de config/log nas integrações ──
+  function agentesInjectarHTML(){
+    var dashAlerts = document.getElementById('dash-alerts');
+    if (dashAlerts && !document.getElementById('agentes-painel-alertas') && dashAlerts.parentNode) {
+      var wrap = document.createElement('div');
+      wrap.style.cssText = 'margin-top:14px;padding-top:10px;border-top:1px dashed var(--border)';
+      wrap.innerHTML = '<div style="font-size:11px;font-weight:700;letter-spacing:.06em;color:var(--y);text-transform:uppercase;margin-bottom:6px">🤖 Agentes Colaborativos</div><div id="agentes-painel-alertas"></div>';
+      dashAlerts.parentNode.insertBefore(wrap, dashAlerts.nextSibling);
+    }
+    var integ = document.getElementById('page-integracoes');
+    if (integ && !document.getElementById('agentes-config-card')) {
+      var card = document.createElement('div');
+      card.id = 'agentes-config-card';
+      card.className = 'conn';
+      card.style.cssText = 'flex-direction:column;align-items:stretch;gap:10px;margin-top:14px';
+      card.innerHTML =
+        '<div style="display:flex;align-items:center;gap:11px">' +
+          '<div class="cico" style="background:var(--bg3)">🤖</div>' +
+          '<div style="flex:1"><div class="cname">Agentes Colaborativos</div>' +
+          '<div class="cst" style="color:var(--muted)">Ativa/desativa cada agente individualmente</div></div>' +
+        '</div>' +
+        '<div id="agentes-config-lista">' + agentesConfigPainelHTML() + '</div>' +
+        '<div style="border-top:1px solid var(--border);padding-top:10px;margin-top:4px">' +
+          '<div style="display:flex;align-items:center;justify-content:space-between">' +
+            '<div style="font-size:12px;font-weight:700;color:var(--y);text-transform:uppercase;letter-spacing:.06em">Log de Agentes</div>' +
+            '<button class="bsm bon" onclick="window.agentesLogRender()">🔄 Atualizar</button>' +
+          '</div>' +
+          '<div id="agentes-log-lista" style="max-height:240px;overflow-y:auto;margin-top:8px"></div>' +
+        '</div>';
+      var innerContainer = integ.querySelector('.sg') || integ.querySelector('.admin-page') || integ;
+      innerContainer.appendChild(card);
+    }
+  }
+
+  function agentesInit(){
+    agentesInjectarHTML();
+    agentesPainelRender();
+    window.agentesLogRender();
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', agentesInit);
+  } else {
+    agentesInit();
+  }
+})();
+</script>
+
 </body>
 </html>
