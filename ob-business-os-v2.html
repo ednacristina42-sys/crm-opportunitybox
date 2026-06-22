@@ -12653,6 +12653,7 @@ function orcGuardar(){
   d.dt = d.data; d.st = 'Pendente'; d.stc = 'ba';
   orcData.unshift(d);
   localStorage.setItem('ob-orcamentos', JSON.stringify(orcData.slice(0,5000)));
+  if (typeof _copExemplosCache !== 'undefined') _copExemplosCache = {};
   orcRenderList();
   // Próximo número
   const badge = document.getElementById('orc-num-badge');
@@ -17115,10 +17116,19 @@ function _copProcessarFile(file) {
 }
 
 // ── System Prompt especializado ───────────────────────────────────
-function _copSystemPrompt() {
+function _copSystemPrompt(exemplos) {
   var stockNomes = (typeof STK_STOCK !== 'undefined' ? STK_STOCK : [])
     .map(function(s) { return s.nome + ' (' + s.un + ', EUR' + s.preco.toFixed(2) + ')'; })
     .join(', ');
+  var exemplosTxt = '';
+  if (exemplos && exemplos.length) {
+    exemplosTxt = '\n\nExemplos de orçamentos anteriores semelhantes (usa como referência de preços/markup):\n' +
+      exemplos.map(function(ex) {
+        return '- Cliente ' + (ex.cliente || '—') + ': ' + (ex.produto || '—') + ', qtd ' + (ex.qtd || '—') +
+          ', preço EUR' + (typeof ex.preco === 'number' ? ex.preco.toFixed(2) : ex.preco) +
+          (ex.markup ? ', markup ' + ex.markup + 'x' : '');
+      }).join('\n');
+  }
   return 'Actuas como orçamentista sénior de uma empresa portuguesa especializada em ' +
     'reclamos luminosos, letras 3D, tótemes e sinalética corporativa (OpportunityBox, Sintra). ' +
     'Analisa a imagem/maquete fornecida e devolve APENAS um objecto JSON válido (sem markdown, ' +
@@ -17130,6 +17140,7 @@ function _copSystemPrompt() {
     '"markup_sugerido":number,"preco_estimado_total":number,' +
     '"observacoes":"string","confianca":"Alta|Media|Baixa"}' +
     '\n\nStock disponível no sistema: ' + stockNomes +
+    exemplosTxt +
     '\n\nRegras obrigatórias:' +
     '\n1. Para cada material, verifica se existe no stock acima. Se existir, usa o preço de stock.' +
     '\n2. Estima quantidades reais baseadas nas proporções visuais (ex: fachada de 4m × 0.8m = 3.2m²).' +
@@ -17138,6 +17149,49 @@ function _copSystemPrompt() {
     '\n5. Unidades aceites: m, m², unid, rolo, folha.' +
     '\n6. Responde em português de Portugal.';
 }
+
+// ── Exemplos de orçamentos anteriores (RAG simples por categoria/tipo de reclamo) ──
+var _copExemplosCache = {};
+var _COP_CATEGORIAS_KW = {
+  'letras 3d': ['letra', 'letras', '3d', 'monobloco'],
+  'totem': ['totem', 'totens'],
+  'caixa de luz': ['caixa de luz', 'caixa luminosa', 'lightbox'],
+  'lona/banner': ['lona', 'banner', 'lonas'],
+  'placa/sinalética': ['placa', 'sinalética', 'sinaletica']
+};
+function copilotoBuscarExemplos(descricao) {
+  if (!descricao || typeof orcData === 'undefined') return [];
+  var descLower = descricao.toLowerCase();
+  var categoria = null;
+  for (var cat in _COP_CATEGORIAS_KW) {
+    if (_COP_CATEGORIAS_KW[cat].some(function(kw) { return descLower.indexOf(kw) !== -1; })) { categoria = cat; break; }
+  }
+  if (!categoria) return [];
+  if (_copExemplosCache[categoria]) return _copExemplosCache[categoria];
+
+  var exemplos = [];
+  orcData.forEach(function(o) {
+    (o.linhas || []).forEach(function(l) {
+      var texto = ((l.produto || '') + ' ' + (l.desc || '')).toLowerCase();
+      if (_COP_CATEGORIAS_KW[categoria].some(function(kw) { return texto.indexOf(kw) !== -1; })) {
+        var preco = l.preco || l.precoTotal || l.sub || 0;
+        if (!preco) return;
+        exemplos.push({
+          cliente: o.cli || '',
+          produto: l.produto || l.desc || '',
+          qtd: l.qty || 1,
+          preco: preco,
+          markup: l.markup || null
+        });
+      }
+    });
+  });
+  exemplos.sort(function(a, b) { return (b.preco || 0) - (a.preco || 0); });
+  exemplos = exemplos.slice(0, 3);
+  _copExemplosCache[categoria] = exemplos;
+  return exemplos;
+}
+
 
 // ── Chamada à API Vision ──────────────────────────────────────────
 async function analisarDesignComIA(file) {
@@ -17150,9 +17204,10 @@ async function analisarDesignComIA(file) {
   if (modo !== 'descricao' && !_cop.b64) throw new Error('Nenhuma imagem carregada.');
 
   if (provider === 'openai') {
-    var userContent;
+    var userContent, exemplos = [];
     if (modo === 'descricao') {
       var descricao = (document.getElementById('copiloto-descricao') || {}).value || '';
+      exemplos = copilotoBuscarExemplos(descricao);
       userContent = 'Descrição da fachada/reclamo fornecida pelo cliente: "' + descricao + '". Com base nesta descrição, devolve o JSON de orçamento.';
     } else {
       userContent = [
@@ -17167,7 +17222,7 @@ async function analisarDesignComIA(file) {
         model: 'gpt-4o',
         max_tokens: 2048,
         messages: [
-          { role: 'system', content: _copSystemPrompt() },
+          { role: 'system', content: _copSystemPrompt(exemplos) },
           { role: 'user', content: userContent }
         ]
       })
