@@ -12889,12 +12889,17 @@ window.numeroPorExtenso = numeroPorExtenso;
 function orcPDF(){
   const d = orcGetData();
   if(!d.cli){ alert('Preenche o cliente antes de gerar o PDF.'); return; }
-  // ADD: se não houver totais (ou estiverem vazios), recalcula a partir das linhas
-  if(!d.totais || (!d.totais.sub && !d.totais.total)){
-    const subR = (d.linhas||[]).reduce((s,l)=>s+(l.sub||(l.qty*l.preco)||0),0);
-    const ivaPctR = d.totais && d.totais.ivaPct ? d.totais.ivaPct : 23;
-    const ivaValR = subR*ivaPctR/100;
-    d.totais = { sub: subR, descPct:0, descVal:0, ivaPct: ivaPctR, ivaVal: ivaValR, total: subR+ivaValR };
+  // ADD: se não houver totais (ou o total vier a zero), recalcula a partir das linhas
+  if(!d.totais || d.totais.total === 0){
+    let sub = 0;
+    (d.linhas||[]).forEach(l => { sub += (l.sub || l.subtotal || (l.qty*l.preco) || 0); });
+    const descPct = d.totais?.descPct || 0;
+    const ivaPct = d.totais?.ivaPct || 23;
+    const descVal = sub * descPct / 100;
+    const base = sub - descVal;
+    const ivaVal = base * ivaPct / 100;
+    const total = base + ivaVal;
+    d.totais = { sub, descPct, descVal, ivaPct, ivaVal, total };
   }
   const valFmt = d.val ? d.val.split('-').reverse().join('/') : '—';
   const linhasHTML = d.linhas.map((l,i)=>`
@@ -17701,6 +17706,10 @@ function copilotoAplicar() {
   orcCalcTotal();
   var badge = document.getElementById('orc-num-badge');
   if (badge && !badge.textContent.trim() && typeof orcNextNum === 'function') badge.textContent = orcNextNum();
+
+  // ADD: guardar o orçamento com os valores atualizados pelo Copiloto e atualizar a lista
+  if (typeof orcGuardar === 'function') orcGuardar();
+  if (typeof orcRenderList === 'function') orcRenderList();
 
   var NL = String.fromCharCode(10);
   if (naoEncontrados.length) {
