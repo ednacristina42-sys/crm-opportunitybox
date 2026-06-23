@@ -1795,10 +1795,17 @@ function ecInit(){
   });
 }
 
+function ecTogglePassword(){
+  const el = document.getElementById('ec-password');
+  if (el) el.type = el.type === 'password' ? 'text' : 'password';
+}
+
 async function ecLogin(e){
   e.preventDefault();
-  const email = document.getElementById('ec-email').value.trim();
-  const password = document.getElementById('ec-password').value;
+  // Espaços invisíveis (autofill/copy-paste) são a causa mais comum de
+  // "Invalid login credentials" mesmo quando a password "parece" certa.
+  const email = document.getElementById('ec-email').value.trim().toLowerCase();
+  const password = document.getElementById('ec-password').value.trim();
   const btn = document.getElementById('ec-login-btn');
   const err = document.getElementById('ec-err');
   err.style.display = 'none';
@@ -7675,7 +7682,10 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
         <p>Para ver dados em tempo real (quem está ao ponto, localizações GPS, visitas, frota), faz login com as <strong>mesmas credenciais que usas no app Lovable</strong> (<a href="https://equipaopportunitybox.netlify.app/auth" target="_blank" style="color:var(--y);text-decoration:none">equipaopportunitybox.netlify.app</a>).</p>
         <form class="ec-form" id="ec-login-form" onsubmit="return ecLogin(event)">
           <input type="email" id="ec-email" placeholder="email@dominio.pt" autocomplete="email" required/>
-          <input type="password" id="ec-password" placeholder="••••••••" autocomplete="current-password" required/>
+          <div style="position:relative;display:flex">
+            <input type="password" id="ec-password" placeholder="••••••••" autocomplete="current-password" required style="flex:1;padding-right:38px"/>
+            <button type="button" onclick="ecTogglePassword()" title="Mostrar/ocultar password" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--muted);cursor:pointer;font-size:15px;padding:4px">👁</button>
+          </div>
           <button type="submit" id="ec-login-btn">🔌 Ligar com Supabase</button>
           <div class="err" id="ec-err" style="display:none"></div>
           <!-- ADD: botão para usar dados do App via localStorage -->
