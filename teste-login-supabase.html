@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="UTF-8"/>
+<title>Teste de Login — Supabase Equipa em Campo</title>
+<style>
+  body{font-family:Arial,sans-serif;background:#111;color:#eee;padding:30px;max-width:600px;margin:0 auto}
+  h1{font-size:18px;color:#f0c040}
+  label{display:block;margin-top:14px;font-size:13px;color:#aaa}
+  input{width:100%;padding:10px;margin-top:4px;border-radius:6px;border:1px solid #444;background:#1a1a1a;color:#fff;box-sizing:border-box}
+  button{margin-top:18px;width:100%;padding:12px;border-radius:6px;border:none;background:#f0c040;color:#111;font-weight:700;cursor:pointer}
+  pre{background:#1a1a1a;border:1px solid #333;border-radius:6px;padding:12px;margin-top:16px;white-space:pre-wrap;font-size:12px;color:#9f9}
+  .err{color:#f66}
+  .ok{color:#6f6}
+</style>
+</head>
+<body>
+  <h1>🔧 Teste isolado de Login — Supabase (Equipa em Campo)</h1>
+  <p style="color:#999;font-size:13px">Esta página fala diretamente com o Supabase, sem o resto do CRM. Serve só para ver a resposta exata e descobrir a causa real do "Invalid login credentials".</p>
+
+  <label>Email</label>
+  <input id="email" type="email" placeholder="geral@opportunitybox.pt" autocomplete="email"/>
+
+  <label>Password</label>
+  <input id="password" type="text" placeholder="password" autocomplete="current-password"/>
+
+  <button onclick="testar()">Testar login</button>
+
+  <pre id="out">Resultado vai aparecer aqui...</pre>
+
+<script>
+var SB_URL = "https://ddzlbmnmsdyodouqxbjx.supabase.co";
+var SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRkemxibW5tc2R5b2RvdXF4Ymp4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkyMDQ2NTUsImV4cCI6MjA5NDc4MDY1NX0.P8nyU1zL4bd6Vhs8MGsTqHcB_bSeQsbNHXtQgatVt-Y";
+
+async function testar(){
+  var out = document.getElementById('out');
+  var email = document.getElementById('email').value.trim();
+  var password = document.getElementById('password').value;
+  out.className = '';
+  out.textContent = '⏳ A testar...';
+
+  try {
+    var resp = await fetch(SB_URL + '/auth/v1/token?grant_type=password', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': SB_KEY
+      },
+      body: JSON.stringify({ email: email, password: password })
+    });
+    var json = await resp.json();
+    var resumo = '';
+    resumo += 'HTTP status: ' + resp.status + '\n';
+    resumo += 'error_code: ' + (json.error_code || json.code || '—') + '\n';
+    resumo += 'mensagem: ' + (json.msg || json.error_description || json.message || '—') + '\n\n';
+    resumo += 'Resposta completa:\n' + JSON.stringify(json, null, 2);
+
+    if (resp.ok && json.access_token) {
+      out.className = 'ok';
+      resumo = '✅ LOGIN COM SUCESSO!\n\n' + resumo;
+    } else {
+      out.className = 'err';
+      resumo = '❌ LOGIN FALHOU\n\n' + resumo;
+    }
+    out.textContent = resumo;
+  } catch(e) {
+    out.className = 'err';
+    out.textContent = '❌ Erro de rede/script: ' + (e.message || e);
+  }
+}
+</script>
+</body>
+</html>
