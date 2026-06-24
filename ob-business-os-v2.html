@@ -17672,13 +17672,38 @@ function copilotoAplicar() {
   }
 
   // ADD: garantir que _orcCustoMateriais não fica a 0 mesmo que orcRecalcMateriais() não exista/falhe
-  if (!window._orcCustoMateriais) {
+  // (acontece sempre que algum material da IA não foi encontrado no stock — fica "estimado")
+  if (!window._orcCustoMateriais || naoEncontrados.length) {
     var custoMatFallback = mats.reduce(function(s, mat) {
       var p = (mat.precoEstimado || mat.preco || 0) * (mat.qtd || 0);
       return s + p;
     }, 0);
     if (custoMatFallback) window._orcCustoMateriais = custoMatFallback;
   }
+
+  // ADD: sincronizar o painel "Composição do Reclamo" com o custo/preço final,
+  // mesmo quando os materiais não entraram em ORC_MATERIAIS (não encontrados no stock).
+  // Sem isto o painel ficava preso em €0,00 enquanto a linha de produto já levava o valor certo.
+  (function _syncComposicaoPanel() {
+    var mkSel2 = document.getElementById('orc-markup');
+    var mk2 = mkSel2 ? parseFloat(mkSel2.value) || (analysis.markup_sugerido || 2.5) : (analysis.markup_sugerido || 2.5);
+    var custoFinal = window._orcCustoMateriais || 0;
+    var precoFinal = custoFinal * mk2;
+    window._orcPrecoSugerido = precoFinal;
+    var elC = document.getElementById('orc-custo-mat');
+    if (elC) elC.textContent = '€' + custoFinal.toFixed(2).replace('.', ',');
+    var elM = document.getElementById('orc-markup-label');
+    if (elM) elM.textContent = '×' + mk2;
+    var elP = document.getElementById('orc-preco-sugerido');
+    if (elP) elP.textContent = '€' + precoFinal.toFixed(2).replace('.', ',');
+    if (naoEncontrados.length) {
+      var listEl = document.getElementById('orc-materiais-list');
+      if (listEl && !listEl.querySelector('.stk-mat-row')) {
+        listEl.innerHTML = '<div style="font-size:12px;color:var(--a);text-align:center;padding:6px">' +
+          '🔶 ' + naoEncontrados.length + ' material(is) estimado(s) (fora de stock) — custo incluído acima, sem reserva de stock.</div>';
+      }
+    }
+  })();
 
   // ADD: Atualiza a primeira linha de produto com o valor final sugerido pela IA
   // (usa SEMPRE o mesmo valor mostrado em "Markup ×N" no painel de análise, para nunca diferir do que o utilizador viu)
