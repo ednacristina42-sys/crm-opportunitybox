@@ -1772,8 +1772,8 @@ function avVendedoresFiltrar(ano){
 // ═══════════════════════════════════════════════════════
 // EQUIPA EM CAMPO — Supabase real-time integration
 // ═══════════════════════════════════════════════════════
-var EC_SB_URL = "https://ddzlbmnmsdyodouqxbjx.supabase.co";
-var EC_SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRkemxibW5tc2R5b2RvdXF4Ymp4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkyMDQ2NTUsImV4cCI6MjA5NDc4MDY1NX0.P8nyU1zL4bd6Vhs8MGsTqHcB_bSeQsbNHXtQgatVt-Y";
+var EC_SB_URL = "https://xtiguuyvotnpwqzmggnc.supabase.co";
+var EC_SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh0aWd1dXl2b3RucHdxem1nZ25jIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc0Nzg3NjcsImV4cCI6MjA5MzA1NDc2N30.YHxMPauh6MA4nkFEEQBPGUduozWLKlGsymsix9jY7Bc";
 
 var ecSupabase = null;
 var ecUser = null;
@@ -2023,22 +2023,20 @@ async function ecLoadLocations(){
 }
 
 async function ecLoadFleet(){
-  // Assignments activas (sem assigned_until OU futuras)
-  const now = new Date().toISOString();
-  const { data: assigns } = await ecSupabase
-    .from('vehicle_assignments')
-    .select('user_id, vehicle_id, is_primary, assigned_from, assigned_until')
-    .or(`assigned_until.is.null,assigned_until.gte.${now}`)
-    .lte('assigned_from', now);
+  // Usos de viatura activos (sem ended_at)
+  const { data: usages } = await ecSupabase
+    .from('vehicle_usages')
+    .select('user_id, vehicle_id, started_at')
+    .is('ended_at', null);
   const { data: vehicles } = await ecSupabase.from('vehicles').select('id, plate, brand, model, current_km, active');
   const vMap = {};
   (vehicles||[]).forEach(v => { vMap[v.id] = v; });
-  const list = (assigns||[]).filter(a => vMap[a.vehicle_id] && vMap[a.vehicle_id].active);
+  const list = (usages||[]).filter(a => vMap[a.vehicle_id] && vMap[a.vehicle_id].active !== false);
   document.getElementById('ec-cnt-vehicles').textContent = list.length;
   document.getElementById('ec-fleet-badge').textContent = list.length;
   const el = document.getElementById('ec-fleet-list');
   if(list.length === 0){
-    el.innerHTML = '<div class="ec-row empty">Nenhuma viatura atribuída</div>';
+    el.innerHTML = '<div class="ec-row empty">Nenhuma viatura em uso</div>';
     return;
   }
   el.innerHTML = list.slice(0,8).map(a => {
@@ -2056,7 +2054,7 @@ async function ecLoadFleet(){
         </div>
       </div>
       <div class="right">
-        ${a.is_primary ? '<span style="font-family:DM Mono,monospace;font-size:12px;color:var(--y)">PRIMÁRIO</span>' : ''}
+        <div class="timer" style="color:var(--muted);font-size:12px">${new Date(a.started_at).toLocaleTimeString('pt-PT',{hour:'2-digit',minute:'2-digit'})}</div>
       </div>
     </div>`;
   }).join('');
@@ -7686,7 +7684,7 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
       <div class="ec-auth-gate">
         <div class="ico">🔐</div>
         <h2>Ligar à Equipa em Campo</h2>
-        <p>Para ver dados em tempo real (quem está ao ponto, localizações GPS, visitas, frota), faz login com as <strong>mesmas credenciais que usas no app Lovable</strong> (<a href="https://equipaopportunitybox.netlify.app/auth" target="_blank" style="color:var(--y);text-decoration:none">equipaopportunitybox.netlify.app</a>).</p>
+        <p>Para ver dados em tempo real (quem está ao ponto, localizações GPS, visitas, frota), faz login com as <strong>mesmas credenciais que usas na app de campo</strong> (<a href="https://equipaopportunitybox.lovable.app/auth" target="_blank" style="color:var(--y);text-decoration:none">equipaopportunitybox.lovable.app</a>).</p>
         <form class="ec-form" id="ec-login-form" onsubmit="return ecLogin(event)">
           <input type="email" id="ec-email" placeholder="email@dominio.pt" autocomplete="email" required/>
           <div style="position:relative;display:flex">
