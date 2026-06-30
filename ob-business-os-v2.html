@@ -2750,6 +2750,11 @@ function orcSwitchTab(tab) {
   if (tab === 'faturas') fatRenderList();
 }
 
+window.goFaturasAdmin = function() {
+  goPage('comercial-orcamentos');
+  orcSwitchTab('faturas');
+};
+
 // ── Abrir modal de fatura a partir de orçamento ─────────────
 function fatAbrirModal(orcNum) {
   FAT_EDITING_NUM = null;
@@ -5224,6 +5229,7 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
     <button class="sl-item" data-action="goPage" data-page="admin-agenda"><div class="sl-dot" style="background:var(--y)"></div>Agenda</button>
     <button class="sl-item" data-action="goPage" data-page="admin-docs"><div class="sl-dot" style="background:#4d94db"></div>Documentos</button>
     <button class="sl-item" data-action="goPage" data-page="admin-despesas"><div class="sl-dot" style="background:#d9822b"></div>Despesas</button>
+    <button class="sl-item" onclick="goFaturasAdmin()"><div class="sl-dot" style="background:#3fcf8e"></div>🧾 Faturas</button>
     <button class="sl-item" data-action="goPage" data-page="admin-rh"><div class="sl-dot" style="background:#ec4899"></div>👥 Recursos Humanos</button>
     <button class="sl-item" onclick="homeFilterTasks('Dep. Administrativo')"><div class="sl-dot" style="background:#8b5cf6"></div>📋 Tarefas ClickUp — Admin</button>
   </div>
@@ -5422,7 +5428,8 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
   <!-- ── TABS Orçamentos / Faturas ──────────── -->
   <div style="display:flex;gap:0;border-bottom:1px solid var(--border);padding:0 24px;margin-bottom:0">
     <button id="orc-tab-orcamentos" onclick="orcSwitchTab('orcamentos')" style="background:none;border:none;border-bottom:2px solid var(--y);color:var(--txt2);font-size:14px;font-weight:600;padding:10px 16px;cursor:pointer">📄 Orçamentos</button>
-    <button id="orc-tab-faturas" onclick="orcSwitchTab('faturas')" style="background:none;border:none;border-bottom:2px solid transparent;color:var(--muted);font-size:14px;font-weight:500;padding:10px 16px;cursor:pointer">🧾 Faturas</button>
+    <!-- Faturas movido para Dep. Administrativo — botão mantido oculto para não partir orcSwitchTab() -->
+    <button id="orc-tab-faturas" onclick="orcSwitchTab('faturas')" style="display:none;background:none;border:none;border-bottom:2px solid transparent;color:var(--muted);font-size:14px;font-weight:500;padding:10px 16px;cursor:pointer">🧾 Faturas</button>
   </div>
 
   <!-- ── PAINEL ORÇAMENTOS (original) ──────── -->
@@ -8603,7 +8610,7 @@ var DEPT_PAGES={
   'Dep. Comercial':['home','todas','comercial-pipeline','comercial-clientes','comercial-orcamentos','wa','equipa-campo','alerts','chat'],
   'Dep. Design':['home','todas','design-tarefas','design-ficheiros','alerts','chat'],
   'Chão da Fábrica':['home','todas','fabrica-producao','fabrica-instalacoes','alerts','chat'],
-  'Dep. Administrativo':['home','todas','admin-agenda','admin-docs','admin-despesas','admin-analise-vendas','admin-rh','stock','alerts','chat'],
+  'Dep. Administrativo':['home','todas','admin-agenda','admin-docs','admin-despesas','admin-analise-vendas','admin-rh','stock','alerts','chat','comercial-orcamentos'],
 };
 
 var CU=null; // current user
