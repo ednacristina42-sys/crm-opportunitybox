@@ -15147,32 +15147,70 @@ async function docsLoadApp(){
     }
     const EC_SB_STORAGE = 'https://xtiguuyvotnpwqzmggnc.supabase.co/storage/v1/object/public/';
     const docTypeColor = {cc:'#8b5cf6',passport:'#8b5cf6',nif:'#3b82f6',iban:'#3b82f6',contract:'#f97316',certificate:'#10b981',license:'#f59e0b',vehicle_insurance:'#ec4899',vehicle_registration:'#ec4899',other:'#6b7280'};
-    tbody.innerHTML = docs.map(d=>{
-      const col = docTypeColor[d.doc_type] || '#6b7280';
-      const label = d.label || d.doc_type || '—';
-      const entity = d.entity_name || '—';
-      const source = d.source==='employee' ? '👤 Funcionário' : '🚗 Viatura';
+
+    // Agrupar por entidade
+    const groups = {};
+    docs.forEach(d=>{
+      const key = (d.source==='employee'?'👤 ':'🚗 ') + (d.entity_name||'Sem nome');
+      if(!groups[key]) groups[key] = {source:d.source, name:d.entity_name||'—', docs:[]};
+      groups[key].docs.push(d);
+    });
+
+    const docRow = d => {
+      const col = docTypeColor[d.doc_type]||'#6b7280';
+      const label = d.label||d.doc_type||'—';
       const validade = d.expires_on ? d.expires_on.split('T')[0] : '—';
       const uploaded = d.created_at ? d.created_at.split('T')[0] : '—';
       const expired = d.expires_on && new Date(d.expires_on) < new Date();
-      const estadoBadge = !d.expires_on ? `<span class="b" style="background:#6b728020;color:#6b7280;border-color:#6b728040">Sem validade</span>`
-        : expired ? `<span class="b br">Expirado</span>`
-        : `<span class="b bg">Válido</span>`;
       const storageUrl = d.storage_path ? EC_SB_STORAGE + d.storage_path : null;
       const dlBtn = storageUrl
         ? `<a href="${storageUrl}" target="_blank" class="tbtn" style="font-size:12px;padding:3px 8px;text-decoration:none">📥</a>`
         : `<button class="tbtn" style="font-size:12px;padding:3px 8px;color:var(--muted)" disabled>📥</button>`;
+      const validBadge = !d.expires_on
+        ? `<span style="font-size:11px;color:var(--muted)">—</span>`
+        : expired ? `<span class="b br" style="font-size:11px">Expirado</span>`
+        : `<span class="b bg" style="font-size:11px">Válido</span>`;
       return `<tr>
-        <td><strong>${label}</strong><div style="font-size:11px;color:var(--muted)">${source}</div></td>
-        <td><span class="b" style="background:${col}20;color:${col};border:1px solid ${col}40;border-radius:4px;padding:2px 7px;font-size:11px">${d.doc_type||'—'}</span></td>
-        <td>${entity}</td>
-        <td style="${expired?'color:var(--r)':''}">${validade}</td>
+        <td><strong style="font-size:13px">${label}</strong></td>
+        <td><span style="background:${col}20;color:${col};border:1px solid ${col}40;border-radius:4px;padding:2px 7px;font-size:11px">${d.doc_type||'—'}</span></td>
+        <td style="${expired?'color:var(--r)':''}font-size:13px">${validade}</td>
+        <td>${validBadge}</td>
         <td style="font-size:12px;color:var(--muted)">${uploaded}</td>
         <td>${dlBtn}</td>
       </tr>`;
+    };
+
+    const html = Object.entries(groups).map(([key, g])=>{
+      const initials = g.name.split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
+      const avatarColor = g.source==='employee' ? ecRoleColor('interno') : '#f97316';
+      const icon = g.source==='employee'
+        ? `<div style="width:36px;height:36px;border-radius:50%;background:${avatarColor};display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;color:#fff;flex-shrink:0">${initials}</div>`
+        : `<div style="width:36px;height:36px;border-radius:50%;background:#f97316;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">🚗</div>`;
+      return `<div style="margin-bottom:20px;background:var(--bg2);border:1px solid var(--border);border-radius:10px;overflow:hidden">
+        <div style="display:flex;align-items:center;gap:10px;padding:12px 16px;background:var(--bg3);border-bottom:1px solid var(--border)">
+          ${icon}
+          <div>
+            <div style="font-size:14px;font-weight:600;color:var(--txt2)">${g.name}</div>
+            <div style="font-size:11px;color:var(--muted)">${g.source==='employee'?'Funcionário':'Viatura'} · ${g.docs.length} documento${g.docs.length!==1?'s':''}</div>
+          </div>
+        </div>
+        <table style="width:100%;border-collapse:collapse">
+          <thead><tr style="background:var(--bg3)">
+            <th style="padding:7px 14px;font-size:12px;text-align:left;color:var(--muted);font-weight:500">Documento</th>
+            <th style="padding:7px 14px;font-size:12px;text-align:left;color:var(--muted);font-weight:500">Tipo</th>
+            <th style="padding:7px 14px;font-size:12px;text-align:left;color:var(--muted);font-weight:500">Validade</th>
+            <th style="padding:7px 14px;font-size:12px;text-align:left;color:var(--muted);font-weight:500">Estado</th>
+            <th style="padding:7px 14px;font-size:12px;text-align:left;color:var(--muted);font-weight:500">Upload</th>
+            <th style="padding:7px 14px;font-size:12px;text-align:left;color:var(--muted);font-weight:500">Ação</th>
+          </tr></thead>
+          <tbody>${g.docs.map(docRow).join('')}</tbody>
+        </table>
+      </div>`;
     }).join('');
+
+    wrap.innerHTML = html;
+    wrap.style.display = '';
     if(status) status.style.display='none';
-    if(wrap) wrap.style.display='';
     if(btn) btn.textContent='📱 App ('+docs.length+')';
     // mudar para tab app se não estiver lá
     docsTab('app');
