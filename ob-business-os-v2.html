@@ -6352,16 +6352,24 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
 
 <!-- ─── ADMIN DOCS -->
 <div id="page-admin-docs" class="app-page">
-  <!-- Input file oculto para upload de documentos -->
   <input type="file" id="docs-file-input" multiple accept=".pdf,.png,.jpg,.jpeg,.ai,.psd,.cdr,.svg,.eps,.zip,.rar" style="display:none" onchange="adminDocsHandleFiles(this)"/>
   <div class="pg-hdr">
     <div class="pg-hdr-top">
       <div class="pg-space-icon" style="background:var(--da)">D</div>
       <div class="pg-title">Documentos e Contratos</div>
-      <div class="pg-actions"><button class="tbtn y" onclick="document.getElementById('docs-file-input').click()">+ Carregar</button></div>
+      <div class="pg-actions">
+        <button class="tbtn" id="docs-app-sync-btn" onclick="docsLoadApp()" style="font-size:13px">📱 App</button>
+        <button class="tbtn y" onclick="document.getElementById('docs-file-input').click()">+ Carregar</button>
+      </div>
+    </div>
+    <div class="view-tabs">
+      <button class="vt on" onclick="docsTab('crm')">📁 CRM</button>
+      <button class="vt" onclick="docsTab('app')">📱 App de Pontos</button>
     </div>
   </div>
-  <div class="task-content">
+
+  <!-- Tab CRM (documentos existentes) -->
+  <div id="docs-panel-crm" class="task-content">
     <div class="tw"><table><thead><tr><th>Documento</th><th>Tipo</th><th>Cliente/Entidade</th><th>Validade</th><th>Estado</th><th>Acção</th></tr></thead>
     <tbody>
       <tr><td><strong style="cursor:pointer;color:var(--y)" data-action="alertMsg" data-msg="Documento: Contrato Hotel Serra da Lua 2025">Contrato Hotel Serra da Lua 2025</strong></td><td><span class="b bb">Contrato</span></td><td>Hotel Serra da Lua</td><td>31 Dez 2025</td><td><span class="b bg">Assinado</span></td><td><button class="tbtn" style="font-size:12px;padding:3px 8px" data-action="alertMsg" data-msg="Download: documento guardado localmente.">📥</button></td></tr>
@@ -6370,6 +6378,20 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
       <tr><td><strong>Seguro Responsabilidade Civil</strong></td><td><span class="b bm">Seguro</span></td><td>Fidelidade</td><td>15 Mar 2026</td><td><span class="b bg">Válido</span></td><td><button class="tbtn" style="font-size:12px;padding:3px 8px" data-action="alertMsg" data-msg="Download: documento guardado localmente.">📥</button></td></tr>
       <tr><td><strong>Manual Identidade OB</strong></td><td><span class="b ba">Design</span></td><td>Interno</td><td>—</td><td><span class="b bg">Actualizado</span></td><td><button class="tbtn" style="font-size:12px;padding:3px 8px" data-action="alertMsg" data-msg="Download: documento guardado localmente.">📥</button></td></tr>
     </tbody></table></div>
+  </div>
+
+  <!-- Tab App de Pontos -->
+  <div id="docs-panel-app" style="display:none" class="task-content">
+    <div id="docs-app-status" style="padding:12px 0;font-size:13px;color:var(--muted)">Clique em "📱 App" para sincronizar documentos do app de pontos.</div>
+    <div class="tw" id="docs-app-wrap" style="display:none">
+      <table>
+        <thead><tr>
+          <th>Documento</th><th>Tipo</th><th>Funcionário / Viatura</th>
+          <th>Validade</th><th>Data upload</th><th>Ação</th>
+        </tr></thead>
+        <tbody id="docs-app-tbody"></tbody>
+      </table>
+    </div>
   </div>
 </div>
 
@@ -9182,7 +9204,7 @@ window.goPage=function goPage(id){
   if(id==='admin-agenda')        { try{ agendaRender(); }catch(e){} }
   if(id==='admin-despesas')      { try{ renderDespesas(); }catch(e){} }
   if(id==='admin-rh')            { try{ rhRender(); }catch(e){} }
-  if(id==='admin-docs')          { /* static content - no render needed */ }
+  if(id==='admin-docs')          { docsTab('crm'); }
   if(id==='dashboard')           { try{ renderDashLeads(); setTimeout(initCharts,50); }catch(e){} }
   if(id==='financeiro')          { try{ renderFinanceiro(); setTimeout(initCharts,50); }catch(e){} }
   if(id==='relatorios')          { try{ renderRelatorios(); setTimeout(initCharts,50); }catch(e){} }
@@ -15092,6 +15114,74 @@ window.adminDocsHandleFiles = function(inputEl) {
   if (nomes.length) alert('Carregado(s): ' + nomes.length + NL + nomes.join(NL));
   inputEl.value = '';
 };
+
+// ── Documentos — tabs ─────────────────────────────────────────
+function docsTab(tab){
+  document.getElementById('docs-panel-crm').style.display = tab==='crm' ? '' : 'none';
+  document.getElementById('docs-panel-app').style.display = tab==='app' ? '' : 'none';
+  document.querySelectorAll('#page-admin-docs .vt').forEach((b,i)=>{
+    b.classList.toggle('on', (i===0&&tab==='crm')||(i===1&&tab==='app'));
+  });
+  if(tab==='app' && !document.getElementById('docs-app-tbody').children.length) docsLoadApp();
+}
+
+async function docsLoadApp(){
+  const btn = document.getElementById('docs-app-sync-btn');
+  const status = document.getElementById('docs-app-status');
+  const wrap = document.getElementById('docs-app-wrap');
+  const tbody = document.getElementById('docs-app-tbody');
+  if(btn) btn.textContent='⏳ A carregar...';
+  if(status) status.style.display='block';
+  if(status) status.textContent='A sincronizar com o app de pontos...';
+  try {
+    const res = await fetch('https://xtiguuyvotnpwqzmggnc.supabase.co/functions/v1/crm-documents',{
+      headers:{'apikey':EC_SB_KEY,'x-api-key':'ob-crm-2026-secure'}
+    });
+    if(!res.ok){ const t=await res.text(); throw new Error(t); }
+    const docs = await res.json();
+    if(!docs.length){
+      if(status) status.textContent='Nenhum documento encontrado no app de pontos.';
+      if(wrap) wrap.style.display='none';
+      if(btn) btn.textContent='📱 App (0)';
+      return;
+    }
+    const EC_SB_STORAGE = 'https://xtiguuyvotnpwqzmggnc.supabase.co/storage/v1/object/public/';
+    const docTypeColor = {cc:'#8b5cf6',passport:'#8b5cf6',nif:'#3b82f6',iban:'#3b82f6',contract:'#f97316',certificate:'#10b981',license:'#f59e0b',vehicle_insurance:'#ec4899',vehicle_registration:'#ec4899',other:'#6b7280'};
+    tbody.innerHTML = docs.map(d=>{
+      const col = docTypeColor[d.doc_type] || '#6b7280';
+      const label = d.label || d.doc_type || '—';
+      const entity = d.entity_name || '—';
+      const source = d.source==='employee' ? '👤 Funcionário' : '🚗 Viatura';
+      const validade = d.expires_on ? d.expires_on.split('T')[0] : '—';
+      const uploaded = d.created_at ? d.created_at.split('T')[0] : '—';
+      const expired = d.expires_on && new Date(d.expires_on) < new Date();
+      const estadoBadge = !d.expires_on ? `<span class="b" style="background:#6b728020;color:#6b7280;border-color:#6b728040">Sem validade</span>`
+        : expired ? `<span class="b br">Expirado</span>`
+        : `<span class="b bg">Válido</span>`;
+      const storageUrl = d.storage_path ? EC_SB_STORAGE + d.storage_path : null;
+      const dlBtn = storageUrl
+        ? `<a href="${storageUrl}" target="_blank" class="tbtn" style="font-size:12px;padding:3px 8px;text-decoration:none">📥</a>`
+        : `<button class="tbtn" style="font-size:12px;padding:3px 8px;color:var(--muted)" disabled>📥</button>`;
+      return `<tr>
+        <td><strong>${label}</strong><div style="font-size:11px;color:var(--muted)">${source}</div></td>
+        <td><span class="b" style="background:${col}20;color:${col};border:1px solid ${col}40;border-radius:4px;padding:2px 7px;font-size:11px">${d.doc_type||'—'}</span></td>
+        <td>${entity}</td>
+        <td style="${expired?'color:var(--r)':''}">${validade}</td>
+        <td style="font-size:12px;color:var(--muted)">${uploaded}</td>
+        <td>${dlBtn}</td>
+      </tr>`;
+    }).join('');
+    if(status) status.style.display='none';
+    if(wrap) wrap.style.display='';
+    if(btn) btn.textContent='📱 App ('+docs.length+')';
+    // mudar para tab app se não estiver lá
+    docsTab('app');
+  } catch(e){
+    if(status){ status.textContent='❌ Erro: '+e.message; status.style.display='block'; }
+    if(btn) btn.textContent='📱 App ❌';
+    console.error('docsLoadApp:', e);
+  }
+}
 
 // adminDocsUpload: apenas activa o input file da página (fallback se onclick directo não funcionar)
 window.adminDocsUpload = function(){
