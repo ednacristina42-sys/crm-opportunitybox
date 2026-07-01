@@ -1039,13 +1039,33 @@ function avAbrirDetalheMensal(){
 
 // Agrega as faturas FT reais do tocoFaturasCache() por ano/mês e actualiza
 // AV_ANOS[2026], a tabela "Dados TocOnline", os KPIs e o gráfico de evolução mensal.
+// GUARD: só actualiza os meses de 2026 se realmente houver faturas em cache —
+// caso contrário mantém os valores estáticos do array AV_ANOS para não apagar
+// os dados históricos inseridos manualmente.
 function avTocoIntegrar(){
   var docs = (typeof tocoFaturasCache==='function') ? tocoFaturasCache() : [];
-  var faturas = docs.filter(function(d){ return (d._tipo||d.DocumentType)==='FT'; });
-  var porMes2026 = {};
-  faturas.forEach(function(f){
+  // Incluir também docs do _tocoFatCache (sincronizados via Edge Function)
+  var allDocs = docs.concat((_tocoFatCache||[]).filter(function(d){
+    return !docs.find(function(x){ return (x.Id||x.Number)===(d.Id||d.Number); });
+  }));
+  var faturas = allDocs.filter(function(d){ return (d._tipo||d.DocumentType)==='FT'; });
+  var fat2026 = faturas.filter(function(f){
     var dt = new Date(f.Date||f.DocumentDate||f.CreatedAt||'');
-    if(isNaN(dt.getTime()) || dt.getFullYear()!==2026) return;
+    return !isNaN(dt.getTime()) && dt.getFullYear()===2026;
+  });
+
+  console.log('AV: Faturas 2026 em cache:', fat2026.length, '/ total docs:', allDocs.length);
+
+  // Se não há nenhuma fatura real em cache, não apaga os valores estáticos
+  if(!fat2026.length){
+    avRenderTocoTable({});
+    avAtualizarKPIs();
+    return;
+  }
+
+  var porMes2026 = {};
+  fat2026.forEach(function(f){
+    var dt = new Date(f.Date||f.DocumentDate||f.CreatedAt||'');
     var m = dt.getMonth();
     if(!porMes2026[m]) porMes2026[m] = {total:0, n:0, clientes:{}};
     var valor = parseFloat(f.TotalAmount||f.Total||f.Amount||0)||0;
@@ -1055,10 +1075,6 @@ function avTocoIntegrar(){
     porMes2026[m].clientes[cli] = true;
   });
   _avTocoPorMes2026 = porMes2026;
-  console.log('AV: Faturas 2026 encontradas:', faturas.filter(function(f){
-    var dt = new Date(f.Date||f.DocumentDate||f.CreatedAt||'');
-    return !isNaN(dt.getTime()) && dt.getFullYear()===2026;
-  }).length, 'de', docs.length, 'documentos em cache');
 
   var av2026 = AV_ANOS.filter(function(a){return a.ano===2026;})[0];
   if(av2026){
@@ -1068,9 +1084,9 @@ function avTocoIntegrar(){
       if(porMes2026[m] && porMes2026[m].n>0){
         av2026.meses[m] = Math.round(porMes2026[m].total*100)/100;
       } else if(m <= mesAtualIdx){
-        av2026.meses[m] = 0; // mês já decorrido sem faturas emitidas
+        av2026.meses[m] = null; // sem dados para este mês (não sabemos se é 0 real)
       } else {
-        av2026.meses[m] = null; // mês futuro · ainda não chegou
+        av2026.meses[m] = null;
       }
     }
   }
@@ -1210,11 +1226,11 @@ async function afLoad(){
       afSet('af-kpi-vencido', afFmt(vencido));
       afSet('af-kpi-vencido-sub', nVencido + ' fatura'+(nVencido===1?'':'s')+' em atraso');
     } else {
-      afSet('af-kpi-faturado', '↻ Sync');
-      afSet('af-kpi-faturado-sub', 'clique em Sync TocOnline');
-      afSet('af-kpi-receber', '↻ Sync');
+      afSet('af-kpi-faturado', '—');
+      afSet('af-kpi-faturado-sub', 'use ↻ Sync TocOnline');
+      afSet('af-kpi-receber', '—');
       afSet('af-kpi-receber-sub', 'aguarda sincronização');
-      afSet('af-kpi-vencido', '↻ Sync');
+      afSet('af-kpi-vencido', '—');
       afSet('af-kpi-vencido-sub', 'aguarda sincronização');
     }
   } catch(e){ console.warn('[AF] TOConline cache:', e); }
