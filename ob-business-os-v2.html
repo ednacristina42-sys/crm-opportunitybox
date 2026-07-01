@@ -5439,26 +5439,25 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
     <button class="sl-item" onclick="homeFilterTasks('Chão da Fábrica')"><div class="sl-dot" style="background:#3b82f6"></div>📋 Tarefas ClickUp — Fábrica</button>
   </div>
 
-  <!-- Gestão Administrativa -->
-  <button class="space-item" id="si-admin-dept" data-action="toggleSpace" data-space="admin-dept">
-    <div class="space-icon" style="background:var(--da)">D</div>
-    <span class="space-name">Gestão Administrativa</span>
-    <span class="space-chevron">›</span>
-  </button>
-  <div class="space-lists" id="sl-admin-dept">
-    <button class="sl-item" data-action="goPage" data-page="admin-agenda"><div class="sl-dot" style="background:var(--y)"></div>Agenda</button>
-    <button class="sl-item" data-action="goPage" data-page="admin-docs"><div class="sl-dot" style="background:#4d94db"></div>Documentos</button>
-    <button class="sl-item" data-action="goPage" data-page="admin-despesas"><div class="sl-dot" style="background:#d9822b"></div>Despesas</button>
-    <button class="sl-item" onclick="goFaturasAdmin()"><div class="sl-dot" style="background:#3fcf8e"></div>🧾 Faturas</button>
-    <button class="sl-item" data-action="goPage" data-page="admin-rh"><div class="sl-dot" style="background:#ec4899"></div>👥 Recursos Humanos</button>
-    <button class="sl-item" onclick="homeFilterTasks('Gestão Administrativa')"><div class="sl-dot" style="background:#8b5cf6"></div>📋 Tarefas ClickUp — Admin</button>
-  </div>
-
   <!-- ADMIN ONLY section -->
   <div class="sb-admin" id="admin-nav" style="display:none">
     <div class="sb-admin-lbl">Gestão — Admin</div>
     <button class="sni" id="ni-dashboard" data-action="goPage" data-page="dashboard"><span class="si">◈</span>Dashboard CFO</button>
     <button class="sni" id="ni-crm" data-action="goPage" data-page="crm"><span class="si">◫</span>CRM Completo</button>
+    <!-- Gestão Administrativa -->
+    <button class="space-item" id="si-admin-dept" data-action="toggleSpace" data-space="admin-dept">
+      <div class="space-icon" style="background:var(--da)">D</div>
+      <span class="space-name">Gestão Administrativa</span>
+      <span class="space-chevron">›</span>
+    </button>
+    <div class="space-lists" id="sl-admin-dept">
+      <button class="sl-item" data-action="goPage" data-page="admin-agenda"><div class="sl-dot" style="background:var(--y)"></div>Agenda</button>
+      <button class="sl-item" data-action="goPage" data-page="admin-docs"><div class="sl-dot" style="background:#4d94db"></div>Documentos</button>
+      <button class="sl-item" data-action="goPage" data-page="admin-despesas"><div class="sl-dot" style="background:#d9822b"></div>Despesas</button>
+      <button class="sl-item" onclick="goFaturasAdmin()"><div class="sl-dot" style="background:#3fcf8e"></div>🧾 Faturas</button>
+      <button class="sl-item" data-action="goPage" data-page="admin-rh"><div class="sl-dot" style="background:#ec4899"></div>👥 Recursos Humanos</button>
+      <button class="sl-item" onclick="homeFilterTasks('Gestão Administrativa')"><div class="sl-dot" style="background:#8b5cf6"></div>📋 Tarefas ClickUp — Admin</button>
+    </div>
     <button class="sni" id="ni-financeiro" data-action="goPage" data-page="financeiro"><span class="si">💰</span>Financeiro</button>
     <button class="sni" id="ni-tesouraria" data-action="goPage" data-page="tesouraria"><span class="si">🏦</span>Tesouraria</button>
     <button class="sni" id="ni-stock" data-action="goPage" data-page="stock"><span class="si">📦</span>Stock</button>
