@@ -6426,9 +6426,25 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
       <label class="form-label">Notas</label>
       <textarea id="cdm-notas" class="form-input" rows="3" style="resize:vertical"></textarea>
     </div>
-    <div id="cdm-file-row" style="display:flex;align-items:center;gap:10px;margin-top:4px">
-      <a id="cdm-file-link" href="#" target="_blank" class="tbtn" style="font-size:13px;text-decoration:none;display:none">📥 Abrir ficheiro</a>
-      <span id="cdm-file-name" style="font-size:12px;color:var(--muted)"></span>
+    <div class="form-group">
+      <label class="form-label">Ficheiro</label>
+      <div id="cdm-dropzone" onclick="document.getElementById('cdm-file-input').click()"
+        style="border:2px dashed var(--border);border-radius:8px;padding:18px;text-align:center;cursor:pointer;transition:border-color .2s"
+        onmouseover="this.style.borderColor='var(--y)'" onmouseout="this.style.borderColor='var(--border)'"
+        ondragover="event.preventDefault();this.style.borderColor='var(--y)'"
+        ondragleave="this.style.borderColor='var(--border)'"
+        ondrop="event.preventDefault();crmDocHandleDrop(event)">
+        <div style="font-size:22px;margin-bottom:6px">📎</div>
+        <div style="font-size:13px;color:var(--txt2)">Clique ou arraste um ficheiro aqui</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:4px">PDF, Word, imagens, ZIP…</div>
+      </div>
+      <input type="file" id="cdm-file-input" style="display:none" onchange="crmDocHandleFile(this.files[0])">
+      <div id="cdm-file-chosen" style="display:none;margin-top:8px;display:flex;align-items:center;gap:8px">
+        <span id="cdm-file-icon" style="font-size:18px">📄</span>
+        <span id="cdm-file-name" style="font-size:13px;color:var(--txt2);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
+        <a id="cdm-file-link" href="#" target="_blank" class="tbtn" style="font-size:12px;padding:3px 8px;text-decoration:none;display:none">Abrir</a>
+        <button class="tbtn" style="font-size:12px;padding:3px 8px;color:var(--r)" onclick="crmDocClearFile()">✕</button>
+      </div>
     </div>
     <div class="crm-modal-btns" style="margin-top:18px">
       <button class="tbtn" onclick="crmDocDelete()" style="color:var(--r)">🗑️ Eliminar</button>
@@ -15204,6 +15220,49 @@ function crmDocsRender(){
   </tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
+var CDM_FILE_OBJ = null; // File object pendente de upload
+
+function crmDocHandleFile(file){
+  if(!file) return;
+  CDM_FILE_OBJ = file;
+  const ext = file.name.split('.').pop().toLowerCase();
+  const icons = {pdf:'📕',doc:'📘',docx:'📘',xls:'📗',xlsx:'📗',png:'🖼️',jpg:'🖼️',jpeg:'🖼️',zip:'🗜️',rar:'🗜️'};
+  document.getElementById('cdm-file-icon').textContent = icons[ext]||'📄';
+  document.getElementById('cdm-file-name').textContent = file.name;
+  document.getElementById('cdm-file-link').style.display = 'none';
+  const chosen = document.getElementById('cdm-file-chosen');
+  chosen.style.display = 'flex';
+  document.getElementById('cdm-dropzone').style.display = 'none';
+}
+
+function crmDocHandleDrop(e){
+  const file = e.dataTransfer.files[0];
+  if(file) crmDocHandleFile(file);
+}
+
+function crmDocClearFile(){
+  CDM_FILE_OBJ = null;
+  document.getElementById('cdm-file-input').value='';
+  document.getElementById('cdm-file-chosen').style.display='none';
+  document.getElementById('cdm-dropzone').style.display='';
+}
+
+function crmDocShowFile(url, name){
+  document.getElementById('cdm-dropzone').style.display='none';
+  document.getElementById('cdm-file-name').textContent = name||'ficheiro';
+  document.getElementById('cdm-file-icon').textContent = '📄';
+  const link = document.getElementById('cdm-file-link');
+  link.href = url; link.style.display = '';
+  document.getElementById('cdm-file-chosen').style.display = 'flex';
+}
+
+function crmDocResetFile(){
+  CDM_FILE_OBJ = null;
+  document.getElementById('cdm-file-input').value='';
+  document.getElementById('cdm-file-chosen').style.display='none';
+  document.getElementById('cdm-dropzone').style.display='';
+}
+
 function crmDocOpen(id){
   const d = CRM_DOCS.find(x=>x.id===id); if(!d) return;
   CRM_DOC_EDIT_ID = id;
@@ -15214,10 +15273,8 @@ function crmDocOpen(id){
   document.getElementById('cdm-entidade').value = d.entidade||'';
   document.getElementById('cdm-validade').value = d.validade||'';
   document.getElementById('cdm-notas').value = d.notas||'';
-  const link = document.getElementById('cdm-file-link');
-  const fname = document.getElementById('cdm-file-name');
-  if(d.file_url){ link.href=d.file_url; link.style.display=''; fname.textContent=''; }
-  else { link.style.display='none'; fname.textContent='Sem ficheiro anexo'; }
+  if(d.file_url) crmDocShowFile(d.file_url, d.file_name||'Ficheiro');
+  else crmDocResetFile();
   document.getElementById('crm-doc-modal').style.display='flex';
 }
 
@@ -15230,26 +15287,29 @@ function crmDocOpenNew(){
   document.getElementById('cdm-entidade').value='';
   document.getElementById('cdm-validade').value='';
   document.getElementById('cdm-notas').value='';
-  document.getElementById('cdm-file-link').style.display='none';
-  document.getElementById('cdm-file-name').textContent='';
+  crmDocResetFile();
   document.getElementById('crm-doc-modal').style.display='flex';
 }
 
 function crmDocClose(){
   document.getElementById('crm-doc-modal').style.display='none';
   CRM_DOC_EDIT_ID = null;
+  CDM_FILE_OBJ = null;
 }
 
 function crmDocSave(){
   const nome = document.getElementById('cdm-nome').value.trim();
   if(!nome){ alert('Insira o nome do documento.'); return; }
+  const existing = CRM_DOC_EDIT_ID ? (CRM_DOCS.find(x=>x.id===CRM_DOC_EDIT_ID)||{}) : {};
+  const file_url = CDM_FILE_OBJ ? URL.createObjectURL(CDM_FILE_OBJ) : (existing.file_url||null);
+  const file_name = CDM_FILE_OBJ ? CDM_FILE_OBJ.name : (existing.file_name||null);
   const data = {
     nome, tipo: document.getElementById('cdm-tipo').value,
     estado: document.getElementById('cdm-estado').value,
     entidade: document.getElementById('cdm-entidade').value.trim(),
     validade: document.getElementById('cdm-validade').value,
     notas: document.getElementById('cdm-notas').value.trim(),
-    file_url: CRM_DOC_EDIT_ID ? (CRM_DOCS.find(x=>x.id===CRM_DOC_EDIT_ID)||{}).file_url||null : null
+    file_url, file_name
   };
   if(CRM_DOC_EDIT_ID){
     const idx = CRM_DOCS.findIndex(x=>x.id===CRM_DOC_EDIT_ID);
