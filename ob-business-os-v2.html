@@ -6379,7 +6379,8 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
     <div class="form-row">
       <div class="form-group">
         <label class="form-label">Colaborador</label>
-        <input id="dm-colab" class="form-input" placeholder="Nome do colaborador">
+        <input id="dm-colab" class="form-input" placeholder="Nome do colaborador" list="dm-colab-list" autocomplete="off">
+        <datalist id="dm-colab-list"></datalist>
       </div>
       <div class="form-group">
         <label class="form-label">Data</label>
@@ -6533,7 +6534,6 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
     <div class="view-tabs">
       <button class="vt on" onclick="despTab('crm')">💳 CRM</button>
       <button class="vt" onclick="despTab('app')">📱 App de Pontos</button>
-      <button class="vt" onclick="despTab('horas')">⏱️ Pica-ponto</button>
     </div>
   </div>
 
@@ -6561,36 +6561,6 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
       <div class="tw"><table><thead><tr><th>Data</th><th>Colaborador</th><th>Categoria</th><th>Referência</th><th>Valor</th><th>Recibo</th><th>Estado</th></tr></thead><tbody id="desp-app-tbody"></tbody></table></div>
     </div>
   </div>
-
-  <!-- ── PAINEL PICA-PONTO ─────────────────── -->
-  <div id="desp-panel-horas" style="display:none;flex:1;min-height:0;overflow-y:auto;padding:16px 24px">
-
-    <!-- Controlos -->
-    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:16px">
-      <select id="wd-periodo" onchange="wdLoad()" style="background:var(--bg3);border:1px solid var(--border);color:var(--txt2);border-radius:7px;padding:6px 10px;font-size:14px">
-        <option value="7">Últimos 7 dias</option>
-        <option value="30" selected>Últimos 30 dias</option>
-        <option value="90">Últimos 90 dias</option>
-      </select>
-      <select id="wd-filtro-func" onchange="wdRender()" style="background:var(--bg3);border:1px solid var(--border);color:var(--txt2);border-radius:7px;padding:6px 10px;font-size:14px">
-        <option value="">— Todos os funcionários —</option>
-      </select>
-      <button onclick="wdLoad()" style="background:var(--bg3);border:1px solid var(--border);color:var(--txt2);border-radius:7px;padding:6px 12px;font-size:14px;cursor:pointer">🔄 Sincronizar</button>
-      <span id="wd-status" style="font-size:13px;color:var(--muted)">Clique em Sincronizar para carregar</span>
-    </div>
-
-    <!-- Resumo por funcionário -->
-    <div id="wd-resumo" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px"></div>
-
-    <!-- Tabela de registos -->
-    <div class="tw"><table>
-      <thead><tr>
-        <th>Funcionário</th><th>Data</th><th>Entrada</th><th>Saída</th>
-        <th>Horas</th><th>Km</th><th>Estado</th><th>Ação</th>
-      </tr></thead>
-      <tbody id="wd-tbody"></tbody>
-    </table></div>
-  </div><!-- /desp-panel-horas -->
 
 </div>
 
@@ -7289,8 +7259,8 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
       <button class="vt on" onclick="rhTab('colabs')">👥 Colaboradores</button>
       <button class="vt" onclick="rhTab('admissoes')">✅ Admissões</button>
       <button class="vt" onclick="rhTab('recrutamento')">🔍 Recrutamento</button>
-      <!-- ADD: Fecho de Ordenados -->
       <button class="vt" onclick="rhTab('ordenados')">💶 Ordenados</button>
+      <button class="vt" onclick="rhTab('horas')">⏱️ Pica-ponto</button>
     </div>
   </div>
   <div class="admin-page">
@@ -7359,7 +7329,30 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
       </div>
     </div>
 
-  
+    <!-- Pica-ponto (movido de Despesas) -->
+    <div id="rh-panel-horas" style="display:none;padding:4px 0">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:16px">
+        <select id="wd-periodo" onchange="wdLoad()" style="background:var(--bg3);border:1px solid var(--border);color:var(--txt2);border-radius:7px;padding:6px 10px;font-size:14px">
+          <option value="7">Últimos 7 dias</option>
+          <option value="30" selected>Últimos 30 dias</option>
+          <option value="90">Últimos 90 dias</option>
+        </select>
+        <select id="wd-filtro-func" onchange="wdRender()" style="background:var(--bg3);border:1px solid var(--border);color:var(--txt2);border-radius:7px;padding:6px 10px;font-size:14px">
+          <option value="">— Todos os funcionários —</option>
+        </select>
+        <button onclick="wdLoad()" style="background:var(--bg3);border:1px solid var(--border);color:var(--txt2);border-radius:7px;padding:6px 12px;font-size:14px;cursor:pointer">🔄 Sincronizar</button>
+        <span id="wd-status" style="font-size:13px;color:var(--muted)">Clique em Sincronizar para carregar</span>
+      </div>
+      <div id="wd-resumo" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px"></div>
+      <div class="tw"><table>
+        <thead><tr>
+          <th>Funcionário</th><th>Data</th><th>Entrada</th><th>Saída</th>
+          <th>Horas</th><th>Km</th><th>Estado</th><th>Ação</th>
+        </tr></thead>
+        <tbody id="wd-tbody"></tbody>
+      </table></div>
+    </div>
+
 </div>
 
 <!-- ADD: Mini-modal Registar Falta / Férias -->
@@ -11812,19 +11805,19 @@ var RH_ESTADO_COLORS = {
 
 // ── TABS ──
 function rhTab(tab){
-  // ADD: Fecho de Ordenados — tab adicionada
-  ['colabs','admissoes','recrutamento','ordenados'].forEach(t=>{
+  ['colabs','admissoes','recrutamento','ordenados','horas'].forEach(t=>{
     var p=document.getElementById('rh-panel-'+t);
     if(p) p.style.display=t===tab?'block':'none';
   });
   document.querySelectorAll('#page-admin-rh .vt').forEach((b,i)=>{
-    const tabs=['colabs','admissoes','recrutamento','ordenados'];
+    const tabs=['colabs','admissoes','recrutamento','ordenados','horas'];
     b.classList.toggle('on',tabs[i]===tab);
   });
   if(tab==='colabs') rhRenderColabs();
   if(tab==='admissoes') rhRenderAdms();
   if(tab==='recrutamento') rhRenderRecs();
   if(tab==='ordenados') foInit();
+  if(tab==='horas' && !window._wdLoaded) wdLoad();
 }
 
 function rhRender(){
@@ -14398,8 +14391,15 @@ function renderDespesas(){
   }).join('') || '<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:20px">Sem despesas CRM. Crie a primeira.</td></tr>';
 }
 
+function despFillColabList(){
+  const dl = document.getElementById('dm-colab-list'); if(!dl) return;
+  const names = [...new Set(EC_FUNCIONARIOS.map(f=>f.nome).filter(Boolean))].sort();
+  dl.innerHTML = names.map(n=>`<option value="${n}">`).join('');
+}
+
 function despOpenNew(){
   CRM_DESP_EDIT_ID = null; DM_FILE_OBJ = null;
+  despFillColabList();
   document.getElementById('desp-modal-title').textContent = '+ Nova Despesa';
   document.getElementById('dm-del-btn').style.display = 'none';
   document.getElementById('dm-colab').value='';
@@ -14416,6 +14416,7 @@ function despOpenNew(){
 function despOpenEdit(id){
   const d = CRM_DESPESAS.find(x=>x.id===id); if(!d) return;
   CRM_DESP_EDIT_ID = id; DM_FILE_OBJ = null;
+  despFillColabList();
   document.getElementById('desp-modal-title').textContent = 'Editar Despesa';
   document.getElementById('dm-del-btn').style.display = '';
   document.getElementById('dm-colab').value = d.colab||'';
@@ -14487,13 +14488,11 @@ function despClearFile(){
 }
 
 function despTab(tab){
-  document.getElementById('desp-panel-crm').style.display   = tab==='crm'   ? '' : 'none';
-  document.getElementById('desp-panel-app').style.display   = tab==='app'   ? '' : 'none';
-  document.getElementById('desp-panel-horas').style.display = tab==='horas' ? '' : 'none';
+  document.getElementById('desp-panel-crm').style.display = tab==='crm' ? '' : 'none';
+  document.getElementById('desp-panel-app').style.display = tab==='app' ? '' : 'none';
   document.querySelectorAll('#page-admin-despesas .vt').forEach((b,i)=>{
-    b.classList.toggle('on', (i===0&&tab==='crm')||(i===1&&tab==='app')||(i===2&&tab==='horas'));
+    b.classList.toggle('on', (i===0&&tab==='crm')||(i===1&&tab==='app'));
   });
-  if(tab==='app' && !document.getElementById('desp-app-wrap').style.display==='') despSyncApp();
 }
 
 async function despSyncApp(){
