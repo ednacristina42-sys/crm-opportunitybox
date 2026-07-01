@@ -1090,35 +1090,48 @@ var AV_TOCO_EF_KEY = 'ob-crm-2026-secure';
 async function avSyncTocOnlineViaEF(){
   var tsEl = document.getElementById('av-sb-ts');
   if(tsEl) tsEl.textContent = '⏳ A sincronizar TocOnline...';
-  var tipos = [
-    { tipo:'FT', resource:'invoices', filter:'document_type=FT' },
-    { tipo:'NC', resource:'invoices', filter:'document_type=NC' },
-    { tipo:'RC', resource:'receipts', filter:'' },
-  ];
-  var todos = [];
-  for(var t=0; t<tipos.length; t++){
-    try{
-      var url = AV_TOCO_EF_URL + '?resource=' + tipos[t].resource + (tipos[t].filter ? '&' + tipos[t].filter : '');
-      var resp = await fetch(url, {headers:{'x-api-key': AV_TOCO_EF_KEY}});
-      if(!resp.ok) continue;
-      var json = await resp.json();
-      var brutos = Array.isArray(json) ? json : (json && Array.isArray(json.data) ? json.data : []);
-      brutos.forEach(function(item){
-        var a = item.attributes || item;
-        todos.push({
-          _tipo: tipos[t].tipo,
-          Id: item.id || a.id,
-          Number: a.document_no || a.number || a.Number || item.id,
-          CustomerName: a.customer_business_name || a.entity_name || a.CustomerName,
-          CustomerTaxNumber: a.customer_tax_registration_number || a.CustomerTaxNumber,
-          Date: a.date || a.Date,
-          DueDate: a.due_date || a.DueDate,
-          TotalAmount: a.gross_total != null ? a.gross_total : (a.net_total != null ? a.net_total : (a.amount || a.TotalAmount || 0)),
-          Status: a.status || a.Status,
-        });
-      });
-    }catch(e){ console.warn('[AV EF] Erro tipo', tipos[t].tipo, e); }
+
+  // Chama a Edge Function para obter token + invoices
+  var resp = await fetch(AV_TOCO_EF_URL + '?resource=invoices', {headers:{'x-api-key': AV_TOCO_EF_KEY}});
+  if(!resp.ok){
+    var errTxt = await resp.text();
+    console.warn('[AV EF] Invoices HTTP', resp.status, errTxt);
+    // Mostrar o que a API devolveu para debug
+    if(tsEl) tsEl.textContent = '⚠️ TocOnline API: ' + resp.status + ' — ver consola';
+    throw new Error('TOConline EF HTTP ' + resp.status + ': ' + errTxt.slice(0,200));
   }
+
+  var payload = await resp.json();
+  console.log('[AV EF] TOConline payload:', payload);
+
+  // Normalizar para o formato interno { _tipo, Id, Number, CustomerName, Date, DueDate, TotalAmount, Status }
+  var normalizar = function(item, tipo){
+    var a = item.attributes || item;
+    // Suporta JSON:API (attributes) e flat JSON
+    return {
+      _tipo: tipo,
+      Id: item.id || a.id || a.Id,
+      Number: a.document_no || a.number || a.Number || item.id,
+      CustomerName: a.customer_business_name || a.entity_name || a.CustomerName || a.name || a.client_name,
+      CustomerTaxNumber: a.customer_tax_registration_number || a.nif || a.CustomerTaxNumber,
+      Date: a.date || a.Date || a.invoice_date || a.created_at,
+      DueDate: a.due_date || a.DueDate || a.payment_due_date,
+      TotalAmount: parseFloat(a.gross_total ?? a.total_amount ?? a.TotalAmount ?? a.amount ?? a.net_total ?? 0) || 0,
+      Status: a.status || a.Status || a.payment_status || 'open',
+    };
+  };
+
+  var todos = [];
+  // Payload pode ser array direto, { data: [...] }, { invoices: [...] }, { items: [...] }
+  var brutos = Array.isArray(payload) ? payload
+    : (payload.data && Array.isArray(payload.data)) ? payload.data
+    : (payload.invoices && Array.isArray(payload.invoices)) ? payload.invoices
+    : (payload.items && Array.isArray(payload.items)) ? payload.items
+    : [];
+
+  brutos.forEach(function(item){ todos.push(normalizar(item, 'FT')); });
+  console.log('[AV EF] Documentos normalizados:', todos.length);
+
   if(todos.length){
     var chave = function(d){ return (d._tipo||'') + '-' + (d.Id||d.Number||''); };
     var mapa = {};
@@ -1127,9 +1140,11 @@ async function avSyncTocOnlineViaEF(){
     var merged = Object.keys(mapa).map(function(k){ return mapa[k]; });
     _tocoFatCache = merged;
     try{ localStorage.setItem(TOCO_FAT_KEY, JSON.stringify({ts: Date.now(), data: merged})); }catch(e){}
-    if(tsEl) tsEl.textContent = '✅ Synced · ' + merged.length + ' docs';
+    if(tsEl) tsEl.textContent = '✅ TocOnline · ' + merged.length + ' docs';
   } else {
-    if(tsEl) tsEl.textContent = '⚠️ Sem dados do TocOnline';
+    // Payload veio mas sem itens reconhecidos — mostrar estrutura para diagnóstico
+    if(tsEl) tsEl.textContent = '⚠️ TocOnline: 0 faturas (ver consola)';
+    console.warn('[AV EF] Estrutura inesperada do TOConline:', JSON.stringify(payload).slice(0,500));
   }
   avTocoIntegrar();
 }
@@ -1175,39 +1190,62 @@ async function afLoad(){
       var faturadoMes = 0, nFaturadoMes = 0, aReceber = 0, nReceber = 0, vencido = 0, nVencido = 0;
       var hoje = new Date(); hoje.setHours(0,0,0,0);
       faturas.forEach(function(f){
-        if(f._tipo === 'RC') return; // recibos não contam como faturação
+        if(f._tipo === 'RC') return;
         var dtDoc = f.Date ? new Date(f.Date) : null;
         var total = parseFloat(f.TotalAmount)||0;
         var status = (f.Status||'').toLowerCase();
-        // Faturado mês atual (FT emitidas neste mês)
         if(f._tipo === 'FT' && dtDoc && dtDoc >= inicioMes && dtDoc <= fimMes){
           faturadoMes += total; nFaturadoMes++;
         }
-        // A receber (aberto)
-        if(f._tipo === 'FT' && (status==='sent'||status==='open'||status==='pending'||status==='overdue')){
+        if(f._tipo === 'FT' && (status==='sent'||status==='open'||status==='pending'||status==='overdue'||!status)){
           aReceber += total; nReceber++;
-          // Vencido
           var dtDue = f.DueDate ? new Date(f.DueDate) : null;
           if(dtDue && dtDue < hoje){ vencido += total; nVencido++; }
         }
       });
-      afSet('af-kpi-faturado', faturadoMes > 0 ? afFmt(faturadoMes) : '—');
-      afSet('af-kpi-faturado-sub', nFaturadoMes + ' faturas emitidas');
-      afSet('af-kpi-receber', aReceber > 0 ? afFmt(aReceber) : '—');
+      afSet('af-kpi-faturado', afFmt(faturadoMes));
+      afSet('af-kpi-faturado-sub', nFaturadoMes + ' faturas · ' + nomeMes);
+      afSet('af-kpi-receber', afFmt(aReceber));
       afSet('af-kpi-receber-sub', nReceber + ' faturas em aberto');
-      afSet('af-kpi-vencido', vencido > 0 ? afFmt(vencido) : '—');
+      afSet('af-kpi-vencido', afFmt(vencido));
       afSet('af-kpi-vencido-sub', nVencido + ' fatura'+(nVencido===1?'':'s')+' em atraso');
+    } else {
+      afSet('af-kpi-faturado', '↻ Sync');
+      afSet('af-kpi-faturado-sub', 'clique em Sync TocOnline');
+      afSet('af-kpi-receber', '↻ Sync');
+      afSet('af-kpi-receber-sub', 'aguarda sincronização');
+      afSet('af-kpi-vencido', '↻ Sync');
+      afSet('af-kpi-vencido-sub', 'aguarda sincronização');
     }
   } catch(e){ console.warn('[AF] TOConline cache:', e); }
 
-  // ── 2. A Pagar + Despesas p/ aprovar (dados locais) ─────────
+  // ── 2. A Pagar + Despesas p/ aprovar (Supabase CRM expenses) ──
   try {
-    var despesas = JSON.parse(localStorage.getItem('ob-fin-despesas') || '[]');
     var totalPagar = 0, nPagar = 0, nDespAprovar = 0;
-    despesas.forEach(function(d){
-      if(d.estado === 'Pendente'){ totalPagar += parseFloat(d.valor)||0; nPagar++; nDespAprovar++; }
-    });
-    afSet('af-kpi-pagar', nPagar > 0 ? afFmt(totalPagar) : '—');
+    // Primeiro tenta Supabase CRM (tabela expenses)
+    var sb = (typeof crmSBClient==='function') ? crmSBClient() : null;
+    if(sb){
+      var expRes = await sb.from('expenses').select('valor,estado').in('estado',['pending','Pendente']);
+      if(!expRes.error && expRes.data){
+        expRes.data.forEach(function(d){
+          totalPagar += parseFloat(d.valor)||0; nPagar++; nDespAprovar++;
+        });
+      }
+    }
+    // Fallback: despesas em memória já carregadas
+    if(nPagar === 0 && CRM_DESPESAS && CRM_DESPESAS.length){
+      CRM_DESPESAS.forEach(function(d){
+        if(d.estado==='pending'||d.estado==='Pendente'){ totalPagar+=parseFloat(d.valor)||0; nPagar++; nDespAprovar++; }
+      });
+    }
+    // Fallback localStorage (Tesouraria)
+    if(nPagar === 0){
+      var despLoc = JSON.parse(localStorage.getItem('ob-fin-despesas') || '[]');
+      despLoc.forEach(function(d){
+        if(d.estado==='Pendente'){ totalPagar+=parseFloat(d.valor)||0; nPagar++; nDespAprovar++; }
+      });
+    }
+    afSet('af-kpi-pagar', nPagar > 0 ? afFmt(totalPagar) : '€0');
     afSet('af-kpi-pagar-sub', nDespAprovar + ' despesa'+(nDespAprovar===1?'':'s')+' pendente'+(nDespAprovar===1?'':'s'));
     afSet('af-kpi-desp-aprovar', String(nDespAprovar));
   } catch(e){ console.warn('[AF] Despesas:', e); }
