@@ -9336,7 +9336,7 @@ window.goPage=function goPage(id){
   if(id==='fabrica-producao')    { try{ fpView('board'); }catch(e){} }
   if(id==='fabrica-instalacoes') { try{ instRender(); }catch(e){} }
   if(id==='admin-agenda')        { try{ agendaRender(); }catch(e){} }
-  if(id==='admin-despesas')      { try{ renderDespesas(); despTab('crm'); }catch(e){} }
+  if(id==='admin-despesas')      { try{ renderDespesas(); despTab('crm'); if(!EC_DESPESAS_APP.length) despSyncApp().then(()=>renderDespesas()); }catch(e){} }
   if(id==='admin-rh')            { try{ rhRender(); }catch(e){} }
   if(id==='admin-docs')          { crmDocsRender(); docsTab('crm'); }
   if(id==='dashboard')           { try{ renderDashLeads(); setTimeout(initCharts,50); }catch(e){} }
@@ -14353,13 +14353,26 @@ function renderDespesas(){
   const el = document.getElementById('desp-tbody'); if(!el) return;
   const now = new Date(); const mes = now.getMonth(); const ano = now.getFullYear();
   let totalMes=0,cntMes=0,totalPend=0,cntPend=0,totalReimb=0,totalAprov=0;
+
+  // CRM local
   CRM_DESPESAS.forEach(d=>{
-    const dt = d.data ? new Date(d.data) : null;
+    const dt = d.data ? new Date(d.data+'T12:00:00') : null;
     if(dt && dt.getMonth()===mes && dt.getFullYear()===ano){ totalMes+=d.valor||0; cntMes++; }
     if(d.estado==='pending'){ totalPend+=d.valor||0; cntPend++; }
     if(d.estado==='reimbursed') totalReimb+=d.valor||0;
     if(d.estado==='approved') totalAprov+=d.valor||0;
   });
+
+  // App de Pontos (adiciona aos totais)
+  EC_DESPESAS_APP.forEach(d=>{
+    const v = parseFloat(d.amount_eur)||0;
+    const dt = d.occurred_at ? new Date(d.occurred_at) : null;
+    if(dt && dt.getMonth()===mes && dt.getFullYear()===ano){ totalMes+=v; cntMes++; }
+    if(d.status==='pending'||d.status==='submitted'){ totalPend+=v; cntPend++; }
+    if(d.status==='reimbursed') totalReimb+=v;
+    if(d.status==='approved') totalAprov+=v;
+  });
+
   const fmt = v=>'€'+(v%1===0?v:v.toFixed(2));
   document.getElementById('desp-stat-mes').textContent=fmt(totalMes);
   document.getElementById('desp-stat-mes-n').textContent=cntMes+' despesa'+(cntMes!==1?'s':'');
@@ -14554,7 +14567,7 @@ async function despSyncApp(){
     if(wrap) wrap.style.display='';
     if(status) status.style.display='none';
     if(btn) btn.textContent='📱 App ('+EC_DESPESAS_APP.length+')';
-    despTab('app');
+    renderDespesas(); // atualiza stats no tab CRM com dados do app
   } catch(e){
     if(status){ status.textContent='❌ Erro: '+e.message; status.style.display='block'; }
     if(btn) btn.textContent='📱 App ❌';
