@@ -1448,69 +1448,138 @@ function avParseNumPT(s){
 }
 
 async function avFetchVendSheetCSV(){
-  // Tenta fetch direto (funciona se a folha for pública / link partilhado);
-  // se falhar por CORS/403 tenta via proxy allorigins.win.
-  var urls = [
-    AV_VEND_SHEET_URL,
+  // Proxy list — Google bloqueia CORS direto do browser para export CSV
+  var proxyUrls = [
     'https://api.allorigins.win/raw?url=' + encodeURIComponent(AV_VEND_SHEET_URL),
     'https://corsproxy.io/?' + encodeURIComponent(AV_VEND_SHEET_URL),
+    'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(AV_VEND_SHEET_URL),
+    AV_VEND_SHEET_URL, // direto como último recurso (falha CORS mas vale tentar)
   ];
-  for(var i=0; i<urls.length; i++){
+  var lastErr = null;
+  for(var i=0; i<proxyUrls.length; i++){
     try{
-      var resp = await fetch(urls[i]);
+      var resp = await fetch(proxyUrls[i], {cache:'no-store'});
       if(resp.ok){
         var text = await resp.text();
-        if(text && text.length > 50) return text;
+        // Verifica que não é HTML de login do Google (retorno de 200 mas conteúdo HTML)
+        if(text && text.length > 100 && !text.trim().startsWith('<!') && !text.trim().startsWith('<html')){
+          console.log('[GSheets] CSV obtido via:', proxyUrls[i].slice(0,60), '— tamanho:', text.length);
+          return text;
+        }
+        // Se é HTML, provavelmente precisamos de "Publicar na Web" em vez de apenas partilhar
+        if(text.trim().startsWith('<')) lastErr = new Error('Google devolveu página HTML — o Sheets precisa de "Publicar na Web" (Ficheiro → Partilhar → Publicar na Web → CSV)');
       }
-    }catch(e){ /* tenta próximo */ }
+    }catch(e){ lastErr = e; }
   }
-  throw new Error('Não foi possível obter o Google Sheet (verifique se está partilhado como "qualquer pessoa com o link pode ver")');
+  throw lastErr || new Error('Não foi possível obter o CSV do Google Sheets');
+}
+
+// Normaliza o header CSV removendo acentos e espaços extra para matching robusto
+function avNormHdr(s){ return s.trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/\s+/g,' '); }
+
+// Encontra índice de coluna por variantes possíveis de nome
+function avFindCol(header, variants){
+  var norm = header.map(avNormHdr);
+  for(var i=0;i<variants.length;i++){
+    var vi = variants[i].toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
+    var idx = norm.indexOf(vi);
+    if(idx!==-1) return idx;
+    // correspondência parcial
+    idx = norm.findIndex(function(h){ return h.includes(vi) || vi.includes(h); });
+    if(idx!==-1) return idx;
+  }
+  return -1;
 }
 
 async function avSyncVendedoresSheet(){
+  var tsEl = document.getElementById('av-sb-ts');
   try{
+    if(tsEl) tsEl.textContent = '⏳ A ler Google Sheets...';
     var text = await avFetchVendSheetCSV();
     var rows = avParseCSV(text);
-    if(!rows.length) throw new Error('Folha vazia');
-    var header = rows[0].map(function(h){return h.trim().toLowerCase();});
+    if(!rows.length) throw new Error('Folha CSV vazia');
+
+    // Procura linha de cabeçalho (pode não ser a 1ª se houver título)
+    var headerRow = 0;
+    for(var ri=0;ri<Math.min(5,rows.length);ri++){
+      if(avFindCol(rows[ri],['vendedor'])!==-1){ headerRow=ri; break; }
+    }
+    var header = rows[headerRow];
+    console.log('[GSheets] Cabeçalho encontrado (linha '+(headerRow+1)+'):', header);
+
     var idx = {
-      mesAno: header.indexOf('mês/ano'),
-      totalIVA: header.indexOf('total com iva'),
-      recebido: header.indexOf('valor recebido'),
-      aReceber: header.indexOf('saldo a receber'),
-      vendedor: header.indexOf('vendedor'),
+      mesAno:   avFindCol(header,['mes/ano','mês/ano','month','mes ano','mesano']),
+      totalIVA: avFindCol(header,['total com iva','total c/ iva','total iva','valor total','total']),
+      recebido: avFindCol(header,['valor recebido','recebido','pago','received']),
+      aReceber: avFindCol(header,['saldo a receber','a receber','por receber','saldo','pendente']),
+      vendedor: avFindCol(header,['vendedor','comercial','sales rep','seller']),
+      data:     avFindCol(header,['data','date','data fatura']),
     };
-    if(idx.vendedor===-1 || idx.totalIVA===-1) throw new Error('Colunas não encontradas');
-    var porVend = {};
-    for(var i=1;i<rows.length;i++){
+    console.log('[GSheets] Índices de colunas:', idx);
+
+    if(idx.vendedor===-1 || idx.totalIVA===-1){
+      throw new Error('Colunas obrigatórias não encontradas. Cabeçalho detectado: [' + header.slice(0,12).join(' | ') + ']');
+    }
+    var porVend = {}, totalYTD = 0, nFaturas = 0;
+    var dataStart = headerRow + 1;
+    for(var i=dataStart;i<rows.length;i++){
       var r = rows[i];
       if(!r || r.length<2) continue;
-      var mesAno = (r[idx.mesAno]||'').trim();
-      if(!/\/2026$/.test(mesAno)) continue;
+      // Filtro por 2026: testa coluna Mês/Ano, ou Data se disponível
+      var is2026 = false;
+      if(idx.mesAno!==-1){
+        var mesAno = (r[idx.mesAno]||'').trim();
+        is2026 = /2026/.test(mesAno);
+      } else if(idx.data!==-1){
+        var dataCel = (r[idx.data]||'').trim();
+        is2026 = /2026/.test(dataCel);
+      } else {
+        is2026 = true; // sem coluna de data: assume tudo 2026
+      }
+      if(!is2026) continue;
       var vend = (r[idx.vendedor]||'').trim();
-      if(!vend) continue;
-      var v = avParseNumPT(r[idx.totalIVA]);
-      var rec = avParseNumPT(r[idx.recebido]);
-      var nrec = avParseNumPT(r[idx.aReceber]);
+      if(!vend || vend.toLowerCase()==='vendedor') continue; // ignora cabeçalhos repetidos
+      var v = avParseNumPT(idx.totalIVA!==-1 ? r[idx.totalIVA] : '0');
+      var rec = avParseNumPT(idx.recebido!==-1 ? r[idx.recebido] : '0');
+      var nrec = avParseNumPT(idx.aReceber!==-1 ? r[idx.aReceber] : '0');
       if(!porVend[vend]) porVend[vend] = {n:vend, v:0, st:{rec:0,nrec:0}};
       porVend[vend].v += v;
       porVend[vend].st.rec += rec;
       porVend[vend].st.nrec += nrec;
+      totalYTD += v; nFaturas++;
     }
+    console.log('[GSheets] Linhas 2026 encontradas:', nFaturas, '· Total YTD:', totalYTD);
+
     var lista = Object.keys(porVend).map(function(k){
       var d = porVend[k];
       d.init = d.n.trim().charAt(0).toUpperCase();
       return d;
     }).sort(function(a,b){return b.v-a.v;});
-    if(!lista.length) throw new Error('Sem dados de 2026 na folha');
+
+    if(!lista.length){
+      if(tsEl) tsEl.textContent = '⚠️ Sheets: 0 linhas 2026 encontradas';
+      console.warn('[GSheets] Nenhuma linha de 2026 detetada. Verifica coluna Mês/Ano ou Data.');
+      return;
+    }
+
     AV_VEND_26 = lista;
-    console.log('AV: Vendedores 2026 atualizados a partir do Google Sheets:', AV_VEND_26);
+    // Atualiza YTD no card principal
+    AV_YTD = totalYTD;
+    var kpiEl = document.getElementById('av-kpi-2026');
+    if(kpiEl) kpiEl.innerHTML = '<span class="cur">€</span>' + Math.round(totalYTD).toLocaleString('pt-PT');
+    var kpiDelta = document.getElementById('av-kpi-2026-delta');
+    if(kpiDelta) kpiDelta.textContent = nFaturas + ' faturas · Google Sheets';
+
+    if(tsEl) tsEl.textContent = '✅ Sheets · ' + nFaturas + ' faturas · ' + lista.length + ' vendedores';
+    console.log('[GSheets] AV_VEND_26 atualizado:', AV_VEND_26);
+
     if(document.getElementById('av-vend-year') && document.getElementById('av-vend-year').value==='2026' && typeof avVendedoresFiltrar==='function'){
       avVendedoresFiltrar('2026');
     }
     if(typeof avAtualizarMetricasCartoes==='function') avAtualizarMetricasCartoes();
   }catch(e){
-    console.error('[AV] Erro ao sincronizar vendedores via Google Sheets:', e);
+    if(tsEl) tsEl.textContent = '⚠️ Sheets: ' + e.message.slice(0,60);
+    console.error('[GSheets] Erro:', e.message);
   }
 }
 window.avSyncVendedoresSheet = avSyncVendedoresSheet;
