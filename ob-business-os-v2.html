@@ -1099,6 +1099,207 @@ window.avSyncTocOnline = avSyncTocOnline;
 window.avTocoIntegrar = avTocoIntegrar;
 
 // ════════════════════════════════════════════════════════════════
+// ÁREA FINANCEIRA — Widget resumo mensal
+// ════════════════════════════════════════════════════════════════
+var _afLoading = false;
+
+function afFmt(v){ return '€' + (v||0).toLocaleString('pt-PT',{minimumFractionDigits:0,maximumFractionDigits:0}); }
+function afSet(id, v){ var el=document.getElementById(id); if(el) el.textContent=v; }
+
+async function afLoad(){
+  if(_afLoading) return;
+  _afLoading = true;
+  // Mês corrente
+  var agr = new Date();
+  var nomeMes = agr.toLocaleDateString('pt-PT',{month:'short',year:'numeric'}).replace('.','/');
+  var inicioMes = new Date(agr.getFullYear(), agr.getMonth(), 1);
+  var fimMes   = new Date(agr.getFullYear(), agr.getMonth()+1, 0, 23, 59, 59);
+  afSet('af-mes-label', nomeMes.toUpperCase());
+
+  // ── 1. TOConline: Faturado, A Receber, Vencido ──────────────
+  try {
+    var cached = JSON.parse(localStorage.getItem('ob-toconline-faturas') || 'null');
+    var faturas = (cached && Array.isArray(cached.data)) ? cached.data : (_tocoFatCache || []);
+    if(faturas.length > 0){
+      var faturadoMes = 0, nFaturadoMes = 0, aReceber = 0, nReceber = 0, vencido = 0, nVencido = 0;
+      var hoje = new Date(); hoje.setHours(0,0,0,0);
+      faturas.forEach(function(f){
+        if(f._tipo === 'RC') return; // recibos não contam como faturação
+        var dtDoc = f.Date ? new Date(f.Date) : null;
+        var total = parseFloat(f.TotalAmount)||0;
+        var status = (f.Status||'').toLowerCase();
+        // Faturado mês atual (FT emitidas neste mês)
+        if(f._tipo === 'FT' && dtDoc && dtDoc >= inicioMes && dtDoc <= fimMes){
+          faturadoMes += total; nFaturadoMes++;
+        }
+        // A receber (aberto)
+        if(f._tipo === 'FT' && (status==='sent'||status==='open'||status==='pending'||status==='overdue')){
+          aReceber += total; nReceber++;
+          // Vencido
+          var dtDue = f.DueDate ? new Date(f.DueDate) : null;
+          if(dtDue && dtDue < hoje){ vencido += total; nVencido++; }
+        }
+      });
+      afSet('af-kpi-faturado', faturadoMes > 0 ? afFmt(faturadoMes) : '—');
+      afSet('af-kpi-faturado-sub', nFaturadoMes + ' faturas emitidas');
+      afSet('af-kpi-receber', aReceber > 0 ? afFmt(aReceber) : '—');
+      afSet('af-kpi-receber-sub', nReceber + ' faturas em aberto');
+      afSet('af-kpi-vencido', vencido > 0 ? afFmt(vencido) : '—');
+      afSet('af-kpi-vencido-sub', nVencido + ' fatura'+(nVencido===1?'':'s')+' em atraso');
+    }
+  } catch(e){ console.warn('[AF] TOConline cache:', e); }
+
+  // ── 2. A Pagar + Despesas p/ aprovar (dados locais) ─────────
+  try {
+    var despesas = JSON.parse(localStorage.getItem('ob-fin-despesas') || '[]');
+    var totalPagar = 0, nPagar = 0, nDespAprovar = 0;
+    despesas.forEach(function(d){
+      if(d.estado === 'Pendente'){ totalPagar += parseFloat(d.valor)||0; nPagar++; nDespAprovar++; }
+    });
+    afSet('af-kpi-pagar', nPagar > 0 ? afFmt(totalPagar) : '—');
+    afSet('af-kpi-pagar-sub', nDespAprovar + ' despesa'+(nDespAprovar===1?'':'s')+' pendente'+(nDespAprovar===1?'':'s'));
+    afSet('af-kpi-desp-aprovar', String(nDespAprovar));
+  } catch(e){ console.warn('[AF] Despesas:', e); }
+
+  // ── 3. Horas Ponto hoje + Faltas pendentes (app de campo) ───
+  try {
+    if(ecSupabase){
+      var todayStart = new Date(); todayStart.setHours(0,0,0,0);
+      // Horas ponto hoje: work_days de hoje
+      var wdRes = await ecSupabase.from('work_days')
+        .select('user_id, started_at, ended_at')
+        .gte('started_at', todayStart.toISOString());
+      if(!wdRes.error){
+        var totalMs = 0, ativos = 0;
+        (wdRes.data||[]).forEach(function(w){
+          var fim = w.ended_at ? new Date(w.ended_at) : new Date();
+          totalMs += fim - new Date(w.started_at);
+          if(!w.ended_at) ativos++;
+        });
+        var hTot = Math.floor(totalMs/3600000);
+        var mTot = Math.floor((totalMs%3600000)/60000);
+        afSet('af-kpi-horas', hTot + 'h ' + String(mTot).padStart(2,'0') + 'm');
+        afSet('af-kpi-horas-sub', ativos + ' ao ponto agora');
+      }
+      // Faltas p/ justificar: time_off_requests pendentes
+      var toRes = await ecSupabase.from('time_off_requests')
+        .select('id', {count:'exact',head:true})
+        .eq('status','pendente');
+      if(!toRes.error){ afSet('af-kpi-faltas', String(toRes.count||0)); }
+    } else {
+      afSet('af-kpi-horas', '—');
+      afSet('af-kpi-horas-sub', 'login na app necessário');
+      afSet('af-kpi-faltas', '—');
+    }
+  } catch(e){ console.warn('[AF] App campo:', e); }
+
+  // ── Timestamp ────────────────────────────────────────────────
+  var ts = new Date().toLocaleTimeString('pt-PT',{hour:'2-digit',minute:'2-digit'});
+  afSet('af-sync-ts', 'Atualizado às ' + ts);
+  localStorage.setItem('ob-af-last-sync', new Date().toISOString());
+  var fb = document.getElementById('af-fallback'); if(fb) fb.style.display='none';
+  _afLoading = false;
+}
+
+async function afSincTudo(){
+  var btn = document.getElementById('af-sinc-btn');
+  if(btn){ btn.disabled=true; btn.textContent='⏳ A sincronizar...'; }
+  var ts0 = localStorage.getItem('ob-af-last-sync');
+  try {
+    // Sync TOConline se configurado
+    if(typeof avSyncTocOnline === 'function') await avSyncTocOnline();
+    // Reload widget
+    await afLoad();
+    // Actualizar banner de fallback com último ok
+    var fb = document.getElementById('af-fallback'); if(fb) fb.style.display='none';
+  } catch(e){
+    console.error('[AF] Erro sync:', e);
+    var fb = document.getElementById('af-fallback');
+    if(fb){
+      fb.style.display='block';
+      var lastEl = document.getElementById('af-last-ok');
+      if(lastEl && ts0) lastEl.textContent = new Date(ts0).toLocaleString('pt-PT',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+    }
+  } finally {
+    if(btn){ btn.disabled=false; btn.textContent='🔄 Sincronizar Tudo'; }
+  }
+}
+
+function afGerarRelatorio(){
+  var agr = new Date();
+  var mes = agr.toLocaleDateString('pt-PT',{month:'long',year:'numeric'});
+  var get = function(id){ var el=document.getElementById(id); return el?el.textContent.trim():'—'; };
+  var txt = [
+    '════════════════════════════════════════',
+    '  RELATÓRIO FINANCEIRO — ' + mes.toUpperCase(),
+    '  OpportunityBox · gerado em ' + new Date().toLocaleString('pt-PT'),
+    '════════════════════════════════════════',
+    '',
+    '  💰 Faturado (TOConline):    ' + get('af-kpi-faturado'),
+    '  📤 A Receber:               ' + get('af-kpi-receber'),
+    '  🔴 Vencido:                 ' + get('af-kpi-vencido'),
+    '  📥 A Pagar (despesas):      ' + get('af-kpi-pagar'),
+    '  👥 Massa Salarial:          ' + get('af-kpi-salarios'),
+    '',
+    '  ⏱️  Horas Ponto (hoje):     ' + get('af-kpi-horas'),
+    '  ⚠️  Faltas p/ justificar:   ' + get('af-kpi-faltas'),
+    '  📎 Despesas p/ aprovar:     ' + get('af-kpi-desp-aprovar'),
+    '',
+    '════════════════════════════════════════',
+  ].join('\n');
+  // Mostrar em modal simples
+  var modal = document.createElement('div');
+  modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+  modal.innerHTML='<div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:24px;max-width:520px;width:100%;position:relative">'
+    +'<button onclick="this.closest(\'div\').parentNode.remove()" style="position:absolute;top:12px;right:14px;background:none;border:none;color:var(--muted);font-size:18px;cursor:pointer">✕</button>'
+    +'<h3 style="margin:0 0 14px;font-size:15px;color:var(--txt2)">📊 Relatório Mensal</h3>'
+    +'<pre style="font-family:DM Mono,monospace;font-size:13px;color:var(--txt2);white-space:pre-wrap;background:var(--bg3);border-radius:8px;padding:14px;margin:0 0 14px">'
+    +txt.replace(/</g,'&lt;')+'</pre>'
+    +'<button onclick="navigator.clipboard.writeText('+JSON.stringify(txt)+').then(function(){alert(\'Copiado!\')})" class="af-btn" style="font-size:13px">📋 Copiar</button>'
+    +'</div>';
+  document.body.appendChild(modal);
+}
+
+function afExportarExcel(){
+  var agr = new Date();
+  var mes = agr.toLocaleDateString('pt-PT',{month:'long',year:'numeric'});
+  var get = function(id){ var el=document.getElementById(id); return el?el.textContent.trim():'—'; };
+  var rows = [
+    ['Relatório Financeiro — ' + mes],
+    [''],
+    ['Indicador','Valor'],
+    ['Faturado (TOConline)', get('af-kpi-faturado')],
+    ['A Receber', get('af-kpi-receber')],
+    ['Vencido', get('af-kpi-vencido')],
+    ['A Pagar (despesas)', get('af-kpi-pagar')],
+    ['Massa Salarial', get('af-kpi-salarios')],
+    ['Horas Ponto (hoje)', get('af-kpi-horas')],
+    ['Faltas p/ justificar', get('af-kpi-faltas')],
+    ['Despesas p/ aprovar', get('af-kpi-desp-aprovar')],
+  ];
+  // SheetJS já está carregado no CRM
+  if(typeof XLSX !== 'undefined'){
+    var wb = XLSX.utils.book_new();
+    var ws = XLSX.utils.aoa_to_sheet(rows);
+    ws['!cols'] = [{wch:35},{wch:20}];
+    XLSX.utils.book_append_sheet(wb, ws, 'Financeiro');
+    XLSX.writeFile(wb, 'relatorio-financeiro-' + agr.toISOString().slice(0,7) + '.xlsx');
+  } else {
+    // Fallback CSV
+    var csv = rows.map(function(r){return r.join(';')}).join('\n');
+    var blob = new Blob(['﻿'+csv],{type:'text/csv;charset=utf-8'});
+    var a = document.createElement('a'); a.href=URL.createObjectURL(blob);
+    a.download='relatorio-financeiro-'+agr.toISOString().slice(0,7)+'.csv'; a.click();
+  }
+}
+
+// Chamar afLoad quando a página admin-analise-vendas abre
+window.afLoad = afLoad;
+window.afSincTudo = afSincTudo;
+window.afGerarRelatorio = afGerarRelatorio;
+window.afExportarExcel = afExportarExcel;
+
+// ════════════════════════════════════════════════════════════════
 // ANÁLISE DE VENDAS — Vendedores 2026 a partir de Google Sheets
 // ════════════════════════════════════════════════════════════════
 // Folha "Cópia de Mapa de vendas", separador com colunas:
@@ -4943,6 +5144,27 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
 
 /* Financeiro and Relatorios wrappers */
 .av-wrap { max-width: 100%; width: 100%; }
+/* ── ÁREA FINANCEIRA widget ── */
+.af-painel{background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:18px 20px 16px;margin-bottom:20px}
+.af-titulo{display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap}
+.af-titulo h3{font-size:15px;font-weight:700;color:var(--txt2);margin:0;flex:1}
+.af-titulo .af-mes{font-size:12px;color:var(--muted);background:var(--bg4);border:1px solid var(--border);border-radius:6px;padding:3px 9px;font-family:'DM Mono',monospace}
+.af-titulo .af-sync-ts{font-size:11px;color:var(--muted)}
+.af-kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}
+@media(max-width:900px){.af-kpis{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:480px){.af-kpis{grid-template-columns:1fr 1fr}}
+.af-kpi{background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:12px 14px}
+.af-kpi .lbl{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px}
+.af-kpi .val{font-size:20px;font-weight:700;color:var(--txt2);font-family:'DM Mono',monospace;line-height:1.1}
+.af-kpi .sub{font-size:11px;color:var(--muted);margin-top:3px}
+.af-kpi.green{border-color:rgba(63,207,142,.25)}.af-kpi.green .val{color:var(--g)}
+.af-kpi.yellow{border-color:rgba(217,130,43,.25)}.af-kpi.yellow .val{color:var(--a)}
+.af-kpi.red{border-color:rgba(239,68,68,.25)}.af-kpi.red .val{color:#ef4444}
+.af-kpi.blue{border-color:rgba(77,148,219,.25)}.af-kpi.blue .val{color:#4d94db}
+.af-acoes{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.af-btn{display:inline-flex;align-items:center;gap:5px;background:var(--bg4);border:1px solid var(--border);color:var(--txt2);border-radius:7px;padding:7px 13px;font-size:13px;cursor:pointer;transition:opacity .15s}
+.af-btn:hover{opacity:.8}.af-btn.primary{background:rgba(var(--y-rgb,217,164,0),.15);border-color:rgba(var(--y-rgb,217,164,0),.4);color:var(--y)}
+.af-fallback{display:none;font-size:12px;color:var(--a);background:rgba(217,130,43,.08);border:1px solid rgba(217,130,43,.25);border-radius:7px;padding:6px 12px;margin-top:10px}
 .ck-wrap { max-width: 100%; width: 100%; }
 
 /* Chat and WA layouts */
@@ -7154,6 +7376,63 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
 
   <div class="av-wrap">
 
+    <!-- ── ÁREA FINANCEIRA ── -->
+    <div class="af-painel" id="af-painel">
+      <div class="af-titulo">
+        <h3>💼 Área Financeira</h3>
+        <span class="af-mes" id="af-mes-label">—</span>
+        <span class="af-sync-ts" id="af-sync-ts"></span>
+        <div class="af-acoes" style="margin-left:auto">
+          <button class="af-btn primary" onclick="afSincTudo()" id="af-sinc-btn" title="Sincronizar TOConline + Ponto">🔄 Sincronizar Tudo</button>
+          <button class="af-btn" onclick="afGerarRelatorio()" title="Gerar relatório do mês em texto">📊 Relatório Mensal</button>
+          <button class="af-btn" onclick="afExportarExcel()" title="Exportar dados financeiros do mês para Excel">💾 Exportar Excel</button>
+        </div>
+      </div>
+      <div class="af-kpis">
+        <div class="af-kpi green">
+          <div class="lbl">💰 Faturado (TOConline)</div>
+          <div class="val" id="af-kpi-faturado">—</div>
+          <div class="sub" id="af-kpi-faturado-sub">mês atual</div>
+        </div>
+        <div class="af-kpi yellow">
+          <div class="lbl">📤 A Receber</div>
+          <div class="val" id="af-kpi-receber">—</div>
+          <div class="sub" id="af-kpi-receber-sub">em aberto</div>
+        </div>
+        <div class="af-kpi red">
+          <div class="lbl">📥 A Pagar</div>
+          <div class="val" id="af-kpi-pagar">—</div>
+          <div class="sub" id="af-kpi-pagar-sub">despesas pendentes</div>
+        </div>
+        <div class="af-kpi">
+          <div class="lbl">👥 Massa Salarial</div>
+          <div class="val" id="af-kpi-salarios">—</div>
+          <div class="sub">disponível após TOConline</div>
+        </div>
+        <div class="af-kpi blue">
+          <div class="lbl">⏱️ Horas Ponto (hoje)</div>
+          <div class="val" id="af-kpi-horas">—</div>
+          <div class="sub" id="af-kpi-horas-sub">app de campo</div>
+        </div>
+        <div class="af-kpi yellow">
+          <div class="lbl">⚠️ Faltas p/ justificar</div>
+          <div class="val" id="af-kpi-faltas">—</div>
+          <div class="sub">pedidos pendentes</div>
+        </div>
+        <div class="af-kpi yellow">
+          <div class="lbl">📎 Despesas p/ aprovar</div>
+          <div class="val" id="af-kpi-desp-aprovar">—</div>
+          <div class="sub">aguardam aprovação</div>
+        </div>
+        <div class="af-kpi red">
+          <div class="lbl">🔴 Vencido</div>
+          <div class="val" id="af-kpi-vencido">—</div>
+          <div class="sub" id="af-kpi-vencido-sub">faturas em atraso</div>
+        </div>
+      </div>
+      <div class="af-fallback" id="af-fallback">⚠️ Última sincronização: <span id="af-last-ok">—</span> · Alguns dados podem estar desatualizados</div>
+    </div>
+
     <!-- TABS -->
     <nav class="av-tabs">
       <button class="av-tab active" data-avtab="anual">📈 Visão Anual</button>
@@ -8871,6 +9150,7 @@ window.goPage=function goPage(id){
   if(ni)ni.classList.add('on');
   // Trigger Análise de Vendas render
   if(id==='admin-analise-vendas'&&typeof renderAnaliseVendas==='function')renderAnaliseVendas();
+  if(id==='admin-analise-vendas'&&typeof afLoad==='function')afLoad();
   if(id==='comercial-orcamentos'&&typeof orcInitPage==='function')orcInitPage();
   if(id==='comercial-pipeline'&&typeof crmInit==='function')crmInit();
   if(id==='crm'){ try{ renderCRMKanban('crm-kanban-admin'); }catch(e){} }
