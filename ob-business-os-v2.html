@@ -12081,24 +12081,38 @@ window.foGerarDocumento = foGerarDocumento;
 
 // ════════════════════════════════════════════════════════════════
 
+// ── cor por role ──
+function ecRoleColor(role){
+  return {admin:'#8b5cf6',comercial:'#3b82f6',montagem:'#f97316',interno:'#10b981'}[role]||'#6366f1';
+}
+
 // ── COLABORADORES ──
 function rhRenderColabs(){
   const el=document.getElementById('rh-colab-cards'); if(!el) return;
 
-  // Colaboradores do App de Pontos (EC_FUNCIONARIOS)
-  const appCards = EC_FUNCIONARIOS.map(c=>{
+  // Deduplica por nome (mantém o com mais campos preenchidos)
+  const unique = [];
+  const seen = new Set();
+  for(const c of EC_FUNCIONARIOS){
+    const key = (c.nome||'').trim().toLowerCase();
+    if(!seen.has(key)){ seen.add(key); unique.push(c); }
+  }
+
+  // Colaboradores do App de Pontos
+  const appCards = unique.map(c=>{
+    const col = ecRoleColor(c.cargo);
     const initials = (c.nome||'?').split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
     const avatarHtml = c.avatar_url
       ? `<img src="${c.avatar_url}" style="width:42px;height:42px;border-radius:50%;object-fit:cover;margin-bottom:8px" onerror="this.style.display='none'">`
-      : `<div style="width:42px;height:42px;border-radius:50%;background:#ec4899;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;color:#fff;margin-bottom:8px">${initials}</div>`;
+      : `<div style="width:42px;height:42px;border-radius:50%;background:${col};display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;color:#fff;margin-bottom:8px">${initials}</div>`;
     const contrato = c.admissao ? '📅 '+c.admissao+(c.contract_end?' → '+c.contract_end:'') : '';
     const horas    = c.weekly_hours ? '⏱ '+c.weekly_hours+'h/sem' : '';
-    return `<div onclick="rhVerFuncionarioApp('${c.ec_id}')" style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:14px 16px;min-width:190px;max-width:230px;cursor:pointer;transition:border-color .15s;position:relative" onmouseover="this.style.borderColor='#ec4899'" onmouseout="this.style.borderColor='var(--border)'">
-      <span style="position:absolute;top:8px;right:8px;font-size:10px;background:#ec489920;color:#ec4899;border:1px solid #ec489940;border-radius:4px;padding:1px 5px">📱 App</span>
+    return `<div onclick="rhVerFuncionarioApp('${c.ec_id}')" style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:14px 16px;min-width:190px;max-width:230px;cursor:pointer;transition:border-color .15s;position:relative" onmouseover="this.style.borderColor='${col}'" onmouseout="this.style.borderColor='var(--border)'">
+      <span style="position:absolute;top:8px;right:8px;font-size:10px;background:${col}20;color:${col};border:1px solid ${col}40;border-radius:4px;padding:1px 5px">📱 App</span>
       ${avatarHtml}
       <div style="font-size:15px;font-weight:600;color:var(--txt2)">${c.nome}</div>
       <div style="font-size:12px;color:var(--muted);margin-top:2px">${c.cargo||'—'}</div>
-      <div style="margin-top:5px"><span style="font-size:11px;background:#ec489915;color:#ec4899;border:1px solid #ec489930;border-radius:4px;padding:2px 6px">${c.dept||'—'}</span></div>
+      <div style="margin-top:5px"><span style="font-size:11px;background:${col}15;color:${col};border:1px solid ${col}30;border-radius:4px;padding:2px 6px">${c.dept||'—'}</span></div>
       ${c.tel&&c.tel!=='—'?`<div style="margin-top:6px;font-size:12px;color:var(--muted)">📞 ${c.tel}</div>`:''}
       ${contrato?`<div style="margin-top:4px;font-size:11px;color:var(--muted)">${contrato}</div>`:''}
       ${horas?`<div style="font-size:11px;color:var(--muted)">${horas}</div>`:''}
