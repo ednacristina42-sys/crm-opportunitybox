@@ -1976,6 +1976,15 @@ function avVendedoresFiltrar(ano){
 var EC_SB_URL = "https://xtiguuyvotnpwqzmggnc.supabase.co";
 var EC_SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh0aWd1dXl2b3RucHdxem1nZ25jIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc0Nzg3NjcsImV4cCI6MjA5MzA1NDc2N30.YHxMPauh6MA4nkFEEQBPGUduozWLKlGsymsix9jY7Bc";
 
+// ── CRM Supabase (ddzlbmnmsdyodouqxbjx) ──────────────────
+var CRM_SB_URL = "https://ddzlbmnmsdyodouqxbjx.supabase.co";
+var CRM_SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRkemxibW5tc2R5b2RvdXF4Ymp4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkyMDQ2NTUsImV4cCI6MjA5NDc4MDY1NX0.P8nyU1zL4bd6Vhs8MGsTqHcB_bSeQsbNHXtQgatVt-Y";
+var crmSB = null;
+function crmSBClient(){
+  if(!crmSB && window.supabase) crmSB = window.supabase.createClient(CRM_SB_URL, CRM_SB_KEY);
+  return crmSB;
+}
+
 var ecSupabase = null;
 var ecUser = null;
 var ecProfilesMap = {};
@@ -9336,7 +9345,7 @@ window.goPage=function goPage(id){
   if(id==='fabrica-producao')    { try{ fpView('board'); }catch(e){} }
   if(id==='fabrica-instalacoes') { try{ instRender(); }catch(e){} }
   if(id==='admin-agenda')        { try{ agendaRender(); }catch(e){} }
-  if(id==='admin-despesas')      { try{ renderDespesas(); despTab('crm'); if(!EC_DESPESAS_APP.length) despSyncApp().then(()=>renderDespesas()); }catch(e){} }
+  if(id==='admin-despesas')      { try{ despTab('crm'); despLoadCRM(); if(!EC_DESPESAS_APP.length) despSyncApp(); }catch(e){} }
   if(id==='admin-rh')            { try{ rhRender(); }catch(e){} }
   if(id==='admin-docs')          { crmDocsRender(); docsTab('crm'); }
   if(id==='dashboard')           { try{ renderDashLeads(); setTimeout(initCharts,50); }catch(e){} }
@@ -14334,14 +14343,8 @@ function renderAgenda(){
 }
 
 // ── DESPESAS ──────────────────────────────────────────────
-var CRM_DESPESAS = [
-  {id:1,colab:'André Costa',data:'2026-05-14',cat:'Material',ref:'Painel LED Pingo Bom',valor:890,estado:'approved',notas:'',file_url:null,file_name:null},
-  {id:2,colab:'Ricardo Pinto',data:'2026-05-13',cat:'Combustível',ref:'Instalação Auto Premium',valor:78,estado:'approved',notas:'',file_url:null,file_name:null},
-  {id:3,colab:'Rui Mota',data:'2026-05-12',cat:'Representação',ref:'Prospeção CC Mira',valor:142,estado:'pending',notas:'',file_url:null,file_name:null},
-  {id:4,colab:'Sara Antunes',data:'2026-05-11',cat:'Software',ref:'Design Geral',valor:29,estado:'approved',notas:'',file_url:null,file_name:null},
-  {id:5,colab:'Carlos Melo',data:'2026-05-10',cat:'Ferramentas',ref:'Produção Geral',valor:245,estado:'approved',notas:'',file_url:null,file_name:null},
-];
-var CRM_DESPESAS_IDX = 6;
+var CRM_DESPESAS = [];
+var CRM_DESPESAS_IDX = 1; // não usado com Supabase UUID
 var CRM_DESP_EDIT_ID = null;
 var DM_FILE_OBJ = null;
 var EC_DESPESAS_APP = [];
@@ -14449,42 +14452,63 @@ function despCloseModal(){
   CRM_DESP_EDIT_ID=null; DM_FILE_OBJ=null;
 }
 
-function despSaveModal(){
+async function despSaveModal(){
   const colab = document.getElementById('dm-colab').value.trim();
   if(!colab){ alert('Insira o nome do colaborador.'); return; }
   const existing = CRM_DESP_EDIT_ID ? (CRM_DESPESAS.find(x=>x.id===CRM_DESP_EDIT_ID)||{}) : {};
   const file_url = DM_FILE_OBJ ? URL.createObjectURL(DM_FILE_OBJ) : (existing.file_url||null);
   const file_name = DM_FILE_OBJ ? DM_FILE_OBJ.name : (existing.file_name||null);
-  const data = {
-    colab, data: document.getElementById('dm-data').value,
-    cat: document.getElementById('dm-cat').value,
+  const payload = {
+    colab, data: document.getElementById('dm-data').value||null,
+    categoria: document.getElementById('dm-cat').value,
     valor: parseFloat(document.getElementById('dm-valor').value)||0,
-    ref: document.getElementById('dm-ref').value.trim(),
+    referencia: document.getElementById('dm-ref').value.trim(),
     estado: document.getElementById('dm-estado').value,
     notas: document.getElementById('dm-notas').value.trim(),
-    file_url, file_name
+    file_url, file_name, updated_at: new Date().toISOString()
   };
-  if(CRM_DESP_EDIT_ID){
-    const idx = CRM_DESPESAS.findIndex(x=>x.id===CRM_DESP_EDIT_ID);
-    if(idx>=0) CRM_DESPESAS[idx] = {...CRM_DESPESAS[idx], ...data};
-  } else {
-    CRM_DESPESAS.push({id: CRM_DESPESAS_IDX++, ...data});
-  }
-  despCloseModal();
-  renderDespesas();
+  const sb = crmSBClient();
+  try {
+    if(CRM_DESP_EDIT_ID){
+      const {error} = await sb.from('expenses').update(payload).eq('id', CRM_DESP_EDIT_ID);
+      if(error) throw error;
+    } else {
+      const {error} = await sb.from('expenses').insert([payload]);
+      if(error) throw error;
+    }
+    despCloseModal();
+    await despLoadCRM();
+  } catch(e){ alert('Erro ao guardar: '+e.message); }
 }
 
-function despDeleteId(id){
+async function despDeleteId(id){
   if(!confirm('Eliminar esta despesa?')) return;
-  CRM_DESPESAS = CRM_DESPESAS.filter(x=>x.id!==id);
-  renderDespesas();
+  const sb = crmSBClient();
+  const {error} = await sb.from('expenses').delete().eq('id', id);
+  if(error){ alert('Erro: '+error.message); return; }
+  await despLoadCRM();
 }
 
-function despDeleteCurrent(){
+async function despDeleteCurrent(){
   if(!CRM_DESP_EDIT_ID) return;
   if(!confirm('Eliminar esta despesa?')) return;
-  CRM_DESPESAS = CRM_DESPESAS.filter(x=>x.id!==CRM_DESP_EDIT_ID);
-  despCloseModal(); renderDespesas();
+  const sb = crmSBClient();
+  const {error} = await sb.from('expenses').delete().eq('id', CRM_DESP_EDIT_ID);
+  if(error){ alert('Erro: '+error.message); return; }
+  despCloseModal(); await despLoadCRM();
+}
+
+async function despLoadCRM(){
+  const sb = crmSBClient(); if(!sb) return;
+  const {data, error} = await sb.from('expenses').select('*').order('data', {ascending:false});
+  if(error){ console.error('despLoadCRM:', error); return; }
+  CRM_DESPESAS = (data||[]).map(d=>({
+    id: d.id, colab: d.colab||'—', data: d.data||'',
+    cat: d.categoria||'Outro', ref: d.referencia||'',
+    valor: parseFloat(d.valor)||0, estado: d.estado||'pending',
+    notas: d.notas||'', file_url: d.file_url||null, file_name: d.file_name||null
+  }));
+  renderDespesas();
 }
 
 function despHandleFile(file){
