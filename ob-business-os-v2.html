@@ -15144,7 +15144,6 @@ async function docsLoadApp(){
       if(btn) btn.textContent='📱 App (0)';
       return;
     }
-    const EC_SB_STORAGE_BASE = 'https://xtiguuyvotnpwqzmggnc.supabase.co/storage/v1/object/public/';
     const docTypeColor = {cc:'#8b5cf6',passport:'#8b5cf6',nif:'#3b82f6',iban:'#3b82f6',contract:'#f97316',certificate:'#10b981',license:'#f59e0b',vehicle_insurance:'#ec4899',vehicle_registration:'#ec4899',other:'#6b7280'};
 
     // Agrupar por entidade
@@ -15161,8 +15160,7 @@ async function docsLoadApp(){
       const validade = d.expires_on ? d.expires_on.split('T')[0] : '—';
       const uploaded = d.created_at ? d.created_at.split('T')[0] : '—';
       const expired = d.expires_on && new Date(d.expires_on) < new Date();
-      const bucket = d.source === 'vehicle' ? 'vehicle-docs' : 'employee-docs';
-      const storageUrl = d.storage_path ? EC_SB_STORAGE_BASE + bucket + '/' + d.storage_path : null;
+      const storageUrl = d.signed_url || null;
       const dlBtn = storageUrl
         ? `<a href="${storageUrl}" target="_blank" class="tbtn" style="font-size:12px;padding:3px 8px;text-decoration:none">📥</a>`
         : `<button class="tbtn" style="font-size:12px;padding:3px 8px;color:var(--muted)" disabled>📥</button>`;
