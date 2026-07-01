@@ -2766,19 +2766,10 @@ function orcNovoCliSave(){
 }
 
 
-// ── DESPESAS — TAB SWITCH ─────────────────────────────────
+// ── DESPESAS — TAB SWITCH (legacy alias) ──────────────────
 function despSwitchTab(tab){
-  const tabs = ['despesas','horas'];
-  tabs.forEach(t=>{
-    const panel = document.getElementById('desp-panel-'+t);
-    const btn   = document.getElementById('desp-tab-'+t);
-    if(!panel||!btn) return;
-    const active = t===tab;
-    panel.style.display = active ? (t==='despesas'?'block':'block') : 'none';
-    btn.style.borderBottomColor = active ? 'var(--y)' : 'transparent';
-    btn.style.color = active ? 'var(--txt2)' : 'var(--muted)';
-    btn.style.fontWeight = active ? '600' : '500';
-  });
+  if(tab==='horas') despTab('horas');
+  else despTab('crm');
   if(tab==='horas' && !window._wdLoaded) wdLoad();
 }
 
@@ -6381,6 +6372,80 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
 
 </div>
 
+<!-- ─── MODAL NOVA DESPESA ───────────────────────────────────────────── -->
+<div id="desp-modal" class="crm-modal-overlay" style="display:none" onclick="if(event.target===this)despCloseModal()">
+  <div class="crm-modal" style="max-width:580px">
+    <h2 id="desp-modal-title">+ Nova Despesa</h2>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Colaborador</label>
+        <input id="dm-colab" class="form-input" placeholder="Nome do colaborador">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Data</label>
+        <input id="dm-data" class="form-input" type="date">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Categoria</label>
+        <select id="dm-cat" class="form-select">
+          <option>Material</option><option>Combustível</option><option>Representação</option>
+          <option>Software</option><option>Ferramentas</option><option>Alimentação</option>
+          <option>Transporte</option><option>Alojamento</option><option>Outro</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Valor (€)</label>
+        <input id="dm-valor" class="form-input" type="number" min="0" step="0.01" placeholder="0.00">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Referência / Projeto</label>
+        <input id="dm-ref" class="form-input" placeholder="Ex: Instalação Auto Premium">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Estado</label>
+        <select id="dm-estado" class="form-select">
+          <option value="pending">Pendente</option>
+          <option value="approved">Aprovada</option>
+          <option value="rejected">Rejeitada</option>
+          <option value="reimbursed">Reembolsada</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Notas</label>
+      <textarea id="dm-notas" class="form-input" rows="2" style="resize:vertical"></textarea>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Comprovante</label>
+      <div id="dm-dropzone" onclick="document.getElementById('dm-file-input').click()"
+        style="border:2px dashed var(--border);border-radius:8px;padding:14px;text-align:center;cursor:pointer"
+        onmouseover="this.style.borderColor='var(--y)'" onmouseout="this.style.borderColor='var(--border)'"
+        ondragover="event.preventDefault();this.style.borderColor='var(--y)'"
+        ondragleave="this.style.borderColor='var(--border)'"
+        ondrop="event.preventDefault();despHandleDrop(event)">
+        <div style="font-size:20px;margin-bottom:4px">🧾</div>
+        <div style="font-size:13px;color:var(--txt2)">Clique ou arraste o comprovante</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:2px">PDF, imagem, etc.</div>
+      </div>
+      <input type="file" id="dm-file-input" style="display:none" accept="image/*,.pdf" onchange="despHandleFile(this.files[0])">
+      <div id="dm-file-chosen" style="display:none;margin-top:8px;align-items:center;gap:8px">
+        <span id="dm-file-icon" style="font-size:18px">🧾</span>
+        <span id="dm-file-name" style="font-size:13px;color:var(--txt2);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
+        <button class="tbtn" style="font-size:12px;padding:3px 8px;color:var(--r)" onclick="despClearFile()">✕</button>
+      </div>
+    </div>
+    <div class="crm-modal-btns" style="margin-top:16px">
+      <button class="tbtn" id="dm-del-btn" onclick="despDeleteCurrent()" style="color:var(--r);display:none">🗑️ Eliminar</button>
+      <button class="tbtn" onclick="despCloseModal()">Cancelar</button>
+      <button class="tbtn y" onclick="despSaveModal()">💾 Guardar</button>
+    </div>
+  </div>
+</div>
+
 <!-- ─── MODAL CRM DOC ─────────────────────────────────────────────── -->
 <div id="crm-doc-modal" class="crm-modal-overlay" style="display:none" onclick="if(event.target===this)crmDocClose()">
   <div class="crm-modal" style="max-width:560px">
@@ -6460,25 +6525,42 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
     <div class="pg-hdr-top">
       <div class="pg-space-icon" style="background:var(--da)">D</div>
       <div class="pg-title">Despesas e Reembolsos</div>
-      <div class="pg-actions"><button class="tbtn y" data-action="openDespesaModal">+ Nova Despesa</button></div>
+      <div class="pg-actions">
+        <button class="tbtn" id="desp-app-sync-btn" onclick="despSyncApp()" style="font-size:13px">📱 App</button>
+        <button class="tbtn y" onclick="despOpenNew()">+ Nova Despesa</button>
+      </div>
     </div>
-  </div>
-  <!-- ── Tabs ───────────────────────────────── -->
-  <div style="display:flex;gap:0;border-bottom:1px solid var(--border);padding:0 24px;margin-bottom:0">
-    <button id="desp-tab-despesas" onclick="despSwitchTab('despesas')" style="background:none;border:none;border-bottom:2px solid var(--y);color:var(--txt2);font-size:14px;font-weight:600;padding:10px 16px;cursor:pointer">💳 Despesas</button>
-    <button id="desp-tab-horas" onclick="despSwitchTab('horas')" style="background:none;border:none;border-bottom:2px solid transparent;color:var(--muted);font-size:14px;font-weight:500;padding:10px 16px;cursor:pointer">⏱️ Pica-ponto</button>
+    <div class="view-tabs">
+      <button class="vt on" onclick="despTab('crm')">💳 CRM</button>
+      <button class="vt" onclick="despTab('app')">📱 App de Pontos</button>
+      <button class="vt" onclick="despTab('horas')">⏱️ Pica-ponto</button>
+    </div>
   </div>
 
-  <!-- ── PAINEL DESPESAS (original) ────────── -->
-  <div id="desp-panel-despesas" class="task-content">
+  <!-- ── PAINEL CRM ────────── -->
+  <div id="desp-panel-crm" class="task-content">
     <div class="g4" style="margin-bottom:14px">
-      <div class="mn"><div class="mnl">Este mês</div><div class="mnv">€4.2k</div><div class="mns">12 despesas</div></div>
-      <div class="mn" style="border-color:rgba(217,130,43,.3)"><div class="mnl">Pendentes</div><div class="mnv" style="color:var(--a)">€1.1k</div><div class="mns">4 aprovações</div></div>
-      <div class="mn"><div class="mnl">Reembolsos</div><div class="mnv">€680</div><div class="mns">3 a pagar</div></div>
-      <div class="mn" style="border-color:rgba(63,207,142,.2)"><div class="mnl">Aprovadas</div><div class="mnv" style="color:var(--g)">€3.1k</div><div class="mns">TOConline ✓</div></div>
+      <div class="mn"><div class="mnl">Este mês</div><div class="mnv" id="desp-stat-mes">€0</div><div class="mns" id="desp-stat-mes-n">0 despesas</div></div>
+      <div class="mn" style="border-color:rgba(217,130,43,.3)"><div class="mnl">Pendentes</div><div class="mnv" style="color:var(--a)" id="desp-stat-pend">€0</div><div class="mns" id="desp-stat-pend-n">0 aprovações</div></div>
+      <div class="mn"><div class="mnl">Reembolsos</div><div class="mnv" id="desp-stat-reimb">€0</div><div class="mns">a pagar</div></div>
+      <div class="mn" style="border-color:rgba(63,207,142,.2)"><div class="mnl">Aprovadas</div><div class="mnv" style="color:var(--g)" id="desp-stat-aprov">€0</div><div class="mns">TOConline ✓</div></div>
     </div>
-    <div class="tw"><table><thead><tr><th>Data</th><th>Colaborador</th><th>Categoria</th><th>Projeto</th><th>Valor</th><th>Comprovante</th><th>Estado</th></tr></thead><tbody id="desp-tbody"></tbody></table></div>
-  </div><!-- /desp-panel-despesas -->
+    <div class="tw"><table><thead><tr><th>Data</th><th>Colaborador</th><th>Categoria</th><th>Referência</th><th>Valor</th><th>Comprovante</th><th>Estado</th><th>Ação</th></tr></thead><tbody id="desp-tbody"></tbody></table></div>
+  </div>
+
+  <!-- ── PAINEL APP ────────── -->
+  <div id="desp-panel-app" style="display:none" class="task-content">
+    <div id="desp-app-status" style="padding:12px 0;font-size:13px;color:var(--muted)">Clique em "📱 App" para sincronizar despesas do app de pontos.</div>
+    <div id="desp-app-wrap" style="display:none">
+      <div class="g4" style="margin-bottom:14px">
+        <div class="mn"><div class="mnl">Total App</div><div class="mnv" id="desp-app-total">€0</div><div class="mns" id="desp-app-total-n">0 despesas</div></div>
+        <div class="mn" style="border-color:rgba(217,130,43,.3)"><div class="mnl">Pendentes</div><div class="mnv" style="color:var(--a)" id="desp-app-pend">€0</div><div class="mns" id="desp-app-pend-n">a aprovar</div></div>
+        <div class="mn" style="border-color:rgba(63,207,142,.2)"><div class="mnl">Aprovadas</div><div class="mnv" style="color:var(--g)" id="desp-app-aprov">€0</div><div class="mns" id="desp-app-aprov-n">aprovadas</div></div>
+        <div class="mn"><div class="mnl">TOConline</div><div class="mnv" id="desp-app-toc">0</div><div class="mns">enviadas</div></div>
+      </div>
+      <div class="tw"><table><thead><tr><th>Data</th><th>Colaborador</th><th>Categoria</th><th>Referência</th><th>Valor</th><th>Recibo</th><th>Estado</th></tr></thead><tbody id="desp-app-tbody"></tbody></table></div>
+    </div>
+  </div>
 
   <!-- ── PAINEL PICA-PONTO ─────────────────── -->
   <div id="desp-panel-horas" style="display:none;flex:1;min-height:0;overflow-y:auto;padding:16px 24px">
@@ -9261,7 +9343,7 @@ window.goPage=function goPage(id){
   if(id==='fabrica-producao')    { try{ fpView('board'); }catch(e){} }
   if(id==='fabrica-instalacoes') { try{ instRender(); }catch(e){} }
   if(id==='admin-agenda')        { try{ agendaRender(); }catch(e){} }
-  if(id==='admin-despesas')      { try{ renderDespesas(); }catch(e){} }
+  if(id==='admin-despesas')      { try{ renderDespesas(); despTab('crm'); }catch(e){} }
   if(id==='admin-rh')            { try{ rhRender(); }catch(e){} }
   if(id==='admin-docs')          { crmDocsRender(); docsTab('crm'); }
   if(id==='dashboard')           { try{ renderDashLeads(); setTimeout(initCharts,50); }catch(e){} }
@@ -14259,24 +14341,226 @@ function renderAgenda(){
 }
 
 // ── DESPESAS ──────────────────────────────────────────────
+var CRM_DESPESAS = [
+  {id:1,colab:'André Costa',data:'2026-05-14',cat:'Material',ref:'Painel LED Pingo Bom',valor:890,estado:'approved',notas:'',file_url:null,file_name:null},
+  {id:2,colab:'Ricardo Pinto',data:'2026-05-13',cat:'Combustível',ref:'Instalação Auto Premium',valor:78,estado:'approved',notas:'',file_url:null,file_name:null},
+  {id:3,colab:'Rui Mota',data:'2026-05-12',cat:'Representação',ref:'Prospeção CC Mira',valor:142,estado:'pending',notas:'',file_url:null,file_name:null},
+  {id:4,colab:'Sara Antunes',data:'2026-05-11',cat:'Software',ref:'Design Geral',valor:29,estado:'approved',notas:'',file_url:null,file_name:null},
+  {id:5,colab:'Carlos Melo',data:'2026-05-10',cat:'Ferramentas',ref:'Produção Geral',valor:245,estado:'approved',notas:'',file_url:null,file_name:null},
+];
+var CRM_DESPESAS_IDX = 6;
+var CRM_DESP_EDIT_ID = null;
+var DM_FILE_OBJ = null;
+var EC_DESPESAS_APP = [];
+
+const DESP_ESTADO_LABEL = {approved:'Aprovada',pending:'Pendente',rejected:'Rejeitada',reimbursed:'Reembolsada'};
+const DESP_ESTADO_CLS   = {approved:'bg',pending:'ba',rejected:'br',reimbursed:'bg'};
+
 function renderDespesas(){
-  const el=document.getElementById('desp-tbody');if(!el)return;
-  const d=[
-    {dt:'14 Mai',who:'André Costa',cat:'Material',proj:'Painel LED Pingo Bom',val:890,ocr:true,st:'approved'},
-    {dt:'13 Mai',who:'Ricardo Pinto',cat:'Combustível',proj:'Instalação Auto Premium',val:78,ocr:true,st:'approved'},
-    {dt:'12 Mai',who:'Rui Mota',cat:'Representação',proj:'Prospeção CC Mira',val:142,ocr:false,st:'pending'},
-    {dt:'11 Mai',who:'Sara Antunes',cat:'Software',proj:'Design Geral',val:29,ocr:true,st:'approved'},
-    {dt:'10 Mai',who:'Carlos Melo',cat:'Ferramentas',proj:'Produção Geral',val:245,ocr:true,st:'approved'},
-  ];
-  el.innerHTML=d.map(e=>`<tr>
-    <td style="color:var(--muted)">${e.dt}</td>
-    <td><strong style="color:var(--txt2)">${e.who}</strong></td>
-    <td><span class="b bm">${e.cat}</span></td>
-    <td>${e.proj}</td>
-    <td style="font-family:'DM Mono',monospace;font-weight:600">€${e.val}</td>
-    <td>${e.ocr?'<span class="b bg">✓ OCR</span>':'<span class="b bm">Manual</span>'}</td>
-    <td>${e.st==='approved'?'<span class="b bg">Aprovada</span>':'<span class="b ba">Pendente</span>'}</td>
-  </tr>`).join('');
+  const el = document.getElementById('desp-tbody'); if(!el) return;
+  const now = new Date(); const mes = now.getMonth(); const ano = now.getFullYear();
+  let totalMes=0,cntMes=0,totalPend=0,cntPend=0,totalReimb=0,totalAprov=0;
+  CRM_DESPESAS.forEach(d=>{
+    const dt = d.data ? new Date(d.data) : null;
+    if(dt && dt.getMonth()===mes && dt.getFullYear()===ano){ totalMes+=d.valor||0; cntMes++; }
+    if(d.estado==='pending'){ totalPend+=d.valor||0; cntPend++; }
+    if(d.estado==='reimbursed') totalReimb+=d.valor||0;
+    if(d.estado==='approved') totalAprov+=d.valor||0;
+  });
+  const fmt = v=>'€'+(v%1===0?v:v.toFixed(2));
+  document.getElementById('desp-stat-mes').textContent=fmt(totalMes);
+  document.getElementById('desp-stat-mes-n').textContent=cntMes+' despesa'+(cntMes!==1?'s':'');
+  document.getElementById('desp-stat-pend').textContent=fmt(totalPend);
+  document.getElementById('desp-stat-pend-n').textContent=cntPend+' aprovação'+(cntPend!==1?'s':'');
+  document.getElementById('desp-stat-reimb').textContent=fmt(totalReimb);
+  document.getElementById('desp-stat-aprov').textContent=fmt(totalAprov);
+
+  el.innerHTML = CRM_DESPESAS.map(d=>{
+    const dtStr = d.data ? new Date(d.data+'T12:00:00').toLocaleDateString('pt-PT',{day:'2-digit',month:'short'}) : '—';
+    const estCls = DESP_ESTADO_CLS[d.estado]||'ba';
+    const estLbl = DESP_ESTADO_LABEL[d.estado]||d.estado;
+    const recBtn = d.file_url
+      ? `<a href="${d.file_url}" target="_blank" class="tbtn" style="font-size:12px;padding:3px 8px;text-decoration:none">🧾</a>`
+      : `<button class="tbtn" style="font-size:12px;padding:3px 8px;color:var(--muted)" disabled>🧾</button>`;
+    return `<tr>
+      <td style="color:var(--muted)">${dtStr}</td>
+      <td><strong style="color:var(--txt2);cursor:pointer" onclick="despOpenEdit(${d.id})">${d.colab}</strong></td>
+      <td><span class="b bm">${d.cat}</span></td>
+      <td>${d.ref||'—'}</td>
+      <td style="font-family:'DM Mono',monospace;font-weight:600">€${d.valor}</td>
+      <td>${recBtn}</td>
+      <td><span class="b ${estCls}" style="font-size:12px">${estLbl}</span></td>
+      <td style="display:flex;gap:5px">
+        <button class="tbtn" style="font-size:12px;padding:3px 8px" onclick="despOpenEdit(${d.id})" title="Editar">✏️</button>
+        <button class="tbtn" style="font-size:12px;padding:3px 8px;color:var(--r)" onclick="despDeleteId(${d.id})" title="Eliminar">🗑️</button>
+      </td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:20px">Sem despesas CRM. Crie a primeira.</td></tr>';
+}
+
+function despOpenNew(){
+  CRM_DESP_EDIT_ID = null; DM_FILE_OBJ = null;
+  document.getElementById('desp-modal-title').textContent = '+ Nova Despesa';
+  document.getElementById('dm-del-btn').style.display = 'none';
+  document.getElementById('dm-colab').value='';
+  document.getElementById('dm-data').value=new Date().toISOString().split('T')[0];
+  document.getElementById('dm-cat').value='Material';
+  document.getElementById('dm-valor').value='';
+  document.getElementById('dm-ref').value='';
+  document.getElementById('dm-estado').value='pending';
+  document.getElementById('dm-notas').value='';
+  despClearFile();
+  document.getElementById('desp-modal').style.display='flex';
+}
+
+function despOpenEdit(id){
+  const d = CRM_DESPESAS.find(x=>x.id===id); if(!d) return;
+  CRM_DESP_EDIT_ID = id; DM_FILE_OBJ = null;
+  document.getElementById('desp-modal-title').textContent = 'Editar Despesa';
+  document.getElementById('dm-del-btn').style.display = '';
+  document.getElementById('dm-colab').value = d.colab||'';
+  document.getElementById('dm-data').value = d.data||'';
+  document.getElementById('dm-cat').value = d.cat||'Outro';
+  document.getElementById('dm-valor').value = d.valor||'';
+  document.getElementById('dm-ref').value = d.ref||'';
+  document.getElementById('dm-estado').value = d.estado||'pending';
+  document.getElementById('dm-notas').value = d.notas||'';
+  if(d.file_url){ document.getElementById('dm-file-name').textContent=d.file_name||'Comprovante'; document.getElementById('dm-file-chosen').style.display='flex'; document.getElementById('dm-dropzone').style.display='none'; }
+  else despClearFile();
+  document.getElementById('desp-modal').style.display='flex';
+}
+
+function despCloseModal(){
+  document.getElementById('desp-modal').style.display='none';
+  CRM_DESP_EDIT_ID=null; DM_FILE_OBJ=null;
+}
+
+function despSaveModal(){
+  const colab = document.getElementById('dm-colab').value.trim();
+  if(!colab){ alert('Insira o nome do colaborador.'); return; }
+  const existing = CRM_DESP_EDIT_ID ? (CRM_DESPESAS.find(x=>x.id===CRM_DESP_EDIT_ID)||{}) : {};
+  const file_url = DM_FILE_OBJ ? URL.createObjectURL(DM_FILE_OBJ) : (existing.file_url||null);
+  const file_name = DM_FILE_OBJ ? DM_FILE_OBJ.name : (existing.file_name||null);
+  const data = {
+    colab, data: document.getElementById('dm-data').value,
+    cat: document.getElementById('dm-cat').value,
+    valor: parseFloat(document.getElementById('dm-valor').value)||0,
+    ref: document.getElementById('dm-ref').value.trim(),
+    estado: document.getElementById('dm-estado').value,
+    notas: document.getElementById('dm-notas').value.trim(),
+    file_url, file_name
+  };
+  if(CRM_DESP_EDIT_ID){
+    const idx = CRM_DESPESAS.findIndex(x=>x.id===CRM_DESP_EDIT_ID);
+    if(idx>=0) CRM_DESPESAS[idx] = {...CRM_DESPESAS[idx], ...data};
+  } else {
+    CRM_DESPESAS.push({id: CRM_DESPESAS_IDX++, ...data});
+  }
+  despCloseModal();
+  renderDespesas();
+}
+
+function despDeleteId(id){
+  if(!confirm('Eliminar esta despesa?')) return;
+  CRM_DESPESAS = CRM_DESPESAS.filter(x=>x.id!==id);
+  renderDespesas();
+}
+
+function despDeleteCurrent(){
+  if(!CRM_DESP_EDIT_ID) return;
+  if(!confirm('Eliminar esta despesa?')) return;
+  CRM_DESPESAS = CRM_DESPESAS.filter(x=>x.id!==CRM_DESP_EDIT_ID);
+  despCloseModal(); renderDespesas();
+}
+
+function despHandleFile(file){
+  if(!file) return; DM_FILE_OBJ = file;
+  document.getElementById('dm-file-name').textContent = file.name;
+  document.getElementById('dm-file-chosen').style.display='flex';
+  document.getElementById('dm-dropzone').style.display='none';
+}
+function despHandleDrop(e){ const f=e.dataTransfer.files[0]; if(f) despHandleFile(f); }
+function despClearFile(){
+  DM_FILE_OBJ=null; document.getElementById('dm-file-input').value='';
+  document.getElementById('dm-file-chosen').style.display='none';
+  document.getElementById('dm-dropzone').style.display='';
+}
+
+function despTab(tab){
+  document.getElementById('desp-panel-crm').style.display   = tab==='crm'   ? '' : 'none';
+  document.getElementById('desp-panel-app').style.display   = tab==='app'   ? '' : 'none';
+  document.getElementById('desp-panel-horas').style.display = tab==='horas' ? '' : 'none';
+  document.querySelectorAll('#page-admin-despesas .vt').forEach((b,i)=>{
+    b.classList.toggle('on', (i===0&&tab==='crm')||(i===1&&tab==='app')||(i===2&&tab==='horas'));
+  });
+  if(tab==='app' && !document.getElementById('desp-app-wrap').style.display==='') despSyncApp();
+}
+
+async function despSyncApp(){
+  const btn = document.getElementById('desp-app-sync-btn');
+  const status = document.getElementById('desp-app-status');
+  const wrap = document.getElementById('desp-app-wrap');
+  if(btn) btn.textContent='⏳ A carregar...';
+  if(status){ status.textContent='A sincronizar despesas do app de pontos...'; status.style.display='block'; }
+  try {
+    const res = await fetch('https://xtiguuyvotnpwqzmggnc.supabase.co/functions/v1/crm-expenses',{
+      headers:{'apikey':EC_SB_KEY,'x-api-key':'ob-crm-2026-secure'}
+    });
+    if(!res.ok){ const t=await res.text(); throw new Error(t); }
+    EC_DESPESAS_APP = await res.json();
+    if(!EC_DESPESAS_APP.length){
+      if(status) status.textContent='Nenhuma despesa encontrada no app de pontos.';
+      if(wrap) wrap.style.display='none';
+      if(btn) btn.textContent='📱 App (0)';
+      return;
+    }
+    // stats
+    let tot=0, pend=0, cntPend=0, aprov=0, cntAprov=0, toc=0;
+    EC_DESPESAS_APP.forEach(d=>{
+      const v=parseFloat(d.amount_eur)||0;
+      tot+=v;
+      if(d.status==='pending'||d.status==='submitted'){ pend+=v; cntPend++; }
+      if(d.status==='approved'){ aprov+=v; cntAprov++; }
+      if(d.toc_sent_at) toc++;
+    });
+    const fmt=v=>'€'+(v%1===0?v:v.toFixed(2));
+    document.getElementById('desp-app-total').textContent=fmt(tot);
+    document.getElementById('desp-app-total-n').textContent=EC_DESPESAS_APP.length+' despesa'+(EC_DESPESAS_APP.length!==1?'s':'');
+    document.getElementById('desp-app-pend').textContent=fmt(pend);
+    document.getElementById('desp-app-pend-n').textContent=cntPend+' a aprovar';
+    document.getElementById('desp-app-aprov').textContent=fmt(aprov);
+    document.getElementById('desp-app-aprov-n').textContent=cntAprov+' aprovadas';
+    document.getElementById('desp-app-toc').textContent=toc;
+
+    const estLabel = {pending:'Pendente',submitted:'Submetida',approved:'Aprovada',rejected:'Rejeitada',reimbursed:'Reembolsada'};
+    const estCls   = {pending:'ba',submitted:'ba',approved:'bg',rejected:'br',reimbursed:'bg'};
+    const tbody = document.getElementById('desp-app-tbody');
+    tbody.innerHTML = EC_DESPESAS_APP.map(d=>{
+      const dtStr = d.occurred_at ? new Date(d.occurred_at).toLocaleDateString('pt-PT',{day:'2-digit',month:'short',year:'numeric'}) : '—';
+      const cls = estCls[d.status]||'ba';
+      const lbl = estLabel[d.status]||d.status||'—';
+      const recBtn = d.receipt_signed_url
+        ? `<a href="${d.receipt_signed_url}" target="_blank" class="tbtn" style="font-size:12px;padding:3px 8px;text-decoration:none">🧾 Ver</a>`
+        : `<button class="tbtn" style="font-size:12px;padding:3px 8px;color:var(--muted)" disabled>🧾</button>`;
+      return `<tr>
+        <td style="color:var(--muted);font-size:13px">${dtStr}</td>
+        <td><strong>${d.user_name||'—'}</strong></td>
+        <td><span class="b bm" style="font-size:12px">${d.category||'—'}</span></td>
+        <td style="font-size:13px">${d.reference||d.notes||'—'}</td>
+        <td style="font-family:'DM Mono',monospace;font-weight:600">€${parseFloat(d.amount_eur||0).toFixed(2)}</td>
+        <td>${recBtn}</td>
+        <td><span class="b ${cls}" style="font-size:12px">${lbl}</span></td>
+      </tr>`;
+    }).join('');
+    if(wrap) wrap.style.display='';
+    if(status) status.style.display='none';
+    if(btn) btn.textContent='📱 App ('+EC_DESPESAS_APP.length+')';
+    despTab('app');
+  } catch(e){
+    if(status){ status.textContent='❌ Erro: '+e.message; status.style.display='block'; }
+    if(btn) btn.textContent='📱 App ❌';
+    console.error('despSyncApp:', e);
+  }
 }
 
 // ── PROFILE EDIT ─────────────────────────────────────────
