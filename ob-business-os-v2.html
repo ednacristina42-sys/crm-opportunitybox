@@ -432,7 +432,7 @@ function renderTasksCalendar() {
   var firstDay = new Date(calYear, calMonth, 1);
   var lastDay  = new Date(calYear, calMonth+1, 0);
   var startPad = firstDay.getDay(); // 0=Sun
-  var deptColors = typeof HOME_DEPTS !== 'undefined' ? HOME_DEPTS : {'Dep. Comercial':'#e74c3c','Dep. Design':'#e67e22','Chão da Fábrica':'#3b82f6','Dep. Administrativo':'#8b5cf6'};
+  var deptColors = typeof HOME_DEPTS !== 'undefined' ? HOME_DEPTS : {'Dep. Comercial':'#e74c3c','Dep. Design':'#e67e22','Chão da Fábrica':'#3b82f6','Gestão Administrativa':'#8b5cf6'};
 
   var cells = '';
   // Day headers
@@ -569,7 +569,7 @@ function renderTasksGantt() {
   }
 
   var totalW = COLS * COL_PX;
-  var deptColors = typeof HOME_DEPTS !== 'undefined' ? HOME_DEPTS : {'Dep. Comercial':'#e74c3c','Dep. Design':'#e67e22','Chão da Fábrica':'#3b82f6','Dep. Administrativo':'#8b5cf6'};
+  var deptColors = typeof HOME_DEPTS !== 'undefined' ? HOME_DEPTS : {'Dep. Comercial':'#e74c3c','Dep. Design':'#e67e22','Chão da Fábrica':'#3b82f6','Gestão Administrativa':'#8b5cf6'};
 
   // Today line position
   var todayOff = (today.getTime() - rangeStart.getTime()) / UNIT_MS * COL_PX;
@@ -2575,12 +2575,12 @@ var CK_STATUS_COLOR = {'A fazer':'#6b6b72','Em progresso':'#4d94db','Em revisão
 var CK_PRIO_MAP = {urgent:'Urgente',high:'Alta',normal:'Normal',low:'Baixa'};
 var CK_PRIO_COLOR = {Urgente:'#e74c3c',Alta:'#e67e22',Normal:'#6b6b72',Baixa:'#94a3b8'};
 // ADD: mapeamento space ClickUp → nome de departamento usado no Kanban/Lista de tarefas (HOME_DEPTS)
-// Nota: difere do CK_SPACES.name (usado só na página ClickUp Live) — "Dep. Admin" vs "Dep. Administrativo"
+// Nota: difere do CK_SPACES.name (usado só na página ClickUp Live) — "Dep. Admin" vs "Gestão Administrativa"
 var CK_DEPT_KANBAN_MAP = {
   '90153926268':'Dep. Comercial',
   '90155366310':'Dep. Design',
   '90153965643':'Chão da Fábrica',
-  '901510527937':'Dep. Administrativo'
+  '901510527937':'Gestão Administrativa'
 };
 
 function ckMapStatus(t){
@@ -3834,7 +3834,7 @@ function nbTestarConexao() {
   --dc:#e74c3c; /* Dep. Comercial */
   --dd:#e67e22; /* Dep. Design */
   --cf:#3b82f6; /* Chão da Fábrica */
-  --da:#8b5cf6; /* Dep. Administrativo */
+  --da:#8b5cf6; /* Gestão Administrativa */
 }
 html{font-size:13px}
 body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--txt);min-height:100vh;overflow:hidden}
@@ -5439,10 +5439,10 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
     <button class="sl-item" onclick="homeFilterTasks('Chão da Fábrica')"><div class="sl-dot" style="background:#3b82f6"></div>📋 Tarefas ClickUp — Fábrica</button>
   </div>
 
-  <!-- Dep. Administrativo -->
+  <!-- Gestão Administrativa -->
   <button class="space-item" id="si-admin-dept" data-action="toggleSpace" data-space="admin-dept">
     <div class="space-icon" style="background:var(--da)">D</div>
-    <span class="space-name">Dep. Administrativo</span>
+    <span class="space-name">Gestão Administrativa</span>
     <span class="space-chevron">›</span>
   </button>
   <div class="space-lists" id="sl-admin-dept">
@@ -5451,7 +5451,7 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
     <button class="sl-item" data-action="goPage" data-page="admin-despesas"><div class="sl-dot" style="background:#d9822b"></div>Despesas</button>
     <button class="sl-item" onclick="goFaturasAdmin()"><div class="sl-dot" style="background:#3fcf8e"></div>🧾 Faturas</button>
     <button class="sl-item" data-action="goPage" data-page="admin-rh"><div class="sl-dot" style="background:#ec4899"></div>👥 Recursos Humanos</button>
-    <button class="sl-item" onclick="homeFilterTasks('Dep. Administrativo')"><div class="sl-dot" style="background:#8b5cf6"></div>📋 Tarefas ClickUp — Admin</button>
+    <button class="sl-item" onclick="homeFilterTasks('Gestão Administrativa')"><div class="sl-dot" style="background:#8b5cf6"></div>📋 Tarefas ClickUp — Admin</button>
   </div>
 
   <!-- ADMIN ONLY section -->
@@ -5648,7 +5648,7 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
   <!-- ── TABS Orçamentos / Faturas ──────────── -->
   <div style="display:flex;gap:0;border-bottom:1px solid var(--border);padding:0 24px;margin-bottom:0">
     <button id="orc-tab-orcamentos" onclick="orcSwitchTab('orcamentos')" style="background:none;border:none;border-bottom:2px solid var(--y);color:var(--txt2);font-size:14px;font-weight:600;padding:10px 16px;cursor:pointer">📄 Orçamentos</button>
-    <!-- Faturas movido para Dep. Administrativo — botão mantido oculto para não partir orcSwitchTab() -->
+    <!-- Faturas movido para Gestão Administrativa — botão mantido oculto para não partir orcSwitchTab() -->
     <button id="orc-tab-faturas" onclick="orcSwitchTab('faturas')" style="display:none;background:none;border:none;border-bottom:2px solid transparent;color:var(--muted);font-size:14px;font-weight:500;padding:10px 16px;cursor:pointer">🧾 Faturas</button>
   </div>
 
@@ -7252,7 +7252,7 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
       <div class="form-group"><label class="form-label">Cargo / Função</label><input class="form-input" id="rh-c-cargo" placeholder="Ex: Técnico de Produção"/></div>
       <div class="form-group"><label class="form-label">Departamento</label>
         <select class="form-select" id="rh-c-dept">
-          <option>Dep. Comercial</option><option>Dep. Design</option><option>Chão da Fábrica</option><option>Dep. Administrativo</option><option>Direcção</option>
+          <option>Dep. Comercial</option><option>Dep. Design</option><option>Chão da Fábrica</option><option>Gestão Administrativa</option><option>Direcção</option>
         </select>
       </div>
     </div>
@@ -8277,7 +8277,7 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
           <option>Dep. Comercial</option>
           <option>Dep. Design</option>
           <option>Chão da Fábrica</option>
-          <option>Dep. Administrativo</option>
+          <option>Gestão Administrativa</option>
         </select>
       </div>
       <div class="form-group">
@@ -8762,7 +8762,7 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
           </div>
         </div>
 
-        <!-- Dep. Administrativo -->
+        <!-- Gestão Administrativa -->
         <div style="background:var(--bg3);border:1px solid rgba(139,92,246,.25);border-radius:8px;padding:12px 14px;margin-bottom:16px">
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
             <div style="width:18px;height:18px;background:#8b5cf6;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#fff;flex-shrink:0">D</div>
@@ -8868,10 +8868,10 @@ var USERS=[
   {id:'luis',name:'Luís Rodrigues',role:'Instalador',dept:'Chão da Fábrica',color:'#3b82f6',admin:false,online:false},
   {id:'sergio',name:'Sérgio Martins',role:'Instalador',dept:'Chão da Fábrica',color:'#3b82f6',admin:false,online:true},
   {id:'nuno',name:'Nuno Pereira',role:'Instalador',dept:'Chão da Fábrica',color:'#3b82f6',admin:false,online:false},
-  {id:'joana',name:'Joana Lopes',role:'Secretariado',dept:'Dep. Administrativo',color:'#8b5cf6',admin:false,online:true},
-  {id:'marta',name:'Marta Gomes',role:'Secretariado',dept:'Dep. Administrativo',color:'#8b5cf6',admin:false,online:true},
-  {id:'ines',name:'Inês Sousa',role:'Financeira',dept:'Dep. Administrativo',color:'#8b5cf6',admin:false,online:true},
-  {id:'vasco',name:'Vasco Cunha',role:'Suporte TI',dept:'Dep. Administrativo',color:'#8b5cf6',admin:false,online:true},
+  {id:'joana',name:'Joana Lopes',role:'Secretariado',dept:'Gestão Administrativa',color:'#8b5cf6',admin:false,online:true},
+  {id:'marta',name:'Marta Gomes',role:'Secretariado',dept:'Gestão Administrativa',color:'#8b5cf6',admin:false,online:true},
+  {id:'ines',name:'Inês Sousa',role:'Financeira',dept:'Gestão Administrativa',color:'#8b5cf6',admin:false,online:true},
+  {id:'vasco',name:'Vasco Cunha',role:'Suporte TI',dept:'Gestão Administrativa',color:'#8b5cf6',admin:false,online:true},
 ];
 
 // Dept → which spaces are visible
@@ -8880,14 +8880,14 @@ var DEPT_ACCESS={
   'Dep. Comercial':['comercial'],
   'Dep. Design':['design'],
   'Chão da Fábrica':['fabrica'],
-  'Dep. Administrativo':['admin-dept'],
+  'Gestão Administrativa':['admin-dept'],
 };
 // Pages accessible per role
 var DEPT_PAGES={
   'Dep. Comercial':['home','todas','comercial-pipeline','comercial-clientes','comercial-orcamentos','wa','equipa-campo','alerts','chat'],
   'Dep. Design':['home','todas','design-tarefas','design-ficheiros','alerts','chat'],
   'Chão da Fábrica':['home','todas','fabrica-producao','fabrica-instalacoes','alerts','chat'],
-  'Dep. Administrativo':['home','todas','admin-agenda','admin-docs','admin-despesas','admin-analise-vendas','admin-rh','stock','alerts','chat','comercial-orcamentos'],
+  'Gestão Administrativa':['home','todas','admin-agenda','admin-docs','admin-despesas','admin-analise-vendas','admin-rh','stock','alerts','chat','comercial-orcamentos'],
 };
 
 var CU=null; // current user
@@ -9235,10 +9235,10 @@ var HOME_TASKS_DEFAULT=[
   {id:10,title:'Painel LED Pingo Bom — Corte perfis',group:'Chão da Fábrica',status:'Em progresso',statusC:'#4d94db',prio:'Alta',prioBg:'#e67e22',dept:'Chão da Fábrica',ass:'CM',assC:'#3b82f6',due:'Qui',dueType:'ok'},
   {id:11,title:'Sinalética Clínica D&S — Montagem',group:'Chão da Fábrica',status:'A fazer',statusC:'#6b6b72',prio:'Normal',prioBg:'#6b6b72',dept:'Chão da Fábrica',ass:'TN',assC:'#3b82f6',due:'Sex',dueType:'ok'},
   {id:12,title:'Instalação Auto Premium — Equipa',group:'Chão da Fábrica',status:'Em revisão',statusC:'#d9822b',prio:'Urgente',prioBg:'#e74c3c',dept:'Chão da Fábrica',ass:'RP',assC:'#3b82f6',due:'Seg',dueType:'ok'},
-  {id:13,title:'Reunião geral de equipa — 9h',group:'Dep. Administrativo',status:'A fazer',statusC:'#6b6b72',prio:'Alta',prioBg:'#e67e22',dept:'Dep. Administrativo',ass:'JL',assC:'#8b5cf6',due:'Amanhã',dueType:'ok'},
-  {id:14,title:'Processar despesas semana 20',group:'Dep. Administrativo',status:'A fazer',statusC:'#6b6b72',prio:'Normal',prioBg:'#6b6b72',dept:'Dep. Administrativo',ass:'IG',assC:'#8b5cf6',due:'Sex',dueType:'ok'},
-  {id:15,title:'Actualizar TOConline — faturas Maio',group:'Dep. Administrativo',status:'Em progresso',statusC:'#4d94db',prio:'Alta',prioBg:'#e67e22',dept:'Dep. Administrativo',ass:'IS',assC:'#8b5cf6',due:'Hoje',dueType:'soon'},
-  {id:16,title:'Licença Câmara — Totem CC Mira',group:'Dep. Administrativo',status:'Em progresso',statusC:'#4d94db',prio:'Urgente',prioBg:'#e74c3c',dept:'Dep. Administrativo',ass:'JL',assC:'#8b5cf6',due:'Qui',dueType:'soon'},
+  {id:13,title:'Reunião geral de equipa — 9h',group:'Gestão Administrativa',status:'A fazer',statusC:'#6b6b72',prio:'Alta',prioBg:'#e67e22',dept:'Gestão Administrativa',ass:'JL',assC:'#8b5cf6',due:'Amanhã',dueType:'ok'},
+  {id:14,title:'Processar despesas semana 20',group:'Gestão Administrativa',status:'A fazer',statusC:'#6b6b72',prio:'Normal',prioBg:'#6b6b72',dept:'Gestão Administrativa',ass:'IG',assC:'#8b5cf6',due:'Sex',dueType:'ok'},
+  {id:15,title:'Actualizar TOConline — faturas Maio',group:'Gestão Administrativa',status:'Em progresso',statusC:'#4d94db',prio:'Alta',prioBg:'#e67e22',dept:'Gestão Administrativa',ass:'IS',assC:'#8b5cf6',due:'Hoje',dueType:'soon'},
+  {id:16,title:'Licença Câmara — Totem CC Mira',group:'Gestão Administrativa',status:'Em progresso',statusC:'#4d94db',prio:'Urgente',prioBg:'#e74c3c',dept:'Gestão Administrativa',ass:'JL',assC:'#8b5cf6',due:'Qui',dueType:'soon'},
 ];
 // Usar como compat alias para código legado
 var ALL_TASKS=HOME_TASKS_DEFAULT;
@@ -9300,7 +9300,7 @@ async function homeSyncApp(){
     const prioMap = {
       'urgente':'Urgente','high':'Alta','alta':'Alta','medium':'Normal','normal':'Normal','low':'Normal'
     };
-    const deptColors = {'Dep. Comercial':'#e74c3c','Dep. Design':'#e67e22','Chão da Fábrica':'#3b82f6','Dep. Administrativo':'#8b5cf6'};
+    const deptColors = {'Dep. Comercial':'#e74c3c','Dep. Design':'#e67e22','Chão da Fábrica':'#3b82f6','Gestão Administrativa':'#8b5cf6'};
 
     homeAppTasks = (data||[]).map(t=>{
       const rawSt = (t.status||'').toLowerCase();
@@ -9442,7 +9442,7 @@ function renderTasksList(){
   if(!el)return;
   el.innerHTML=groups.map(grp=>{
     const gtasks=homeSortTasks(tasks.filter(t=>t.group===grp));
-    const deptColors={'Dep. Comercial':'#e74c3c','Dep. Design':'#e67e22','Chão da Fábrica':'#3b82f6','Dep. Administrativo':'#8b5cf6'};
+    const deptColors={'Dep. Comercial':'#e74c3c','Dep. Design':'#e67e22','Chão da Fábrica':'#3b82f6','Gestão Administrativa':'#8b5cf6'};
     const dc=deptColors[grp]||'#888';
     return `<div>
       <div class="group-hdr" data-action="toggleGroup">
@@ -9481,7 +9481,7 @@ function toggleGroup(hdr){
 
 // ── RENDER TASKS BOARD (drag & drop) ─────────────────────
 var HOME_ST_COLORS={'A fazer':'#6b6b72','Em progresso':'#4d94db','Em revisão':'#d9822b','Concluído':'#3fcf8e'};
-var HOME_DEPTS={'Dep. Comercial':'#e74c3c','Dep. Design':'#e67e22','Chão da Fábrica':'#3b82f6','Dep. Administrativo':'#8b5cf6'};
+var HOME_DEPTS={'Dep. Comercial':'#e74c3c','Dep. Design':'#e67e22','Chão da Fábrica':'#3b82f6','Gestão Administrativa':'#8b5cf6'};
 var homeDragId=null;
 
 function renderTasksBoard(){
@@ -9756,7 +9756,7 @@ var HOME_SUGESTOES_DEPT={
   'Dep. Design':['Revisão de briefing','Criar mockup','Aprovação do cliente'],
   'Dep. Comercial':['Contactar cliente','Preparar proposta','Follow-up'],
   'Chão da Fábrica':['Encomendar materiais','Produção','Controlo de qualidade','Expedição'],
-  'Dep. Administrativo':['Emitir documento','Validar dados','Arquivar']
+  'Gestão Administrativa':['Emitir documento','Validar dados','Arquivar']
 };
 
 function homeSugerirSubtarefas(){
@@ -9817,7 +9817,7 @@ function homeSaveFullEdit(){
   const prio=document.getElementById('hf-prio').value;
   const PRIO_LABELS={urgent:'Urgente',high:'Alta',normal:'Normal',low:'Baixa'};
   const PRIO_COLORS={urgent:'#e74c3c',high:'#e67e22',normal:'#6b6b72',low:'#94a3b8'};
-  const DEPT_COLORS={'Dep. Comercial':'#e74c3c','Dep. Design':'#e67e22','Chão da Fábrica':'#3b82f6','Dep. Administrativo':'#8b5cf6'};
+  const DEPT_COLORS={'Dep. Comercial':'#e74c3c','Dep. Design':'#e67e22','Chão da Fábrica':'#3b82f6','Gestão Administrativa':'#8b5cf6'};
 
   const aSel=document.getElementById('hf-assignee');
   const responsaveis=Array.prototype.filter.call(aSel.options,function(o){return o.selected;}).map(function(o){return o.value;});
@@ -9886,7 +9886,7 @@ function homeSaveTask(){
   const assignee=document.getElementById('ht-assignee').value;
   const PRIO_LABELS={urgent:'Urgente',high:'Alta',normal:'Normal',low:'Baixa'};
   const PRIO_COLORS={urgent:'#e74c3c',high:'#e67e22',normal:'#6b6b72',low:'#94a3b8'};
-  const DEPT_COLORS={'Dep. Comercial':'#e74c3c','Dep. Design':'#e67e22','Chão da Fábrica':'#3b82f6','Dep. Administrativo':'#8b5cf6'};
+  const DEPT_COLORS={'Dep. Comercial':'#e74c3c','Dep. Design':'#e67e22','Chão da Fábrica':'#3b82f6','Gestão Administrativa':'#8b5cf6'};
   const assInitials=assignee.split(' ').map(w=>w[0]).join('').substring(0,2).toUpperCase();
   const htDateEl=document.getElementById('ht-date');
   const htDateVal=htDateEl ? htDateEl.value : '';
@@ -9937,7 +9937,7 @@ var HOME_DEPT_SUBTAREFAS = {
   'Dep. Comercial': ['Contactar cliente', 'Enviar proposta', 'Follow-up'],
   'Dep. Design': ['Briefing', 'Criar mockup', 'Aprovação do cliente'],
   'Chão da Fábrica': ['Encomendar materiais', 'Produção', 'Controlo de qualidade', 'Expedição'],
-  'Dep. Administrativo': ['Criar ficha de projeto', 'Faturação', 'Arquivo']
+  'Gestão Administrativa': ['Criar ficha de projeto', 'Faturação', 'Arquivo']
 };
 function homeDistribuirSubtarefas(task){
   const titulos = HOME_DEPT_SUBTAREFAS[task.dept];
@@ -12140,7 +12140,7 @@ function rhOpenAdmissao(){
   document.getElementById('rh-adm-cargo').value='';
   document.getElementById('rh-adm-data').value=new Date().toISOString().split('T')[0];
   const resp=document.getElementById('rh-adm-resp');
-  if(resp&&typeof USERS!=='undefined') resp.innerHTML=USERS.filter(u=>u.dept==='Dep. Administrativo'||u.admin).map(u=>'<option>'+u.name+'</option>').join('');
+  if(resp&&typeof USERS!=='undefined') resp.innerHTML=USERS.filter(u=>u.dept==='Gestão Administrativa'||u.admin).map(u=>'<option>'+u.name+'</option>').join('');
   rhRenderAdmChecklist(RH_CHECKLIST_ADM.map(t=>({text:t,done:false})));
   document.getElementById('rh-adm-title').textContent='✅ Nova Admissão';
   document.getElementById('rh-adm-del').style.display='none';
@@ -12153,7 +12153,7 @@ function rhEditAdm(id){
   document.getElementById('rh-adm-cargo').value=a.cargo||'';
   document.getElementById('rh-adm-data').value=a.data||'';
   const resp=document.getElementById('rh-adm-resp');
-  if(resp&&typeof USERS!=='undefined') resp.innerHTML=USERS.filter(u=>u.dept==='Dep. Administrativo'||u.admin).map(u=>'<option>'+u.name+'</option>').join('');
+  if(resp&&typeof USERS!=='undefined') resp.innerHTML=USERS.filter(u=>u.dept==='Gestão Administrativa'||u.admin).map(u=>'<option>'+u.name+'</option>').join('');
   if(resp&&a.resp) resp.value=a.resp;
   rhRenderAdmChecklist(a.items||RH_CHECKLIST_ADM.map(t=>({text:t,done:false})));
   document.getElementById('rh-adm-title').textContent='✅ Admissão — '+a.nome;
@@ -13387,10 +13387,10 @@ var FALLBACK_USERS=[
 {id:'luis',name:'Luís Rodrigues',role:'Instalador',dept:'Chão da Fábrica',color:'#3b82f6',admin:false,online:false},
 {id:'sergio',name:'Sérgio Martins',role:'Instalador',dept:'Chão da Fábrica',color:'#3b82f6',admin:false,online:true},
 {id:'nuno',name:'Nuno Pereira',role:'Instalador',dept:'Chão da Fábrica',color:'#3b82f6',admin:false,online:false},
-{id:'joana',name:'Joana Lopes',role:'Secretariado',dept:'Dep. Administrativo',color:'#8b5cf6',admin:false,online:true},
-{id:'marta',name:'Marta Gomes',role:'Secretariado',dept:'Dep. Administrativo',color:'#8b5cf6',admin:false,online:true},
-{id:'ines',name:'Inês Sousa',role:'Financeira',dept:'Dep. Administrativo',color:'#8b5cf6',admin:false,online:true},
-{id:'vasco',name:'Vasco Cunha',role:'Suporte TI',dept:'Dep. Administrativo',color:'#8b5cf6',admin:false,online:true}
+{id:'joana',name:'Joana Lopes',role:'Secretariado',dept:'Gestão Administrativa',color:'#8b5cf6',admin:false,online:true},
+{id:'marta',name:'Marta Gomes',role:'Secretariado',dept:'Gestão Administrativa',color:'#8b5cf6',admin:false,online:true},
+{id:'ines',name:'Inês Sousa',role:'Financeira',dept:'Gestão Administrativa',color:'#8b5cf6',admin:false,online:true},
+{id:'vasco',name:'Vasco Cunha',role:'Suporte TI',dept:'Gestão Administrativa',color:'#8b5cf6',admin:false,online:true}
 ];
 
 function _getUsers(){
@@ -13726,7 +13726,7 @@ var chatRooms=[
   {id:'comercial',n:'Dep. Comercial',sub:'Rui, Humberto, Filipa',c:'#e74c3c',ini:'CO',unread:1,last:'Rui: Lead Serra da Lua confirmado'},
   {id:'design',n:'Dep. Design',sub:'Sara, Tomás',c:'#e67e22',ini:'DS',unread:0,last:'Sara: Arte O Farol aprovada'},
   {id:'fabrica',n:'Chão da Fábrica',sub:'André + equipa',c:'#3b82f6',ini:'CF',unread:2,last:'André: Totem pronto quinta'},
-  {id:'admin',n:'Dep. Administrativo',sub:'Joana, Marta, Inês',c:'#8b5cf6',ini:'AD',unread:0,last:'Inês: TOConline actualizado'},
+  {id:'admin',n:'Gestão Administrativa',sub:'Joana, Marta, Inês',c:'#8b5cf6',ini:'AD',unread:0,last:'Inês: TOConline actualizado'},
   {id:'direcao',n:'Direcção',sub:'Paulo + Edna',c:'#F5C400',ini:'DI',unread:0,last:'Edna: Margens excelentes'},
 ];
 var chatMsgs={
@@ -13816,7 +13816,7 @@ function globalSearch(q){
 
 function chatGetAllowedRooms(){
   if(!CU||CU.admin) return chatRooms;
-  const deptRoomMap={'Dep. Comercial':['geral','comercial'],'Dep. Design':['geral','design'],'Chão da Fábrica':['geral','fabrica'],'Dep. Administrativo':['geral','admin']};
+  const deptRoomMap={'Dep. Comercial':['geral','comercial'],'Dep. Design':['geral','design'],'Chão da Fábrica':['geral','fabrica'],'Gestão Administrativa':['geral','admin']};
   const allowed=deptRoomMap[CU.dept]||['geral'];
   return chatRooms.filter(r=>allowed.includes(r.id));
 }
@@ -14223,7 +14223,7 @@ function renderRelatorios(){
     {dept:'Dep. Comercial',kpi:'Pipeline activo',c:'#e74c3c',pct:67},
     {dept:'Dep. Design',kpi:'Artes em curso',c:'#e67e22',pct:88},
     {dept:'Chao da Fabrica',kpi:'Em producao',c:'#3b82f6',pct:78},
-    {dept:'Dep. Administrativo',kpi:'Documentos OK',c:'#8b5cf6',pct:92},
+    {dept:'Gestão Administrativa',kpi:'Documentos OK',c:'#8b5cf6',pct:92},
   ].map(function(d){
     return '<div style="margin-bottom:10px">'+
       '<div style="display:flex;justify-content:space-between;margin-bottom:4px">'+
@@ -14345,7 +14345,7 @@ function runImport(){
     {name:'Dep. Comercial',color:'#e74c3c',tasks:47,lists:['Pipeline Leads','Clientes','Prospeção','Follow-ups','Orçamentos','Contratos'],members:['Rui Mota','Humberto Estrelinha','Filipa Santos'],fields:['Valor lead','Produto','Fase','Responsável','Data fecho','Fonte','Empresa','Contacto']},
     {name:'Dep. Design',color:'#e67e22',tasks:23,lists:['Artes em Progresso','Aguarda Aprovação','Aprovadas','Arquivo'],members:['Sara Antunes','Tomás Figueiredo'],fields:['Tipo de arte','Cliente','Versão','Estado aprovação','Data entrega']},
     {name:'Chão da Fábrica',color:'#3b82f6',tasks:38,lists:['Ordens de Produção','Em Produção','Controlo Qualidade','Instalações','Concluídos'],members:['André Costa','Carlos Melo','Bruno Ferreira','Tiago Nunes','Diogo Alves','Mauro Silva','Ricardo Pinto','Pedro Carvalho','Luís Rodrigues','Sérgio Martins','Nuno Pereira'],fields:['Produto','Material','Dimensões','Data início','Data prevista','Operador','Nº série','Estado QC','Local instalação','Equipa instalação']},
-    {name:'Dep. Administrativo',color:'#8b5cf6',tasks:19,lists:['Agenda','Documentos','Despesas e Reembolsos','Processos Internos'],members:['Joana Lopes','Marta Gomes','Inês Sousa','Vasco Cunha'],fields:['Tipo doc','Entidade','Validade','Estado','Responsável','Valor']},
+    {name:'Gestão Administrativa',color:'#8b5cf6',tasks:19,lists:['Agenda','Documentos','Despesas e Reembolsos','Processos Internos'],members:['Joana Lopes','Marta Gomes','Inês Sousa','Vasco Cunha'],fields:['Tipo doc','Entidade','Validade','Estado','Responsável','Valor']},
   ];
 
   let logEl=document.getElementById('import-log');
@@ -14938,7 +14938,7 @@ window.openEquipaModal = function(){
   if(!nome) return;
   var cargo=prompt('Cargo / Funcao:');
   var d=prompt('Departamento (1=Comercial 2=Design 3=Fabrica 4=Admin 5=Direccao):');
-  var depts=['Dep. Comercial','Dep. Design','Chao da Fabrica','Dep. Administrativo','Direccao'];
+  var depts=['Dep. Comercial','Dep. Design','Chao da Fabrica','Gestão Administrativa','Direccao'];
   var cores=['#e74c3c','#e67e22','#3b82f6','#8b5cf6','#F5C400'];
   var di=Math.max(0,Math.min(4,(parseInt(d)||1)-1));
   USERS.push({id:'u'+Date.now(),name:nome,role:cargo||'Colaborador',dept:depts[di],color:cores[di],admin:false,online:false});
@@ -15172,7 +15172,7 @@ if(typeof initNovosModulos==='function') setTimeout(initNovosModulos, 200);
         <option>Dep. Comercial</option>
         <option>Dep. Design</option>
         <option>Chão da Fábrica</option>
-        <option>Dep. Administrativo</option>
+        <option>Gestão Administrativa</option>
       </select>
     </div>
     <div class="form-group"><label class="form-label">Acesso admin? (ver tudo)</label>
@@ -19330,7 +19330,7 @@ function importarConfiguracao() {
           <option>Dep. Comercial</option>
           <option>Dep. Design</option>
           <option>Chão da Fábrica</option>
-          <option>Dep. Administrativo</option>
+          <option>Gestão Administrativa</option>
         </select>
       </div>
       <div class="form-group">
