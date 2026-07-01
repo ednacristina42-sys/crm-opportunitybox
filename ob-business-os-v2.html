@@ -11673,7 +11673,7 @@ async function ecSyncFuncionarios(){
   try {
     if(btn) btn.textContent = '⏳ Sincronizando...';
     const res = await fetch('https://xtiguuyvotnpwqzmggnc.supabase.co/functions/v1/crm-employees', {
-      headers: { 'apikey': EC_SB_KEY }
+      headers: { 'apikey': EC_SB_KEY, 'x-api-key': 'ob-crm-2026-secure' }
     });
     if(!res.ok){ const err=await res.text(); console.error('crm-employees error:', err); if(btn) btn.textContent = '❌ Erro'; return; }
     const data = await res.json();
