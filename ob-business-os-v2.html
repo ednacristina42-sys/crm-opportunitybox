@@ -6359,7 +6359,7 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
       <div class="pg-title">Documentos e Contratos</div>
       <div class="pg-actions">
         <button class="tbtn" id="docs-app-sync-btn" onclick="docsLoadApp()" style="font-size:13px">📱 App</button>
-        <button class="tbtn y" onclick="document.getElementById('docs-file-input').click()">+ Carregar</button>
+        <button class="tbtn y" onclick="crmDocOpenNew()">+ Carregar</button>
       </div>
     </div>
     <div class="view-tabs">
@@ -6370,27 +6370,58 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
 
   <!-- Tab CRM (documentos existentes) -->
   <div id="docs-panel-crm" class="task-content">
-    <div class="tw"><table><thead><tr><th>Documento</th><th>Tipo</th><th>Cliente/Entidade</th><th>Validade</th><th>Estado</th><th>Acção</th></tr></thead>
-    <tbody>
-      <tr><td><strong style="cursor:pointer;color:var(--y)" data-action="alertMsg" data-msg="Documento: Contrato Hotel Serra da Lua 2025">Contrato Hotel Serra da Lua 2025</strong></td><td><span class="b bb">Contrato</span></td><td>Hotel Serra da Lua</td><td>31 Dez 2025</td><td><span class="b bg">Assinado</span></td><td><button class="tbtn" style="font-size:12px;padding:3px 8px" data-action="alertMsg" data-msg="Download: documento guardado localmente.">📥</button></td></tr>
-      <tr><td><strong>Proposta CC Mira Sintra</strong></td><td><span class="b ba">Proposta</span></td><td>CC Mira Sintra</td><td>15 Jun 2025</td><td><span class="b ba">Pendente</span></td><td><button class="tbtn" style="font-size:12px;padding:3px 8px" data-action="alertMsg" data-msg="Download: documento guardado localmente.">📥</button></td></tr>
-      <tr><td><strong style="cursor:pointer;color:var(--y)" data-action="alertMsg" data-msg="Documento: Licença Câmara Sintra">Licença Câmara Sintra</strong></td><td><span class="b bb">Licença</span></td><td>C.M. Sintra</td><td>30 Out 2025</td><td><span class="b bg">Válido</span></td><td><button class="tbtn" style="font-size:12px;padding:3px 8px" data-action="alertMsg" data-msg="Download: documento guardado localmente.">📥</button></td></tr>
-      <tr><td><strong>Seguro Responsabilidade Civil</strong></td><td><span class="b bm">Seguro</span></td><td>Fidelidade</td><td>15 Mar 2026</td><td><span class="b bg">Válido</span></td><td><button class="tbtn" style="font-size:12px;padding:3px 8px" data-action="alertMsg" data-msg="Download: documento guardado localmente.">📥</button></td></tr>
-      <tr><td><strong>Manual Identidade OB</strong></td><td><span class="b ba">Design</span></td><td>Interno</td><td>—</td><td><span class="b bg">Actualizado</span></td><td><button class="tbtn" style="font-size:12px;padding:3px 8px" data-action="alertMsg" data-msg="Download: documento guardado localmente.">📥</button></td></tr>
-    </tbody></table></div>
+    <div id="docs-crm-wrap"></div>
   </div>
 
   <!-- Tab App de Pontos -->
   <div id="docs-panel-app" style="display:none" class="task-content">
     <div id="docs-app-status" style="padding:12px 0;font-size:13px;color:var(--muted)">Clique em "📱 App" para sincronizar documentos do app de pontos.</div>
-    <div class="tw" id="docs-app-wrap" style="display:none">
-      <table>
-        <thead><tr>
-          <th>Documento</th><th>Tipo</th><th>Funcionário / Viatura</th>
-          <th>Validade</th><th>Data upload</th><th>Ação</th>
-        </tr></thead>
-        <tbody id="docs-app-tbody"></tbody>
-      </table>
+    <div id="docs-app-wrap" style="display:none"></div>
+  </div>
+
+</div>
+
+<!-- ─── MODAL CRM DOC ─────────────────────────────────────────────── -->
+<div id="crm-doc-modal" class="crm-modal-overlay" style="display:none" onclick="if(event.target===this)crmDocClose()">
+  <div class="crm-modal" style="max-width:560px">
+    <h2 id="crm-doc-modal-title">Documento</h2>
+    <div style="display:grid;gap:12px">
+      <div><label class="field-lbl">Nome do Documento</label><input id="cdm-nome" class="field-inp" placeholder="Nome"></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div><label class="field-lbl">Tipo</label>
+          <select id="cdm-tipo" class="field-inp">
+            <option value="Contrato">Contrato</option>
+            <option value="Proposta">Proposta</option>
+            <option value="Licença">Licença</option>
+            <option value="Seguro">Seguro</option>
+            <option value="Design">Design</option>
+            <option value="Outro">Outro</option>
+          </select>
+        </div>
+        <div><label class="field-lbl">Estado</label>
+          <select id="cdm-estado" class="field-inp">
+            <option value="Válido">Válido</option>
+            <option value="Assinado">Assinado</option>
+            <option value="Pendente">Pendente</option>
+            <option value="Actualizado">Actualizado</option>
+            <option value="Expirado">Expirado</option>
+          </select>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div><label class="field-lbl">Cliente / Entidade</label><input id="cdm-entidade" class="field-inp" placeholder="Ex: Hotel Serra da Lua"></div>
+        <div><label class="field-lbl">Validade</label><input id="cdm-validade" class="field-inp" type="date"></div>
+      </div>
+      <div><label class="field-lbl">Notas</label><textarea id="cdm-notas" class="field-inp" rows="3" style="resize:vertical"></textarea></div>
+      <div id="cdm-file-row" style="display:flex;align-items:center;gap:10px">
+        <a id="cdm-file-link" href="#" target="_blank" class="tbtn" style="font-size:13px;text-decoration:none;display:none">📥 Abrir ficheiro</a>
+        <span id="cdm-file-name" style="font-size:12px;color:var(--muted)"></span>
+      </div>
+    </div>
+    <div class="crm-modal-btns" style="margin-top:18px">
+      <button class="tbtn" id="cdm-del-btn" onclick="crmDocDelete()" style="color:var(--r)">🗑️ Eliminar</button>
+      <button class="tbtn" onclick="crmDocClose()">Cancelar</button>
+      <button class="tbtn y" onclick="crmDocSave()">💾 Guardar</button>
     </div>
   </div>
 </div>
@@ -9204,7 +9235,7 @@ window.goPage=function goPage(id){
   if(id==='admin-agenda')        { try{ agendaRender(); }catch(e){} }
   if(id==='admin-despesas')      { try{ renderDespesas(); }catch(e){} }
   if(id==='admin-rh')            { try{ rhRender(); }catch(e){} }
-  if(id==='admin-docs')          { docsTab('crm'); }
+  if(id==='admin-docs')          { crmDocsRender(); docsTab('crm'); }
   if(id==='dashboard')           { try{ renderDashLeads(); setTimeout(initCharts,50); }catch(e){} }
   if(id==='financeiro')          { try{ renderFinanceiro(); setTimeout(initCharts,50); }catch(e){} }
   if(id==='relatorios')          { try{ renderRelatorios(); setTimeout(initCharts,50); }catch(e){} }
@@ -15114,6 +15145,123 @@ window.adminDocsHandleFiles = function(inputEl) {
   if (nomes.length) alert('Carregado(s): ' + nomes.length + NL + nomes.join(NL));
   inputEl.value = '';
 };
+
+// ── Documentos CRM — dados e render ───────────────────────────
+var CRM_DOCS = [
+  {id:1, nome:'Contrato Hotel Serra da Lua 2025', tipo:'Contrato', entidade:'Hotel Serra da Lua', validade:'2025-12-31', estado:'Assinado', notas:'', file_url:null},
+  {id:2, nome:'Proposta CC Mira Sintra', tipo:'Proposta', entidade:'CC Mira Sintra', validade:'2025-06-15', estado:'Pendente', notas:'', file_url:null},
+  {id:3, nome:'Licença Câmara Sintra', tipo:'Licença', entidade:'C.M. Sintra', validade:'2025-10-30', estado:'Válido', notas:'', file_url:null},
+  {id:4, nome:'Seguro Responsabilidade Civil', tipo:'Seguro', entidade:'Fidelidade', validade:'2026-03-15', estado:'Válido', notas:'', file_url:null},
+  {id:5, nome:'Manual Identidade OB', tipo:'Design', entidade:'Interno', validade:'', estado:'Actualizado', notas:'', file_url:null}
+];
+var CRM_DOCS_IDX = 6;
+var CRM_DOC_EDIT_ID = null;
+
+const DOC_TIPO_COLOR = {Contrato:'#3b82f6',Proposta:'#f97316',Licença:'#3b82f6',Seguro:'#a855f7',Design:'#f97316',Outro:'#6b7280'};
+const DOC_ESTADO_COLOR = {Válido:'bg',Assinado:'bg',Pendente:'ba',Actualizado:'bg',Expirado:'br'};
+
+function crmDocsRender(){
+  const wrap = document.getElementById('docs-crm-wrap'); if(!wrap) return;
+  if(!CRM_DOCS.length){
+    wrap.innerHTML='<p style="padding:20px;color:var(--muted);text-align:center">Nenhum documento CRM. Carregue o primeiro.</p>';
+    return;
+  }
+  const rows = CRM_DOCS.map(d=>{
+    const col = DOC_TIPO_COLOR[d.tipo]||'#6b7280';
+    const estadoCls = DOC_ESTADO_COLOR[d.estado]||'ba';
+    const valStr = d.validade ? new Date(d.validade+'T12:00:00').toLocaleDateString('pt-PT',{day:'2-digit',month:'short',year:'numeric'}) : '—';
+    const expired = d.validade && new Date(d.validade) < new Date();
+    const dlBtn = d.file_url
+      ? `<a href="${d.file_url}" target="_blank" class="tbtn" style="font-size:12px;padding:3px 8px;text-decoration:none" title="Abrir">📥</a>`
+      : `<button class="tbtn" style="font-size:12px;padding:3px 8px;color:var(--muted)" disabled title="Sem ficheiro">📥</button>`;
+    return `<tr>
+      <td><strong style="cursor:pointer;color:var(--y)" onclick="crmDocOpen(${d.id})">${d.nome}</strong></td>
+      <td><span style="background:${col}20;color:${col};border:1px solid ${col}40;border-radius:4px;padding:2px 8px;font-size:12px">${d.tipo}</span></td>
+      <td>${d.entidade||'—'}</td>
+      <td style="${expired?'color:var(--r)':''}">${valStr}</td>
+      <td><span class="b ${estadoCls}" style="font-size:12px">${d.estado}</span></td>
+      <td style="display:flex;gap:6px;align-items:center">
+        ${dlBtn}
+        <button class="tbtn" style="font-size:12px;padding:3px 8px" onclick="crmDocOpen(${d.id})" title="Editar">✏️</button>
+        <button class="tbtn" style="font-size:12px;padding:3px 8px;color:var(--r)" onclick="crmDocDeleteId(${d.id})" title="Eliminar">🗑️</button>
+      </td>
+    </tr>`;
+  }).join('');
+  wrap.innerHTML=`<div class="tw"><table><thead><tr>
+    <th>Documento</th><th>Tipo</th><th>Cliente/Entidade</th><th>Validade</th><th>Estado</th><th>Acção</th>
+  </tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+
+function crmDocOpen(id){
+  const d = CRM_DOCS.find(x=>x.id===id); if(!d) return;
+  CRM_DOC_EDIT_ID = id;
+  document.getElementById('crm-doc-modal-title').textContent = d.nome||'Documento';
+  document.getElementById('cdm-nome').value = d.nome||'';
+  document.getElementById('cdm-tipo').value = d.tipo||'Outro';
+  document.getElementById('cdm-estado').value = d.estado||'Válido';
+  document.getElementById('cdm-entidade').value = d.entidade||'';
+  document.getElementById('cdm-validade').value = d.validade||'';
+  document.getElementById('cdm-notas').value = d.notas||'';
+  const link = document.getElementById('cdm-file-link');
+  const fname = document.getElementById('cdm-file-name');
+  if(d.file_url){ link.href=d.file_url; link.style.display=''; fname.textContent=''; }
+  else { link.style.display='none'; fname.textContent='Sem ficheiro anexo'; }
+  document.getElementById('crm-doc-modal').style.display='flex';
+}
+
+function crmDocOpenNew(){
+  CRM_DOC_EDIT_ID = null;
+  document.getElementById('crm-doc-modal-title').textContent = '+ Novo Documento';
+  document.getElementById('cdm-nome').value='';
+  document.getElementById('cdm-tipo').value='Contrato';
+  document.getElementById('cdm-estado').value='Válido';
+  document.getElementById('cdm-entidade').value='';
+  document.getElementById('cdm-validade').value='';
+  document.getElementById('cdm-notas').value='';
+  document.getElementById('cdm-file-link').style.display='none';
+  document.getElementById('cdm-file-name').textContent='';
+  document.getElementById('crm-doc-modal').style.display='flex';
+}
+
+function crmDocClose(){
+  document.getElementById('crm-doc-modal').style.display='none';
+  CRM_DOC_EDIT_ID = null;
+}
+
+function crmDocSave(){
+  const nome = document.getElementById('cdm-nome').value.trim();
+  if(!nome){ alert('Insira o nome do documento.'); return; }
+  const data = {
+    nome, tipo: document.getElementById('cdm-tipo').value,
+    estado: document.getElementById('cdm-estado').value,
+    entidade: document.getElementById('cdm-entidade').value.trim(),
+    validade: document.getElementById('cdm-validade').value,
+    notas: document.getElementById('cdm-notas').value.trim(),
+    file_url: CRM_DOC_EDIT_ID ? (CRM_DOCS.find(x=>x.id===CRM_DOC_EDIT_ID)||{}).file_url||null : null
+  };
+  if(CRM_DOC_EDIT_ID){
+    const idx = CRM_DOCS.findIndex(x=>x.id===CRM_DOC_EDIT_ID);
+    if(idx>=0) CRM_DOCS[idx] = {...CRM_DOCS[idx], ...data};
+  } else {
+    CRM_DOCS.push({id: CRM_DOCS_IDX++, ...data});
+  }
+  crmDocClose();
+  crmDocsRender();
+}
+
+function crmDocDeleteId(id){
+  if(!confirm('Eliminar este documento?')) return;
+  CRM_DOCS = CRM_DOCS.filter(x=>x.id!==id);
+  crmDocsRender();
+}
+
+function crmDocDelete(){
+  if(!CRM_DOC_EDIT_ID) return;
+  if(!confirm('Eliminar este documento?')) return;
+  CRM_DOCS = CRM_DOCS.filter(x=>x.id!==CRM_DOC_EDIT_ID);
+  crmDocClose();
+  crmDocsRender();
+}
 
 // ── Documentos — tabs ─────────────────────────────────────────
 function docsTab(tab){
