@@ -15122,14 +15122,13 @@ function docsTab(tab){
   document.querySelectorAll('#page-admin-docs .vt').forEach((b,i)=>{
     b.classList.toggle('on', (i===0&&tab==='crm')||(i===1&&tab==='app'));
   });
-  if(tab==='app' && !document.getElementById('docs-app-tbody').children.length) docsLoadApp();
+  if(tab==='app' && !document.getElementById('docs-app-wrap').innerHTML.trim()) docsLoadApp();
 }
 
 async function docsLoadApp(){
   const btn = document.getElementById('docs-app-sync-btn');
   const status = document.getElementById('docs-app-status');
   const wrap = document.getElementById('docs-app-wrap');
-  const tbody = document.getElementById('docs-app-tbody');
   if(btn) btn.textContent='⏳ A carregar...';
   if(status) status.style.display='block';
   if(status) status.textContent='A sincronizar com o app de pontos...';
@@ -15145,7 +15144,7 @@ async function docsLoadApp(){
       if(btn) btn.textContent='📱 App (0)';
       return;
     }
-    const EC_SB_STORAGE = 'https://xtiguuyvotnpwqzmggnc.supabase.co/storage/v1/object/public/';
+    const EC_SB_STORAGE_BASE = 'https://xtiguuyvotnpwqzmggnc.supabase.co/storage/v1/object/public/';
     const docTypeColor = {cc:'#8b5cf6',passport:'#8b5cf6',nif:'#3b82f6',iban:'#3b82f6',contract:'#f97316',certificate:'#10b981',license:'#f59e0b',vehicle_insurance:'#ec4899',vehicle_registration:'#ec4899',other:'#6b7280'};
 
     // Agrupar por entidade
@@ -15162,7 +15161,8 @@ async function docsLoadApp(){
       const validade = d.expires_on ? d.expires_on.split('T')[0] : '—';
       const uploaded = d.created_at ? d.created_at.split('T')[0] : '—';
       const expired = d.expires_on && new Date(d.expires_on) < new Date();
-      const storageUrl = d.storage_path ? EC_SB_STORAGE + d.storage_path : null;
+      const bucket = d.source === 'vehicle' ? 'vehicle-docs' : 'employee-docs';
+      const storageUrl = d.storage_path ? EC_SB_STORAGE_BASE + bucket + '/' + d.storage_path : null;
       const dlBtn = storageUrl
         ? `<a href="${storageUrl}" target="_blank" class="tbtn" style="font-size:12px;padding:3px 8px;text-decoration:none">📥</a>`
         : `<button class="tbtn" style="font-size:12px;padding:3px 8px;color:var(--muted)" disabled>📥</button>`;
