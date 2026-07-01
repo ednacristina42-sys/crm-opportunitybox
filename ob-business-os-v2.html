@@ -1084,16 +1084,67 @@ function avTocoIntegrar(){
   if(typeof avBars==='function') avBars();
 }
 
-async function avSyncTocOnline(){
-  if(typeof tocoSincronizarFaturas!=='function') return;
-  console.log('AV: Sincronizando TocOnline...');
-  try{
-    // CORRIGIDO: passa '2026' para forçar a sincronização a percorrer páginas
-    // suficientes até cobrir todo o ano em curso (antes só trazia a 1ª página
-    // de 100 documentos, insuficiente com milhares de faturas no TocOnline).
-    await tocoSincronizarFaturas(false, '2026');
-  }catch(e){ console.error('[AV] Erro ao sincronizar TocOnline:', e); }
+var AV_TOCO_EF_URL = 'https://xtiguuyvotnpwqzmggnc.supabase.co/functions/v1/crm-toconline';
+var AV_TOCO_EF_KEY = 'ob-crm-2026-secure';
+
+async function avSyncTocOnlineViaEF(){
+  var tsEl = document.getElementById('av-sb-ts');
+  if(tsEl) tsEl.textContent = '⏳ A sincronizar TocOnline...';
+  var tipos = [
+    { tipo:'FT', resource:'invoices', filter:'document_type=FT' },
+    { tipo:'NC', resource:'invoices', filter:'document_type=NC' },
+    { tipo:'RC', resource:'receipts', filter:'' },
+  ];
+  var todos = [];
+  for(var t=0; t<tipos.length; t++){
+    try{
+      var url = AV_TOCO_EF_URL + '?resource=' + tipos[t].resource + (tipos[t].filter ? '&' + tipos[t].filter : '');
+      var resp = await fetch(url, {headers:{'x-api-key': AV_TOCO_EF_KEY}});
+      if(!resp.ok) continue;
+      var json = await resp.json();
+      var brutos = Array.isArray(json) ? json : (json && Array.isArray(json.data) ? json.data : []);
+      brutos.forEach(function(item){
+        var a = item.attributes || item;
+        todos.push({
+          _tipo: tipos[t].tipo,
+          Id: item.id || a.id,
+          Number: a.document_no || a.number || a.Number || item.id,
+          CustomerName: a.customer_business_name || a.entity_name || a.CustomerName,
+          CustomerTaxNumber: a.customer_tax_registration_number || a.CustomerTaxNumber,
+          Date: a.date || a.Date,
+          DueDate: a.due_date || a.DueDate,
+          TotalAmount: a.gross_total != null ? a.gross_total : (a.net_total != null ? a.net_total : (a.amount || a.TotalAmount || 0)),
+          Status: a.status || a.Status,
+        });
+      });
+    }catch(e){ console.warn('[AV EF] Erro tipo', tipos[t].tipo, e); }
+  }
+  if(todos.length){
+    var chave = function(d){ return (d._tipo||'') + '-' + (d.Id||d.Number||''); };
+    var mapa = {};
+    (_tocoFatCache||[]).forEach(function(d){ mapa[chave(d)] = d; });
+    todos.forEach(function(d){ mapa[chave(d)] = d; });
+    var merged = Object.keys(mapa).map(function(k){ return mapa[k]; });
+    _tocoFatCache = merged;
+    try{ localStorage.setItem(TOCO_FAT_KEY, JSON.stringify({ts: Date.now(), data: merged})); }catch(e){}
+    if(tsEl) tsEl.textContent = '✅ Synced · ' + merged.length + ' docs';
+  } else {
+    if(tsEl) tsEl.textContent = '⚠️ Sem dados do TocOnline';
+  }
   avTocoIntegrar();
+}
+
+async function avSyncTocOnline(){
+  console.log('AV: Sincronizando TocOnline via Edge Function...');
+  try{
+    await avSyncTocOnlineViaEF();
+  }catch(e){
+    console.warn('[AV] Edge Function falhou, tentando Make proxy...', e);
+    if(typeof tocoSincronizarFaturas==='function'){
+      try{ await tocoSincronizarFaturas(false, '2026'); }catch(e2){}
+    }
+    avTocoIntegrar();
+  }
 }
 window.avSyncTocOnline = avSyncTocOnline;
 window.avTocoIntegrar = avTocoIntegrar;
@@ -1206,8 +1257,12 @@ async function afSincTudo(){
   if(btn){ btn.disabled=true; btn.textContent='⏳ A sincronizar...'; }
   var ts0 = localStorage.getItem('ob-af-last-sync');
   try {
-    // Sync TOConline se configurado
+    // Sync TOConline via Edge Function
     if(typeof avSyncTocOnline === 'function') await avSyncTocOnline();
+    // Sync Google Sheets (vendas 2026)
+    if(typeof avSyncVendedoresSheet === 'function'){
+      try{ await avSyncVendedoresSheet(); }catch(e){ console.warn('[AF] Google Sheets sync:', e); }
+    }
     // Reload widget
     await afLoad();
     // Actualizar banner de fallback com último ok
@@ -1302,11 +1357,12 @@ window.afExportarExcel = afExportarExcel;
 // ════════════════════════════════════════════════════════════════
 // ANÁLISE DE VENDAS — Vendedores 2026 a partir de Google Sheets
 // ════════════════════════════════════════════════════════════════
-// Folha "Cópia de Mapa de vendas", separador com colunas:
-// Data | Número | Nome | Total líquido | IVA TOTAL | Total com IVA |
-// Mês/Ano | Valor Recebido | Saldo a Receber | Data Recebimento |
-// Status | Vendedor | ...
-var AV_VEND_SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRdQzJWlUwfWXf8GZbOJhRI3LpmfV62Z3fIMVahzcYcpUNUB4wuqWZHWi11DAVzzFwG9TvDYoZF1ljR/pub?output=csv';
+// Folha "Vendas 2026" do Google Sheets partilhado (gid=1837232023)
+// Colunas: Data | Número | Nome | Total líquido | IVA TOTAL | Total com IVA |
+// Mês/Ano | Valor Recebido | Saldo a Receber | Data Recebimento | Status | Vendedor
+var AV_VEND_SHEET_ID = '1I36CIpMncOucNdkfVVVExXlQXbvlL3l1';
+var AV_VEND_SHEET_GID = '1837232023';
+var AV_VEND_SHEET_URL = 'https://docs.google.com/spreadsheets/d/' + AV_VEND_SHEET_ID + '/export?format=csv&gid=' + AV_VEND_SHEET_GID;
 
 function avParseCSV(text){
   var rows=[],row=[],field='',inQuotes=false;
@@ -1338,20 +1394,23 @@ function avParseNumPT(s){
 }
 
 async function avFetchVendSheetCSV(){
-  // Quando o CRM é aberto via file:// (origin null), o Google não devolve
-  // cabeçalhos CORS no export CSV, pelo que é preciso passar por um proxy
-  // que faz o pedido do lado do servidor.
-  var directOk = false;
-  try{
-    var resp = await fetch(AV_VEND_SHEET_URL);
-    if(resp.ok){ directOk = true; return await resp.text(); }
-  }catch(e){ /* bloqueado por CORS, tentar via proxy */ }
-  if(!directOk){
-    var proxyUrl = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(AV_VEND_SHEET_URL);
-    var resp2 = await fetch(proxyUrl);
-    if(!resp2.ok) throw new Error('HTTP '+resp2.status+' (proxy)');
-    return await resp2.text();
+  // Tenta fetch direto (funciona se a folha for pública / link partilhado);
+  // se falhar por CORS/403 tenta via proxy allorigins.win.
+  var urls = [
+    AV_VEND_SHEET_URL,
+    'https://api.allorigins.win/raw?url=' + encodeURIComponent(AV_VEND_SHEET_URL),
+    'https://corsproxy.io/?' + encodeURIComponent(AV_VEND_SHEET_URL),
+  ];
+  for(var i=0; i<urls.length; i++){
+    try{
+      var resp = await fetch(urls[i]);
+      if(resp.ok){
+        var text = await resp.text();
+        if(text && text.length > 50) return text;
+      }
+    }catch(e){ /* tenta próximo */ }
   }
+  throw new Error('Não foi possível obter o Google Sheet (verifique se está partilhado como "qualquer pessoa com o link pode ver")');
 }
 
 async function avSyncVendedoresSheet(){
@@ -7534,7 +7593,8 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
       <div class="pg-title">Análise de Vendas</div>
       <div class="pg-actions">
         <span id="av-sb-ts" style="font-size:12px;color:var(--muted);margin-right:6px"></span>
-        <button class="tbtn" style="font-size:13px" onclick="if(typeof avSyncTocOnline==='function'){avSyncTocOnline();}" title="Vai buscar as faturas reais ao TocOnline e atualiza 2026, gráfico e tabela TocOnline">↻ Sync TocOnline</button>
+        <button class="tbtn" style="font-size:13px" onclick="if(typeof avSyncTocOnline==='function'){avSyncTocOnline();}" title="Vai buscar as faturas reais ao TocOnline (OAuth2 via Edge Function)">↻ Sync TocOnline</button>
+        <button class="tbtn" style="font-size:13px;background:rgba(52,199,89,.15);border-color:rgba(52,199,89,.4);color:#34c759" onclick="if(typeof avSyncVendedoresSheet==='function'){avSyncVendedoresSheet().then(function(){var ts=document.getElementById('av-sb-ts');if(ts)ts.textContent='✅ Google Sheets sincronizado';});}" title="Importa dados da folha Vendas 2026 do Google Sheets">📊 Sync Google Sheets</button>
         <button class="tbtn" style="font-size:13px" onclick="if(typeof avAtualizarMetricasCartoes==='function'){AV_METRICAS_TS=0;avAtualizarMetricasCartoes();}">↻ Sync Supabase</button>
         <span style="font-family:'DM Mono',monospace;font-size:12.5px;color:var(--muted);background:var(--bg3);border:1px solid var(--border);padding:5px 10px;border-radius:6px;display:inline-flex;align-items:center;gap:7px">
           <span style="width:5px;height:5px;border-radius:50%;background:var(--y);box-shadow:0 0 6px var(--y)"></span>
