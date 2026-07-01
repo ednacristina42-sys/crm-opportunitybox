@@ -12125,34 +12125,108 @@ function rhRenderColabs(){
 
 function rhVerFuncionarioApp(ecId){
   const c = EC_FUNCIONARIOS.find(x=>x.ec_id===ecId); if(!c) return;
-  const rows = [
-    ['Nome completo', c.nome],
-    ['Função / Cargo', c.cargo],
-    ['Departamento', c.dept],
-    ['Telefone', c.tel],
-    ['NIF', c.nif||'—'],
-    ['NISS', c.niss||'—'],
-    ['IBAN', c.iban||'—'],
-    ['Data de nascimento', c.birth_date||'—'],
-    ['Início contrato', c.admissao||'—'],
-    ['Fim contrato', c.contract_end||'—'],
-    ['Horas semanais', c.weekly_hours ? c.weekly_hours+'h' : '—'],
-    ['Morada', c.morada||'—'],
-    ['CC', c.cc_number ? c.cc_number+(c.cc_expiry?' (exp: '+c.cc_expiry+')':'') : '—'],
-    ['Carta de condução', c.driver_license ? c.driver_license+(c.license_expiry?' (exp: '+c.license_expiry+')':'') : '—'],
-    ['Contacto emergência', c.emergency_name ? c.emergency_name+(c.emergency_phone?' — '+c.emergency_phone:'') : '—'],
-    ['Notas', c.notes||'—'],
-  ];
+  const initials = c.nome.split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
   const avatarHtml = c.avatar_url
-    ? `<img src="${c.avatar_url}" style="width:64px;height:64px;border-radius:50%;object-fit:cover" onerror="this.outerHTML='<div style=width:64px;height:64px;border-radius:50%;background:#ec4899;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:700;color:#fff>${c.nome.split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase()}</div>'">`
-    : `<div style="width:64px;height:64px;border-radius:50%;background:#ec4899;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:700;color:#fff">${c.nome.split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase()}</div>`;
-  const body = `<div style="display:flex;align-items:center;gap:14px;margin-bottom:18px">${avatarHtml}<div><div style="font-size:18px;font-weight:700">${c.nome}</div><div style="color:var(--muted);font-size:13px">${c.cargo} · ${c.dept}</div><span style="font-size:11px;background:#ec489920;color:#ec4899;border:1px solid #ec489940;border-radius:4px;padding:2px 6px">📱 App de Pontos</span></div></div><table style="width:100%;border-collapse:collapse">${rows.map(([l,v])=>`<tr><td style="padding:6px 10px;font-size:13px;color:var(--muted);white-space:nowrap;border-bottom:1px solid var(--border)">${l}</td><td style="padding:6px 10px;font-size:13px;border-bottom:1px solid var(--border)">${v||'—'}</td></tr>`).join('')}</table>`;
+    ? `<img src="${c.avatar_url}" style="width:56px;height:56px;border-radius:50%;object-fit:cover">`
+    : `<div style="width:56px;height:56px;border-radius:50%;background:#ec4899;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:700;color:#fff">${initials}</div>`;
+  const f = (id,label,val,type='text')=>`<div class="form-group"><label class="form-label">${label}</label><input class="form-input" id="ecf-${id}" type="${type}" value="${(val||'').toString().replace(/"/g,'&quot;')}"/></div>`;
+  const body = `
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+      ${avatarHtml}
+      <div>
+        <div style="font-size:17px;font-weight:700">${c.nome}</div>
+        <div style="font-size:12px;color:var(--muted)">${c.cargo} · ${c.dept}</div>
+        <span style="font-size:11px;background:#ec489920;color:#ec4899;border:1px solid #ec489940;border-radius:4px;padding:2px 6px">📱 App de Pontos</span>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      ${f('full_name','Nome completo',c.nome)}
+      ${f('phone','Telefone',c.tel)}
+      ${f('department','Departamento',c.dept)}
+      ${f('team_label','Equipa / Label',c.cargo)}
+      ${f('nif','NIF',c.nif)}
+      ${f('niss','NISS',c.niss)}
+      ${f('iban','IBAN',c.iban)}
+      ${f('birth_date','Data de nascimento',c.birth_date,'date')}
+      ${f('contract_start','Início contrato',c.admissao,'date')}
+      ${f('contract_end','Fim contrato',c.contract_end,'date')}
+      ${f('weekly_hours','Horas semanais',c.weekly_hours,'number')}
+      ${f('address','Morada',c.morada)}
+      ${f('cc_number','N.º CC',c.cc_number)}
+      ${f('cc_expiry','Validade CC',c.cc_expiry,'date')}
+      ${f('driver_license_number','Carta condução',c.driver_license)}
+      ${f('driver_license_expiry','Validade carta',c.license_expiry,'date')}
+      ${f('emergency_contact_name','Contacto emergência',c.emergency_name)}
+      ${f('emergency_contact_phone','Tel. emergência',c.emergency_phone)}
+    </div>
+    <div class="form-group" style="margin-top:8px"><label class="form-label">Notas</label><textarea class="form-input" id="ecf-notes" rows="2" style="resize:vertical">${c.notes||''}</textarea></div>
+    <div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end">
+      <button class="tbtn" onclick="rhCloseColabModal()">Cancelar</button>
+      <button class="tbtn y" onclick="ecSaveFuncionario('${c.ec_id}')">💾 Guardar no App</button>
+    </div>`;
   document.getElementById('rh-colab-modal-body').innerHTML = body;
-  document.getElementById('rh-colab-title').textContent = c.nome;
+  document.getElementById('rh-colab-title').textContent = '✏️ '+c.nome;
   document.getElementById('rh-c-del').style.display='none';
   document.getElementById('rh-colab-modal-form').style.display='none';
   document.getElementById('rh-colab-modal-body').style.display='block';
   document.getElementById('rh-colab-modal').classList.add('open');
+}
+
+async function ecSaveFuncionario(ecId){
+  const g = id => (document.getElementById('ecf-'+id)||{}).value || null;
+  const payload = {
+    id: ecId,
+    full_name:               g('full_name'),
+    phone:                   g('phone'),
+    department:              g('department'),
+    team_label:              g('team_label'),
+    nif:                     g('nif'),
+    niss:                    g('niss'),
+    iban:                    g('iban'),
+    birth_date:              g('birth_date')||null,
+    contract_start:          g('contract_start')||null,
+    contract_end:            g('contract_end')||null,
+    weekly_hours:            g('weekly_hours') ? parseFloat(g('weekly_hours')) : null,
+    address:                 g('address'),
+    cc_number:               g('cc_number'),
+    cc_expiry:               g('cc_expiry')||null,
+    driver_license_number:   g('driver_license_number'),
+    driver_license_expiry:   g('driver_license_expiry')||null,
+    emergency_contact_name:  g('emergency_contact_name'),
+    emergency_contact_phone: g('emergency_contact_phone'),
+    notes:                   (document.getElementById('ecf-notes')||{}).value||null,
+  };
+  const btn = document.querySelector('#rh-colab-modal-body .tbtn.y');
+  if(btn){ btn.textContent='⏳ A guardar...'; btn.disabled=true; }
+  try {
+    const res = await fetch('https://xtiguuyvotnpwqzmggnc.supabase.co/functions/v1/crm-update-employee',{
+      method:'PATCH',
+      headers:{'Content-Type':'application/json','apikey':EC_SB_KEY,'x-api-key':'ob-crm-2026-secure'},
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if(data.success){
+      // Actualiza cache local
+      const idx = EC_FUNCIONARIOS.findIndex(x=>x.ec_id===ecId);
+      if(idx>=0){
+        EC_FUNCIONARIOS[idx].nome    = payload.full_name || EC_FUNCIONARIOS[idx].nome;
+        EC_FUNCIONARIOS[idx].tel     = payload.phone     || EC_FUNCIONARIOS[idx].tel;
+        EC_FUNCIONARIOS[idx].dept    = payload.department|| EC_FUNCIONARIOS[idx].dept;
+        EC_FUNCIONARIOS[idx].nif     = payload.nif       || EC_FUNCIONARIOS[idx].nif;
+        EC_FUNCIONARIOS[idx].niss    = payload.niss      || EC_FUNCIONARIOS[idx].niss;
+        EC_FUNCIONARIOS[idx].iban    = payload.iban      || EC_FUNCIONARIOS[idx].iban;
+      }
+      rhCloseColabModal();
+      rhRenderColabs();
+      alert('✅ Dados guardados no app de pontos!');
+    } else {
+      alert('Erro ao guardar: '+(data.error||'desconhecido'));
+      if(btn){ btn.textContent='💾 Guardar no App'; btn.disabled=false; }
+    }
+  } catch(e){
+    alert('Erro de ligação: '+e.message);
+    if(btn){ btn.textContent='💾 Guardar no App'; btn.disabled=false; }
+  }
 }
 
 function rhCloseColabModal(){
