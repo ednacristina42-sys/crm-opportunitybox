@@ -15227,6 +15227,16 @@ function renderDashboardCFO(){
   var faturasValidas = docs.filter(function(d){ return (d._tipo||d.DocumentType)==='FT'; });
   var receitaMes = faturasValidas.filter(function(d){ return String(dataDoc(d)).slice(0,7)===mesAtual; }).reduce(function(s,d){return s+valorDoc(d);},0);
   var receitaMesAnt = faturasValidas.filter(function(d){ return String(dataDoc(d)).slice(0,7)===mesAnterior; }).reduce(function(s,d){return s+valorDoc(d);},0);
+  // Fallback para AV_ANOS 2026 quando TocOnline não tem dados
+  if(!receitaMes && typeof AV_ANOS!=='undefined'){
+    var ano2026=AV_ANOS.find(function(a){return a.ano===2026;});
+    if(ano2026&&ano2026.meses){
+      var mAtualIdx=parseInt(mesAtual.slice(5))-1;
+      var mAntIdx=parseInt(mesAnterior.slice(5))-1;
+      if(mesAtual.startsWith('2026') && ano2026.meses[mAtualIdx]) receitaMes=ano2026.meses[mAtualIdx];
+      if(mesAnterior.startsWith('2026') && ano2026.meses[mAntIdx]) receitaMesAnt=ano2026.meses[mAntIdx];
+    }
+  }
 
   var contas = (typeof TES_CONTAS!=='undefined'?TES_CONTAS:[]);
   var log = (typeof TES_LOG_DESPESAS!=='undefined'?TES_LOG_DESPESAS:[]);
@@ -15236,7 +15246,7 @@ function renderDashboardCFO(){
                + contas.filter(function(c){return c.estado==='Paga' && c.data && c.data.slice(0,7)===mesAnterior;}).reduce(function(s,c){return s+(c.valor||0);},0);
 
   var orcAll = (typeof orcData!=='undefined'?orcData:[]);
-  var projetosActivos = orcAll.filter(function(o){return o.st==='Aprovado'||o.st==='Em Producao'||o.st==='Em Produção';});
+  var projetosActivos = orcAll.filter(function(o){return o.st==='Aprovado'||o.st==='Em Produção'||o.st==='Concluído';});
   var emRisco = projetosActivos.filter(function(o){
     var cTotal=(o.custoMateriais||0)+(o.custoMO||0)+(o.custoLog||0);
     return o.val>0 && cTotal/o.val>0.85;
@@ -15255,7 +15265,7 @@ function renderDashboardCFO(){
   set('dash-kpi-receita-lbl','Receita ' + hoje.toLocaleDateString('pt-PT',{month:'short',year:'2-digit'}));
   set('dash-kpi-receita-val', fmt(receitaMes));
   set('dash-kpi-receita-dlt', deltaReceita===null ? '—' : ((deltaReceita>=0?'↑ ':'↓ ')+Math.abs(deltaReceita).toFixed(1)+'% vs mês anterior'));
-  set('dash-kpi-receita-sub', faturasValidas.length ? (faturasValidas.length+' faturas sincronizadas') : 'Sem dados sincronizados do TocOnline');
+  set('dash-kpi-receita-sub', faturasValidas.length ? (faturasValidas.length+' faturas sincronizadas') : (receitaMes?'Comparativo de Vendas 2026':'Sem dados sincronizados do TocOnline'));
 
   set('dash-kpi-margem-val', margem.toFixed(1)+'%');
   set('dash-kpi-margem-dlt', (margemAnt===0 && margem===0) ? '—' : ((margem>=margemAnt?'↑ ':'↓ ')+Math.abs(margem-margemAnt).toFixed(1)+'pp'));
@@ -15593,15 +15603,36 @@ function initCharts(){
     const existing=Chart.getChart(ctx);if(existing)existing.destroy();
     return new Chart(ctx,{type,data,options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{display:data.datasets.length>1,labels:{boxWidth:10,padding:14,color:'#606068'}}},...opts}});
   };
-  mk('revChart','bar',{labels:m,datasets:[
-    {label:'Receita',data:[31200,34800,37100,38900,40200,42800],backgroundColor:YEL,borderRadius:4},
-    {label:'Custo',data:[20400,22100,23800,25100,25200,26300],backgroundColor:'rgba(77,148,219,.6)',borderRadius:4},
-  ]},{plugins:{legend:{display:true}}});
+  // revChart — Faturação mensal 2026 (AV_ANOS) + despesas aprovadas reais
+  (function(){
+    var canvasEl=document.getElementById('revChart'); if(!canvasEl) return;
+    var ano2026=(typeof AV_ANOS!=='undefined'?AV_ANOS:[]).find(function(a){return a.ano===2026;});
+    var mLabels=['Jan','Fev','Mar','Abr','Mai','Jun'];
+    var receitas=mLabels.map(function(_,i){ return ano2026&&ano2026.meses[i]?ano2026.meses[i]:0; });
+    var temReceita=receitas.some(function(v){return v>0;});
+    var despAll=(typeof FIN_DESPESAS!=='undefined'?FIN_DESPESAS:[]);
+    var custos=mLabels.map(function(_,i){
+      var m='2026-'+(i+1<10?'0':'')+(i+1);
+      return despAll.filter(function(d){return d.estado==='Aprovada'&&String(d.data||'').slice(0,7)===m;}).reduce(function(s,d){return s+(d.valor||0);},0);
+    });
+    if(!temReceita){ var ex=Chart.getChart(canvasEl); if(ex)ex.destroy(); return; }
+    mk('revChart','bar',{labels:mLabels,datasets:[
+      {label:'Faturação',data:receitas,backgroundColor:YEL,borderRadius:4},
+      {label:'Despesas',data:custos,backgroundColor:'rgba(77,148,219,.6)',borderRadius:4},
+    ]},{plugins:{legend:{display:true}},scales:{y:{grid:{color:GC},ticks:{callback:function(v){return '€'+v.toLocaleString('pt-PT');}}}}});
+  })();
 
-  mk('pipeChart','doughnut',{
-    labels:['Novo','Qualificado','Proposta','Negociação','Fecho'],
-    datasets:[{data:[2,2,3,2,1],backgroundColor:['rgba(107,107,114,.8)','rgba(77,148,219,.8)',YEL,'rgba(217,130,43,.8)','rgba(63,207,142,.8)'],borderWidth:0,spacing:2}]
-  },{plugins:{legend:{display:true,position:'bottom'}}});
+  // pipeChart — distribuição real de orçamentos por estado
+  (function(){
+    var canvasEl=document.getElementById('pipeChart'); if(!canvasEl) return;
+    var orcAll=(typeof orcData!=='undefined'?orcData:[]).filter(function(o){return o.val>0;});
+    var estados=['Pendente','Em análise','Aprovado','Em Produção','Concluído','Faturado','Cancelado'];
+    var cores={'Pendente':'rgba(107,107,114,.8)','Em análise':'rgba(77,148,219,.8)','Aprovado':YEL,'Em Produção':'rgba(139,92,246,.8)','Concluído':'rgba(63,207,142,.8)','Faturado':'rgba(39,174,96,.9)','Cancelado':'rgba(224,85,85,.7)'};
+    var labelsFin=[],dataFin=[],coresFin=[];
+    estados.forEach(function(st){ var n=orcAll.filter(function(o){return (o.st||'')===st;}).length; if(n>0){labelsFin.push(st+' ('+n+')');dataFin.push(n);coresFin.push(cores[st]);} });
+    if(!dataFin.length){ var ex=Chart.getChart(canvasEl); if(ex)ex.destroy(); return; }
+    mk('pipeChart','doughnut',{labels:labelsFin,datasets:[{data:dataFin,backgroundColor:coresFin,borderWidth:0,spacing:2}]},{plugins:{legend:{display:true,position:'bottom'}}});
+  })();
 
   // Margem por Projeto: usa apenas orçamentos reais (orcData) com valor > 0 e com custos preenchidos.
   // Quando ainda não há custos lançados (caso dos orçamentos importados da planilha), a margem
@@ -15708,15 +15739,35 @@ function initCharts(){
     },{plugins:{legend:{display:true,position:'bottom'}}});
   })();
 
-  mk('prodChart','doughnut',{
-    labels:['Aguarda Arte','Em Produção','Pronto','Instalação','Concluído'],
-    datasets:[{data:[2,3,2,2,3],backgroundColor:['rgba(217,130,43,.8)',YEL,'rgba(139,92,246,.8)','rgba(63,207,142,.8)','rgba(39,174,96,.5)'],borderWidth:0,spacing:2}]
-  },{plugins:{legend:{display:true,position:'bottom'}}});
+  // prodChart — orçamentos em produção vs concluídos vs outros (dados reais)
+  (function(){
+    var canvasEl=document.getElementById('prodChart'); if(!canvasEl) return;
+    var orcAll=(typeof orcData!=='undefined'?orcData:[]).filter(function(o){return o.val>0;});
+    var grupos=[
+      {label:'Pendente/Análise',sts:['Pendente','Em análise'],cor:'rgba(107,107,114,.8)'},
+      {label:'Aprovado',sts:['Aprovado'],cor:YEL},
+      {label:'Em Produção',sts:['Em Produção'],cor:'rgba(139,92,246,.8)'},
+      {label:'Concluído',sts:['Concluído'],cor:'rgba(63,207,142,.8)'},
+      {label:'Faturado',sts:['Faturado'],cor:'rgba(39,174,96,.9)'},
+      {label:'Cancelado',sts:['Cancelado'],cor:'rgba(224,85,85,.7)'},
+    ];
+    var labelsFin=[],dataFin=[],coresFin=[];
+    grupos.forEach(function(g){ var n=orcAll.filter(function(o){return g.sts.indexOf(o.st||'')!==-1;}).length; if(n>0){labelsFin.push(g.label+' ('+n+')');dataFin.push(n);coresFin.push(g.cor);} });
+    if(!dataFin.length){ var ex=Chart.getChart(canvasEl); if(ex)ex.destroy(); return; }
+    mk('prodChart','doughnut',{labels:labelsFin,datasets:[{data:dataFin,backgroundColor:coresFin,borderWidth:0,spacing:2}]},{plugins:{legend:{display:true,position:'bottom'}}});
+  })();
 
-  mk('hoursChart','doughnut',{
-    labels:['Faturáveis','Improdutivas','Overhead'],
-    datasets:[{data:[68,18,14],backgroundColor:[YEL,'rgba(224,85,85,.75)','rgba(217,130,43,.75)'],borderWidth:0,spacing:2}]
-  },{plugins:{legend:{display:true,position:'bottom'}}});
+  // hoursChart — valor faturado por vendedor 2026 (AV_VEND_26)
+  (function(){
+    var canvasEl=document.getElementById('hoursChart'); if(!canvasEl) return;
+    var vends=(typeof AV_VEND_26!=='undefined'?AV_VEND_26:[]).filter(function(v){return v.v>0;});
+    if(!vends.length){ var ex=Chart.getChart(canvasEl); if(ex)ex.destroy(); return; }
+    var cores=[YEL,'rgba(77,148,219,.8)','rgba(63,207,142,.8)','rgba(217,130,43,.8)'];
+    mk('hoursChart','doughnut',{
+      labels:vends.map(function(v){return v.n;}),
+      datasets:[{data:vends.map(function(v){return v.v;}),backgroundColor:vends.map(function(_,i){return cores[i%cores.length];}),borderWidth:0,spacing:2}]
+    },{plugins:{legend:{display:true,position:'bottom'}}});
+  })();
 }
 
 // ══ GOOGLE SHEETS ENGINE ════════════════════════════════════════
