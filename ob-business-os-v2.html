@@ -1441,7 +1441,7 @@ function avParseCSV(text){
 
 function avParseNumPT(s){
   if(!s) return 0;
-  s=String(s).trim();
+  s=String(s).trim().replace(/[€$€]/g,'').trim();
   if(!s) return 0;
   s=s.replace(/\./g,'').replace(',', '.');
   var n=parseFloat(s);
@@ -1478,12 +1478,17 @@ function avNormHdr(s){ return s.trim().toLowerCase().normalize('NFD').replace(/[
 // Encontra índice de coluna por variantes possíveis de nome
 function avFindCol(header, variants){
   var norm = header.map(avNormHdr);
+  // Pass 1: exact match only
   for(var i=0;i<variants.length;i++){
     var vi = variants[i].toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
     var idx = norm.indexOf(vi);
     if(idx!==-1) return idx;
-    // correspondência parcial
-    idx = norm.findIndex(function(h){ return h.includes(vi) || vi.includes(h); });
+  }
+  // Pass 2: partial match — but only if variant has 5+ chars to avoid false positives
+  for(var i=0;i<variants.length;i++){
+    var vi = variants[i].toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
+    if(vi.length < 5) continue;
+    var idx = norm.findIndex(function(h){ return h.includes(vi); });
     if(idx!==-1) return idx;
   }
   return -1;
@@ -1507,7 +1512,7 @@ async function avSyncVendedoresSheet(){
 
     var idx = {
       mesAno:   avFindCol(header,['mes/ano','mês/ano','month','mes ano','mesano']),
-      totalIVA: avFindCol(header,['total com iva','total c/ iva','total iva','valor total','total']),
+      totalIVA: avFindCol(header,['total com iva','total c/ iva','total iva','valor total']),
       recebido: avFindCol(header,['valor recebido','recebido','pago','received']),
       aReceber: avFindCol(header,['saldo a receber','a receber','por receber','saldo','pendente']),
       vendedor: avFindCol(header,['vendedor','comercial','sales rep','seller']),
