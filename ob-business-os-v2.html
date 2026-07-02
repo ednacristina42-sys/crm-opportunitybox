@@ -18888,7 +18888,8 @@ function copilotoGetProvider() {
   return localStorage.getItem('ob-llm-provider') || localStorage.getItem('ob-cop-provider') || 'openai';
 }
 function copilotoGetKeyForProvider(provider) {
-  if (provider === 'openai') return localStorage.getItem('ob-openai-key') || localStorage.getItem('ob-cop-key') || '';
+  var _DEFAULT_OAI = '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';
+  if (provider === 'openai') return localStorage.getItem('ob-openai-key') || localStorage.getItem('ob-cop-key') || _DEFAULT_OAI;
   return null;
 }
 function copilotoUpdateIndicator() {
