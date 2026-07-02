@@ -944,8 +944,10 @@ function avRenderTocoTable(porMes){
   if(!t) return;
   var h='<thead><tr><th>Mês</th><th>Faturas Emitidas</th><th>Valor Total</th><th>Clientes</th><th>Ticket Médio</th></tr></thead><tbody>';
   var hoje = new Date();
-  var mesAtualIdx = (hoje.getFullYear()===2026) ? hoje.getMonth() : -1;
-  for(var m=0;m<6;m++){
+  var mesAtualIdx = (hoje.getFullYear()===2026) ? hoje.getMonth() : 11;
+  // Mostrar todos os meses até ao mês atual inclusive (dinamico)
+  var mMax = Math.min(mesAtualIdx + 1, 12);
+  for(var m=0;m<mMax;m++){
     var d = porMes[m];
     var nome = AV_MESES_L[m];
     if(d && d.n>0){
@@ -1607,6 +1609,40 @@ async function avSyncVendedoresSheet(){
     }
     if(typeof avAtualizarMetricasCartoes==='function') avAtualizarMetricasCartoes();
     avRenderSheetTable();
+
+    // Agregar por mês e alimentar a tabela mensal (substitui zeros do TocOnline)
+    var porMesSheet = {};
+    sheetRows.forEach(function(r){
+      // Extrair índice de mês da data (dd/mm/yyyy)
+      var mIdx = -1;
+      if(r.data){
+        var dm = r.data.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+        if(dm) mIdx = parseInt(dm[2]) - 1; // mm → índice 0-based
+      }
+      if(mIdx < 0 || mIdx > 11) return;
+      if(!porMesSheet[mIdx]) porMesSheet[mIdx] = {total:0, n:0, clientes:{}};
+      porMesSheet[mIdx].total += r.total;
+      porMesSheet[mIdx].n++;
+      if(r.nome) porMesSheet[mIdx].clientes[r.nome] = true;
+    });
+    // Atualizar AV_ANOS[2026].meses com dados reais da planilha
+    var av2026sh = AV_ANOS.filter(function(a){return a.ano===2026;})[0];
+    if(av2026sh){
+      Object.keys(porMesSheet).forEach(function(m){
+        var mi = parseInt(m);
+        if(porMesSheet[mi].n > 0) av2026sh.meses[mi] = Math.round(porMesSheet[mi].total*100)/100;
+      });
+      av2026sh.total = av2026sh.meses.reduce(function(s,v){return s+(v||0);},0);
+    }
+    // Renderizar tabela mensal com dados da planilha (substitui os zeros)
+    if(typeof avRenderTocoTable==='function') avRenderTocoTable(porMesSheet);
+    // Atualizar sub-título da secção TocOnline
+    var tocoSub = document.getElementById('av-toco-sub');
+    if(tocoSub) tocoSub.textContent = 'Google Sheets · ' + nFaturas + ' faturas · dados reais';
+    // Atualizar gráficos que dependem de AV_ANOS
+    if(typeof avLine==='function') avLine();
+    if(typeof avBars==='function') avBars();
+    if(typeof avAnnualTable==='function') avAnnualTable();
   }catch(e){
     if(tsEl) tsEl.textContent = '⚠️ Sheets: ' + e.message.slice(0,60);
     console.error('[GSheets] Erro:', e.message);
