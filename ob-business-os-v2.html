@@ -13861,8 +13861,12 @@ function orcGetData(){
   const saldo = pagamento50 ? Math.round((totais.total-sinal)*100)/100 : null;
   const imagem = window._orcImagemAtual || null;
   const imagemFachadaGerada = window._orcImagemFachadaGerada || null;
+  // _geradoPorIA: verifica flag activo OU orçamento guardado com esse campo
+  var _orcGuardado = (typeof orcData !== 'undefined') ? orcData.find(function(o){ return o.num === num; }) : null;
+  const _geradoPorIA = !!(window._orcGeradoPorIA) || !!(_orcGuardado && _orcGuardado._geradoPorIA);
   return {num, cli, prazo, prazoEntrega, morada, nif, val, linhas, totais, vendedor, email,
     cliEmail, cliWA, pagamento50, sinal, saldo, imagem, imagemObra: imagem, imagemFachadaGerada,
+    _geradoPorIA,
     data: new Date().toLocaleDateString('pt-PT',{day:'2-digit',month:'2-digit',year:'numeric'})
   };
 }
@@ -13901,6 +13905,7 @@ function orcGuardar(){
   if(!d.cli.trim()){ alert('Por favor preenche o nome do cliente.'); return; }
   if(!d.linhas.length){ alert('Adiciona pelo menos uma linha de produto.'); return; }
   d.dt = d.data; d.st = 'Pendente'; d.stc = 'ba';
+  d._geradoPorIA = !!(window._orcGeradoPorIA);
   orcData.unshift(d);
   localStorage.setItem('ob-orcamentos', JSON.stringify(orcData.slice(0,5000)));
   _sbOrcUpsert(d);
@@ -13916,6 +13921,7 @@ function orcGuardar(){
 
 function orcNew(){
   // ADD: Correção botão +Novo — garante tab Orçamentos visível
+  window._orcGeradoPorIA = false;
   if(typeof orcSwitchTab==='function') orcSwitchTab('orcamentos');
   const cont = document.getElementById('orc-lines-container');
   if(cont) cont.innerHTML='';
@@ -14272,6 +14278,22 @@ body{font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#222;background
 </div>
 <div style="font-size:11.5px;color:#888;text-align:right;margin:-8px 0 18px;font-style:italic">${(typeof numeroPorExtenso==='function')?numeroPorExtenso(d.totais.total):''}</div>
 
+${d._geradoPorIA ? `
+<div style="margin-bottom:10px;padding:10px 14px;background:#fff8e1;border:2px solid #F5C400;border-radius:6px;display:flex;gap:10px;align-items:flex-start">
+  <span style="font-size:22px;line-height:1">🤖</span>
+  <div>
+    <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#b8860b;margin-bottom:4px">Orçamento Estimado por Inteligência Artificial</div>
+    <div style="font-size:10.5px;color:#555;line-height:1.55">
+      Os valores apresentados neste orçamento foram gerados automaticamente por IA com base na fotografia/imagem fornecida pelo cliente. Tratam-se de <strong>estimativas indicativas de preço</strong> e podem sofrer alterações após:
+      <ul style="margin:5px 0 0 16px;padding:0">
+        <li>Levantamento presencial e medição rigorosa do espaço;</li>
+        <li>Visita técnica para avaliação das condições de instalação;</li>
+        <li>Necessidade de estruturas de suporte, reforços ou adaptações ao reclamo.</li>
+      </ul>
+      <div style="margin-top:6px">A <strong>OpportunityBox</strong> compromete-se a apresentar um orçamento definitivo após visita técnica sem custo adicional. Este documento não constitui adjudicação nem compromisso de preço final.</div>
+    </div>
+  </div>
+</div>` : ''}
 <div class="notes-box">
   <strong>Condições:</strong> Orçamento válido até ${valFmt}. Prazo de entrega: <strong>${d.prazoEntrega||'25'} dias úteis</strong> após confirmação. ${d.prazo?`Prazo de pagamento: <strong>${d.prazo}</strong>.`:'Pagamento conforme condições negociadas.'} O presente orçamento não constitui compromisso de entrega até confirmação formal.
 </div>
@@ -19689,6 +19711,8 @@ function copilotoAplicar() {
     alert('Nenhuma análise disponível. Clica em "Analisar com IA" primeiro.');
     return;
   }
+  // Marcar este orçamento como gerado por IA (para aviso no PDF)
+  window._orcGeradoPorIA = true;
   var mats = analysis.materiais;
   var aplicados = 0, naoEncontrados = [];
 
