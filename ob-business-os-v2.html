@@ -1732,6 +1732,10 @@ async function avSyncVendedoresSheet(){
       setAF('af-kpi-receber-sub',  'Saldo por receber 2026 · Sheets');
     }
     console.log('[GSheets] Top Clientes 2026:', cli2026.length, '· Faturado mês:', faturadoMesV, '· A Receber:', totalAReceberV);
+
+    // ── TESOURARIA: alimentar A Receber / Recebidos com dados da planilha ──
+    try{ sheetMergeReceber(); }catch(etr){ console.warn('[GSheets] sheetMergeReceber:', etr); }
+
   }catch(e){
     if(tsEl) tsEl.textContent = '⚠️ Sheets: ' + e.message.slice(0,60);
     console.error('[GSheets] Erro:', e.message);
@@ -18443,6 +18447,78 @@ function tocoAtualizarTesourariaComFaturas(){
   if(typeof tesRender==='function') tesRender();
 }
 
+// ── TESOURARIA via Google Sheets ─────────────────────────────────────────────
+// Converte window.AV_SHEET_ROWS (dados da planilha) para entradas em TES_RECEBER.
+// Identifica entradas pelo prefixo "SHEET-" para nunca sobrescrever lançamentos manuais
+// nem duplicar quando a sincronização é repetida.
+function sheetMergeReceber(){
+  var rows = window.AV_SHEET_ROWS || [];
+  if(!rows.length) return false;
+  var alterou = false;
+  // Índice rápido das entradas já existentes com origem na planilha
+  var porSheetId = {};
+  TES_RECEBER.forEach(function(r){ if(r._sheetId) porSheetId[r._sheetId]=r; });
+  rows.forEach(function(r){
+    var sid = String(r.numero||'').trim();
+    if(!sid) return;
+    var total = r.total || 0;
+    if(!total) return; // ignorar linhas sem valor
+    var liq = total / 1.23;
+    // Determinar estado com base na coluna "status" e nos campos recebido/aReceber
+    var stLow = String(r.status||'').toLowerCase();
+    var recebido = r.recebido || 0;
+    var aReceber = r.aReceber || 0;
+    var pago = stLow.includes('pag') || stLow.includes('receb') || aReceber === 0 && recebido > 0;
+    var estado = pago ? 'Recebido' : 'Pendente';
+    // Calcular data de vencimento (30 dias após emissão se não disponível)
+    var dataEmissao = r.data || '';
+    var vencimento = '';
+    if(dataEmissao){
+      var dm = dataEmissao.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+      if(dm){
+        var dtV = new Date(parseInt(dm[3]), parseInt(dm[2])-1, parseInt(dm[1]));
+        dtV.setDate(dtV.getDate()+30);
+        vencimento = dtV.toLocaleDateString('pt-PT');
+      }
+    }
+    var existente = porSheetId[sid];
+    if(existente){
+      // Atualizar valores se mudaram
+      if(existente.total!==total || existente.estado!==estado){ alterou=true; }
+      existente.total = total; existente.valorLiq = liq;
+      if(estado==='Recebido' && existente.estado!=='Recebido'){
+        existente.estado='Recebido';
+        existente.dataRec = r.dataRec || new Date().toLocaleDateString('pt-PT');
+        alterou=true;
+      }
+    } else {
+      alterou=true;
+      TES_RECEBER.push({
+        id: 'SHEET-'+sid,
+        _sheetId: sid,
+        tipo: 'FT',
+        data: dataEmissao,
+        descricao: 'Fatura '+sid,
+        cliente: r.nome || '—',
+        projeto: '',
+        valorLiq: liq,
+        ivaPct: 23,
+        total: total,
+        vencimento: vencimento,
+        dataEmissao: dataEmissao,
+        estado: estado,
+        dataRec: pago ? (r.dataRec || dataEmissao) : undefined
+      });
+    }
+  });
+  if(alterou) tesSaveReceber();
+  // Renderizar Tesouraria se as funções existirem
+  if(typeof tesRenderReceber==='function') tesRenderReceber();
+  if(typeof tesRenderRecebidos==='function') tesRenderRecebidos();
+  if(typeof tesRender==='function') tesRender();
+  return alterou;
+}
+
 // Modal de criação manual (prompt) removido — os dados de "A Receber"/"Recebidos" vêm
 // automaticamente das faturas reais sincronizadas do TocOnline. Este botão agora sincroniza.
 function tesNovaReceber(){
@@ -18463,8 +18539,9 @@ function tesRenderReceber(){
   tocoMergeFaturasCacheReceber();
   var list=TES_RECEBER.filter(function(r){return r.estado!=='Recebido';});
   if(!list.length){
-    var temToco = (typeof tocoFaturasCache==='function') && tocoFaturasCache().length>0;
-    el.innerHTML='<tr><td colspan="10" style="text-align:center;color:var(--muted);padding:20px">'+(temToco?'Sem faturas a receber.':'Sincronize com TocOnline para ver as faturas.')+'</td></tr>';
+    var temDados = (typeof tocoFaturasCache==='function') && tocoFaturasCache().length>0;
+    var temSheets = (window.AV_SHEET_ROWS||[]).length>0;
+    el.innerHTML='<tr><td colspan="10" style="text-align:center;color:var(--muted);padding:20px">'+(temDados||temSheets?'Sem faturas pendentes a receber.':'Clique em 🔄 Sincronizar para ver as faturas.')+'</td></tr>';
     return;
   }
   var hoje=new Date();
