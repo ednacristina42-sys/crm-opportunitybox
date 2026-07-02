@@ -1,0 +1,4 @@
+[[redirects]]
+  from = "/*"
+  to = "/ob-business-os-v2.html"
+  status = 200
