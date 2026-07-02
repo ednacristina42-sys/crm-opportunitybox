@@ -1517,6 +1517,9 @@ async function avSyncVendedoresSheet(){
       aReceber: avFindCol(header,['saldo a receber','a receber','por receber','saldo','pendente']),
       vendedor: avFindCol(header,['vendedor','comercial','sales rep','seller']),
       data:     avFindCol(header,['data','date','data fatura']),
+      numero:   avFindCol(header,['numero','número','num','n.º','nº','invoice']),
+      nome:     avFindCol(header,['nome','cliente','client','customer','name']),
+      status:   avFindCol(header,['status','estado','state','situacao','situação']),
     };
     console.log('[GSheets] Índices de colunas:', idx);
 
@@ -1524,21 +1527,23 @@ async function avSyncVendedoresSheet(){
       throw new Error('Colunas obrigatórias não encontradas. Cabeçalho detectado: [' + header.slice(0,12).join(' | ') + ']');
     }
     var porVend = {}, totalYTD = 0, nFaturas = 0;
+    var sheetRows = []; // linhas individuais para tabela ordenada
     var dataStart = headerRow + 1;
     for(var i=dataStart;i<rows.length;i++){
       var r = rows[i];
       if(!r || r.length<2) continue;
       // Filtro por 2026: testa coluna Mês/Ano, ou Data se disponível
       var is2026 = false;
+      var dataStr = '';
       if(idx.mesAno!==-1){
         var mesAno = (r[idx.mesAno]||'').trim();
         is2026 = /2026/.test(mesAno);
-      } else if(idx.data!==-1){
-        var dataCel = (r[idx.data]||'').trim();
-        is2026 = /2026/.test(dataCel);
-      } else {
-        is2026 = true; // sem coluna de data: assume tudo 2026
       }
+      if(idx.data!==-1){
+        dataStr = (r[idx.data]||'').trim();
+        if(!is2026) is2026 = /2026/.test(dataStr);
+      }
+      if(!is2026 && idx.mesAno===-1 && idx.data===-1) is2026 = true;
       if(!is2026) continue;
       var vend = (r[idx.vendedor]||'').trim();
       if(!vend || vend.toLowerCase()==='vendedor') continue; // ignora cabeçalhos repetidos
@@ -1550,7 +1555,28 @@ async function avSyncVendedoresSheet(){
       porVend[vend].st.rec += rec;
       porVend[vend].st.nrec += nrec;
       totalYTD += v; nFaturas++;
+      // Parse data para ordenação (formato dd/mm/yyyy ou yyyy-mm-dd)
+      var dtSort = 0;
+      if(dataStr){
+        var dm = dataStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+        if(dm) dtSort = parseInt(dm[3])*10000+parseInt(dm[2])*100+parseInt(dm[1]);
+        else{ var dm2=dataStr.match(/^(\d{4})-(\d{2})-(\d{2})/); if(dm2) dtSort=parseInt(dm2[1])*10000+parseInt(dm2[2])*100+parseInt(dm2[3]); }
+      }
+      sheetRows.push({
+        data: dataStr,
+        dtSort: dtSort,
+        numero: idx.numero!==-1 ? (r[idx.numero]||'').trim() : '',
+        nome:   idx.nome!==-1   ? (r[idx.nome]||'').trim()   : vend,
+        total:  v,
+        recebido: rec,
+        aReceber: nrec,
+        vendedor: vend,
+        status: idx.status!==-1 ? (r[idx.status]||'').trim() : '',
+      });
     }
+    // Ordenar por data decrescente (mais recente primeiro)
+    sheetRows.sort(function(a,b){ return b.dtSort - a.dtSort; });
+    window.AV_SHEET_ROWS = sheetRows;
     console.log('[GSheets] Linhas 2026 encontradas:', nFaturas, '· Total YTD:', totalYTD);
 
     var lista = Object.keys(porVend).map(function(k){
@@ -1580,12 +1606,49 @@ async function avSyncVendedoresSheet(){
       avVendedoresFiltrar('2026');
     }
     if(typeof avAtualizarMetricasCartoes==='function') avAtualizarMetricasCartoes();
+    avRenderSheetTable();
   }catch(e){
     if(tsEl) tsEl.textContent = '⚠️ Sheets: ' + e.message.slice(0,60);
     console.error('[GSheets] Erro:', e.message);
   }
 }
 window.avSyncVendedoresSheet = avSyncVendedoresSheet;
+
+function avRenderSheetTable(){
+  var t = document.getElementById('av-sheet-rows-table');
+  if(!t) return;
+  var rows = window.AV_SHEET_ROWS || [];
+  if(!rows.length){
+    t.innerHTML = '<thead><tr><th colspan="6" style="text-align:center;color:var(--muted)">Sem dados — clique em 📊 Sync Google Sheets</th></tr></thead>';
+    return;
+  }
+  var fmtE = function(n){ return '€ ' + (n||0).toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2}); };
+  var h = '<thead><tr><th>Data</th><th>Nº Fatura</th><th>Cliente</th><th>Vendedor</th><th style="text-align:right">Total c/ IVA</th><th>Estado</th></tr></thead><tbody>';
+  for(var i=0;i<rows.length;i++){
+    var r = rows[i];
+    var stClass = '';
+    var stLow = (r.status||'').toLowerCase();
+    if(stLow.includes('pag') || stLow.includes('receb')) stClass = 'color:#34c759';
+    else if(stLow.includes('pend') || stLow.includes('falta') || stLow.includes('receber')) stClass = 'color:#ff9f0a';
+    else if(stLow.includes('cancel') || stLow.includes('anulad')) stClass = 'color:#ff453a';
+    h += '<tr>';
+    h += '<td style="white-space:nowrap">' + (r.data||'—') + '</td>';
+    h += '<td style="font-family:\'DM Mono\',monospace;font-size:12px">' + (r.numero||'—') + '</td>';
+    h += '<td>' + (r.nome||'—') + '</td>';
+    h += '<td>' + (r.vendedor||'—') + '</td>';
+    h += '<td style="text-align:right;font-family:\'DM Mono\',monospace;font-weight:600">' + fmtE(r.total) + '</td>';
+    h += '<td style="font-size:12px;' + stClass + '">' + (r.status||'—') + '</td>';
+    h += '</tr>';
+  }
+  var total = rows.reduce(function(s,r){return s+r.total;},0);
+  h += '<tr style="font-weight:700;border-top:2px solid var(--border)">';
+  h += '<td colspan="4">TOTAL (' + rows.length + ' faturas)</td>';
+  h += '<td style="text-align:right;font-family:\'DM Mono\',monospace">' + fmtE(total) + '</td>';
+  h += '<td></td></tr>';
+  h += '</tbody>';
+  t.innerHTML = h;
+}
+window.avRenderSheetTable = avRenderSheetTable;
 
 // ════════════════════════════════════════════════════════════════
 // MÓDULOS: MO, ARTES KANBAN, TESOURARIA MODAL
@@ -7974,6 +8037,19 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
       <div class="av-chart-card">
         <div style="overflow-x:auto">
           <table class="av-years" id="av-tocoTable"></table>
+        </div>
+      </div>
+
+      <!-- Tabela individual Google Sheets — ordenada por data decrescente -->
+      <div class="av-section-head" style="margin-top:28px">
+        <h2>Faturas 2026 · Google Sheets</h2>
+        <span class="av-sub">Ordenadas por data (mais recente primeiro) · clique em 📊 Sync Google Sheets para atualizar</span>
+      </div>
+      <div class="av-chart-card">
+        <div style="overflow-x:auto">
+          <table class="av-years" id="av-sheet-rows-table">
+            <thead><tr><th colspan="6" style="text-align:center;color:var(--muted)">Sem dados — clique em 📊 Sync Google Sheets</th></tr></thead>
+          </table>
         </div>
       </div>
     </div>
