@@ -13609,6 +13609,77 @@ var ORC_LOGO_B64 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAASwAAAFwCAYAAA
 
 var orcData; try{orcData=JSON.parse(localStorage.getItem('ob-orcamentos')||'[]');}catch(e){orcData=[];}
 
+// ── Supabase sync — Orçamentos ────────────────────────────────────────────
+var _ORC_SB_URL = 'https://ddzlbmnmsdyodouqxbjx.supabase.co';
+var _ORC_SB_KEY = (typeof CRM_SB_KEY !== 'undefined') ? CRM_SB_KEY : 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRkemxibW5tc2R5b2RvdXF4Ymp4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkyMDQ2NTUsImV4cCI6MjA5NDc4MDY1NX0.P8nyU1zL4bd6Vhs8MGsTqHcB_bSeQsbNHXtQgatVt-Y';
+
+function _sbOrcHeaders() {
+  return { 'Content-Type': 'application/json', 'apikey': _ORC_SB_KEY, 'Authorization': 'Bearer ' + _ORC_SB_KEY, 'Prefer': 'return=representation' };
+}
+
+async function _sbOrcUpsert(orc) {
+  try {
+    var row = {
+      id: orc.num || orc.id || ('ORC-' + Date.now()),
+      num: orc.num, cli: orc.cli, vendedor: orc.vendedor || '', email: orc.email || '',
+      st: orc.st || 'Pendente', stc: orc.stc || 'ba',
+      dt: orc.dt || orc.data || '', data: orc.data || orc.dt || '',
+      prazo: orc.prazo || '', morada: orc.morada || '', nif: orc.nif || '',
+      val: orc.totais ? orc.totais.total : (orc.val || 0),
+      linhas: orc.linhas || [], totais: orc.totais || {},
+      materiais: orc.materiais || [], mo_linhas: orc.moLinhas || orc.mo_linhas || [],
+      logistica: orc.logistica || {}, markup: orc.markup || 2.5,
+      imagem: orc.imagem || null, obs: orc.obs || '',
+      cliemail: orc.cliEmail || '', cliwa: orc.cliWA || '',
+      pagamento50: orc.pagamento50 || false, sinal: orc.sinal || null, saldo: orc.saldo || null,
+      extra: { dtProducao: orc.dtProducao, aprovado_em: orc.aprovado_em, aprovado_por: orc.aprovado_por, _importadoPlanilha: orc._importadoPlanilha }
+    };
+    await fetch(_ORC_SB_URL + '/rest/v1/ob_orcamentos?on_conflict=id', {
+      method: 'POST', headers: _sbOrcHeaders(), body: JSON.stringify(row)
+    });
+  } catch(e) { console.warn('[SB-ORC] upsert falhou:', e); }
+}
+
+async function _sbOrcLoadAll() {
+  try {
+    var r = await fetch(_ORC_SB_URL + '/rest/v1/ob_orcamentos?order=created_at.desc&limit=2000', {
+      headers: { 'apikey': _ORC_SB_KEY, 'Authorization': 'Bearer ' + _ORC_SB_KEY }
+    });
+    if (!r.ok) return null;
+    var rows = await r.json();
+    return rows.map(function(row) {
+      return {
+        num: row.num, cli: row.cli, vendedor: row.vendedor, email: row.email,
+        st: row.st, stc: row.stc, dt: row.dt, data: row.data,
+        prazo: row.prazo, morada: row.morada, nif: row.nif,
+        val: row.val, linhas: row.linhas || [], totais: row.totais || {},
+        materiais: row.materiais || [], moLinhas: row.mo_linhas || [],
+        logistica: row.logistica || {}, markup: row.markup || 2.5,
+        imagem: row.imagem, obs: row.obs,
+        cliEmail: row.cliemail, cliWA: row.cliwa,
+        pagamento50: row.pagamento50, sinal: row.sinal, saldo: row.saldo,
+        dtProducao: (row.extra||{}).dtProducao,
+        aprovado_em: (row.extra||{}).aprovado_em, aprovado_por: (row.extra||{}).aprovado_por,
+        _importadoPlanilha: (row.extra||{})._importadoPlanilha
+      };
+    });
+  } catch(e) { console.warn('[SB-ORC] load falhou:', e); return null; }
+}
+
+// Carregar orçamentos do Supabase ao iniciar (substitui localStorage se houver dados)
+(async function _orcInitFromSB() {
+  var sbData = await _sbOrcLoadAll();
+  if (sbData && sbData.length > 0) {
+    orcData = sbData;
+    localStorage.setItem('ob-orcamentos', JSON.stringify(orcData.slice(0, 5000)));
+    if (typeof orcRenderList === 'function') orcRenderList();
+  } else if (orcData.length > 0) {
+    // Migrar dados locais para Supabase
+    for (var i = 0; i < orcData.length; i++) { await _sbOrcUpsert(orcData[i]); }
+    console.log('[SB-ORC] ' + orcData.length + ' orçamentos migrados para Supabase.');
+  }
+})();
+
 // ADD: limpeza única de dados de teste/fictícios já guardados no navegador (clientes, orçamentos, faturas)
 (function obLimparDadosTesteUmaVez(){
   try{
@@ -13832,6 +13903,7 @@ function orcGuardar(){
   d.dt = d.data; d.st = 'Pendente'; d.stc = 'ba';
   orcData.unshift(d);
   localStorage.setItem('ob-orcamentos', JSON.stringify(orcData.slice(0,5000)));
+  _sbOrcUpsert(d);
   if (typeof _copExemplosCache !== 'undefined') _copExemplosCache = {};
   orcRenderList();
   // Próximo número
@@ -16747,7 +16819,61 @@ var STK_STOCK = JSON.parse(localStorage.getItem('ob-stock') || 'null') || [
 var STK_MOVIMENTOS = JSON.parse(localStorage.getItem('ob-stk-mov') || '[]');
 var STK_EDITING_ID = null;
 
-function stkSave() { localStorage.setItem('ob-stock', JSON.stringify(STK_STOCK)); }
+// ── Supabase sync — Stock ─────────────────────────────────────────────────
+function _sbStkHeaders() {
+  return { 'Content-Type': 'application/json', 'apikey': _ORC_SB_KEY, 'Authorization': 'Bearer ' + _ORC_SB_KEY, 'Prefer': 'return=representation' };
+}
+async function _sbStkUpsert(item) {
+  try {
+    var row = { id: item.id, ref: item.ref || '', nome: item.nome, cat: item.cat || '',
+      qty: item.qty || 0, qty_min: item.qtyMin || 0, un: item.un || 'un',
+      preco: item.preco || 0, forn: item.forn || '', loc: item.loc || '',
+      extra: {} };
+    await fetch(_ORC_SB_URL + '/rest/v1/ob_stock?on_conflict=id', {
+      method: 'POST', headers: _sbStkHeaders(), body: JSON.stringify(row)
+    });
+  } catch(e) { console.warn('[SB-STK] upsert falhou:', e); }
+}
+async function _sbStkDelete(id) {
+  try {
+    await fetch(_ORC_SB_URL + '/rest/v1/ob_stock?id=eq.' + encodeURIComponent(id), {
+      method: 'DELETE', headers: _sbStkHeaders()
+    });
+  } catch(e) { console.warn('[SB-STK] delete falhou:', e); }
+}
+async function _sbStkLoadAll() {
+  try {
+    var r = await fetch(_ORC_SB_URL + '/rest/v1/ob_stock?order=nome.asc&limit=2000', {
+      headers: { 'apikey': _ORC_SB_KEY, 'Authorization': 'Bearer ' + _ORC_SB_KEY }
+    });
+    if (!r.ok) return null;
+    var rows = await r.json();
+    return rows.map(function(row) {
+      return { id: row.id, ref: row.ref, nome: row.nome, cat: row.cat,
+        qty: row.qty, qtyMin: row.qty_min, un: row.un, preco: row.preco, forn: row.forn, loc: row.loc };
+    });
+  } catch(e) { console.warn('[SB-STK] load falhou:', e); return null; }
+}
+
+// Carregar stock do Supabase ao iniciar
+(async function _stkInitFromSB() {
+  var sbData = await _sbStkLoadAll();
+  if (sbData && sbData.length > 0) {
+    STK_STOCK = sbData;
+    localStorage.setItem('ob-stock', JSON.stringify(STK_STOCK));
+    if (typeof stockRender === 'function') stockRender();
+  } else {
+    // Migrar stock local/demo para Supabase
+    for (var i = 0; i < STK_STOCK.length; i++) { await _sbStkUpsert(STK_STOCK[i]); }
+    console.log('[SB-STK] ' + STK_STOCK.length + ' itens de stock migrados para Supabase.');
+  }
+})();
+
+function stkSave() {
+  localStorage.setItem('ob-stock', JSON.stringify(STK_STOCK));
+  // Sincroniza item editado/adicionado
+  if (STK_EDITING_ID) { var item = STK_STOCK.find(function(s){return s.id===STK_EDITING_ID;}); if(item) _sbStkUpsert(item); }
+}
 function stkMovSave() { localStorage.setItem('ob-stk-mov', JSON.stringify(STK_MOVIMENTOS.slice(0,500))); }
 
 function stockRender() {
@@ -16855,15 +16981,18 @@ function stockSave() {
   var preco=parseFloat(document.getElementById('stk-preco').value)||0;
   var forn=document.getElementById('stk-forn').value.trim();
   if (!nome) { alert('Preenche o nome do material.'); return; }
+  var itemSalvo;
   if (STK_EDITING_ID) {
     var idx = STK_STOCK.findIndex(function(s){return s.id===STK_EDITING_ID;});
     var loc2 = document.getElementById('stk-loc') ? document.getElementById('stk-loc').value.trim() : '';
-    if (idx>=0) STK_STOCK[idx] = {id:STK_EDITING_ID,ref:ref,nome:nome,cat:cat,qty:qty,qtyMin:qtyMin,un:un,preco:preco,forn:forn,loc:loc2};
+    if (idx>=0) { STK_STOCK[idx] = {id:STK_EDITING_ID,ref:ref,nome:nome,cat:cat,qty:qty,qtyMin:qtyMin,un:un,preco:preco,forn:forn,loc:loc2}; itemSalvo = STK_STOCK[idx]; }
   } else {
     var loc = document.getElementById('stk-loc') ? document.getElementById('stk-loc').value.trim() : '';
-  STK_STOCK.push({id:'s'+Date.now(),ref:ref||('MAT-'+Date.now()),nome:nome,cat:cat,qty:qty,qtyMin:qtyMin,un:un,preco:preco,forn:forn,loc:loc});
+    itemSalvo = {id:'s'+Date.now(),ref:ref||('MAT-'+Date.now()),nome:nome,cat:cat,qty:qty,qtyMin:qtyMin,un:un,preco:preco,forn:forn,loc:loc};
+    STK_STOCK.push(itemSalvo);
   }
-  stkSave();
+  localStorage.setItem('ob-stock', JSON.stringify(STK_STOCK));
+  if (itemSalvo) _sbStkUpsert(itemSalvo);
   stockCloseModal();
   stockRender();
 }
@@ -16882,7 +17011,7 @@ function stockEntrada(id) {
   if (isNaN(qtd) || qtd <= 0) { alert('Quantidade inválida.'); return; }
   s.qty = Math.round((s.qty + qtd) * 100) / 100;
   STK_MOVIMENTOS.unshift({data:new Date().toLocaleDateString('pt-PT'),nome:s.nome,tipo:'Entrada',qty:qtd,un:s.un,origem:'Manual',saldo:s.qty});
-  stkSave(); stkMovSave(); stockRender();
+  localStorage.setItem('ob-stock', JSON.stringify(STK_STOCK)); _sbStkUpsert(s); stkMovSave(); stockRender();
 }
 
 function stockSaida(id) {
@@ -16895,7 +17024,7 @@ function stockSaida(id) {
   if (qtd > s.qty) { alert('Quantidade superior ao saldo em stock (' + s.qty + ' ' + s.un + ').'); return; }
   s.qty = Math.round((s.qty - qtd) * 100) / 100;
   STK_MOVIMENTOS.unshift({data:new Date().toLocaleDateString('pt-PT'),nome:s.nome,tipo:'Saída',qty:qtd,un:s.un,origem:'Manual',saldo:s.qty});
-  stkSave(); stkMovSave(); stockRender();
+  localStorage.setItem('ob-stock', JSON.stringify(STK_STOCK)); _sbStkUpsert(s); stkMovSave(); stockRender();
 }
 
 // Baixa automática ao aprovar orçamento
@@ -17424,6 +17553,7 @@ function orcChangeStatus(orcId, novoEstado) {
     orc.dtProducao = new Date().toLocaleDateString('pt-PT');
   }
   localStorage.setItem('ob-orcamentos', JSON.stringify(orcData.slice(0,5000)));
+  _sbOrcUpsert(orc);
   orcRenderList();
   // ADD: Item 2 — enviar para ClickUp via Make.com quando aprovado (só uma vez)
   if (novoEstado === 'Aprovado' && estadoAnterior !== 'Aprovado') {
