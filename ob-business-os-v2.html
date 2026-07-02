@@ -1414,9 +1414,10 @@ window.afExportarExcel = afExportarExcel;
 // Folha "Vendas 2026" do Google Sheets partilhado (gid=1837232023)
 // Colunas: Data | Número | Nome | Total líquido | IVA TOTAL | Total com IVA |
 // Mês/Ano | Valor Recebido | Saldo a Receber | Data Recebimento | Status | Vendedor
-var AV_VEND_SHEET_ID = '1I36CIpMncOucNdkfVVVExXlQXbvlL3l1';
+// URL publicado via "Ficheiro → Publicar na Web → CSV" (sem autenticação, sem CORS)
+var AV_VEND_SHEET_PUB_ID = '2PACX-1vSwbKHLzynLEsyVvgnglVIfXSB2wzvJAUwn-LzIrHbk1cePzSN9bOm-E3CAGYoPnQ';
 var AV_VEND_SHEET_GID = '1837232023';
-var AV_VEND_SHEET_URL = 'https://docs.google.com/spreadsheets/d/' + AV_VEND_SHEET_ID + '/export?format=csv&gid=' + AV_VEND_SHEET_GID;
+var AV_VEND_SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/' + AV_VEND_SHEET_PUB_ID + '/pub?output=csv&gid=' + AV_VEND_SHEET_GID;
 
 function avParseCSV(text){
   var rows=[],row=[],field='',inQuotes=false;
@@ -1448,30 +1449,27 @@ function avParseNumPT(s){
 }
 
 async function avFetchVendSheetCSV(){
-  // Proxy list — Google bloqueia CORS direto do browser para export CSV
-  var proxyUrls = [
-    'https://api.allorigins.win/raw?url=' + encodeURIComponent(AV_VEND_SHEET_URL),
+  // URL publicado via "Publicar na Web" → acesso direto sem CORS nem autenticação
+  var urls = [
+    AV_VEND_SHEET_URL,                                                                      // direto (deve funcionar)
+    'https://api.allorigins.win/raw?url=' + encodeURIComponent(AV_VEND_SHEET_URL),         // proxy fallback
     'https://corsproxy.io/?' + encodeURIComponent(AV_VEND_SHEET_URL),
-    'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(AV_VEND_SHEET_URL),
-    AV_VEND_SHEET_URL, // direto como último recurso (falha CORS mas vale tentar)
   ];
   var lastErr = null;
-  for(var i=0; i<proxyUrls.length; i++){
+  for(var i=0; i<urls.length; i++){
     try{
-      var resp = await fetch(proxyUrls[i], {cache:'no-store'});
+      var resp = await fetch(urls[i], {cache:'no-store'});
       if(resp.ok){
         var text = await resp.text();
-        // Verifica que não é HTML de login do Google (retorno de 200 mas conteúdo HTML)
-        if(text && text.length > 100 && !text.trim().startsWith('<!') && !text.trim().startsWith('<html')){
-          console.log('[GSheets] CSV obtido via:', proxyUrls[i].slice(0,60), '— tamanho:', text.length);
+        if(text && text.length > 100 && !text.trim().startsWith('<')){
+          console.log('[GSheets] CSV obtido (tentativa '+(i+1)+') tamanho:', text.length, 'bytes');
           return text;
         }
-        // Se é HTML, provavelmente precisamos de "Publicar na Web" em vez de apenas partilhar
-        if(text.trim().startsWith('<')) lastErr = new Error('Google devolveu página HTML — o Sheets precisa de "Publicar na Web" (Ficheiro → Partilhar → Publicar na Web → CSV)');
+        if(text.trim().startsWith('<')) lastErr = new Error('Google devolveu HTML em vez de CSV — verifica se publicaste a folha "Vendas 2026" e não o documento inteiro');
       }
     }catch(e){ lastErr = e; }
   }
-  throw lastErr || new Error('Não foi possível obter o CSV do Google Sheets');
+  throw lastErr || new Error('Não foi possível obter o CSV do Google Sheets após 3 tentativas');
 }
 
 // Normaliza o header CSV removendo acentos e espaços extra para matching robusto
