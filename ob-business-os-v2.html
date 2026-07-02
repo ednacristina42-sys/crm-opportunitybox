@@ -833,9 +833,12 @@ function avBars(){
 function avAnnualTable(){
   const t=document.getElementById('av-annualTable');
   let h='<thead><tr><th>Ano</th>';AV_MESES.forEach(m=>h+=`<th>${m}</th>`);h+='<th>Total</th></tr></thead><tbody>';
-  AV_ANOS.forEach(a=>{
+  // 2026 primeiro, depois anos anteriores por ordem decrescente
+  const anos = AV_ANOS.slice().sort((a,b)=>b.ano-a.ano);
+  anos.forEach(a=>{
     const max=Math.max(...a.meses.filter(v=>v!=null));
-    h+=`<tr><td>${a.ano}</td>`;
+    const destaque = a.ano===2026 ? ' style="background:rgba(245,196,0,0.04);border-left:3px solid var(--y)"' : '';
+    h+=`<tr${destaque}><td><strong>${a.ano}</strong></td>`;
     a.meses.forEach(v=>{if(v==null)h+='<td style="color:var(--muted2)">—</td>';else h+=`<td class="${v===max?'av-peak':''}">${avFmtE(v)}</td>`;});
     h+=`<td class="av-total">${avFmtE(a.total)}</td></tr>`;
   });
@@ -8059,17 +8062,17 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
       <div class="av-section-head"><h2>Indicadores principais</h2><span class="av-sub">Ano fiscal · valores em € sem IVA</span></div>
       <div class="av-kpi-grid">
         <div class="av-kpi featured">
-          <div class="av-kpi-label">💎 Vendas 2025 (fechado)</div>
-          <div class="av-kpi-value" id="av-kpi-2025"><span class="cur">€</span>1.289.525</div>
-          <div class="av-kpi-delta up">↗ +20,3% vs 2024 · recorde histórico</div>
-          <div class="av-kpi-foot">Acumulado em 12 meses · pico em Dez (€158.569)</div>
-          <button class="tbtn" style="margin-top:8px;font-size:12px" onclick="if(typeof avAbrirDetalheMensal==='function')avAbrirDetalheMensal();">📊 Ver detalhe mensal</button>
-        </div>
-        <div class="av-kpi">
           <div class="av-kpi-label">📅 Vendas 2026 YTD</div>
           <div class="av-kpi-value" id="av-kpi-2026"><span class="cur">€</span>45.439</div>
           <div class="av-kpi-delta flat" id="av-kpi-2026-delta">Jan · 26 faturas emitidas</div>
           <div class="av-kpi-foot" id="av-kpi-2026-foot">€36.627 ainda por receber · €8.811 recebido</div>
+          <button class="tbtn" style="margin-top:8px;font-size:12px" onclick="if(typeof avAbrirDetalheMensal==='function')avAbrirDetalheMensal();">📊 Ver detalhe mensal</button>
+        </div>
+        <div class="av-kpi">
+          <div class="av-kpi-label">💎 Vendas 2025 (fechado)</div>
+          <div class="av-kpi-value" id="av-kpi-2025"><span class="cur">€</span>1.289.525</div>
+          <div class="av-kpi-delta up">↗ +20,3% vs 2024 · recorde histórico</div>
+          <div class="av-kpi-foot">Acumulado em 12 meses · pico em Dez (€158.569)</div>
         </div>
         <div class="av-kpi">
           <div class="av-kpi-label">📈 Crescimento médio</div>
