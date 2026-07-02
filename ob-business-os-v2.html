@@ -7403,6 +7403,25 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
         <div class="mn" style="border-color:rgba(63,207,142,.2)"><div class="mnl">Aprovadas</div><div class="mnv" style="color:var(--g)" id="fin-desp-aprov">€0</div><div class="mns">este mês</div></div>
       </div>
 
+      <!-- Filtros Despesas -->
+      <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:center">
+        <select id="fin-desp-filtro-func" onchange="finRenderDespesas()" style="background:var(--bg3);border:1px solid var(--border);color:var(--txt2);border-radius:7px;padding:5px 10px;font-size:13px">
+          <option value="">— Todos os funcionários —</option>
+        </select>
+        <select id="fin-desp-filtro-mes" onchange="finRenderDespesas()" style="background:var(--bg3);border:1px solid var(--border);color:var(--txt2);border-radius:7px;padding:5px 10px;font-size:13px">
+          <option value="">— Todos os meses —</option>
+        </select>
+        <select id="fin-desp-filtro-estado" onchange="finRenderDespesas()" style="background:var(--bg3);border:1px solid var(--border);color:var(--txt2);border-radius:7px;padding:5px 10px;font-size:13px">
+          <option value="">— Todos os estados —</option>
+          <option value="Pendente">Pendente</option>
+          <option value="Aprovada">Aprovada</option>
+          <option value="Rejeitada">Rejeitada</option>
+          <option value="Reembolso">Reembolso</option>
+        </select>
+        <button class="tbtn" onclick="finDespLimparFiltros()" style="font-size:12px">✕ Limpar</button>
+        <span id="fin-desp-contagem" style="font-size:13px;color:var(--muted);margin-left:4px"></span>
+      </div>
+
       <!-- Tabela Despesas Funcionários -->
       <div class="tw">
         <table>
@@ -7420,7 +7439,7 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
             </tr>
           </thead>
           <tbody id="fin-desp-tbody">
-            <tr><td colspan="8" style="text-align:center;color:var(--muted);padding:20px">Sem despesas registadas. Adiciona manualmente ou activa o webhook Make.</td></tr>
+            <tr><td colspan="9" style="text-align:center;color:var(--muted);padding:20px">Sem despesas registadas. Adiciona manualmente ou activa o webhook Make.</td></tr>
           </tbody>
         </table>
       </div>
@@ -15260,14 +15279,15 @@ function renderFinanceiro(){
   var orcAll = (typeof orcData!=='undefined'?orcData:[]);
   var realRows = orcAll.filter(function(o){ return o.val>0; });
   if(realRows.length){
-    var corEstado = {Faturada:'var(--g)',Adjudicada:'var(--y)',Proposta:'var(--b)',Perdida:'var(--r)',Cancelado:'var(--muted)'};
+    var corEstado = {Faturado:'var(--g)',Aprovado:'var(--y)','Em Produção':'var(--b)',Concluído:'var(--g)',Cancelado:'var(--muted)',Pendente:'var(--muted2)'};
+    var classEstado = {Faturado:'bg',Aprovado:'bb','Em Produção':'bb',Concluído:'bg',Cancelado:'br',Pendente:'ba','Em análise':'ba'};
     el.innerHTML = realRows.map(function(o){
       var rev = o.val||0;
       var temCusto = o.custoMateriais!=null || o.custoMO!=null || o.custoLog!=null;
       var cost = (o.custoMateriais||0)+(o.custoMO||0)+(o.custoLog||0);
       var mar = rev>0 ? ((rev-cost)/rev*100) : 0;
       var st = o.st || 'Pendente';
-      var stClass = st==='Faturada'?'bg':st==='Adjudicada'?'bb':st==='Cancelado'?'br':'ba';
+      var stClass = classEstado[st] || 'ba';
       var corBorda = corEstado[st] || 'var(--border2)';
       return `<tr style="border-left:3px solid ${corBorda}">
         <td><strong style="color:var(--txt2)">${o.num||'—'}</strong></td>
@@ -15275,7 +15295,7 @@ function renderFinanceiro(){
         <td style="font-family:'DM Mono',monospace">${fmt(rev)}</td>
         <td style="font-family:'DM Mono',monospace">${temCusto?fmt(cost):'—'}</td>
         <td style="font-family:'DM Mono',monospace;font-weight:600;color:${!temCusto?'var(--muted)':mar<15?'var(--r)':mar<25?'var(--a)':'var(--g)'}">${temCusto?pct(mar):'—'}</td>
-        <td><span style="font-size:12px;color:var(--muted)">—</span></td>
+        <td style="font-family:'DM Mono',monospace;color:var(--muted)">${fmt(rev)}</td>
         <td><span class="b ${stClass}">${st}</span></td>
       </tr>`;
     }).join('');
@@ -15612,8 +15632,8 @@ function initCharts(){
         {indexAxis:'y',plugins:{legend:{display:false}},scales:{x:{grid:{color:GC}}}});
     } else {
       // Sem custos lançados ainda: distribuição real de orçamentos por estado (pizza/doughnut).
-      var estados=['Proposta','Adjudicada','Faturada','Perdida','Cancelado'];
-      var coresEst={Proposta:'rgba(77,148,219,.8)',Adjudicada:YEL,Faturada:'rgba(63,207,142,.8)',Perdida:'rgba(224,85,85,.8)',Cancelado:'rgba(107,107,114,.8)'};
+      var estados=['Pendente','Em análise','Aprovado','Em Produção','Concluído','Faturado','Cancelado'];
+      var coresEst={'Pendente':'rgba(107,107,114,.8)','Em análise':'rgba(77,148,219,.8)','Aprovado':YEL,'Em Produção':'rgba(139,92,246,.8)','Concluído':'rgba(63,207,142,.8)','Faturado':'rgba(39,174,96,.9)','Cancelado':'rgba(224,85,85,.7)'};
       var contagem=estados.map(function(st){ return orcAll.filter(function(o){return (o.st||'')===st;}).length; });
       var labelsFinal=[], dataFinal=[], coresFinal=[];
       estados.forEach(function(st,i){ if(contagem[i]>0){ labelsFinal.push(st+' ('+contagem[i]+')'); dataFinal.push(contagem[i]); coresFinal.push(coresEst[st]); } });
@@ -15624,7 +15644,7 @@ function initCharts(){
     }
   })();
 
-  // Fluxo de Caixa — 90 dias: entradas reais (faturas TocOnline) e saídas reais (despesas aprovadas).
+  // Fluxo de Caixa — 90 dias: entradas reais (faturas TocOnline ou Comparativo AV_ANOS) e saídas (despesas aprovadas).
   (function(){
     var canvasEl = document.getElementById('cashChart');
     var emptyEl = document.getElementById('cashChart-empty');
@@ -15632,11 +15652,21 @@ function initCharts(){
     var despesas = (typeof FIN_DESPESAS!=='undefined') ? FIN_DESPESAS : [];
     var hoje = new Date();
     var meses=[], labels=[];
-    for(var i=2;i>=0;i--){ var d=new Date(hoje.getFullYear(),hoje.getMonth()-i,1); meses.push(d.toISOString().slice(0,7)); labels.push(d.toLocaleDateString('pt-PT',{month:'short'})); }
+    for(var i=2;i>=0;i--){ var d=new Date(hoje.getFullYear(),hoje.getMonth()-i,1); meses.push(d.toISOString().slice(0,7)); labels.push(d.toLocaleDateString('pt-PT',{month:'short',year:'2-digit'})); }
     var valorDoc = function(d){ return parseFloat(d.TotalAmount||d.Total||d.Amount||0)||0; };
     var dataDoc = function(d){ return d.Date||d.DocumentDate||d.CreatedAt||''; };
     var entradas = meses.map(function(m){ return docs.filter(function(d){ return (d._tipo||d.DocumentType)==='FT' && String(dataDoc(d)).slice(0,7)===m; }).reduce(function(s,d){return s+valorDoc(d);},0); });
     var saidas = meses.map(function(m){ return despesas.filter(function(d){ return d.estado==='Aprovada' && String(d.data||'').slice(0,7)===m; }).reduce(function(s,d){return s+(d.valor||0);},0); });
+    // Fallback: se TocOnline sem dados, usa valores mensais do Comparativo de Vendas (AV_ANOS 2026)
+    if(!entradas.some(function(v){return v>0;}) && typeof AV_ANOS!=='undefined'){
+      var ano2026 = AV_ANOS.find(function(a){return a.ano===2026;});
+      if(ano2026 && ano2026.meses){
+        entradas = meses.map(function(m){
+          var mes = parseInt(m.slice(5))-1; // 0-based
+          return (ano2026.meses[mes]||0);
+        });
+      }
+    }
     var temDados = entradas.some(function(v){return v>0;}) || saidas.some(function(v){return v>0;});
     if(!temDados){
       var existing = canvasEl && Chart.getChart(canvasEl); if(existing) existing.destroy();
@@ -15647,9 +15677,9 @@ function initCharts(){
     if(canvasEl) canvasEl.style.display='block';
     if(emptyEl) emptyEl.style.display='none';
     mk('cashChart','line',{labels:labels,datasets:[
-      {label:'Entradas',data:entradas,borderColor:YEL,backgroundColor:'rgba(245,196,0,.06)',tension:.4,fill:true,pointBackgroundColor:YEL},
-      {label:'Saídas',data:saidas,borderColor:'rgba(77,148,219,.8)',backgroundColor:'rgba(77,148,219,.04)',tension:.4,fill:true},
-    ]},{plugins:{legend:{display:true}},scales:{y:{grid:{color:GC}}}});
+      {label:'Faturação',data:entradas,borderColor:YEL,backgroundColor:'rgba(245,196,0,.06)',tension:.4,fill:true,pointBackgroundColor:YEL},
+      {label:'Despesas',data:saidas,borderColor:'rgba(77,148,219,.8)',backgroundColor:'rgba(77,148,219,.04)',tension:.4,fill:true},
+    ]},{plugins:{legend:{display:true}},scales:{y:{grid:{color:GC},ticks:{callback:function(v){return '€'+v.toLocaleString('pt-PT');}}}}});
   })();
 
   // Receita por Sector: usa orçamentos reais (orcData) cruzados com o sector real do cliente (cliData.sec).
@@ -17052,24 +17082,66 @@ function finIniciarRealtime() {
   } catch (e) { console.warn('[Despesas] Realtime indisponível:', e.message || e); }
 }
 
+function finDespLimparFiltros() {
+  var sf = document.getElementById('fin-desp-filtro-func');
+  var sm = document.getElementById('fin-desp-filtro-mes');
+  var se = document.getElementById('fin-desp-filtro-estado');
+  if(sf) sf.value=''; if(sm) sm.value=''; if(se) se.value='';
+  finRenderDespesas();
+}
+
+function finDespParseData(str) {
+  // Suporta DD/MM/YYYY e YYYY-MM-DD
+  if(!str || str==='—') return null;
+  if(str.includes('/')) { var p=str.split('/'); return new Date(p[2],p[1]-1,p[0]); }
+  return new Date(str);
+}
+
 function finRenderDespesas() {
   var tbody = document.getElementById('fin-desp-tbody');
   if (!tbody) return;
-  var mesAtual = new Date().toISOString().slice(0,7);
-  var totalMes = 0, totalPend = 0, totalReimb = 0, totalAprov = 0;
-  FIN_DESPESAS.forEach(function(d) {
-    if (d.data && d.data.slice(0,7) === mesAtual) totalMes += d.valor || 0;
-    if (d.estado === 'Pendente') totalPend += d.valor || 0;
-    if (d.estado === 'Reembolso') totalReimb += d.valor || 0;
-    if (d.estado === 'Aprovada') totalAprov += d.valor || 0;
-  });
-  var fmtEur = function(v) { return '€' + (v||0).toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2}); };
-  var d1 = document.getElementById('fin-desp-mes'); if(d1) d1.textContent = fmtEur(totalMes);
-  var d2 = document.getElementById('fin-desp-pend'); if(d2) d2.textContent = fmtEur(totalPend);
-  var d3 = document.getElementById('fin-desp-reimb'); if(d3) d3.textContent = fmtEur(totalReimb);
-  var d4 = document.getElementById('fin-desp-aprov'); if(d4) d4.textContent = fmtEur(totalAprov);
 
-  var rows = FIN_DESPESAS.slice(0,100).map(function(d) {
+  // Ordenar por data mais recente primeiro
+  var sorted = FIN_DESPESAS.slice().sort(function(a,b){
+    var da=finDespParseData(a.data), db=finDespParseData(b.data);
+    if(!da && !db) return 0; if(!da) return 1; if(!db) return -1;
+    return db-da;
+  });
+
+  // Preencher dropdowns de funcionário e mês (com valores únicos)
+  var sfEl = document.getElementById('fin-desp-filtro-func');
+  var smEl = document.getElementById('fin-desp-filtro-mes');
+  // Repopular dropdowns (sempre, para reflectir dados actualizados)
+  var prevFunc=sfEl?sfEl.value:'', prevMes=smEl?smEl.value:'';
+  if(sfEl){ sfEl.innerHTML='<option value="">— Todos os funcionários —</option>';
+    var funcs=[...new Set(FIN_DESPESAS.map(function(d){return d.funcionario||'';}).filter(Boolean))].sort();
+    funcs.forEach(function(f){ var o=document.createElement('option'); o.value=f; o.textContent=f; sfEl.appendChild(o); });
+    sfEl.value=prevFunc; }
+  if(smEl){ smEl.innerHTML='<option value="">— Todos os meses —</option>';
+    var mesesUniq=[...new Set(sorted.map(function(d){
+      var dt=finDespParseData(d.data); if(!dt) return null;
+      return dt.toISOString().slice(0,7);
+    }).filter(Boolean))];
+    mesesUniq.forEach(function(m){ var o=document.createElement('option'); o.value=m;
+      o.textContent=new Date(m+'-15').toLocaleDateString('pt-PT',{month:'long',year:'numeric'}); smEl.appendChild(o); });
+    smEl.value=prevMes; }
+
+  // Ler filtros ativos
+  var filtFunc = sfEl ? sfEl.value : '';
+  var filtMes  = smEl ? smEl.value : '';
+  var filtEst  = document.getElementById('fin-desp-filtro-estado') ? document.getElementById('fin-desp-filtro-estado').value : '';
+
+  var filtered = sorted.filter(function(d){
+    if(filtFunc && d.funcionario!==filtFunc) return false;
+    if(filtEst && d.estado!==filtEst) return false;
+    if(filtMes){
+      var dt=finDespParseData(d.data); if(!dt) return false;
+      if(dt.toISOString().slice(0,7)!==filtMes) return false;
+    }
+    return true;
+  });
+
+  var rows = filtered.slice(0,200).map(function(d) {
     var corEstado = d.estado==='Aprovada'?'var(--g)':d.estado==='Rejeitada'?'var(--r)':'var(--a)';
     var syncIcon = d.sync==='ok' ? '<span class="fin-sync-ok">●&nbsp;Sync</span>' : d.sync==='err' ? '<span class="fin-sync-err">✗&nbsp;Erro</span>' : '<span class="fin-sync-pend">○&nbsp;Pendente</span>';
     return '<tr class="fin-desp-row">' +
