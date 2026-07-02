@@ -19671,27 +19671,118 @@ function copilotoAplicar() {
     }
   })();
 
-  // ADD: Atualiza a primeira linha de produto com o valor final sugerido pela IA
-  // (usa SEMPRE o mesmo valor mostrado em "Markup ×N" no painel de análise, para nunca diferir do que o utilizador viu)
+  // ── INJEÇÃO LOGÍSTICA ──────────────────────────────────────────────────────
+  (function _copInjetarLogistica() {
+    var eng = analysis._raw_engenheiro;
+    if (!eng) return;
+    var zona = (eng.zona_deslocacao_sugerida || '').toLowerCase();
+    var tipoLog = 'nenhuma';
+    if (zona.indexOf('ilha') !== -1 || zona.indexOf('açore') !== -1 || zona.indexOf('madeira') !== -1) tipoLog = 'ilhas';
+    else if (zona.indexOf('nacional') !== -1 || zona.indexOf('grande') !== -1 || zona.indexOf('norte') !== -1 || zona.indexOf('sul') !== -1 || zona.indexOf('algarve') !== -1 || zona.indexOf('centro') !== -1) tipoLog = 'nacional';
+    else if (zona.indexOf('local') !== -1 || zona.indexOf('lisboa') !== -1 || zona.indexOf('porto') !== -1 || zona.indexOf('região') !== -1 || zona !== '') tipoLog = 'local';
+
+    var selLog = document.getElementById('orc-tipo-logistica');
+    if (!selLog) return;
+    selLog.value = tipoLog;
+    if (typeof orcLogisticaTipoChange === 'function') orcLogisticaTipoChange();
+
+    // Taxa: usar valor do JSON se disponível, senão defaults por tipo
+    var taxaEng = eng.custo_deslocacao_estimado || 0;
+    var taxaInp = document.getElementById('orc-log-taxa');
+    if (taxaInp && tipoLog !== 'nenhuma') {
+      if (taxaEng > 0) taxaInp.value = taxaEng;
+      else if (tipoLog === 'local') taxaInp.value = 30;
+      else if (tipoLog === 'nacional') taxaInp.value = 80;
+      else if (tipoLog === 'ilhas') taxaInp.value = 200;
+    }
+    if (typeof orcLogisticaCalc === 'function') orcLogisticaCalc();
+  })();
+
+  // ── INJEÇÃO MÃO DE OBRA ────────────────────────────────────────────────────
+  (function _copInjetarMaoObra() {
+    var eng = analysis._raw_engenheiro;
+    if (!eng || !eng.estimativa_operacional) return;
+    var op = eng.estimativa_operacional;
+
+    // Mapeamento: campo JSON → id da MO_TABELA
+    var mapa = [
+      { campo: 'horas_fabrico_serralharia', moId: 1 },
+      { campo: 'horas_design_arte_final',   moId: 8 },
+      { campo: 'horas_instalacao_obra',     moId: 7 }
+    ];
+
+    var moContainer = document.getElementById('orc-mo-linhas-container');
+    if (!moContainer) return;
+
+    // Limpar linhas de MO existentes para evitar duplicados
+    moContainer.innerHTML = '';
+    if (typeof ORC_MO_LINHAS !== 'undefined') ORC_MO_LINHAS.length = 0;
+
+    mapa.forEach(function(item) {
+      var horas = parseFloat(op[item.campo]) || 0;
+      if (horas <= 0) return;
+
+      if (typeof moAdicionarLinha === 'function') moAdicionarLinha();
+      var rows = moContainer.querySelectorAll('.stk-mat-row');
+      var lastRow = rows[rows.length - 1];
+      if (!lastRow) return;
+
+      var idx = rows.length - 1;
+      var sel = lastRow.querySelector('select');
+      if (sel) {
+        sel.value = String(item.moId);
+        if (typeof moLinhaChange === 'function') moLinhaChange(idx, sel);
+      }
+      var horasInp = lastRow.querySelector('input[type=number]');
+      if (horasInp) {
+        horasInp.value = horas;
+        if (typeof moLinhaQty === 'function') moLinhaQty(idx, horasInp);
+      }
+    });
+
+    if (typeof moCalcTotal === 'function') moCalcTotal();
+    // Recalcular materiais para incluir custo de MO no preço sugerido
+    if (typeof orcRecalcMateriais === 'function') orcRecalcMateriais();
+  })();
+
+  // ── INJEÇÃO LINHA COMERCIAL ────────────────────────────────────────────────
   var produtoNome = analysis.tipoReclamo || 'Reclamo personalizado';
   var custoMateriaisCalc = window._orcCustoMateriais || mats.reduce(function(s, mat) {
     return s + (mat.precoEstimado || mat.preco || 0) * (mat.qtd || 0);
   }, 0);
   var markupSugerido = analysis.markup_sugerido || 2.5;
-  var precoTotal = analysis._precoVendaCalculado || analysis.preco_estimado_total_com_markup || analysis.preco_estimado_total || 0;
+  var precoTotal = window._orcPrecoSugerido || analysis._precoVendaCalculado || analysis.preco_estimado_total_com_markup || analysis.preco_estimado_total || 0;
+  if (!precoTotal) precoTotal = custoMateriaisCalc * markupSugerido;
   // Se a IA devolveu o custo dos materiais sem markup (valor igual/inferior ao custo), aplica o markup
   if (precoTotal && custoMateriaisCalc && precoTotal <= custoMateriaisCalc * 1.05) {
     precoTotal = precoTotal * markupSugerido;
   }
-  if (!precoTotal) {
-    precoTotal = (window._orcPrecoSugerido || (custoMateriaisCalc * markupSugerido)) || 0;
-  }
-  var descTexto = 'Composição baseada em análise IA' + (analysis.observacoes ? ' – ' + analysis.observacoes : '');
+
+  // Construir descrição rica com dimensões se disponíveis
+  var descTexto = (function() {
+    var eng2 = analysis._raw_engenheiro;
+    var base = produtoNome;
+    if (eng2 && eng2.medidas) {
+      var m = eng2.medidas;
+      var dims = [];
+      if (m.largura_m) dims.push('L' + m.largura_m + 'm');
+      if (m.altura_m) dims.push('A' + m.altura_m + 'm');
+      if (m.profundidade_m) dims.push('P' + m.profundidade_m + 'm');
+      if (dims.length) base += '. Dimensões: ' + dims.join('×') + '.';
+    }
+    base += ' Produção e instalação conforme especificações técnicas.';
+    if (analysis.observacoes) base += ' ' + analysis.observacoes;
+    return base;
+  })();
+
   var linesCont = document.getElementById('orc-lines-container');
   if (linesCont) {
+    // Remover todas as linhas existentes
     var todasLinhas = linesCont.querySelectorAll('.orc-line');
-    var primeiraLinha = todasLinhas[0];
-    if (!primeiraLinha && typeof orcAddLine === 'function') { orcAddLine(); primeiraLinha = linesCont.querySelector('.orc-line'); }
+    todasLinhas.forEach(function(l){ l.remove(); });
+    // Criar uma linha limpa
+    if (typeof orcAddLine === 'function') orcAddLine();
+    var primeiraLinha = linesCont.querySelector('.orc-line');
     if (primeiraLinha) {
       var selProd = primeiraLinha.querySelector('[id^=sel-]');
       if (selProd) {
@@ -19703,11 +19794,7 @@ function copilotoAplicar() {
       var qtyInp2 = primeiraLinha.querySelector('[id^=qty-]');
       if (qtyInp2) qtyInp2.value = 1;
       var precoInp = primeiraLinha.querySelector('[id^=preco-]');
-      if (precoInp) precoInp.value = precoTotal;
-    }
-    // Remove as restantes linhas de produto — o orçamento fica apenas com a linha do Copiloto
-    for (var li = 1; li < todasLinhas.length; li++) {
-      todasLinhas[li].remove();
+      if (precoInp) precoInp.value = precoTotal.toFixed(2);
     }
   }
   orcCalcTotal();
