@@ -1569,10 +1569,14 @@ async function avSyncVendedoresSheet(){
       var v = avParseNumPT(idx.totalIVA!==-1 ? r[idx.totalIVA] : '0');
       var rec = avParseNumPT(idx.recebido!==-1 ? r[idx.recebido] : '0');
       var nrec = avParseNumPT(idx.aReceber!==-1 ? r[idx.aReceber] : '0');
-      if(!porVend[vend]) porVend[vend] = {n:vend, v:0, st:{rec:0,nrec:0}};
+      if(!porVend[vend]) porVend[vend] = {n:vend, v:0, st:{rec:0,nrec:0}, meses:{}};
       porVend[vend].v += v;
       porVend[vend].st.rec += rec;
       porVend[vend].st.nrec += nrec;
+      // Guardar breakdown por mês para cada vendedor
+      var mIdx = -1;
+      if(dataStr){ var dmv=dataStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/); if(dmv) mIdx=parseInt(dmv[2])-1; }
+      if(mIdx>=0){ if(!porVend[vend].meses[mIdx]) porVend[vend].meses[mIdx]={v:0,rec:0,nrec:0,n:0}; porVend[vend].meses[mIdx].v+=v; porVend[vend].meses[mIdx].rec+=rec; porVend[vend].meses[mIdx].nrec+=nrec; porVend[vend].meses[mIdx].n++; }
       totalYTD += v; nFaturas++;
       // Parse data para ordenação (formato dd/mm/yyyy ou yyyy-mm-dd)
       var dtSort = 0;
@@ -2278,7 +2282,7 @@ function avVendedoresFiltrar(ano){
   // Dados por ano
   var dadosAnos = {
     '2025': { data: AV_VEND_25, total: '€1.291.241', desc: '4 vendedores · ano fechado', tipo: 'fechado' },
-    '2026': { data: AV_VEND_26, total: '€45.439', desc: 'Janeiro · em curso', tipo: 'em curso' },
+    '2026': { data: AV_VEND_26, total: '€'+(Math.round(AV_YTD||45439)).toLocaleString('pt-PT'), desc: AV_VEND_26.length+' vendedores · em curso', tipo: 'em curso' },
     '2024': { data: [{n:'Rui Mota',v:601834,p:51.2,init:'R'},{n:'Paulo Faria',v:491206,p:41.8,init:'P'},{n:'Andreia',v:60450,p:5.1,init:'A'},{n:'Victor Horta',v:21590,p:1.8,init:'V'}], total:'€1.175.080', desc:'4 vendedores · ano fechado', tipo:'fechado'},
     '2023': { data: [{n:'Rui Mota',v:549120,p:52.1,init:'R'},{n:'Paulo Faria',v:445230,p:42.3,init:'P'},{n:'Andreia',v:52300,p:5.0,init:'A'},{n:'Victor Horta',v:6900,p:0.7,init:'V'}], total:'€1.053.550', desc:'4 vendedores · ano fechado', tipo:'fechado'},
     '2022': { data: [{n:'Rui Mota',v:498700,p:53.1,init:'R'},{n:'Paulo Faria',v:398100,p:42.4,init:'P'},{n:'Andreia',v:42300,p:4.5,init:'A'}], total:'€939.100', desc:'3 vendedores · ano fechado', tipo:'fechado'},
@@ -2294,13 +2298,63 @@ function avVendedoresFiltrar(ano){
   if(label) label.textContent = 'Ano '+ano+' · '+info.total+' total · '+info.desc;
 
   if(ano === '2026'){
+    // Dados históricos por vendedor (anos anteriores)
+    var histAnos = ['2025','2024','2023','2022'];
+    var histDados = {
+      '2025': AV_VEND_25,
+      '2024': [{n:'Rui Mota',v:601834,init:'R'},{n:'Paulo Faria',v:491206,init:'P'},{n:'Andreia',v:60450,init:'A'},{n:'Humberto Estrelinha',v:0,init:'H'},{n:'Victor Horta',v:21590,init:'V'}],
+      '2023': [{n:'Rui Mota',v:549120,init:'R'},{n:'Paulo Faria',v:445230,init:'P'},{n:'Andreia',v:52300,init:'A'},{n:'Victor Horta',v:6900,init:'V'}],
+      '2022': [{n:'Rui Mota',v:498700,init:'R'},{n:'Paulo Faria',v:398100,init:'P'},{n:'Andreia',v:42300,init:'A'}],
+    };
+    var fmtK = function(v){ return v>=1000?'€'+(v/1000).toFixed(0)+'k':'€'+Math.round(v); };
+    var fmtFull = function(v){ return '€'+Math.round(v).toLocaleString('pt-PT'); };
+
     grid.innerHTML = dados.map(function(v,i){
-      var recPercent = v.st ? Math.round(v.st.rec/v.v*100) : 0;
+      // ── Breakdown mês a mês ──
+      var meses = v.meses || {};
+      var mIdxs = Object.keys(meses).map(Number).sort(function(a,b){return a-b;});
+      var maxMesV = mIdxs.reduce(function(mx,m){return Math.max(mx,meses[m].v);},0);
+      var mesesHTML = '';
+      if(mIdxs.length){
+        mesesHTML = '<div style="margin-top:14px;border-top:1px solid var(--border);padding-top:10px">';
+        mesesHTML += '<div style="font-size:11px;color:var(--muted);letter-spacing:.1em;margin-bottom:8px">MESES 2026</div>';
+        mesesHTML += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:6px">';
+        mIdxs.forEach(function(m){
+          var md = meses[m];
+          var bw = maxMesV>0 ? Math.round(md.v/maxMesV*100) : 0;
+          mesesHTML += '<div style="background:var(--bg3);border-radius:6px;padding:7px 9px">'+
+            '<div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em">'+AV_MESES[m]+'</div>'+
+            '<div style="font-family:\'DM Mono\',monospace;font-size:13px;font-weight:700;color:var(--txt2);margin-top:2px">'+fmtK(md.v)+'</div>'+
+            '<div style="height:3px;background:var(--bg4);border-radius:2px;margin-top:5px"><div style="height:100%;width:'+bw+'%;background:var(--y);border-radius:2px"></div></div>'+
+            '<div style="font-size:10px;color:var(--muted);margin-top:3px">'+md.n+' fat.</div>'+
+          '</div>';
+        });
+        mesesHTML += '</div></div>';
+      }
+
+      // ── Performance histórica ──
+      var histHTML = '<div style="margin-top:12px;border-top:1px solid var(--border);padding-top:10px">';
+      histHTML += '<div style="font-size:11px;color:var(--muted);letter-spacing:.1em;margin-bottom:7px">HISTÓRICO</div>';
+      histHTML += '<div style="display:flex;flex-wrap:wrap;gap:8px">';
+      histAnos.forEach(function(ha){
+        var hd = (histDados[ha]||[]).find(function(x){return x.n===v.n||(x.init===v.init&&x.n.split(' ')[0]===v.n.split(' ')[0]);});
+        if(hd && hd.v>0){
+          histHTML += '<div style="background:var(--bg3);border-radius:6px;padding:5px 10px;text-align:center">'+
+            '<div style="font-size:10px;color:var(--muted)">'+ha+'</div>'+
+            '<div style="font-family:\'DM Mono\',monospace;font-size:12px;font-weight:700;color:var(--txt)">'+fmtK(hd.v)+'</div>'+
+          '</div>';
+        }
+      });
+      histHTML += '</div></div>';
+
       return '<div class="av-vend-card '+(v.v===maxV?'lead':'')+'">'+
-        '<div class="head"><div style="display:flex;align-items:center;gap:12px"><div class="avatar">'+v.init+'</div><div><div class="name">'+v.n+'</div><div class="role">Janeiro 2026</div></div></div>'+
+        '<div class="head"><div style="display:flex;align-items:center;gap:12px"><div class="avatar">'+v.init+'</div><div><div class="name">'+v.n+'</div><div class="role">Vendedor · 2026</div></div></div>'+
         '<span class="rank-pill">#'+(i+1)+'</span></div>'+
-        '<div class="big"><span class="cur">€</span>'+Math.round(v.v).toLocaleString('pt-PT')+'</div>'+
-        '<div class="sub-line">'+(v.st?'<span style="color:var(--g)">✓ €'+Math.round(v.st.rec).toLocaleString('pt-PT')+' recebido</span>'+(v.st.nrec>0?' · <span style="color:var(--r)">● €'+Math.round(v.st.nrec).toLocaleString('pt-PT')+' pendente</span>':''):'')+'</div>'+
+        '<div class="big"><span class="cur">€</span>'+Math.round(v.v).toLocaleString('pt-PT')+
+          '<span style="font-size:13px;color:var(--muted);font-weight:400;margin-left:10px">YTD</span></div>'+
+        '<div class="sub-line">'+(v.st?'<span style="color:var(--g)">✓ '+fmtFull(v.st.rec)+' recebido</span>'+(v.st.nrec>0?' · <span style="color:var(--r)">● '+fmtFull(v.st.nrec)+' pendente</span>':''):'')+'</div>'+
+        mesesHTML+
+        histHTML+
       '</div>';
     }).join('');
   } else {
