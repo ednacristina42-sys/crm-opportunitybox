@@ -7031,6 +7031,13 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
         <div class="mn" style="border-color:rgba(63,207,142,.2)"><div class="mnl">Aprovadas</div><div class="mnv" style="color:var(--g)" id="desp-app-aprov">€0</div><div class="mns" id="desp-app-aprov-n">aprovadas</div></div>
         <div class="mn"><div class="mnl">TOConline</div><div class="mnv" id="desp-app-toc">0</div><div class="mns">enviadas</div></div>
       </div>
+      <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:center">
+        <select id="desp-app-filtro-colab" onchange="despAppRenderTabela()" style="background:var(--bg3);border:1px solid var(--border);color:var(--txt2);border-radius:7px;padding:5px 10px;font-size:13px">
+          <option value="">— Todos os colaboradores —</option>
+        </select>
+        <button class="tbtn" onclick="document.getElementById('desp-app-filtro-colab').value='';despAppRenderTabela()" style="font-size:12px">✕ Limpar</button>
+        <span id="desp-app-contagem" style="font-size:13px;color:var(--muted)"></span>
+      </div>
       <div class="tw"><table><thead><tr><th>Data</th><th>Colaborador</th><th>Categoria</th><th>Referência</th><th>Valor</th><th>Recibo</th><th>Estado</th></tr></thead><tbody id="desp-app-tbody"></tbody></table></div>
     </div>
   </div>
@@ -15047,6 +15054,46 @@ function despClearFile(){
 function despTab(tab){ /* tabs removidos — vista única CRM + App */ }
 
 var _despAppSynced = false;
+function despAppRenderTabela(){
+  const tbody = document.getElementById('desp-app-tbody');
+  if(!tbody) return;
+  const filtColab = (document.getElementById('desp-app-filtro-colab')||{}).value||'';
+  const estLabel = {pending:'Pendente',submitted:'Submetida',approved:'Aprovada',rejected:'Rejeitada',reimbursed:'Reembolsada'};
+  const estCls   = {pending:'ba',submitted:'ba',approved:'bg',rejected:'br',reimbursed:'bg'};
+
+  // Ordenar por data decrescente (mais recente primeiro)
+  const sorted = EC_DESPESAS_APP.slice().sort((a,b)=>{
+    const da = a.occurred_at ? new Date(a.occurred_at) : new Date(0);
+    const db = b.occurred_at ? new Date(b.occurred_at) : new Date(0);
+    return db - da;
+  });
+
+  const filtered = filtColab ? sorted.filter(d=>(d.user_name||'')=== filtColab) : sorted;
+
+  const cnt = document.getElementById('desp-app-contagem');
+  if(cnt) cnt.textContent = filtered.length !== EC_DESPESAS_APP.length
+    ? filtered.length+' de '+EC_DESPESAS_APP.length+' despesas'
+    : EC_DESPESAS_APP.length+' despesas';
+
+  tbody.innerHTML = filtered.map(d=>{
+    const dtStr = d.occurred_at ? new Date(d.occurred_at).toLocaleDateString('pt-PT',{day:'2-digit',month:'2-digit',year:'numeric'}) : '—';
+    const cls = estCls[d.status]||'ba';
+    const lbl = estLabel[d.status]||d.status||'—';
+    const recBtn = d.receipt_signed_url
+      ? `<a href="${d.receipt_signed_url}" target="_blank" class="tbtn" style="font-size:12px;padding:3px 8px;text-decoration:none">🧾 Ver</a>`
+      : `<button class="tbtn" style="font-size:12px;padding:3px 8px;color:var(--muted)" disabled>🧾</button>`;
+    return `<tr>
+      <td style="color:var(--muted);font-size:13px;font-family:'DM Mono',monospace">${dtStr}</td>
+      <td><strong>${d.user_name||'—'}</strong></td>
+      <td><span class="b bm" style="font-size:12px">${d.category||'—'}</span></td>
+      <td style="font-size:13px">${d.reference||d.notes||'—'}</td>
+      <td style="font-family:'DM Mono',monospace;font-weight:600">€${parseFloat(d.amount_eur||0).toFixed(2)}</td>
+      <td>${recBtn}</td>
+      <td><span class="b ${cls}" style="font-size:12px">${lbl}</span></td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:20px">Sem despesas para este colaborador.</td></tr>';
+}
+
 async function despSyncApp(){
   const btn = document.getElementById('desp-app-sync-btn');
   const status = document.getElementById('desp-app-status');
@@ -15084,26 +15131,16 @@ async function despSyncApp(){
     document.getElementById('desp-app-aprov-n').textContent=cntAprov+' aprovadas';
     document.getElementById('desp-app-toc').textContent=toc;
 
-    const estLabel = {pending:'Pendente',submitted:'Submetida',approved:'Aprovada',rejected:'Rejeitada',reimbursed:'Reembolsada'};
-    const estCls   = {pending:'ba',submitted:'ba',approved:'bg',rejected:'br',reimbursed:'bg'};
-    const tbody = document.getElementById('desp-app-tbody');
-    tbody.innerHTML = EC_DESPESAS_APP.map(d=>{
-      const dtStr = d.occurred_at ? new Date(d.occurred_at).toLocaleDateString('pt-PT',{day:'2-digit',month:'short',year:'numeric'}) : '—';
-      const cls = estCls[d.status]||'ba';
-      const lbl = estLabel[d.status]||d.status||'—';
-      const recBtn = d.receipt_signed_url
-        ? `<a href="${d.receipt_signed_url}" target="_blank" class="tbtn" style="font-size:12px;padding:3px 8px;text-decoration:none">🧾 Ver</a>`
-        : `<button class="tbtn" style="font-size:12px;padding:3px 8px;color:var(--muted)" disabled>🧾</button>`;
-      return `<tr>
-        <td style="color:var(--muted);font-size:13px">${dtStr}</td>
-        <td><strong>${d.user_name||'—'}</strong></td>
-        <td><span class="b bm" style="font-size:12px">${d.category||'—'}</span></td>
-        <td style="font-size:13px">${d.reference||d.notes||'—'}</td>
-        <td style="font-family:'DM Mono',monospace;font-weight:600">€${parseFloat(d.amount_eur||0).toFixed(2)}</td>
-        <td>${recBtn}</td>
-        <td><span class="b ${cls}" style="font-size:12px">${lbl}</span></td>
-      </tr>`;
-    }).join('');
+    // Preencher dropdown de colaboradores
+    const selColab = document.getElementById('desp-app-filtro-colab');
+    if(selColab){
+      const nomes=[...new Set(EC_DESPESAS_APP.map(d=>d.user_name||'').filter(Boolean))].sort();
+      const prevVal=selColab.value;
+      selColab.innerHTML='<option value="">— Todos os colaboradores —</option>';
+      nomes.forEach(n=>{ const o=document.createElement('option'); o.value=n; o.textContent=n; selColab.appendChild(o); });
+      if(nomes.includes(prevVal)) selColab.value=prevVal;
+    }
+    despAppRenderTabela();
     if(status) status.textContent='✅ ' + EC_DESPESAS_APP.length + ' despesas · App de Pontos';
     if(btn){ btn.textContent='🔄 Actualizar App'; btn.disabled=false; }
     _despAppSynced = true;
