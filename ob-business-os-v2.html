@@ -657,13 +657,13 @@ function renderTasksGantt() {
 // ═══════════════════════════════════════════════════════
 var AV_ANOS = [
   {ano:2020, c:'#6b7280', meses:[93675.05,113857.66,92423.88,58937.59,54294.78,48796.20,63751.16,60423.46,102483.60,87174.08,109610.72,60806.20], total:946234.38},
-  {ano:2021, c:'#94a3b8', meses:[31366.38,18782.55,22273.78,87589.27,61278.92,53141.69,70988.71,41178.81,72857.66,47819.83,75532.02,61492.82], total:644302.44},
-  {ano:2022, c:'#a78bfa', meses:[52238.46,54849.93,66350.27,66271.37,75349.62,72179.51,88262.15,36728.70,85016.71,86488.98,83240.78,86949.68], total:853926.16},
-  {ano:2023, c:'#60a5fa', meses:[75289.34,78768.62,92611.44,74637.59,101390.24,102180.59,91806.53,54062.64,98713.16,85297.59,95475.56,78816.80], total:1029050.10},
-  {ano:2024, c:'#f97316', meses:[62570.28,57086.80,67466.77,69269.77,82002.93,92541.26,104649.76,64556.43,88039.89,107027.29,155174.38,121350.17], total:1071735.73},
+  {ano:2021, c:'#94a3b8', meses:[31366.38,18782.55,22273.78,87589.27,61278.92,53141.69,70988.71,41178.81,72857.66,47819.83,75532.02,61492.82],  total:644302.44},
+  {ano:2022, c:'#a78bfa', meses:[52238.46,54849.93,66350.27,66271.37,75349.62,72179.51,88262.15,36728.70,85016.71,86488.98,83240.78,86949.68],  total:853926.16},
+  {ano:2023, c:'#60a5fa', meses:[75289.34,78768.62,92611.44,74637.59,101390.24,92180.59,91806.53,54062.64,98713.16,85297.59,95475.56,78816.80], total:1029050.10},
+  {ano:2024, c:'#f97316', meses:[62570.28,57086.80,67466.77,69269.77,82002.93,92541.26,104649.76,64556.43,88039.89,107027.29,155174.38,121350.17],total:1071735.73},
   {ano:2025, c:'#F5C400', meses:[86734,96592,92723,106291,107923,102260,115588,82685,112948,131240,95972,158569], total:1289525},
-  // 2026: totais mensais sem IVA — Mapa de Vendas (actualizado Jun/2026)
-  {ano:2026, c:'#ffffff', meses:[77249,80995,80970,51912,127229,136016,null,null,null,null,null,null], total:554371}
+  // 2026: Comparativo de Vendas — valores exactos da folha (Jun/2026)
+  {ano:2026, c:'#ffffff', meses:[77249,80994.92,80969.95,51912.02,127228.88,124000,null,null,null,null,null,null], total:542354.77}
 ];
 var AV_MESES=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
 var AV_MESES_L=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
@@ -678,8 +678,8 @@ var AV_VEND_26=[
   {n:"Humberto",v:44483, init:"H",st:{rec:31716, nrec:12767}, meses:{2:2954, 3:12486,4:29044, 5:16717}},
   {n:"André",   v:0,     init:"A",st:{rec:0,     nrec:0},     meses:{}}
 ];
-// Meta anual 2026 e realizado — Mapa de Vendas
-var AV_META=1300000, AV_YTD=554371;
+// Meta anual 2026 e realizado — Comparativo de Vendas
+var AV_META=1300000, AV_YTD=542355;
 // Recebimentos 2026 globais (Mapa de Vendas · linha "Geral - Ano 2026")
 var AV_RECEBIDOS_2026=395084, AV_NAO_RECEBIDOS_2026=156622;
 var avFmtE=n=>'€'+Math.round(n).toLocaleString('pt-PT');
@@ -8083,18 +8083,18 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
       <div class="av-kpi-grid">
         <div class="av-kpi featured">
           <div class="av-kpi-label">📅 Vendas 2026 YTD</div>
-          <div class="av-kpi-value" id="av-kpi-2026"><span class="cur">€</span>554.371</div>
-          <div class="av-kpi-delta flat" id="av-kpi-2026-delta">Jan–Jun · Mapa de Vendas · sem IVA</div>
+          <div class="av-kpi-value" id="av-kpi-2026"><span class="cur">€</span>542.355</div>
+          <div class="av-kpi-delta flat" id="av-kpi-2026-delta">Jan–Jun · Comparativo de Vendas</div>
           <div class="av-kpi-foot" id="av-kpi-2026-foot">€156.622 ainda por receber · €395.084 recebido</div>
           <button class="tbtn" style="margin-top:8px;font-size:12px" onclick="if(typeof avAbrirDetalheMensal==='function')avAbrirDetalheMensal();">📊 Ver detalhe mensal</button>
         </div>
         <div class="av-kpi">
           <div class="av-kpi-label">🎯 Meta 2026</div>
-          <div class="av-kpi-value" id="av-kpi-meta-pct" style="color:var(--y)">42,6%</div>
+          <div class="av-kpi-value" id="av-kpi-meta-pct" style="color:var(--y)">41,7%</div>
           <div style="background:var(--bg3);border-radius:6px;height:6px;margin:8px 0 6px;overflow:hidden">
-            <div id="av-kpi-meta-fill" style="height:100%;width:42.6%;background:linear-gradient(90deg,var(--y),#f97316);border-radius:6px;transition:width .8s ease"></div>
+            <div id="av-kpi-meta-fill" style="height:100%;width:41.7%;background:linear-gradient(90deg,var(--y),#f97316);border-radius:6px;transition:width .8s ease"></div>
           </div>
-          <div class="av-kpi-foot" id="av-kpi-meta-foot">€554.371 de €1.300.000 · Falta €745.629</div>
+          <div class="av-kpi-foot" id="av-kpi-meta-foot">€542.355 de €1.300.000 · Falta €757.645</div>
           <div class="av-kpi-foot" style="margin-top:4px;color:var(--a)">Mensal necessário: €108.333</div>
         </div>
         <div class="av-kpi">
