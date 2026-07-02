@@ -906,7 +906,7 @@ function avPareto(){
 }
 
 function avVendedores(){
-  avVendedoresFiltrar('2025');
+  avVendedoresFiltrar('2026');
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -1140,7 +1140,7 @@ async function avSyncTocOnlineViaEF(){
     var errTxt = await resp.text();
     console.warn('[AV EF] Invoices HTTP', resp.status, errTxt);
     // Mostrar o que a API devolveu para debug
-    if(tsEl) tsEl.textContent = '⚠️ TocOnline API: ' + resp.status + ' — ver consola';
+    console.warn('[AV EF] TocOnline HTTP', resp.status, errTxt.slice(0,200));
     throw new Error('TOConline EF HTTP ' + resp.status + ': ' + errTxt.slice(0,200));
   }
 
@@ -1186,7 +1186,7 @@ async function avSyncTocOnlineViaEF(){
     if(tsEl) tsEl.textContent = '✅ TocOnline · ' + merged.length + ' docs';
   } else {
     // Payload veio mas sem itens reconhecidos — mostrar estrutura para diagnóstico
-    if(tsEl) tsEl.textContent = '⚠️ TocOnline: 0 faturas (ver consola)';
+    console.warn('[AV EF] TocOnline: 0 faturas reconhecidas');
     console.warn('[AV EF] Estrutura inesperada do TOConline:', JSON.stringify(payload).slice(0,500));
   }
   avTocoIntegrar();
