@@ -939,13 +939,36 @@ function avVend25TableRender(){
   t.innerHTML=h;
 }
 
+var AV_SHEET_PORMES_KEY = 'av-sheet-pormes-2026';
+
 function avRenderTocoTable(porMes){
   var t = document.getElementById('av-tocoTable');
   if(!t) return;
+
+  // Se não há dados (TocOnline falhou), tentar usar cache das Google Sheets
+  var temDados = Object.keys(porMes||{}).some(function(k){ return porMes[k] && porMes[k].n > 0; });
+  if(!temDados){
+    try{
+      var cached = localStorage.getItem(AV_SHEET_PORMES_KEY);
+      if(cached){
+        var obj = JSON.parse(cached);
+        // Converter chaves string para número
+        var fromCache = {};
+        Object.keys(obj).forEach(function(k){ fromCache[parseInt(k)] = obj[k]; });
+        var temCache = Object.keys(fromCache).some(function(k){ return fromCache[k] && fromCache[k].n > 0; });
+        if(temCache){
+          porMes = fromCache;
+          // Actualizar subtítulo para indicar fonte
+          var sub = document.getElementById('av-toco-sub');
+          if(sub && !sub.textContent.includes('Google Sheets')) sub.textContent = 'Google Sheets (cache) · clique Sync Google Sheets para actualizar';
+        }
+      }
+    }catch(e){}
+  }
+
   var h='<thead><tr><th>Mês</th><th>Faturas Emitidas</th><th>Valor Total</th><th>Clientes</th><th>Ticket Médio</th></tr></thead><tbody>';
   var hoje = new Date();
   var mesAtualIdx = (hoje.getFullYear()===2026) ? hoje.getMonth() : 11;
-  // Mostrar todos os meses até ao mês atual inclusive (dinamico)
   var mMax = Math.min(mesAtualIdx + 1, 12);
   for(var m=0;m<mMax;m++){
     var d = porMes[m];
@@ -954,7 +977,7 @@ function avRenderTocoTable(porMes){
       var nCli = Object.keys(d.clientes||{}).length;
       var ticket = d.total/d.n;
       h+='<tr><td>'+nome+'</td><td>'+d.n+'</td><td class="av-total">'+avFmtFull(d.total)+'</td><td>'+nCli+'</td><td>'+avFmtFull(ticket)+'</td></tr>';
-    } else if(m <= mesAtualIdx || mesAtualIdx===-1){
+    } else if(m <= mesAtualIdx){
       h+='<tr><td>'+nome+'</td><td>0</td><td style="color:var(--muted2)">€0,00</td><td>0</td><td style="color:var(--muted2)">—</td></tr>';
     } else {
       h+='<tr><td>'+nome+'</td><td colspan="4" style="color:var(--muted2)">Aguardando faturação</td></tr>';
@@ -1311,26 +1334,18 @@ async function afLoad(){
 async function afSincTudo(){
   var btn = document.getElementById('af-sinc-btn');
   if(btn){ btn.disabled=true; btn.textContent='⏳ A sincronizar...'; }
-  var ts0 = localStorage.getItem('ob-af-last-sync');
   try {
-    // Sync TOConline via Edge Function
-    if(typeof avSyncTocOnline === 'function') await avSyncTocOnline();
-    // Sync Google Sheets (vendas 2026)
+    // Sync TOConline — erro aqui NÃO para o processo
+    if(typeof avSyncTocOnline === 'function'){
+      try{ await avSyncTocOnline(); }catch(e){ console.warn('[AF] TocOnline sync falhou (continuando):', e); }
+    }
+    // Sync Google Sheets — sempre corre, mesmo que TocOnline falhe
     if(typeof avSyncVendedoresSheet === 'function'){
-      try{ await avSyncVendedoresSheet(); }catch(e){ console.warn('[AF] Google Sheets sync:', e); }
+      try{ await avSyncVendedoresSheet(); }catch(e){ console.warn('[AF] Google Sheets sync falhou:', e); }
     }
-    // Reload widget
-    await afLoad();
-    // Actualizar banner de fallback com último ok
+    // Reload widget financeiro
+    try{ await afLoad(); }catch(e){ console.warn('[AF] afLoad:', e); }
     var fb = document.getElementById('af-fallback'); if(fb) fb.style.display='none';
-  } catch(e){
-    console.error('[AF] Erro sync:', e);
-    var fb = document.getElementById('af-fallback');
-    if(fb){
-      fb.style.display='block';
-      var lastEl = document.getElementById('af-last-ok');
-      if(lastEl && ts0) lastEl.textContent = new Date(ts0).toLocaleString('pt-PT',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
-    }
   } finally {
     if(btn){ btn.disabled=false; btn.textContent='🔄 Sincronizar Tudo'; }
   }
@@ -1634,6 +1649,8 @@ async function avSyncVendedoresSheet(){
       });
       av2026sh.total = av2026sh.meses.reduce(function(s,v){return s+(v||0);},0);
     }
+    // Guardar cache no localStorage para sobreviver a recarregamentos de página
+    try{ localStorage.setItem(AV_SHEET_PORMES_KEY, JSON.stringify(porMesSheet)); }catch(e){}
     // Renderizar tabela mensal com dados da planilha (substitui os zeros)
     if(typeof avRenderTocoTable==='function') avRenderTocoTable(porMesSheet);
     // Atualizar sub-título da secção TocOnline
