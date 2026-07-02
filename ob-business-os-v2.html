@@ -883,10 +883,12 @@ function avClients(){
   setTimeout(()=>{list.querySelectorAll('.bar').forEach((b,i)=>{setTimeout(()=>{b.style.width=b.dataset.w+'%';},i*25);});},80);
 }
 
+var AV_TOTAL_ALL = 1291241.18; // actualizado pelo Sync Google Sheets com total real 2026
+
 function avPareto(){
   const svg=document.getElementById('av-paretoChart');
   const W=900,H=280,padL=50,padR=50,padT=20,padB=40;
-  const data=AV_CLIENTES.slice(0,30),totalAll=1291241.18;
+  const data=AV_CLIENTES.slice(0,30),totalAll=AV_TOTAL_ALL;
   const maxV=data[0].v;
   let cum=0;const cumData=data.map(c=>{cum+=c.v;return cum/totalAll*100;});
   let h='<g class="av-grid">';
@@ -1660,6 +1662,60 @@ async function avSyncVendedoresSheet(){
     if(typeof avLine==='function') avLine();
     if(typeof avBars==='function') avBars();
     if(typeof avAnnualTable==='function') avAnnualTable();
+
+    // ── TOP CLIENTES 2026 a partir da planilha ──────────────────
+    var porCliente = {};
+    sheetRows.forEach(function(r){
+      var cli = (r.nome||'').trim() || 'Sem nome';
+      if(!porCliente[cli]) porCliente[cli] = {n:cli, v:0, rec:0, nrec:0};
+      porCliente[cli].v   += r.total;
+      porCliente[cli].rec += r.recebido;
+      porCliente[cli].nrec+= r.aReceber;
+    });
+    var totalCliAll = sheetRows.reduce(function(s,r){return s+r.total;},0);
+    var cli2026 = Object.keys(porCliente).map(function(k){
+      var d = porCliente[k];
+      d.p = totalCliAll>0 ? Math.round(d.v/totalCliAll*1000)/10 : 0;
+      return d;
+    }).sort(function(a,b){return b.v-a.v;});
+    window.AV_CLIENTES_2026 = cli2026;
+    // Substituir AV_CLIENTES pelos dados reais 2026 e actualizar total global
+    AV_CLIENTES = cli2026;
+    AV_TOTAL_ALL = totalCliAll;
+    if(typeof avClients==='function') avClients();
+    if(typeof avPareto==='function') avPareto();
+    // Actualizar sub-label "Análise Pareto"
+    var paretoSub = document.getElementById('av-pareto-sub');
+    if(paretoSub) paretoSub.textContent = 'Análise Pareto · ' + cli2026.length + ' clientes únicos · 2026';
+
+    // ── ÁREA FINANCEIRA: Faturado mês actual + A Receber ────────
+    var agr = new Date();
+    var inicioMes = new Date(agr.getFullYear(), agr.getMonth(), 1);
+    var fimMes    = new Date(agr.getFullYear(), agr.getMonth()+1, 0, 23, 59, 59);
+    var nomeMes   = agr.toLocaleDateString('pt-PT',{month:'short',year:'numeric'}).replace('.','').toUpperCase();
+    var faturadoMesV=0, nFaturadoMes=0, totalAReceberV=0, totalRecebidoV=0;
+    sheetRows.forEach(function(r){
+      var dtDoc = null;
+      if(r.data){
+        var dm = r.data.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+        if(dm) dtDoc = new Date(parseInt(dm[3]), parseInt(dm[2])-1, parseInt(dm[1]));
+      }
+      if(dtDoc && dtDoc >= inicioMes && dtDoc <= fimMes){ faturadoMesV+=r.total; nFaturadoMes++; }
+      totalAReceberV += r.aReceber;
+      totalRecebidoV += r.recebido;
+    });
+    var afFmt2 = function(v){ return '€'+(v||0).toLocaleString('pt-PT',{minimumFractionDigits:0,maximumFractionDigits:0}); };
+    var setAF  = function(id,v){ var e=document.getElementById(id); if(e) e.textContent=v; };
+    // Só actualiza se não houver dados TocOnline (para não sobrescrever se existirem)
+    var fatCacheTmp = JSON.parse(localStorage.getItem('ob-toconline-faturas')||'null');
+    var temToco = fatCacheTmp && fatCacheTmp.data && fatCacheTmp.data.length>0;
+    if(!temToco){
+      setAF('af-kpi-faturado',     afFmt2(faturadoMesV));
+      setAF('af-kpi-faturado-sub', nFaturadoMes + ' faturas · ' + nomeMes + ' · Sheets');
+      setAF('af-kpi-receber',      afFmt2(totalAReceberV));
+      setAF('af-kpi-receber-sub',  'Saldo por receber 2026 · Sheets');
+    }
+    console.log('[GSheets] Top Clientes 2026:', cli2026.length, '· Faturado mês:', faturadoMesV, '· A Receber:', totalAReceberV);
   }catch(e){
     if(tsEl) tsEl.textContent = '⚠️ Sheets: ' + e.message.slice(0,60);
     console.error('[GSheets] Erro:', e.message);
