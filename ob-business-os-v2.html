@@ -2407,12 +2407,28 @@ function ecInit(){
   ecSupabase = window.supabase.createClient(EC_SB_URL, EC_SB_KEY, {
     auth: { persistSession: true, autoRefreshToken: true, storage: window.localStorage, storageKey: 'ob-ec-auth' }
   });
-  // Verificar se já está logado
-  ecSupabase.auth.getSession().then(({data})=>{
-    if(data.session && data.session.user){
+  // Verificar se já está logado no Supabase
+  ecSupabase.auth.getSession().then(function(res){
+    var data = res.data;
+    if(data && data.session && data.session.user){
       ecUser = data.session.user;
       ecShowDashboard();
+    } else {
+      // Sem sessão Supabase — verificar se há dados do App local
+      var ponto   = ecGetLocalPonto();
+      var visitas = ecGetLocalVisitas();
+      if(ponto.length || visitas.length){
+        // Dados do App detectados → activar modo local automaticamente
+        console.log('[EC] Sem sessão Supabase, a usar dados locais do App (' + (ponto.length) + ' picagens)');
+        ecUsarDadosLocais();
+      } else {
+        // Sem dados locais — mostrar dashboard vazio (sem "A carregar...")
+        ecShowDashboardLocal();
+      }
     }
+  }).catch(function(){
+    // Erro Supabase — tentar modo local
+    ecShowDashboardLocal();
   });
 }
 
@@ -2700,14 +2716,7 @@ var _ecLocalMode = false; // true quando a usar dados de localStorage
 
 // Entrar em modo local (sem Supabase)
 function ecUsarDadosLocais() {
-  _ecLocalMode = true;
-  // Simular user para ecShowDashboard
-  ecUser = { email: 'local · App de Equipas' };
-  document.getElementById('ec-conn-text').textContent = '💻 Modo Local · App de Equipas';
-  const conn = document.getElementById('ec-conn');
-  if(conn){ conn.classList.remove('off'); conn.style.color='var(--b)'; }
-  // Substituir ecRefresh por versão local para este modo
-  ecShowDashboard();
+  ecShowDashboardLocal();
 }
 window.ecUsarDadosLocais = ecUsarDadosLocais;
 
@@ -2716,16 +2725,21 @@ var _ecRefreshOriginal = null;
 var _ecRefreshTimer2 = null;
 
 function ecShowDashboardLocal() {
-  document.getElementById('ec-auth-view').style.display = 'none';
-  document.getElementById('ec-dashboard-view').style.display = 'block';
-  const conn = document.getElementById('ec-conn');
-  conn.classList.remove('off');
-  document.getElementById('ec-conn-text').textContent = '💻 Modo Local · App de Equipas';
+  _ecLocalMode = true;
+  if(!ecUser) ecUser = { email: 'local · App de Equipas' };
+  var authV = document.getElementById('ec-auth-view');
+  var dashV = document.getElementById('ec-dashboard-view');
+  if(authV) authV.style.display = 'none';
+  if(dashV) dashV.style.display = 'block';
+  var conn = document.getElementById('ec-conn');
+  if(conn){ conn.classList.remove('off'); conn.style.color='var(--b)'; }
+  var connTxt = document.getElementById('ec-conn-text');
+  if(connTxt) connTxt.textContent = '💻 Modo Local · App de Equipas';
   ecRefreshLocal();
   if(_ecRefreshTimer2) clearInterval(_ecRefreshTimer2);
   _ecRefreshTimer2 = setInterval(ecRefreshLocal, 30000);
   if(ecTimerInterval) clearInterval(ecTimerInterval);
-  ecTimerInterval = setInterval(ecUpdateTimers, 1000);
+  if(typeof ecUpdateTimers === 'function') ecTimerInterval = setInterval(ecUpdateTimers, 1000);
 }
 
 // ── Ler dados das keys do App ──────────────────────────────────
