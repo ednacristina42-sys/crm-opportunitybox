@@ -917,26 +917,38 @@ var _avTocoPorMes2026 = {}; // {0:{total,n,clientes:{}}, ...} indexado por mês 
 function avVend25TableRender(){
   var t = document.getElementById('av-vend25Table');
   if(!t) return;
-  var totalAno = AV_VEND_25.reduce(function(s,v){return s+v.v;},0);
-  // Tenta cruzar faturas TocOnline 2025 (se o histórico tiver sido sincronizado) para Faturas/Ticket Médio
-  var docs = (typeof tocoFaturasCache==='function') ? tocoFaturasCache() : [];
-  var ft2025 = docs.filter(function(d){
-    if((d._tipo||d.DocumentType)!=='FT') return false;
-    var dt = new Date(d.Date||d.DocumentDate||d.CreatedAt||'');
-    return !isNaN(dt.getTime()) && dt.getFullYear()===2025;
-  });
-  var temHistorico2025 = ft2025.length>0;
-  var h='<thead><tr><th>Comercial</th><th>Vendas Anuais</th><th>% do Total</th><th>Faturas Emitidas</th><th>Ticket Médio</th></tr></thead><tbody>';
-  AV_VEND_25.forEach(function(v){
-    var pct = Math.round(v.v/totalAno*1000)/10;
-    var nFat='—', ticket='—';
-    if(temHistorico2025){
-      // Sem campo de vendedor nas faturas reais do TocOnline — não é possível atribuir por comercial sem o dado de origem
-      nFat='—'; ticket='—';
+
+  // Usar dados 2026 da planilha se disponíveis; caso contrário usar 2025 estático
+  var dados26 = (AV_VEND_26 && AV_VEND_26.length && AV_VEND_26[0].v > 0) ? AV_VEND_26 : null;
+  var usar26 = !!dados26;
+  var dados = usar26 ? dados26 : AV_VEND_25;
+  var anoLabel = usar26 ? '2026' : '2025';
+  var totalAno = dados.reduce(function(s,v){return s+v.v;},0);
+
+  // Actualizar título e subtítulo
+  var hdr = document.querySelector('#av-card-vend25 h2');
+  if(hdr) hdr.textContent = 'Vendas por comercial · ' + anoLabel;
+  var sub = document.querySelector('#av-card-vend25 .av-sub');
+  if(sub) sub.textContent = usar26 ? 'Google Sheets · dados reais 2026' : 'Google Sheets (histórico) · 2025';
+
+  var fmtFull = function(v){ return '€'+Math.round(v).toLocaleString('pt-PT'); };
+  var h='<thead><tr><th>Comercial</th><th>Vendas '+(usar26?'YTD':'Anuais')+'</th><th>% do Total</th>';
+  if(usar26) h+='<th>Recebido</th><th>Por receber</th>';
+  else h+='<th>Faturas Emitidas</th><th>Ticket Médio</th>';
+  h+='</tr></thead><tbody>';
+
+  dados.forEach(function(v){
+    var pct = totalAno>0 ? Math.round(v.v/totalAno*1000)/10 : 0;
+    h+='<tr><td>'+v.n+'</td><td class="av-total">'+fmtFull(v.v)+'</td><td>'+pct+'%</td>';
+    if(usar26){
+      h+='<td style="color:var(--g)">'+(v.st&&v.st.rec>0?fmtFull(v.st.rec):'—')+'</td>';
+      h+='<td style="color:var(--r)">'+(v.st&&v.st.nrec>0?fmtFull(v.st.nrec):'—')+'</td>';
+    } else {
+      h+='<td>—</td><td>—</td>';
     }
-    h+='<tr><td>'+v.n+'</td><td class="av-total">'+avFmtE(v.v)+'</td><td>'+pct+'%</td><td>'+nFat+'</td><td>'+ticket+'</td></tr>';
+    h+='</tr>';
   });
-  h+='<tr><td><strong>Total</strong></td><td class="av-total"><strong>'+avFmtE(totalAno)+'</strong></td><td>100%</td><td>—</td><td>—</td></tr>';
+  h+='<tr style="font-weight:700;border-top:2px solid var(--border)"><td>Total</td><td class="av-total">'+fmtFull(totalAno)+'</td><td>100%</td><td colspan="2"></td></tr>';
   h+='</tbody>';
   t.innerHTML=h;
 }
