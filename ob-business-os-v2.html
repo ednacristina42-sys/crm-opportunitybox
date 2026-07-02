@@ -662,14 +662,26 @@ var AV_ANOS = [
   {ano:2023, c:'#60a5fa', meses:[75289.34,78768.62,92611.44,74637.59,101390.24,102180.59,91806.53,54062.64,98713.16,85297.59,95475.56,78816.80], total:1029050.10},
   {ano:2024, c:'#f97316', meses:[62570.28,57086.80,67466.77,69269.77,82002.93,92541.26,104649.76,64556.43,88039.89,107027.29,155174.38,121350.17], total:1071735.73},
   {ano:2025, c:'#F5C400', meses:[86734,96592,92723,106291,107923,102260,115588,82685,112948,131240,95972,158569], total:1289525},
-  {ano:2026, c:'#ffffff', meses:[45438.62,null,null,null,null,null,null,null,null,null,null,null], total:45438.62}
+  // 2026: totais mensais sem IVA — Mapa de Vendas (actualizado Jun/2026)
+  {ano:2026, c:'#ffffff', meses:[77249,80995,80970,51912,127229,136016,null,null,null,null,null,null], total:554371}
 ];
 var AV_MESES=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
 var AV_MESES_L=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
 var AV_CLIENTES = [{"n":"VOLARE - Gestão de Projectos, S.A","v":149422.96,"p":11.57},{"n":"R C SANCHES II LDA","v":70367.55,"p":5.45},{"n":"FITOUTICON, LDA","v":65545.4,"p":5.08},{"n":"Brisa - Áreas de Serviço, SA","v":61287.41,"p":4.75},{"n":"WIKIBUILD, S.A.","v":54330.05,"p":4.21},{"n":"Milmodus, Lda","v":50640.17,"p":3.92},{"n":"Auto Julio SA","v":50218.0,"p":3.89},{"n":"BOX ILUMINADA - SUPORTES PUBLICITARIOS LDA","v":44155.0,"p":3.42},{"n":"MULTILEM - Design e Construção de Espaços S.A","v":30940.0,"p":2.40},{"n":"LIVRARIA BERTRAND","v":30613.9,"p":2.37},{"n":"Freguesia Sta. Maria do Castelo, Santiago e Sta. Susana","v":26707.0,"p":2.07},{"n":"ARBLANCO - CONSTRUÇÕES S A","v":25330.0,"p":1.96},{"n":"SMASHVILLE LDA","v":24041.86,"p":1.86},{"n":"ESBOÇOS DE VERÃO - AUTOMOVEIS","v":22357.72,"p":1.73},{"n":"Talenter TT, SA","v":19210.0,"p":1.49},{"n":"PASTELARIA E CONFEITARIA ROLO LDA","v":16698.0,"p":1.29},{"n":"Oceano de Certeza","v":16548.5,"p":1.28},{"n":"Freguesia de Santo André","v":16140.0,"p":1.25},{"n":"Balance Company, Lda.","v":15434.0,"p":1.20},{"n":"PURPLE BRAVERY, LDA.","v":14560.0,"p":1.13},{"n":"Daufood Portugal Unipessoal, Lda","v":13667.0,"p":1.06},{"n":"DESFILA PINGUIM LDA","v":13250.0,"p":1.03},{"n":"Municipio Portel","v":10130.0,"p":0.78},{"n":"CULTO DA IMAGEM","v":9368.0,"p":0.73},{"n":"CHAMPION LEVEL LDA","v":9362.0,"p":0.73},{"n":"Fregª de São João das Lampas e Terrugem","v":9000.0,"p":0.70},{"n":"Freguesia de Foz do Arelho","v":8860.0,"p":0.69},{"n":"Mundo ao Quadrado, Unipessoal Lda.","v":8839.0,"p":0.68},{"n":"BEMMY, LDA","v":8589.75,"p":0.67},{"n":"Onemarket","v":8441.99,"p":0.65}];
 var AV_VEND_25=[{n:"Rui Mota",v:650966.58,p:50.4,init:"R"},{n:"Paulo Faria",v:586866.30,p:45.5,init:"P"},{n:"Andreia",v:50349.30,p:3.9,init:"A"},{n:"Victor Horta",v:3059.00,p:0.2,init:"V"}];
-var AV_VEND_26=[{n:"Rui Mota",v:11870.00,init:"R",st:{rec:150,nrec:11720}},{n:"Paulo Faria",v:9290.29,init:"P",st:{rec:7316.42,nrec:1973.87}},{n:"Edna Faria",v:1254.78,init:"E",st:{rec:1254.78,nrec:0}},{n:"Sem atribuição",v:23023.55,init:"?",st:{rec:90,nrec:22933.55}}];
-var AV_META=1000000, AV_YTD=45438.62;
+// AV_VEND_26: dados do Mapa de Vendas (sem IVA) — Jun/2026
+// meses: {0:Jan,1:Fev,2:Mar,3:Abr,4:Mai,5:Jun,...}
+// st.rec/nrec: estimativa proporcional (taxa geral 71,3% recebido / 28,7% por receber)
+var AV_VEND_26=[
+  {n:"Paulo",   v:353507,init:"P",st:{rec:252050,nrec:101457},meses:{0:47985,1:46620,2:55590,3:39229,4:61869,5:102214}},
+  {n:"Rui",     v:139665,init:"R",st:{rec:99581, nrec:40084}, meses:{0:29264,1:34375,2:22426,3:198,  4:36317, 5:17086}},
+  {n:"Humberto",v:44483, init:"H",st:{rec:31716, nrec:12767}, meses:{2:2954, 3:12486,4:29044, 5:16717}},
+  {n:"André",   v:0,     init:"A",st:{rec:0,     nrec:0},     meses:{}}
+];
+// Meta anual 2026 e realizado — Mapa de Vendas
+var AV_META=1300000, AV_YTD=554371;
+// Recebimentos 2026 globais (Mapa de Vendas · linha "Geral - Ano 2026")
+var AV_RECEBIDOS_2026=395084, AV_NAO_RECEBIDOS_2026=156622;
 var avFmtE=n=>'€'+Math.round(n).toLocaleString('pt-PT');
 var avFmtFull=n=>'€'+n.toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2});
 var _avRendered=false; // CORRIGIDO: só controla o binding dos separadores (1x), já não bloqueia a sincronização
@@ -684,6 +696,7 @@ function renderAnaliseVendas(){
   if(typeof avTocoIntegrar==='function') avTocoIntegrar();
   avLine(); avPie(); avBars(); avAnnualTable(); avClients(); avVendedores(); avHeatmap(); avPareto();
   if(typeof avVend25TableRender==='function') avVend25TableRender();
+  if(typeof avAtualizarMetaCard==='function') avAtualizarMetaCard();
   if(typeof avSyncTocOnline==='function' && !_avSyncEmCurso){
     _avSyncEmCurso = true;
     var tsEl = document.getElementById('av-sb-ts');
@@ -1069,6 +1082,13 @@ function avAtualizarMetaCard(){
   if(elRitmoL) elRitmoL.textContent = 'Ritmo necessário ('+mesesRestantes+' meses)';
   var fill = document.getElementById('av-metaFill');
   if(fill) fill.style.width = Math.min(pct,100)+'%';
+  // Actualizar também o card de Meta nos Indicadores Principais
+  var kpiMetaPct  = document.getElementById('av-kpi-meta-pct');
+  var kpiMetaFill = document.getElementById('av-kpi-meta-fill');
+  var kpiMetaFoot = document.getElementById('av-kpi-meta-foot');
+  if(kpiMetaPct)  kpiMetaPct.textContent = pct.toLocaleString('pt-PT',{minimumFractionDigits:1,maximumFractionDigits:1})+'%';
+  if(kpiMetaFill) kpiMetaFill.style.width = Math.min(pct,100)+'%';
+  if(kpiMetaFoot) kpiMetaFoot.textContent = '€'+Math.round(ytd).toLocaleString('pt-PT')+' de €'+Math.round(AV_META).toLocaleString('pt-PT')+' · Falta €'+Math.round(resta).toLocaleString('pt-PT');
 }
 window.avAtualizarMetaCard = avAtualizarMetaCard;
 
@@ -8063,10 +8083,19 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
       <div class="av-kpi-grid">
         <div class="av-kpi featured">
           <div class="av-kpi-label">📅 Vendas 2026 YTD</div>
-          <div class="av-kpi-value" id="av-kpi-2026"><span class="cur">€</span>45.439</div>
-          <div class="av-kpi-delta flat" id="av-kpi-2026-delta">Jan · 26 faturas emitidas</div>
-          <div class="av-kpi-foot" id="av-kpi-2026-foot">€36.627 ainda por receber · €8.811 recebido</div>
+          <div class="av-kpi-value" id="av-kpi-2026"><span class="cur">€</span>554.371</div>
+          <div class="av-kpi-delta flat" id="av-kpi-2026-delta">Jan–Jun · Mapa de Vendas · sem IVA</div>
+          <div class="av-kpi-foot" id="av-kpi-2026-foot">€156.622 ainda por receber · €395.084 recebido</div>
           <button class="tbtn" style="margin-top:8px;font-size:12px" onclick="if(typeof avAbrirDetalheMensal==='function')avAbrirDetalheMensal();">📊 Ver detalhe mensal</button>
+        </div>
+        <div class="av-kpi">
+          <div class="av-kpi-label">🎯 Meta 2026</div>
+          <div class="av-kpi-value" id="av-kpi-meta-pct" style="color:var(--y)">42,6%</div>
+          <div style="background:var(--bg3);border-radius:6px;height:6px;margin:8px 0 6px;overflow:hidden">
+            <div id="av-kpi-meta-fill" style="height:100%;width:42.6%;background:linear-gradient(90deg,var(--y),#f97316);border-radius:6px;transition:width .8s ease"></div>
+          </div>
+          <div class="av-kpi-foot" id="av-kpi-meta-foot">€554.371 de €1.300.000 · Falta €745.629</div>
+          <div class="av-kpi-foot" style="margin-top:4px;color:var(--a)">Mensal necessário: €108.333</div>
         </div>
         <div class="av-kpi">
           <div class="av-kpi-label">💎 Vendas 2025 (fechado)</div>
