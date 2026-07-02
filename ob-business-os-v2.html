@@ -19006,39 +19006,93 @@ function _copProcessarFile(file) {
 }
 
 // ── System Prompt especializado ───────────────────────────────────
+// Catálogo de materiais padrão do OB Engenheiro de Orçamentos
+var _COP_CATALOGO = {
+  acrilico_3mm_leitoso:        { nome: 'Acrílico 3mm Leitoso',        un: 'm²',  cat: 'Acrílico'      },
+  chapa_aluminio_1mm:          { nome: 'Chapa Alumínio 1mm',           un: 'm²',  cat: 'Alumínio'      },
+  alucobond_4mm:               { nome: 'Alucobond 4mm',                un: 'm²',  cat: 'Alumínio'      },
+  pvc_expandido_10mm:          { nome: 'PVC Expandido 10mm',           un: 'm²',  cat: 'PVC'           },
+  lona_frontlit:               { nome: 'Lona Frontlit',                un: 'm²',  cat: 'Lona'          },
+  vinil_autocolante_impressao: { nome: 'Vinil Autocolante Impressão',  un: 'm²',  cat: 'Vinil'         },
+  fita_led_branco_frio:        { nome: 'Fita LED Branco Frio',         un: 'm',   cat: 'LED'           },
+  fita_led_rgb:                { nome: 'Fita LED RGB',                 un: 'm',   cat: 'LED'           },
+  transformador_12v_60w:       { nome: 'Transformador 12V 60W',        un: 'unid',cat: 'Transformador' },
+  transformador_12v_150w:      { nome: 'Transformador 12V 150W',       un: 'unid',cat: 'Transformador' },
+  perfil_aluminio_caixa:       { nome: 'Perfil Alumínio Caixa',        un: 'm',   cat: 'Perfil'        },
+  estrutura_ferro_tubular:     { nome: 'Estrutura Ferro Tubular',      un: 'm',   cat: 'Estrutura'     }
+};
+
+// Normaliza resposta do novo formato OB Engenheiro para o formato interno do Copiloto
+function _copNormalizarResposta(raw) {
+  // Novo formato: {analise_tecnica, lista_materiais_calculados, estimativa_operacional}
+  if (raw && raw.analise_tecnica && raw.lista_materiais_calculados) {
+    var at = raw.analise_tecnica;
+    var dim = at.dimensoes_validadas || {};
+    var mats = (raw.lista_materiais_calculados || []).map(function(m) {
+      var cat = _COP_CATALOGO[m.id_material_supabase] || {};
+      return {
+        nome: cat.nome || m.id_material_supabase,
+        categoria: cat.cat || 'Outro',
+        qtd: m.quantidade || 0,
+        unidade: cat.un || 'unid',
+        precoEstimado: null, // o OB Engenheiro nunca inventa preços
+        justificacao: m.justificativa_tecnica || '',
+        _supabase_id: m.id_material_supabase
+      };
+    });
+    var op = raw.estimativa_operacional || {};
+    var obsPartes = [];
+    if (op.horas_serralharia_producao) obsPartes.push('Serralharia: ' + op.horas_serralharia_producao + 'h');
+    if (op.horas_design_paginacao) obsPartes.push('Design: ' + op.horas_design_paginacao + 'h');
+    if (op.horas_aplicacao_montagem) obsPartes.push('Montagem: ' + op.horas_aplicacao_montagem + 'h');
+    if (op.zona_deslocacao_sugerida) obsPartes.push(op.zona_deslocacao_sugerida);
+    if (op.necessita_andaime_ou_elevador) obsPartes.push('⚠️ Requer andaime/elevador');
+    return {
+      tipoReclamo: at.produto_identificado || '—',
+      subtipos: [at.tipo_trabalho || '—'],
+      medidas: {
+        largura: dim.largura_m ? dim.largura_m + 'm' : '—',
+        altura: dim.altura_m ? dim.altura_m + 'm' : '—',
+        profundidade: dim.profundidade_m ? dim.profundidade_m + 'm' : '—',
+        area_m2: dim.area_liquida_m2 ? String(dim.area_liquida_m2) : '—',
+        notas: obsPartes.join(' · ')
+      },
+      materiais: mats,
+      markup_sugerido: 2.5,
+      observacoes: obsPartes.join(' · '),
+      confianca: 'Alta',
+      _raw_engenheiro: raw
+    };
+  }
+  // Formato antigo — devolve sem alteração
+  return raw;
+}
+
 function _copSystemPrompt(exemplos) {
-  var stockNomes = (typeof STK_STOCK !== 'undefined' ? STK_STOCK : [])
-    .map(function(s) { return s.nome + ' (' + s.un + ', EUR' + s.preco.toFixed(2) + ')'; })
-    .join(', ');
   var exemplosTxt = '';
   if (exemplos && exemplos.length) {
-    exemplosTxt = '\n\nExemplos de orçamentos anteriores semelhantes (usa como referência de preços/markup):\n' +
+    exemplosTxt = '\n\nExemplos de orçamentos anteriores semelhantes (usa como referência de complexidade):\n' +
       exemplos.map(function(ex) {
-        return '- Cliente ' + (ex.cliente || '—') + ': ' + (ex.produto || '—') + ', qtd ' + (ex.qtd || '—') +
-          ', preço EUR' + (typeof ex.preco === 'number' ? ex.preco.toFixed(2) : ex.preco) +
-          (ex.markup ? ', markup ' + ex.markup + 'x' : '');
+        return '- ' + (ex.produto || '—') + ', qtd ' + (ex.qtd || '—');
       }).join('\n');
   }
-  return 'Actuas como orçamentista sénior de uma empresa portuguesa especializada em ' +
-    'reclamos luminosos, letras 3D, tótemes e sinalética corporativa (OpportunityBox, Sintra). ' +
-    'Analisa a imagem/maquete fornecida e devolve APENAS um objecto JSON válido (sem markdown, ' +
-    'sem texto antes ou depois) com exactamente esta estrutura:' +
-    '\n{"tipoReclamo":"string","subtipos":["string"],"medidas":{"largura":"string","altura":"string",' +
-    '"profundidade":"string","area_m2":"string","notas":"string"},' +
-    '"materiais":[{"nome":"string","categoria":"string","qtd":number,"unidade":"string",' +
-    '"precoEstimado":number,"justificacao":"string"}],' +
-    '"markup_sugerido":number,"preco_estimado_total":number,' +
-    '"observacoes":"string","confianca":"Alta|Media|Baixa"}' +
-    '\n\nStock disponível no sistema: ' + stockNomes +
-    exemplosTxt +
-    '\n\nRegras obrigatórias:' +
-    '\n1. Para cada material, verifica se existe no stock acima. Se existir, usa o preço de stock.' +
-    '\n2. Estima quantidades reais baseadas nas proporções visuais (ex: fachada de 4m × 0.8m = 3.2m²).' +
-    '\n3. Inclui sempre: estrutura de suporte (perfil alumínio), sistema de fixação, cabos e transformador LED.' +
-    '\n4. O markup_sugerido deve ser entre 2.0 e 3.5 consoante a complexidade.' +
-    '\n5. Unidades aceites: m, m², unid, rolo, folha.' +
-    '\n6. Responde em português de Portugal.' +
-    '\n7. O campo "preco_estimado_total" deve ser SEMPRE o valor final de venda sem IVA, já com o markup_sugerido aplicado sobre o custo dos materiais (nunca o custo dos materiais sem markup).';
+  return 'És o "OB Engenheiro de Orçamentos", o copiloto especialista em engenharia de materiais e precificação técnica da OPPORTUNITYBOX (Sintra, Portugal). A tua única função é analisar imagens de fachadas, montras ou descrições em linguagem natural, identificar os componentes técnicos necessários para a produção de comunicação visual, e gerar uma resposta estruturada em JSON com as quantidades exatas de insumos.\n\n' +
+    'REGRAS CRÍTICAS:\n' +
+    '1. NUNCA inventes valores monetários (€) nem preços por conta própria. Os preços vêm das tabelas oficiais da empresa na base de dados.\n' +
+    '2. CÁLCULO DE ÁREA (m²): Largura × Altura. Ex: 0.6m × 0.6m = 0.36m².\n' +
+    '3. DESPERDÍCIO: Para placas rígidas (acrílico, chapa, alucobond, PVC) aplica +10% de desperdício sobre a área líquida.\n' +
+    '4. PERÍMETRO / METRO LINEAR: Para fitas LED e perfis usa o perímetro da peça (2×(L+A)) ou espaçamento de 10cm entre linhas para iluminação uniforme.\n' +
+    '5. TRANSFORMADOR: Calcula a potência total (metros LED × 9.6W/m), arredonda para cima. Usa transformador_12v_60w até 60W, transformador_12v_150w acima disso.\n\n' +
+    'CATÁLOGO DE MATERIAIS DISPONÍVEIS (usa EXACTAMENTE estes id_material_supabase):\n' +
+    '- acrilico_3mm_leitoso (m²)\n- chapa_aluminio_1mm (m²)\n- alucobond_4mm (m²)\n- pvc_expandido_10mm (m²)\n' +
+    '- lona_frontlit (m²)\n- vinil_autocolante_impressao (m²)\n- fita_led_branco_frio (Metro Linear)\n' +
+    '- fita_led_rgb (Metro Linear)\n- transformador_12v_60w (Unidade)\n- transformador_12v_150w (Unidade)\n' +
+    '- perfil_aluminio_caixa (Metro Linear)\n- estrutura_ferro_tubular (Metro Linear)\n\n' +
+    'Devolve APENAS um objecto JSON válido (sem markdown, sem texto antes ou depois) com EXACTAMENTE esta estrutura:\n' +
+    '{"analise_tecnica":{"produto_identificado":"string","tipo_trabalho":"string","dimensoes_validadas":{"largura_m":number,"altura_m":number,"profundidade_m":number,"area_liquida_m2":number}},' +
+    '"lista_materiais_calculados":[{"id_material_supabase":"string","quantidade":number,"justificativa_tecnica":"string"}],' +
+    '"estimativa_operacional":{"horas_serralharia_producao":number,"horas_design_paginacao":number,"horas_aplicacao_montagem":number,"necessita_andaime_ou_elevador":boolean,"zona_deslocacao_sugerida":"string"}}' +
+    exemplosTxt;
 }
 
 // ── Exemplos de orçamentos anteriores (RAG simples por categoria/tipo de reclamo) ──
@@ -19121,7 +19175,8 @@ async function analisarDesignComIA(file) {
     if (!resp.ok) throw new Error('OpenAI API ' + resp.status);
     var data = await resp.json();
     var raw = data.choices[0].message.content || '';
-    return JSON.parse(raw.trim().replace(/^```json\s*/,'').replace(/```$/,''));
+    var parsed = JSON.parse(raw.trim().replace(/^```json\s*/i,'').replace(/```$/,''));
+    return _copNormalizarResposta(parsed);
   }
 }
 
@@ -19238,23 +19293,36 @@ function copilotoRejeitarImagem() {
 
 // ── Análise demo (sem API) ────────────────────────────────────────
 function _copDemoAnalysis() {
-  return {
-    tipoReclamo: 'Letras Monobloco 3D Iluminadas',
-    subtipos: ['Letras 3D', 'Caixa de Luz', 'LED Frontal'],
-    medidas: { largura: '3.5m', altura: '0.7m', profundidade: '0.12m', area_m2: '2.45', notas: 'Fachada plana, fixação em perfil de alumínio' },
-    materiais: [
-      { nome: 'Acrílico Branco Leitoso 3mm', categoria: 'Acrílico', qtd: 2.5, unidade: 'm²', precoEstimado: 19.00, justificacao: 'Face frontal das letras' },
-      { nome: 'Fita LED 5050 Branco Quente (5m)', categoria: 'LED', qtd: 4, unidade: 'rolo', precoEstimado: 12.50, justificacao: 'Iluminação frontal das letras' },
-      { nome: 'Transformador LED 100W 12V', categoria: 'Transformador', qtd: 2, unidade: 'unid', precoEstimado: 22.00, justificacao: 'Alimentação LED (total aprox. 160W)' },
-      { nome: 'Chapa Alumínio 1mm (1m²)', categoria: 'Alumínio', qtd: 3.5, unidade: 'm²', precoEstimado: 14.00, justificacao: 'Corpo e estrutura das letras' },
-      { nome: 'Perfil Alumínio em U 2m', categoria: 'Perfil', qtd: 6, unidade: 'unid', precoEstimado: 4.50, justificacao: 'Suporte e fixação à fachada' },
-      { nome: 'Cabo Eléctrico 2x1mm (rolo 100m)', categoria: 'Cabo', qtd: 1, unidade: 'rolo', precoEstimado: 45.00, justificacao: 'Ligação elétrica interna' }
+  // Demo no formato OB Engenheiro de Orçamentos — fachada 3.5m × 0.7m, letras 3D iluminadas
+  // Área líquida: 3.5 × 0.7 = 2.45m² · +10% desperdício = 2.695m²
+  // Perímetro: 2×(3.5+0.7) = 8.4m de perfil · LED perimetral = 8.4m
+  // Potência LED: 8.4m × 9.6W/m = 80.6W → 1× transformador 12V 150W
+  var rawEngenheiro = {
+    analise_tecnica: {
+      produto_identificado: 'Letras Monobloco 3D Iluminadas',
+      tipo_trabalho: 'Letras 3D / Reclamo Luminoso',
+      dimensoes_validadas: { largura_m: 3.5, altura_m: 0.7, profundidade_m: 0.12, area_liquida_m2: 2.45 }
+    },
+    lista_materiais_calculados: [
+      { id_material_supabase: 'acrilico_3mm_leitoso',    quantidade: 2.70, justificativa_tecnica: 'Face frontal 2.45m² × 2 faces +10% desperdício = 2.70m² por face (arredondado)' },
+      { id_material_supabase: 'chapa_aluminio_1mm',      quantidade: 2.70, justificativa_tecnica: 'Corpo/costas das letras 2.45m² + 10% desperdício' },
+      { id_material_supabase: 'fita_led_branco_frio',    quantidade: 8.40, justificativa_tecnica: 'Perímetro interno 2×(3.5+0.7) = 8.4m para retroiluminação uniforme' },
+      { id_material_supabase: 'transformador_12v_150w',  quantidade: 1,    justificativa_tecnica: '8.4m × 9.6W/m = 80.6W → 1× 150W (margem de segurança 40%)' },
+      { id_material_supabase: 'perfil_aluminio_caixa',   quantidade: 8.40, justificativa_tecnica: 'Contorno perimetral das letras 2×(3.5+0.7) = 8.4m' },
+      { id_material_supabase: 'estrutura_ferro_tubular', quantidade: 4.20, justificativa_tecnica: 'Estrutura de fixação à fachada — 2 eixos horizontais' }
     ],
-    markup_sugerido: 2.5,
-    preco_estimado_total: 0,
-    observacoes: 'Análise DEMO — imagem não processada por IA. Activa a API key para análise real. Estimativa baseada em fachada de 3.5m x 0.7m.',
-    confianca: 'Demo'
+    estimativa_operacional: {
+      horas_serralharia_producao: 6.0,
+      horas_design_paginacao: 1.5,
+      horas_aplicacao_montagem: 3.0,
+      necessita_andaime_ou_elevador: false,
+      zona_deslocacao_sugerida: 'Zona 1 (Lisboa/Sintra)'
+    }
   };
+  var normalizado = _copNormalizarResposta(rawEngenheiro);
+  normalizado.observacoes = 'DEMO — Activa a API key para análise real. ' + normalizado.observacoes;
+  normalizado.confianca = 'Demo';
+  return normalizado;
 }
 
 // ── Botão Analisar ────────────────────────────────────────────────
@@ -19422,6 +19490,25 @@ function _copRenderResultado(analysis) {
     '</div>';
   }
 
+  // Estimativa Operacional (novo formato OB Engenheiro)
+  var matEl2 = document.getElementById('cop-materiais-list');
+  var raw = analysis._raw_engenheiro;
+  if (matEl2 && raw && raw.estimativa_operacional) {
+    var op = raw.estimativa_operacional;
+    var totalH = (op.horas_serralharia_producao||0) + (op.horas_design_paginacao||0) + (op.horas_aplicacao_montagem||0);
+    matEl2.innerHTML += '<div style="margin-top:10px;padding:10px;background:rgba(139,92,246,.06);border:1px solid rgba(139,92,246,.2);border-radius:8px">' +
+      '<div style="font-size:12px;font-weight:700;color:#8b5cf6;margin-bottom:6px;text-transform:uppercase;letter-spacing:.06em">⏱ Estimativa Operacional</div>' +
+      '<div style="display:flex;flex-wrap:wrap;gap:10px;font-size:13px">' +
+        (op.horas_serralharia_producao ? '<span>🔧 Serralharia: <strong>' + op.horas_serralharia_producao + 'h</strong></span>' : '') +
+        (op.horas_design_paginacao ? '<span>🎨 Design: <strong>' + op.horas_design_paginacao + 'h</strong></span>' : '') +
+        (op.horas_aplicacao_montagem ? '<span>🔩 Montagem: <strong>' + op.horas_aplicacao_montagem + 'h</strong></span>' : '') +
+        '<span style="color:var(--y)">Total: <strong>' + totalH.toFixed(1) + 'h</strong></span>' +
+      '</div>' +
+      (op.necessita_andaime_ou_elevador ? '<div style="color:var(--a);font-size:12px;margin-top:4px">⚠️ Requer andaime ou elevador de pessoas</div>' : '') +
+      (op.zona_deslocacao_sugerida ? '<div style="color:var(--muted);font-size:12px;margin-top:2px">📍 ' + op.zona_deslocacao_sugerida + '</div>' : '') +
+    '</div>';
+  }
+
   // Observações
   var obsEl = document.getElementById('cop-obs');
   if (obsEl) obsEl.textContent = analysis.observacoes || '';
@@ -19492,14 +19579,19 @@ function copilotoAplicar() {
   // Adicionar cada material
   mats.forEach(function(mat) {
     // Procurar no stock
-    var stockItem = (typeof STK_STOCK !== 'undefined' ? STK_STOCK : []).find(function(s) {
-      var matNomeLower = mat.nome.toLowerCase();
-      var sNomeLower = s.nome.toLowerCase();
-      return sNomeLower.includes(matNomeLower.slice(0,12)) || matNomeLower.includes(sNomeLower.slice(0,12));
-    });
+    var stockList = (typeof STK_STOCK !== 'undefined' ? STK_STOCK : []);
+    // Primeiro tenta match pelo id_material_supabase (novo formato OB Engenheiro)
+    var catInfo = mat._supabase_id && _COP_CATALOGO[mat._supabase_id];
+    var stockItem = mat._supabase_id
+      ? stockList.find(function(s){ return s.id === mat._supabase_id; }) ||
+        stockList.find(function(s){ var cn = (catInfo&&catInfo.nome||'').toLowerCase(); return cn && (s.nome.toLowerCase().includes(cn.slice(0,10)) || cn.includes(s.nome.toLowerCase().slice(0,10))); })
+      : stockList.find(function(s) {
+          var matNomeLower = mat.nome.toLowerCase();
+          var sNomeLower = s.nome.toLowerCase();
+          return sNomeLower.includes(matNomeLower.slice(0,12)) || matNomeLower.includes(sNomeLower.slice(0,12));
+        });
 
     if (stockItem) {
-      // Adicionar via orcAddMaterial e configurar
       if (typeof orcAddMaterial === 'function') {
         orcAddMaterial();
         var idx = (typeof ORC_MATERIAIS !== 'undefined' ? ORC_MATERIAIS.length : 1) - 1;
@@ -19523,7 +19615,6 @@ function copilotoAplicar() {
         aplicados++;
       }
     } else {
-      // ADD: material fora de stock — aplicado como "estimado", sem reserva de stock
       mat.estimado = true;
       naoEncontrados.push(mat.nome + ' (' + mat.qtd + ' ' + mat.unidade + ')');
     }
