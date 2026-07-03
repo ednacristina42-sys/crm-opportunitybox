@@ -5352,6 +5352,37 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
 .k-card-ass{width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;font-family:'Inter',sans-serif}
 .k-add{padding:8px 10px;font-size:13px;color:var(--muted);cursor:pointer;display:flex;align-items:center;gap:5px;border-top:1px solid var(--border);transition:color .15s;margin-top:2px}
 .k-add:hover{color:var(--y)}
+/* SLA / Pipeline GHL upgrades */
+.k-card.sla-alerta{border-color:#e74c3c !important;border-width:1.5px !important}
+.k-sla-box{background:rgba(231,76,60,.08);border:1px solid rgba(231,76,60,.25);border-radius:5px;padding:4px 8px;font-size:11px;color:#e74c3c;margin-top:7px;display:flex;align-items:center;gap:4px}
+.k-proxima-box{background:rgba(34,197,94,.06);border:1px solid rgba(34,197,94,.2);border-radius:5px;padding:4px 8px;font-size:11px;color:#22c55e;margin-top:6px;display:flex;align-items:center;gap:4px}
+.k-card-progress{height:3px;background:var(--bg4);border-radius:2px;margin:7px 0 3px;overflow:hidden}
+.k-card-progress-bar{height:100%;border-radius:2px}
+.k-card-progress-label{display:flex;justify-content:space-between;font-size:10px;color:var(--muted)}
+.k-score{font-size:10px;color:#a78bfa;background:rgba(167,139,250,.12);border:1px solid rgba(167,139,250,.22);padding:2px 6px;border-radius:4px;font-weight:600}
+.crm-funnel-bar{display:flex;align-items:center;padding:6px 24px 2px;overflow-x:auto;gap:0;border-bottom:1px solid var(--border)}
+.cfb-stage{display:flex;flex-direction:column;align-items:center;padding:4px 8px;min-width:80px;flex-shrink:0}
+.cfb-label{font-size:10px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:80px;text-align:center}
+.cfb-count{font-size:14px;font-weight:700;font-family:'DM Mono',monospace}
+.cfb-val{font-size:10px;color:var(--muted);font-family:'DM Mono',monospace}
+.cfb-arrow{display:flex;flex-direction:column;align-items:center;padding:0 2px;flex-shrink:0}
+.cfb-arrow-icon{font-size:14px;color:var(--border2);line-height:1}
+.cfb-arrow-pct{font-size:10px;color:var(--muted)}
+/* CRM Timeline */
+.crm-tl{display:flex;flex-direction:column}
+.crm-tl-item{display:flex;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)}
+.crm-tl-item:last-child{border-bottom:none}
+.crm-tl-dot{width:26px;height:26px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:12px;margin-top:1px}
+.crm-tl-body{flex:1;min-width:0}
+.crm-tl-action{font-size:13px;color:var(--txt2);font-weight:500}
+.crm-tl-meta{font-size:11px;color:var(--muted);margin-top:1px}
+.crm-ativ-btns{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.crm-ativ-btn{background:var(--bg3);border:1px solid var(--border);color:var(--muted);border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;transition:all .15s}
+.crm-ativ-btn:hover{border-color:var(--y);color:var(--y)}
+/* Lead modal wider for timeline */
+#crm-lead-modal .crm-modal{max-width:700px}
+.crm-lead-layout{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+@media(max-width:640px){.crm-lead-layout{grid-template-columns:1fr}}
 
 /* MODALS CRM */
 .crm-modal-overlay{display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.8);backdrop-filter:blur(6px);align-items:flex-start;justify-content:center;padding:20px;overflow-y:auto}
@@ -6070,6 +6101,7 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
     <div class="crm-stat"><div class="n" id="crm-parados">—</div><div class="l">Leads Parados</div></div>
     <div class="crm-stat"><div class="n" id="crm-top-comercial" style="font-size:14px">—</div><div class="l">Top Comercial</div></div>
   </div>
+  <div id="crm-funnel-bar" class="crm-funnel-bar"></div>
   <div class="crm-kanban" id="crm-kanban"></div>
 </div>
 
@@ -8766,130 +8798,191 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
 <div id="crm-lead-modal" class="crm-modal-overlay">
   <div class="crm-modal">
     <h2 id="clm-titulo">+ Novo Lead</h2>
-    <div class="form-row">
-      <div class="form-group">
-        <label class="form-label">Nome do lead / projecto</label>
-        <input class="form-input" id="clm-n" placeholder="Ex: Reclamo Ginásio Lisboa"/>
+    <div class="crm-lead-layout">
+      <!-- Coluna esquerda: dados do lead -->
+      <div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Nome do lead / projecto</label>
+            <input class="form-input" id="clm-n" placeholder="Ex: Reclamo Ginásio Lisboa"/>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Cliente / Empresa</label>
+            <input class="form-input" id="clm-emp" placeholder="Ex: Fit Studio Lisboa"/>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Email do cliente</label>
+            <input class="form-input" id="clm-email" type="email" placeholder="cliente@empresa.pt"/>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Telefone do cliente</label>
+            <input class="form-input" id="clm-tel" type="tel" placeholder="+351 9XX XXX XXX"/>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Produto / Serviço</label>
+            <select class="form-select" id="clm-prod">
+              <option>Letras Monobloco 3D</option><option>Reclamo Luminoso LED</option>
+              <option>Reclamo em Acrílico</option><option>Totem</option><option>Caixa de Luz</option>
+              <option>Neon Flex</option><option>Painel LED</option><option>Sinalética</option>
+              <option>Decoração Viatura</option><option>Impressão Digital</option>
+              <option>Vinil Decorativo</option><option>Instalação</option><option>Design</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Valor estimado (€)</label>
+            <input class="form-input" id="clm-val" type="number" placeholder="0.00" min="0"/>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Estado</label>
+            <select class="form-select" id="clm-st">
+              <option>Novo Lead</option><option>Qualificado</option>
+              <option>Proposta enviada</option><option>Em negociação</option>
+              <option>Fecho</option><option>Ganho ✓</option><option>Perdido ✗</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Responsável</label>
+            <select class="form-select" id="clm-ass"></select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Prioridade</label>
+            <select class="form-select" id="clm-prioridade">
+              <option value="">— Sem prioridade —</option>
+              <option value="Normal">Normal</option>
+              <option value="Alta">Alta</option>
+              <option value="Urgente">Urgente</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">📣 Origem</label>
+            <select class="form-select" id="clm-origem">
+              <option value="">— Seleccionar —</option>
+              <option value="Instagram">Instagram</option>
+              <option value="Facebook">Facebook</option>
+              <option value="Google Ads">Google Ads</option>
+              <option value="Google Orgânico">Google Orgânico</option>
+              <option value="WhatsApp directo">WhatsApp directo</option>
+              <option value="Referência / Boca a boca">Referência / Boca a boca</option>
+              <option value="Email marketing">Email marketing</option>
+              <option value="Site web">Site web</option>
+              <option value="Loja física / Visita">Loja física / Visita</option>
+              <option value="Feira / Evento">Feira / Evento</option>
+              <option value="Outro">Outro</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">📅 Data de Início</label>
+            <input type="date" class="form-input" id="clm-dt-inicio"/>
+          </div>
+          <div class="form-group">
+            <label class="form-label">🏁 Data Prevista de Fecho</label>
+            <input type="date" class="form-input" id="clm-dt-fecho"/>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Notas</label>
+            <textarea class="form-input" id="clm-nota" rows="2" placeholder="Observações internas..." style="resize:vertical"></textarea>
+          </div>
+          <div class="form-group" style="display:flex;align-items:flex-end">
+            <div id="clm-ciclo-badge" style="display:none;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:8px 12px;width:100%;text-align:center">
+              <div style="font-size:12px;color:var(--muted);margin-bottom:2px">CICLO DE VENDA</div>
+              <div id="clm-ciclo-valor" style="font-size:19px;font-weight:800;color:var(--y);font-family:'DM Mono',monospace">—</div>
+              <div style="font-size:12px;color:var(--muted)" id="clm-ciclo-label">dias</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Próxima Acção -->
+        <div style="margin:12px 0 8px;font-size:12px;font-weight:700;color:var(--y);letter-spacing:.06em;text-transform:uppercase;border-top:1px solid var(--border);padding-top:12px">📅 Próxima Acção</div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Tipo</label>
+            <select class="form-select" id="clm-proxima-tipo">
+              <option value="">— Sem acção —</option>
+              <option value="Chamada">📞 Chamada</option>
+              <option value="Email">✉ Email</option>
+              <option value="Visita">🚗 Visita ao cliente</option>
+              <option value="Reunião">📋 Reunião</option>
+              <option value="Follow-up">🔔 Follow-up</option>
+              <option value="Proposta">📄 Enviar proposta</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Data</label>
+            <input type="date" class="form-input" id="clm-proxima-data"/>
+          </div>
+        </div>
+        <div class="form-group" style="margin-bottom:10px">
+          <label class="form-label">Descrição da acção</label>
+          <input class="form-input" id="clm-proxima-desc" placeholder="Ex: Confirmar medidas da fachada"/>
+        </div>
+
+        <!-- Motivo de perda (oculto por defeito) -->
+        <div id="clm-motivo-wrap" style="display:none;margin-bottom:10px">
+          <label class="form-label">❌ Motivo de Perda</label>
+          <select class="form-select" id="clm-motivo" style="margin-bottom:6px">
+            <option value="">— Seleccionar motivo —</option>
+            <option value="Preço alto">Preço alto</option>
+            <option value="Sem resposta do cliente">Sem resposta do cliente</option>
+            <option value="Concorrência">Concorrência</option>
+            <option value="Projecto cancelado">Projecto cancelado</option>
+            <option value="Prazo incompatível">Prazo incompatível</option>
+            <option value="Outro">Outro</option>
+          </select>
+        </div>
+
+        <!-- Sugestão de próximo passo -->
+        <div id="clm-sugestao" style="display:none;margin:10px 0;background:rgba(245,196,0,.08);border:1px solid rgba(245,196,0,.3);border-radius:8px;padding:10px 14px;font-size:13px;color:var(--y)"></div>
+
+        <div class="form-group" style="margin-bottom:0">
+          <label class="form-label">📎 Fotos / Ficheiros</label>
+          <div style="background:var(--bg3);border:1px dashed var(--border2);border-radius:8px;padding:8px;cursor:pointer;min-height:44px" data-action="clmFileInput">
+            <input type="file" id="clm-file-input" accept="image/*,.pdf,.ai,.psd,.dwg" style="display:none" multiple onchange="crmHandleFiles(this)"/>
+            <div id="clm-files-preview" style="font-size:13px;color:var(--muted);text-align:center">📎 Clica para anexar</div>
+          </div>
+        </div>
       </div>
-      <div class="form-group">
-        <label class="form-label">Cliente / Empresa</label>
-        <input class="form-input" id="clm-emp" placeholder="Ex: Fit Studio Lisboa"/>
-      </div>
-    </div>
-    <div class="form-row">
-      <div class="form-group">
-        <label class="form-label">Email do cliente</label>
-        <input class="form-input" id="clm-email" type="email" placeholder="cliente@empresa.pt"/>
-      </div>
-      <div class="form-group">
-        <label class="form-label">Telefone do cliente</label>
-        <input class="form-input" id="clm-tel" type="tel" placeholder="+351 9XX XXX XXX"/>
-      </div>
-    </div>
-    <div class="form-row">
-      <div class="form-group">
-        <label class="form-label">Produto / Serviço</label>
-        <select class="form-select" id="clm-prod">
-          <option>Letras Monobloco 3D</option><option>Reclamo Luminoso LED</option>
-          <option>Reclamo em Acrílico</option><option>Totem</option><option>Caixa de Luz</option>
-          <option>Neon Flex</option><option>Painel LED</option><option>Sinalética</option>
-          <option>Decoração Viatura</option><option>Impressão Digital</option>
-          <option>Vinil Decorativo</option><option>Instalação</option><option>Design</option>
-        </select>
-      </div>
-      <div class="form-group">
-        <label class="form-label">Valor estimado (€)</label>
-        <input class="form-input" id="clm-val" type="number" placeholder="0.00" min="0"/>
-      </div>
-    </div>
-    <div class="form-row">
-      <div class="form-group">
-        <label class="form-label">Estado</label>
-        <select class="form-select" id="clm-st">
-          <option>Novo Lead</option><option>Qualificado</option>
-          <option>Proposta enviada</option><option>Em negociação</option>
-          <option>Fecho</option><option>Ganho ✓</option><option>Perdido ✗</option>
-        </select>
-      </div>
-      <div class="form-group">
-        <label class="form-label">Responsável</label>
-        <select class="form-select" id="clm-ass"></select>
-      </div>
-    </div>
-    <div class="form-row">
-      <div class="form-group">
-        <label class="form-label">Prioridade</label>
-        <select class="form-select" id="clm-prioridade">
-          <option value="">— Sem prioridade —</option>
-          <option value="Normal">Normal</option>
-          <option value="Alta">Alta</option>
-          <option value="Urgente">Urgente</option>
-        </select>
-      </div>
-    </div>
-    <div class="form-row">
-      <div class="form-group">
-        <label class="form-label">Notas</label>
-        <textarea class="form-input" id="clm-nota" rows="3" placeholder="Observações internas..." style="resize:vertical"></textarea>
-      </div>
-      <div class="form-group">
-        <label class="form-label">📎 Fotos / Ficheiros</label>
-        <div style="background:var(--bg3);border:1px dashed var(--border2);border-radius:8px;padding:10px;cursor:pointer;min-height:60px" data-action="clmFileInput">
-          <input type="file" id="clm-file-input" accept="image/*,.pdf,.ai,.psd,.dwg" style="display:none" multiple onchange="crmHandleFiles(this)"/>
-          <div id="clm-files-preview" style="font-size:13px;color:var(--muted);text-align:center;padding-top:8px">📎 Clica para anexar (imagens, PDF, AI, PSD...)</div>
+
+      <!-- Coluna direita: timeline de actividades -->
+      <div id="clm-timeline-col" style="display:none;border-left:1px solid var(--border);padding-left:20px">
+        <div style="font-size:12px;font-weight:700;color:var(--y);letter-spacing:.06em;text-transform:uppercase;margin-bottom:10px">⚡ Actividades</div>
+        <div class="crm-ativ-btns">
+          <button class="crm-ativ-btn" onclick="crmOpenAddAtiv('Nota')">📝 Nota</button>
+          <button class="crm-ativ-btn" onclick="crmOpenAddAtiv('Chamada')">📞 Chamada</button>
+          <button class="crm-ativ-btn" onclick="crmOpenAddAtiv('Email')">✉ Email</button>
+          <button class="crm-ativ-btn" onclick="crmOpenAddAtiv('Visita')">🚗 Visita</button>
+        </div>
+        <div id="clm-add-ativ-form" style="display:none;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:10px">
+          <div style="font-size:12px;font-weight:600;color:var(--txt2);margin-bottom:6px" id="clm-ativ-tipo-label">Adicionar Nota</div>
+          <textarea class="form-input" id="clm-ativ-texto" rows="2" placeholder="Descreve a actividade..." style="resize:none;margin-bottom:8px;font-size:13px"></textarea>
+          <div style="display:flex;gap:6px">
+            <button class="tbtn y" style="font-size:12px;padding:4px 12px" onclick="crmSaveAtiv()">Guardar</button>
+            <button class="tbtn" style="font-size:12px;padding:4px 10px" onclick="document.getElementById('clm-add-ativ-form').style.display='none'">Cancelar</button>
+          </div>
+        </div>
+        <div id="clm-historico-wrap" style="margin:0">
+          <div id="clm-timeline" class="crm-tl" style="max-height:400px;overflow-y:auto"></div>
+        </div>
+        <!-- Histórico de campos (colapsável) -->
+        <div style="margin-top:12px">
+          <div id="clm-hist-toggle" style="font-size:11px;color:var(--muted);cursor:pointer;user-select:none" onclick="crmToggleHistCampos()">▸ Ver alterações de campos</div>
+          <div id="clm-historico" style="display:none;max-height:120px;overflow-y:auto;margin-top:6px"></div>
         </div>
       </div>
     </div>
 
-    <!-- Datas e Marketing -->
-    <div style="margin:14px 0 8px;font-size:13px;font-weight:600;color:var(--y);letter-spacing:.05em;border-top:1px solid var(--border);padding-top:14px">DATAS E MARKETING</div>
-    <div class="form-row">
-      <div class="form-group">
-        <label class="form-label">📅 Data de Início (1.º Contacto)</label>
-        <input type="date" class="form-input" id="clm-dt-inicio"/>
-      </div>
-      <div class="form-group">
-        <label class="form-label">🏁 Data de Fecho</label>
-        <input type="date" class="form-input" id="clm-dt-fecho" placeholder="Preenchido ao fechar"/>
-      </div>
-    </div>
-    <div class="form-row">
-      <div class="form-group">
-        <label class="form-label">📣 Origem do Lead</label>
-        <select class="form-select" id="clm-origem">
-          <option value="">— Seleccionar —</option>
-          <option value="Instagram">Instagram</option>
-          <option value="Facebook">Facebook</option>
-          <option value="Google Ads">Google Ads</option>
-          <option value="Google Orgânico">Google Orgânico</option>
-          <option value="WhatsApp directo">WhatsApp directo</option>
-          <option value="Referência / Boca a boca">Referência / Boca a boca</option>
-          <option value="Email marketing">Email marketing</option>
-          <option value="Site web">Site web</option>
-          <option value="Loja física / Visita">Loja física / Visita</option>
-          <option value="Feira / Evento">Feira / Evento</option>
-          <option value="Outro">Outro</option>
-        </select>
-      </div>
-      <div class="form-group" style="display:flex;align-items:flex-end">
-        <div id="clm-ciclo-badge" style="display:none;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:8px 12px;width:100%;text-align:center">
-          <div style="font-size:12px;color:var(--muted);margin-bottom:2px">CICLO DE VENDA</div>
-          <div id="clm-ciclo-valor" style="font-size:19px;font-weight:800;color:var(--y);font-family:'DM Mono',monospace">—</div>
-          <div style="font-size:12px;color:var(--muted)" id="clm-ciclo-label">dias</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Sugestão de próximo passo -->
-    <div id="clm-sugestao" style="display:none;margin:14px 0;background:rgba(245,196,0,.08);border:1px solid rgba(245,196,0,.3);border-radius:8px;padding:10px 14px;font-size:13px;color:var(--y)"></div>
-
-    <!-- Histórico -->
-    <div id="clm-historico-wrap" style="display:none;margin:14px 0 0">
-      <div style="font-size:13px;font-weight:600;color:var(--y);letter-spacing:.05em;border-top:1px solid var(--border);padding-top:14px;margin-bottom:8px">HISTÓRICO</div>
-      <div id="clm-historico" style="max-height:160px;overflow-y:auto"></div>
-    </div>
-
-    <div class="crm-modal-btns" style="flex-wrap:wrap;gap:6px">
+    <div class="crm-modal-btns" style="flex-wrap:wrap;gap:6px;margin-top:16px">
       <button class="tbtn" id="clm-del-btn" data-action="crmDeleteLead" style="color:var(--r);border-color:var(--r);margin-right:auto;display:none">🗑️ Eliminar</button>
       <button class="tbtn" id="clm-adjud-btn" style="display:none;background:rgba(245,196,0,.1);border-color:rgba(245,196,0,.4);color:var(--y)" title="Gerar formulário de adjudicação para enviar ao cliente">📋 Adjudicação</button>
       <button class="tbtn" data-action="crmCloseLeadModal">Cancelar</button>
@@ -10700,8 +10793,27 @@ function crmDrop(e, colKey){
   e.preventDefault();
   const lead = crmLeads.find(l=>l.id===crmDragId);
   if(lead && lead.st !== colKey){
+    const stAnterior = lead.st;
     lead.st = colKey;
     lead.dt = new Date().toLocaleDateString('pt-PT',{day:'2-digit',month:'2-digit',year:'numeric'});
+    // Auto-preenche data de fecho ao marcar Ganho/Perdido
+    if((colKey==='Ganho ✓'||colKey==='Perdido ✗') && !lead.dtFecho){
+      lead.dtFecho = new Date().toISOString().split('T')[0];
+    }
+    // Regista actividade de mudança de estado
+    crmAddAtividade(lead.id, 'estado', `Movido de "${stAnterior}" para "${colKey}"`, 'Sistema');
+    // Motivo de perda
+    if(colKey==='Perdido ✗'){
+      const motivos = ['Preço alto','Sem resposta do cliente','Concorrência','Projecto cancelado','Prazo incompatível','Outro'];
+      const opcoes = motivos.map((m,i)=>`${i+1}. ${m}`).join('\n');
+      const esc = prompt('❌ Motivo de perda:\n\n'+opcoes+'\n\nEscreve o número ou motivo:');
+      if(esc){
+        const num = parseInt(esc);
+        const mot = (!isNaN(num)&&num>=1&&num<=motivos.length) ? motivos[num-1] : esc.trim();
+        lead.motivoPerda = mot;
+        crmAddAtividade(lead.id, 'nota', 'Motivo de perda: '+mot, 'Sistema');
+      }
+    }
     saveCrmLeads();
     crmRenderAll();
   }
@@ -10767,14 +10879,28 @@ function crmLeadPassaFiltroValor(val){
   return true;
 }
 
+// Lead score: 1-5 baseado em valor, prioridade, origem
+function crmCalcScore(l){
+  let s = 1;
+  if(l.val>=10000) s=5; else if(l.val>=5000) s=4; else if(l.val>=2000) s=3; else if(l.val>=500) s=2;
+  if(l.prioridade==='Urgente') s=Math.min(5,s+1);
+  if(l.prioridade==='Alta') s=Math.min(5,s+0.5);
+  const origemHot=['Referência / Boca a boca','Feira / Evento','Loja física / Visita'];
+  if(l.origem && origemHot.includes(l.origem)) s=Math.min(5,s+0.5);
+  return Math.round(s);
+}
+
+// Funil: índice de cada coluna para calcular progresso
+const CRM_COL_IDX = {};
+CRM_COLS.forEach((c,i)=>CRM_COL_IDX[c.key]=i);
+const CRM_COL_PROGRESS = {'Novo Lead':10,'Qualificado':25,'Proposta enviada':45,'Em negociação':65,'Fecho':80,'Ganho ✓':100,'Perdido ✗':0};
+
 function renderCRMKanban(elId){
   const el = document.getElementById(elId);
   if(!el) return;
-  // Populate vendor filter if this is the pipeline kanban
   if(elId==='crm-kanban'){ crmPopulateFiltroVendedor(); crmPopulateFiltroOrigem(); }
   el.innerHTML = CRM_COLS.map(col=>{
     let colLeads = crmLeads.filter(l=>l.st===col.key);
-    // Apply vendor filter only on pipeline kanban
     if(elId==='crm-kanban' && _crmFiltroVendedor){
       colLeads = colLeads.filter(l=>l.ass===_crmFiltroVendedor);
     }
@@ -10784,53 +10910,85 @@ function renderCRMKanban(elId){
     if(elId==='crm-kanban' && CRM_FILTERS.valor){
       colLeads = colLeads.filter(l=>crmLeadPassaFiltroValor(l.val));
     }
+    const colTotal = colLeads.reduce((s,l)=>s+l.val,0);
     return `<div class="k-col" ondragover="crmDragOver(event,'${col.key}')" ondragleave="crmDragLeave(event)" ondrop="crmDrop(event,'${col.key}')">
-      <div class="k-col-hdr" style="background:${col.cor}18;border-bottom:1px solid ${col.cor}30">
-        <div class="k-col-name" style="color:${col.cor}">${col.key}</div>
+      <div class="k-col-hdr" style="background:${col.cor}18;border-bottom:2px solid ${col.cor}50">
+        <div>
+          <div class="k-col-name" style="color:${col.cor}">${col.key}</div>
+          <div style="font-size:11px;color:var(--muted);font-family:'DM Mono',monospace;font-variant-numeric:tabular-nums">${colTotal>0?fmt(colTotal):''}</div>
+        </div>
         <div class="k-col-count" style="background:${col.cor}25;color:${col.cor}">${colLeads.length}</div>
       </div>
       <div class="k-col-body">
         ${colLeads.map(l=>{
-          const com = crmGetComercial(l.ass);
-          // Build assignees stack: l.assignees is array of names; fallback to [l.ass]
           const assArr = (Array.isArray(l.assignees) && l.assignees.length) ? l.assignees : (l.ass ? [l.ass] : []);
           const assStack = assArr.slice(0,3).map(a=>{ const c=crmGetComercial(a); return avHtml(a,c.cor); }).join('');
           const assMore = assArr.length>3 ? `<div class="av-more">+${assArr.length-3}</div>` : '';
           const assAddBtn = `<div class="k-card-ass-add" onclick="event.stopPropagation();crmAddAssignee(${l.id})" title="Adicionar comercial">＋</div>`;
-          // Badge de tempo (dias desde a criação/início)
-          const diasOrigemStr = l.dtInicio || l.dt;
+
+          // Dias parado nesta etapa
           let diasParse = null;
           if(l.dtInicio){ diasParse = new Date(l.dtInicio); }
           else if(l.dt){ const p=l.dt.split('/'); if(p.length===3) diasParse = new Date(p[2],p[1]-1,p[0]); }
           const diasDesde = diasParse ? Math.max(0,Math.round((new Date()-diasParse)/86400000)) : null;
-          const tempoBadge = diasDesde!==null ? `<span style="font-size:11px;color:var(--muted);background:var(--bg3);border-radius:4px;padding:1px 6px">há ${diasDesde} dia${diasDesde===1?'':'s'}</span>` : '';
+          const isAtivo = !['Ganho ✓','Perdido ✗'].includes(l.st);
+          const isSLA = isAtivo && diasDesde!==null && diasDesde>7;
 
-          // Badge de prioridade
+          const tempoBadge = diasDesde!==null ? `<span style="font-size:11px;color:${isSLA?'#e74c3c':'var(--muted)'};background:${isSLA?'rgba(231,76,60,.1)':'var(--bg3)'};border-radius:4px;padding:1px 6px;${isSLA?'border:1px solid rgba(231,76,60,.25)':''}">há ${diasDesde}d</span>` : '';
+
           const prioCores = {'Urgente':'#e05555','Alta':'#d9822b','Normal':'#6b6b72'};
           const prioBadge = l.prioridade ? `<span style="font-size:11px;color:${prioCores[l.prioridade]||'#6b6b72'};background:${(prioCores[l.prioridade]||'#6b6b72')}20;border:1px solid ${(prioCores[l.prioridade]||'#6b6b72')}40;border-radius:4px;padding:1px 6px">${l.prioridade}</span>` : '';
-
-          // Badge de origem
           const origBadge = l.origem ? `<span style="font-size:11px;color:var(--y);background:rgba(245,196,0,.1);border:1px solid rgba(245,196,0,.3);border-radius:4px;padding:1px 6px">${l.origem}</span>` : '';
 
-          return `<div class="k-card" id="kcard-${l.id}" draggable="true"
+          // Lead score
+          const score = crmCalcScore(l);
+          const scoreTxt = score>=4?'🔥 Hot':score>=3?'★ '+score+'/5':'';
+          const scoreHtml = scoreTxt ? `<span class="k-score">${scoreTxt}</span>` : '';
+
+          // Barra de progresso
+          const pct = CRM_COL_PROGRESS[l.st] || 0;
+          const progressHtml = isAtivo ? `
+            <div class="k-card-progress-label"><span>${l.st}</span><span>${pct}%</span></div>
+            <div class="k-card-progress"><div class="k-card-progress-bar" style="width:${pct}%;background:${col.cor}"></div></div>` : '';
+
+          // SLA alert
+          const slaHtml = isSLA ? `<div class="k-sla-box">⚠ Parado há ${diasDesde} dias — Follow-up pendente</div>` : '';
+
+          // Próxima acção
+          const pa = l.proximaAcao;
+          const paHtml = (pa && pa.tipo) ? `<div class="k-proxima-box">✓ ${pa.tipo}${pa.data?' · '+new Date(pa.data).toLocaleDateString('pt-PT',{day:'2-digit',month:'2-digit'}):''}${pa.desc?' — '+pa.desc:''}</div>` : '';
+
+          // Data prevista de fecho em atraso
+          let fechoBadge = '';
+          if(l.dtFecho && isAtivo){
+            const df = new Date(l.dtFecho);
+            const hoje = new Date(); hoje.setHours(0,0,0,0);
+            if(df < hoje) fechoBadge = `<span style="font-size:11px;color:#e74c3c;background:rgba(231,76,60,.08);border:1px solid rgba(231,76,60,.2);border-radius:4px;padding:1px 6px">⏰ Fecho ${df.toLocaleDateString('pt-PT',{day:'2-digit',month:'2-digit'})}</span>`;
+            else fechoBadge = `<span style="font-size:11px;color:var(--muted);background:var(--bg3);border-radius:4px;padding:1px 6px">🏁 ${df.toLocaleDateString('pt-PT',{day:'2-digit',month:'2-digit'})}</span>`;
+          }
+
+          return `<div class="k-card${isSLA?' sla-alerta':''}" id="kcard-${l.id}" draggable="true"
             ondragstart="crmDragStart(event,${l.id})" ondragend="crmDragEnd(event)"
             onclick="crmOpenEdit(${l.id})">
             <div class="k-card-title">${l.n}</div>
             <div class="k-card-sub">${l.emp}</div>
-            <div style="margin-bottom:8px;display:flex;gap:5px;flex-wrap:wrap;align-items:center">
-              <span class="b bm" style="font-size:12px">${l.prod}</span>
-              ${tempoBadge}${prioBadge}${origBadge}
+            <div style="margin-bottom:6px;display:flex;gap:4px;flex-wrap:wrap;align-items:center">
+              <span class="b bm" style="font-size:11px">${l.prod}</span>
+              ${scoreHtml}${tempoBadge}${prioBadge}${origBadge}${fechoBadge}
             </div>
-            <div class="k-card-meta">
+            ${progressHtml}
+            ${slaHtml}
+            ${paHtml}
+            <div class="k-card-meta" style="margin-top:8px">
               <div class="av-stack" style="gap:0">${assStack}${assMore}${assAddBtn}</div>
-              <div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px">
-                ${l.tel?`<a href="tel:${l.tel}" onclick="event.stopPropagation()" style="font-size:13px;color:var(--muted);text-decoration:none;font-family:'DM Mono',monospace">📞 ${l.tel}</a>`:''}
-                ${l.email?`<a href="mailto:${l.email}" onclick="event.stopPropagation()" style="font-size:13px;color:var(--muted);text-decoration:none;font-family:'DM Mono',monospace">✉ ${l.email}</a>`:''}
+              <div style="display:flex;flex-direction:column;align-items:flex-end;gap:2px">
+                ${l.tel?`<a href="tel:${l.tel}" onclick="event.stopPropagation()" style="font-size:12px;color:var(--muted);text-decoration:none">📞 ${l.tel}</a>`:''}
+                ${l.email?`<a href="mailto:${l.email}" onclick="event.stopPropagation()" style="font-size:12px;color:var(--muted);text-decoration:none">✉ ${l.email}</a>`:''}
                 <span class="k-card-val">${fmt(l.val)}</span>
               </div>
             </div>
             <div style="margin-top:8px;text-align:right">
-              <button onclick="event.stopPropagation();orcFromLead(${l.id})" title="Gerar Orçamento" style="background:rgba(245,196,0,.12);border:1px solid rgba(245,196,0,.3);color:var(--y);border-radius:5px;padding:4px 10px;font-size:13px;cursor:pointer">📄 Orçamento</button>
+              <button onclick="event.stopPropagation();orcFromLead(${l.id})" title="Gerar Orçamento" style="background:rgba(245,196,0,.12);border:1px solid rgba(245,196,0,.3);color:var(--y);border-radius:5px;padding:4px 10px;font-size:12px;cursor:pointer">📄 Orçamento</button>
             </div>
           </div>`;
         }).join('')}
@@ -10838,6 +10996,8 @@ function renderCRMKanban(elId){
       <div class="k-add" onclick="crmOpenNew('${col.key}')">＋ Adicionar lead</div>
     </div>`;
   }).join('');
+  // Actualiza barra de funil de conversão (apenas no kanban principal)
+  if(elId==='crm-kanban') crmUpdateFunnel();
 }
 
 
@@ -10886,6 +11046,7 @@ function crmRenderAll(){
   renderCRMKanban('crm-kanban-admin');
   crmUpdateStats();
   crmRenderMktBar();
+  crmUpdateFunnel();
 }
 
 function crmUpdateStats(){
@@ -10954,8 +11115,13 @@ function crmOpenNew(stInicial){
   if(adjBtn) adjBtn.style.display='none';
   const sugEl2 = document.getElementById('clm-sugestao');
   if(sugEl2) sugEl2.style.display='none';
-  const histWrap2 = document.getElementById('clm-historico-wrap');
-  if(histWrap2) histWrap2.style.display='none';
+  const tlCol2 = document.getElementById('clm-timeline-col');
+  if(tlCol2) tlCol2.style.display='none';
+  const paTipo2 = document.getElementById('clm-proxima-tipo'); if(paTipo2) paTipo2.value='';
+  const paData2 = document.getElementById('clm-proxima-data'); if(paData2) paData2.value='';
+  const paDesc2 = document.getElementById('clm-proxima-desc'); if(paDesc2) paDesc2.value='';
+  const motivoWrap2 = document.getElementById('clm-motivo-wrap');
+  if(motivoWrap2) motivoWrap2.style.display='none';
 }
 
 function crmOpenEdit(id){
@@ -10997,9 +11163,24 @@ function crmOpenEdit(id){
     else sugEl.style.display='none';
   }
 
-  // Histórico
-  const histWrap = document.getElementById('clm-historico-wrap');
-  if(histWrap){ histWrap.style.display='block'; crmRenderHistorico(id); }
+  // Histórico de campos
+  crmRenderHistorico(id);
+
+  // Timeline de actividades
+  const tlCol = document.getElementById('clm-timeline-col');
+  if(tlCol){ tlCol.style.display='block'; crmRenderTimeline(id); }
+
+  // Próxima acção
+  const pa = lead.proximaAcao || {};
+  const paTipo = document.getElementById('clm-proxima-tipo'); if(paTipo) paTipo.value = pa.tipo||'';
+  const paData = document.getElementById('clm-proxima-data'); if(paData) paData.value = pa.data||'';
+  const paDesc = document.getElementById('clm-proxima-desc'); if(paDesc) paDesc.value = pa.desc||'';
+
+  // Motivo de perda (apenas se já estava perdido)
+  const motivoWrap = document.getElementById('clm-motivo-wrap');
+  const motivoSel  = document.getElementById('clm-motivo');
+  if(motivoWrap){ motivoWrap.style.display = lead.st==='Perdido ✗'?'block':'none'; }
+  if(motivoSel)  motivoSel.value = lead.motivoPerda||'';
 
   m.classList.add('open');
 }
@@ -11094,10 +11275,14 @@ function crmCalcCiclo(){
   valorEl.style.color=dias>60?'var(--r)':dias>30?'var(--a)':'var(--g)';
 }
 
-// Liga eventos das datas ao cálculo
+// Liga eventos das datas ao cálculo e estado ao motivo de perda
 (function(){
   document.addEventListener('change',function(e){
     if(e.target.id==='clm-dt-inicio'||e.target.id==='clm-dt-fecho') crmCalcCiclo();
+    if(e.target.id==='clm-st'){
+      const mw = document.getElementById('clm-motivo-wrap');
+      if(mw) mw.style.display = e.target.value==='Perdido ✗'?'block':'none';
+    }
   });
 })();
 
@@ -11113,6 +11298,15 @@ function crmSaveLead(){
     dtFechoVal = new Date().toISOString().split('T')[0];
     const dtFEl=document.getElementById('clm-dt-fecho'); if(dtFEl) dtFEl.value=dtFechoVal;
   }
+  // Próxima acção
+  const paTipo = document.getElementById('clm-proxima-tipo')?.value||'';
+  const paData = document.getElementById('clm-proxima-data')?.value||'';
+  const paDesc = document.getElementById('clm-proxima-desc')?.value.trim()||'';
+  const proximaAcao = paTipo ? {tipo:paTipo, data:paData, desc:paDesc} : null;
+
+  // Motivo de perda
+  const motivoPerda = document.getElementById('clm-motivo')?.value||'';
+
   const data = {
     n, emp,
     email: document.getElementById('clm-email').value.trim(),
@@ -11126,6 +11320,8 @@ function crmSaveLead(){
     dtFecho: dtFechoVal,
     origem: document.getElementById('clm-origem')?.value||'',
     prioridade: document.getElementById('clm-prioridade')?.value||'',
+    proximaAcao,
+    motivoPerda: motivoPerda||undefined,
     dt:   new Date().toLocaleDateString('pt-PT',{day:'2-digit',month:'2-digit',year:'numeric'})
   };
   if(crmEditingId){
@@ -11145,10 +11341,128 @@ function crmSaveLead(){
   } else {
     data.id = ++crmLeadIdCounter;
     crmLeads.unshift(data);
+    // Regista actividade de criação
+    const autor = (typeof CU!=='undefined'&&CU&&CU.name)?CU.name:'Sistema';
+    crmAddAtividade(data.id, 'criado', `Lead criado${data.origem?' — Origem: '+data.origem:''}`, autor);
   }
   saveCrmLeads();
   crmRenderAll();
   crmCloseLeadModal();
+}
+
+// ── ACTIVIDADES / TIMELINE ──────────────────────────────
+var crmAtividades; try{ crmAtividades=JSON.parse(localStorage.getItem('ob-crm-atividades')||'null'); }catch(e){ crmAtividades=null; } crmAtividades = crmAtividades || [];
+function saveCrmAtividades(){ localStorage.setItem('ob-crm-atividades', JSON.stringify(crmAtividades.slice(0,2000))); }
+
+var _crmAtivTipo = 'Nota'; // tipo em curso no formulário inline
+
+function crmAddAtividade(leadId, tipo, texto, autor){
+  if(!texto||!texto.trim()) return;
+  autor = autor || ((typeof CU!=='undefined'&&CU&&CU.name)?CU.name:'Sistema');
+  crmAtividades.unshift({ leadId, ts: new Date().toISOString(), tipo, texto: texto.trim(), autor });
+  saveCrmAtividades();
+}
+
+function crmOpenAddAtiv(tipo){
+  _crmAtivTipo = tipo;
+  const form = document.getElementById('clm-add-ativ-form');
+  const lbl  = document.getElementById('clm-ativ-tipo-label');
+  const txt  = document.getElementById('clm-ativ-texto');
+  if(!form) return;
+  const icons = {'Nota':'📝','Chamada':'📞','Email':'✉','Visita':'🚗'};
+  if(lbl) lbl.textContent = (icons[tipo]||'')+' Registar '+tipo;
+  if(txt){ txt.value=''; txt.placeholder = tipo==='Chamada'?'Ex: Falei com o gestor, vai analisar a proposta':tipo==='Visita'?'Ex: Visita às instalações, tirei medidas':'Descrição...'; }
+  form.style.display='block';
+  if(txt) setTimeout(()=>txt.focus(),50);
+}
+
+function crmSaveAtiv(){
+  const txt = document.getElementById('clm-ativ-texto');
+  if(!txt||!txt.value.trim()) return;
+  if(!crmEditingId) return;
+  crmAddAtividade(crmEditingId, _crmAtivTipo, txt.value.trim());
+  document.getElementById('clm-add-ativ-form').style.display='none';
+  txt.value='';
+  crmRenderTimeline(crmEditingId);
+}
+
+function crmRenderTimeline(leadId){
+  const el = document.getElementById('clm-timeline');
+  if(!el) return;
+  const entradas = crmAtividades.filter(h=>h.leadId===leadId);
+  if(!entradas.length){
+    el.innerHTML='<div style="color:var(--muted);font-size:13px;padding:8px 0;font-style:italic">Sem actividades registadas. Usa os botões acima para adicionar.</div>';
+    return;
+  }
+  const dotStyle = {
+    'estado': 'background:rgba(75,131,219,.15);color:#4d94db',
+    'Nota':   'background:rgba(245,196,0,.12);color:#F5C400',
+    'Chamada':'background:rgba(63,207,142,.12);color:#3fcf8e',
+    'Email':  'background:rgba(59,130,246,.12);color:#60a5fa',
+    'Visita': 'background:rgba(167,139,250,.12);color:#a78bfa',
+    'nota':   'background:rgba(245,196,0,.12);color:#F5C400',
+    'criado': 'background:rgba(34,197,94,.1);color:#22c55e',
+  };
+  const dotIcon = {
+    'estado':'→','Nota':'📝','Chamada':'📞','Email':'✉','Visita':'🚗','nota':'📝','criado':'＋'
+  };
+  el.innerHTML = entradas.map(h=>{
+    const dt = new Date(h.ts).toLocaleString('pt-PT',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+    const ds = dotStyle[h.tipo] || 'background:var(--bg3);color:var(--muted)';
+    const di = dotIcon[h.tipo] || '●';
+    return `<div class="crm-tl-item">
+      <div class="crm-tl-dot" style="${ds}">${di}</div>
+      <div class="crm-tl-body">
+        <div class="crm-tl-action">${h.texto}</div>
+        <div class="crm-tl-meta">${dt} · ${h.autor}</div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function crmToggleHistCampos(){
+  const el = document.getElementById('clm-historico');
+  const btn = document.getElementById('clm-hist-toggle');
+  if(!el) return;
+  const aberto = el.style.display==='block';
+  el.style.display = aberto?'none':'block';
+  if(btn) btn.textContent = aberto?'▸ Ver alterações de campos':'▾ Ocultar alterações de campos';
+}
+
+// ── BARRA DE FUNIL / CONVERSÃO ──────────────────────────
+function crmUpdateFunnel(){
+  const el = document.getElementById('crm-funnel-bar');
+  if(!el) return;
+  const ativos = CRM_COLS.filter(c=>!['Ganho ✓','Perdido ✗'].includes(c.key));
+  let html = '';
+  ativos.forEach((col, i)=>{
+    const count = crmLeads.filter(l=>l.st===col.key).length;
+    const total = crmLeads.filter(l=>l.st===col.key).reduce((s,l)=>s+l.val,0);
+    html += `<div class="cfb-stage">
+      <div class="cfb-count" style="color:${col.cor}">${count}</div>
+      <div class="cfb-label">${col.key}</div>
+      ${total>0?`<div class="cfb-val">${fmt(total)}</div>`:''}
+    </div>`;
+    if(i < ativos.length-1){
+      const nextCount = crmLeads.filter(l=>l.st===ativos[i+1].key).length;
+      const pct = count>0 ? Math.round(nextCount/count*100) : 0;
+      html += `<div class="cfb-arrow">
+        <div class="cfb-arrow-icon" style="color:${count>0?'var(--muted)':'var(--border)'}">›</div>
+        ${count>0?`<div class="cfb-arrow-pct">${pct}%</div>`:''}
+      </div>`;
+    }
+  });
+  // Ganhos / Perdidos final
+  const ganhos = crmLeads.filter(l=>l.st==='Ganho ✓').length;
+  const perdidos = crmLeads.filter(l=>l.st==='Perdido ✗').length;
+  const total = ganhos+perdidos;
+  const taxaFinal = total ? Math.round(ganhos/total*100) : 0;
+  html += `<div class="cfb-arrow"><div class="cfb-arrow-icon">›</div>${total>0?`<div class="cfb-arrow-pct">${taxaFinal}%</div>`:''}</div>
+    <div style="display:flex;gap:8px;align-items:center;padding:4px 8px">
+      <div class="cfb-stage"><div class="cfb-count" style="color:#27ae60">${ganhos}</div><div class="cfb-label">Ganho ✓</div></div>
+      <div class="cfb-stage"><div class="cfb-count" style="color:#e74c3c">${perdidos}</div><div class="cfb-label">Perdido ✗</div></div>
+    </div>`;
+  el.innerHTML = html;
 }
 
 // ── HISTÓRICO DE ALTERAÇÕES ──────────────────────────────
@@ -11163,6 +11477,10 @@ function crmRegistarHistorico(existing, data){
     const valorNovo = data[campo];
     if((valorAntigo||'')!==(valorNovo||'')){
       crmHistorico.unshift({ leadId: existing.id, data: new Date().toISOString(), campo, valorAntigo, valorNovo, autor });
+      // Regista mudança de estado como actividade na timeline
+      if(campo==='st'){
+        crmAddAtividade(existing.id, 'estado', `Movido de "${valorAntigo||'—'}" para "${valorNovo}"`, autor);
+      }
     }
   });
   saveCrmHistorico();
