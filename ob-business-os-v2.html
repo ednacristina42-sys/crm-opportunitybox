@@ -5504,6 +5504,49 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
 }
 .cop-api-key-row input:focus { outline: none; color: var(--txt2); }
 
+/* ═══════════════════════════════════════════════
+   VETORIZAÇÃO IA — PNG/JPG → SVG/DXF (Vectorizer.AI)
+═══════════════════════════════════════════════ */
+#vec-dropzone {
+  border: 2px dashed rgba(6,182,212,.5);
+  border-radius: 10px;
+  background: rgba(6,182,212,.04);
+  padding: 16px;
+  text-align: center;
+  cursor: pointer;
+  transition: all .25s;
+  position: relative;
+  margin-bottom: 10px;
+}
+#vec-dropzone:hover, #vec-dropzone.drag-over {
+  border-color: #06b6d4;
+  background: rgba(6,182,212,.1);
+  transform: translateY(-1px);
+}
+#vec-dropzone input[type=file] { display:none }
+.vec-header {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 8px;
+  font-size: 14px; font-weight: 700; color: #06b6d4;
+}
+.vec-key-row {
+  display: flex; gap: 6px; align-items: center;
+  background: var(--bg3); border: 1px solid rgba(6,182,212,.2);
+  border-radius: 6px; padding: 6px 10px; margin-bottom: 10px;
+}
+.vec-key-row input {
+  flex: 1; background: transparent; border: none; color: var(--muted);
+  font-size: 12px; font-family: 'DM Mono',monospace;
+}
+.vec-key-row input:focus { outline: none; color: var(--txt2); }
+#vec-result {
+  background: var(--bg2); border: 1px solid rgba(6,182,212,.3);
+  border-radius: 8px; padding: 12px; margin-top: 10px; display: none;
+}
+.vec-spinner {
+  width: 14px; height: 14px; border: 2px solid rgba(6,182,212,.3);
+  border-top-color: #06b6d4; border-radius: 50%; animation: spin .7s linear infinite;
+  display: inline-block; flex-shrink: 0;
+}
 
 /* ═══════════════════════════════════════════════
    LOGIN — Novo design com dropdown + senha
@@ -6223,6 +6266,82 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
               <label class="form-label">Imagem da Obra</label>
               <input type="file" accept="image/*" id="orc-imagem-obra" class="form-input" onchange="orcImagemObraUpload(this)"/>
               <div id="orc-imagem-preview" style="font-size:12px;color:var(--muted);margin-top:6px">Nenhuma imagem associada a este orçamento.</div>
+            </div>
+          </div>
+
+          <!-- ── VETORIZAÇÃO AUTOMÁTICA COM IA (Vectorizer.AI) ── -->
+          <div id="vec-wrapper" style="background:var(--bg3);border:1px solid rgba(6,182,212,.3);border-radius:8px;padding:14px;margin-bottom:14px">
+            <div class="vec-header">
+              <span style="font-size:17px">🪄</span>
+              <span>Vetorização IA — Imagem → Vetor de Corte</span>
+              <span style="margin-left:auto;font-size:12px;font-weight:400;color:var(--muted)">Vectorizer.AI</span>
+              <button type="button" class="tbtn" style="font-size:12px;padding:2px 7px;margin-left:4px" onclick="vecToggle()">▲ Recolher</button>
+            </div>
+            <div id="vec-body">
+              <div style="font-size:12px;color:var(--muted);margin-bottom:10px;line-height:1.5">
+                Carrega a imagem em baixa resolução do cliente (PNG/JPG) e recebe um ficheiro vetorial limpo
+                (<strong style="color:var(--txt2)">SVG</strong>/<strong style="color:var(--txt2)">DXF</strong>)
+                pronto para CNC/Laser — sem redesenhar curvas no Illustrator/Corel.
+              </div>
+
+              <!-- Config API Key (opcional — só necessária se o servidor não tiver VECTORIZER_API_KEY) -->
+              <div class="vec-key-row" title="Formato: API_ID:API_SECRET (obtida em vectorizer.ai/account). Fica guardada localmente. Opcional se a chave estiver configurada no servidor (Netlify).">
+                <span style="font-size:12px;color:var(--muted);white-space:nowrap">🔑 API Key:</span>
+                <input type="password" id="vec-api-key" placeholder="API_ID:API_SECRET (opcional se configurada no servidor)" oninput="vecSaveKey()"/>
+                <span id="vec-api-key-indicator" title="Estado da chave" style="font-size:11px;white-space:nowrap">🟡</span>
+              </div>
+
+              <!-- Dropzone Upload -->
+              <div id="vec-dropzone" onclick="document.getElementById('vec-file-inp').click()"
+                   ondragover="event.preventDefault();this.classList.add('drag-over')"
+                   ondragleave="this.classList.remove('drag-over')"
+                   ondrop="vecDrop(event)">
+                <input type="file" id="vec-file-inp" accept=".png,.jpg,.jpeg,image/png,image/jpeg" onchange="vecFileSelect(this)"/>
+                <div id="vec-drop-idle">
+                  <div style="font-size:28px;margin-bottom:6px">🖼️</div>
+                  <div style="font-size:14px;color:var(--txt2);font-weight:600">Arrasta aqui o logótipo/imagem do cliente</div>
+                  <div style="font-size:12px;color:var(--muted);margin-top:4px">PNG ou JPG — a IA calcula as curvas de Bézier e suaviza os cantos automaticamente</div>
+                </div>
+                <div id="vec-drop-preview" style="display:none">
+                  <img id="vec-preview-img" class="copiloto-preview" alt="preview"/>
+                  <div id="vec-file-name" style="font-size:13px;color:var(--muted);margin-top:4px"></div>
+                </div>
+              </div>
+
+              <!-- Opções + Ação -->
+              <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-bottom:6px">
+                <div class="form-group" style="margin:0;flex:0 0 auto">
+                  <label class="form-label" style="font-size:12px">Formato de saída</label>
+                  <select id="vec-format" class="form-select" style="width:150px;padding:5px 8px;font-size:13px">
+                    <option value="svg">SVG (universal)</option>
+                    <option value="dxf">DXF (CNC/CAD)</option>
+                  </select>
+                </div>
+                <div class="form-group" style="margin:0;flex:0 0 auto">
+                  <label class="form-label" style="font-size:12px">Modo</label>
+                  <select id="vec-mode" class="form-select" style="width:190px;padding:5px 8px;font-size:13px" title="Production: linhas de corte precisas (consome créditos). Test: grátis, para testar a integração.">
+                    <option value="production">Production (corte preciso)</option>
+                    <option value="test">Test (grátis, c/ marca)</option>
+                  </select>
+                </div>
+                <button type="button" id="vec-run-btn" class="tbtn y" style="font-size:13px;padding:6px 14px" onclick="vecRun()">⚡ Vetorizar agora</button>
+              </div>
+              <div id="vec-status" style="font-size:13px;color:var(--muted);min-height:18px;display:flex;align-items:center;gap:6px"></div>
+
+              <!-- Resultado -->
+              <div id="vec-result">
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+                  <span style="font-size:15px">✅</span>
+                  <span style="font-size:13px;font-weight:600;color:var(--txt2)">Vetor gerado</span>
+                  <span id="vec-result-meta" style="font-size:12px;color:var(--muted)"></span>
+                </div>
+                <div id="vec-result-preview" style="background:#fff;border-radius:6px;padding:8px;text-align:center;margin-bottom:8px"></div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap">
+                  <button type="button" class="tbtn y" style="font-size:13px;padding:5px 12px" onclick="vecDownload()">⬇ Descarregar ficheiro</button>
+                  <button type="button" class="tbtn" style="font-size:13px;padding:5px 12px" onclick="vecReset()">↺ Nova vetorização</button>
+                </div>
+                <div style="font-size:12px;color:var(--g);margin-top:8px">📎 Anexado automaticamente a este orçamento — fica guardado na ficha ao clicar em "Guardar".</div>
+              </div>
             </div>
           </div>
 
@@ -13950,7 +14069,7 @@ async function _sbOrcUpsert(orc) {
       imagem: orc.imagem || null, obs: orc.obs || '',
       cliemail: orc.cliEmail || '', cliwa: orc.cliWA || '',
       pagamento50: orc.pagamento50 || false, sinal: orc.sinal || null, saldo: orc.saldo || null,
-      extra: { dtProducao: orc.dtProducao, aprovado_em: orc.aprovado_em, aprovado_por: orc.aprovado_por, _importadoPlanilha: orc._importadoPlanilha }
+      extra: { dtProducao: orc.dtProducao, aprovado_em: orc.aprovado_em, aprovado_por: orc.aprovado_por, _importadoPlanilha: orc._importadoPlanilha, vetorAI: orc.vetorAI || null }
     };
     await fetch(_ORC_SB_URL + '/rest/v1/ob_orcamentos?on_conflict=id', {
       method: 'POST', headers: _sbOrcHeaders(), body: JSON.stringify(row)
@@ -13978,7 +14097,8 @@ async function _sbOrcLoadAll() {
         pagamento50: row.pagamento50, sinal: row.sinal, saldo: row.saldo,
         dtProducao: (row.extra||{}).dtProducao,
         aprovado_em: (row.extra||{}).aprovado_em, aprovado_por: (row.extra||{}).aprovado_por,
-        _importadoPlanilha: (row.extra||{})._importadoPlanilha
+        _importadoPlanilha: (row.extra||{})._importadoPlanilha,
+        vetorAI: (row.extra||{}).vetorAI || null
       };
     });
   } catch(e) { console.warn('[SB-ORC] load falhou:', e); return null; }
@@ -14182,8 +14302,11 @@ function orcGetData(){
   // _geradoPorIA: verifica flag activo OU orçamento guardado com esse campo
   var _orcGuardado = (typeof orcData !== 'undefined') ? orcData.find(function(o){ return o.num === num; }) : null;
   const _geradoPorIA = !!(window._orcGeradoPorIA) || !!(_orcGuardado && _orcGuardado._geradoPorIA);
+  // ADD: vetorAI — ficheiro vetorial (SVG/DXF) gerado pelo módulo de Vetorização IA
+  const vetorAI = window._orcVetorAI || (_orcGuardado && _orcGuardado.vetorAI) || null;
   return {num, cli, prazo, prazoEntrega, morada, nif, val, linhas, totais, vendedor, email,
     cliEmail, cliWA, pagamento50, sinal, saldo, imagem, imagemObra: imagem, imagemFachadaGerada,
+    vetorAI,
     _geradoPorIA,
     data: new Date().toLocaleDateString('pt-PT',{day:'2-digit',month:'2-digit',year:'numeric'})
   };
@@ -14253,6 +14376,7 @@ function orcNew(){
   if(val) val.value = d.toISOString().split('T')[0];
   orcAddLine(); orcAddLine(); orcCalcTotal();
   if(typeof orcSetImagemPreview==='function') orcSetImagemPreview(null);
+  if(typeof vecReset==='function') vecReset();
 }
 
 function orcWhatsApp(){
@@ -22704,6 +22828,219 @@ function importarConfiguracao() {
     if (typeof fatCalcTotal === 'function') fatCalcTotal();
     fatGerarPDF();
   };
+
+})();
+</script>
+
+<script>
+// ════════════════════════════════════════════════════════════════════
+// VETORIZAÇÃO AUTOMÁTICA COM IA — Vectorizer.AI
+// OpportunityBox Business OS — Módulo não-invasivo
+//
+// Fluxo: upload PNG/JPG → função Netlify (/.netlify/functions/vectorize)
+//        → API Vectorizer.AI (curvas de Bézier automáticas)
+//        → SVG/DXF pronto para CNC/Laser, anexado ao orçamento (vetorAI)
+//
+// A chave da API (formato API_ID:API_SECRET) pode vir de dois sítios:
+//   1. Variável de ambiente VECTORIZER_API_KEY no Netlify (recomendado)
+//   2. localStorage 'ob-vec-key' (campo 🔑 no painel), enviada por header
+// ════════════════════════════════════════════════════════════════════
+(function(){
+
+var _VEC_FN_URL = '/.netlify/functions/vectorize';
+var _vec = { file: null, dataUrl: null, result: null, loading: false };
+
+// ── Chave de API (localStorage, mesmo padrão do Copiloto) ────────
+function vecGetKey(){ return (localStorage.getItem('ob-vec-key') || '').trim(); }
+function vecSaveKey(){
+  var k = ((document.getElementById('vec-api-key') || {}).value || '').trim();
+  if (k) localStorage.setItem('ob-vec-key', k); else localStorage.removeItem('ob-vec-key');
+  vecUpdateIndicator();
+}
+function vecUpdateIndicator(){
+  var ind = document.getElementById('vec-api-key-indicator');
+  if (!ind) return;
+  if (vecGetKey()) { ind.textContent = '🟢'; ind.title = '🔑 Chave local configurada'; }
+  else { ind.textContent = '🟡'; ind.title = 'Sem chave local — será usada a chave do servidor (VECTORIZER_API_KEY no Netlify), se configurada'; }
+}
+(function vecInit(){
+  var el = document.getElementById('vec-api-key');
+  if (el && vecGetKey()) el.value = vecGetKey();
+  vecUpdateIndicator();
+})();
+
+// ── Recolher / Expandir painel ───────────────────────────────────
+function vecToggle(){
+  var body = document.getElementById('vec-body');
+  var btn = document.querySelector('#vec-wrapper .vec-header button');
+  if (!body) return;
+  var open = body.style.display !== 'none';
+  body.style.display = open ? 'none' : '';
+  if (btn) btn.textContent = open ? '▼ Expandir' : '▲ Recolher';
+}
+
+// ── Upload / Dropzone ────────────────────────────────────────────
+function vecDrop(ev){
+  ev.preventDefault();
+  var dz = document.getElementById('vec-dropzone');
+  if (dz) dz.classList.remove('drag-over');
+  var file = ev.dataTransfer.files && ev.dataTransfer.files[0];
+  if (file) _vecProcessarFile(file);
+}
+function vecFileSelect(inp){
+  if (inp.files && inp.files[0]) _vecProcessarFile(inp.files[0]);
+}
+function _vecProcessarFile(file){
+  var tiposOk = ['image/png', 'image/jpeg'];
+  if (tiposOk.indexOf(file.type) === -1) {
+    _vecStatus('⚠ Formato não suportado — usa PNG ou JPG.', 'var(--r)');
+    return;
+  }
+  if (file.size > 30 * 1024 * 1024) {
+    _vecStatus('⚠ Ficheiro demasiado grande (máx. 30 MB).', 'var(--r)');
+    return;
+  }
+  _vec.file = file;
+  _vec.result = null;
+  var res = document.getElementById('vec-result');
+  if (res) res.style.display = 'none';
+  var reader = new FileReader();
+  reader.onload = function(e){
+    _vec.dataUrl = e.target.result;
+    var img = document.getElementById('vec-preview-img');
+    var nome = document.getElementById('vec-file-name');
+    var prev = document.getElementById('vec-drop-preview');
+    var idle = document.getElementById('vec-drop-idle');
+    if (img) img.src = _vec.dataUrl;
+    if (nome) nome.textContent = file.name + ' (' + (file.size/1024).toFixed(1) + ' KB)';
+    if (prev) prev.style.display = 'block';
+    if (idle) idle.style.display = 'none';
+    _vecStatus('✓ Imagem carregada — clica em "⚡ Vetorizar agora"', 'var(--g)');
+  };
+  reader.readAsDataURL(file);
+}
+
+function _vecStatus(html, cor){
+  var st = document.getElementById('vec-status');
+  if (!st) return;
+  st.innerHTML = html;
+  st.style.color = cor || 'var(--muted)';
+}
+
+// ── Vetorizar (chamada à função Netlify → Vectorizer.AI) ─────────
+async function vecRun(){
+  if (_vec.loading) return;
+  if (!_vec.dataUrl) { _vecStatus('⚠ Carrega primeiro uma imagem PNG/JPG.', 'var(--r)'); return; }
+  var formato = (document.getElementById('vec-format') || {}).value || 'svg';
+  var modo = (document.getElementById('vec-mode') || {}).value || 'production';
+  var btn = document.getElementById('vec-run-btn');
+  _vec.loading = true;
+  if (btn) { btn.disabled = true; btn.style.opacity = '.6'; }
+  _vecStatus('<span class="vec-spinner"></span> A vetorizar com IA (curvas de Bézier)…');
+  var t0 = Date.now();
+  try {
+    var headers = { 'Content-Type': 'application/json' };
+    var key = vecGetKey();
+    if (key) headers['X-Vectorizer-Key'] = key;
+    var r = await fetch(_VEC_FN_URL, {
+      method: 'POST',
+      headers: headers,
+      body: JSON.stringify({
+        image: _vec.dataUrl,
+        filename: _vec.file ? _vec.file.name : 'imagem.png',
+        mode: modo,
+        format: formato
+      })
+    });
+    var data = null;
+    try { data = await r.json(); } catch(e) {}
+    if (r.status === 404 && !data) {
+      throw new Error('Função de vetorização não encontrada. O módulo requer o site publicado no Netlify (função netlify/functions/vectorize) — não funciona ao abrir o HTML localmente.');
+    }
+    if (!r.ok || !data || !data.ok) {
+      throw new Error((data && (data.error + (data.detail ? ' — ' + data.detail : ''))) || ('Erro HTTP ' + r.status));
+    }
+    var seg = ((Date.now() - t0) / 1000).toFixed(1);
+    _vec.result = {
+      nome: data.filename,
+      formato: formato,
+      mime: data.contentType,
+      base64: data.base64,
+      origem: _vec.file ? _vec.file.name : '',
+      modo: modo,
+      creditos: data.creditsCharged || null,
+      data: new Date().toISOString()
+    };
+    // Anexação automática à ficha do orçamento (guardado com orcGuardar)
+    window._orcVetorAI = _vec.result;
+    _vecRenderResultado(seg);
+    _vecStatus('✓ Vetor gerado em ' + seg + 's', 'var(--g)');
+  } catch(e) {
+    _vecStatus('✗ ' + (e && e.message ? e.message : 'Falha na vetorização'), 'var(--r)');
+  } finally {
+    _vec.loading = false;
+    if (btn) { btn.disabled = false; btn.style.opacity = '1'; }
+  }
+}
+
+function _vecRenderResultado(seg){
+  var res = document.getElementById('vec-result');
+  var meta = document.getElementById('vec-result-meta');
+  var prev = document.getElementById('vec-result-preview');
+  if (!res || !_vec.result) return;
+  var kb = (_vec.result.base64.length * 0.75 / 1024).toFixed(1);
+  if (meta) meta.textContent = _vec.result.nome + ' · ' + kb + ' KB · ' + seg + 's' +
+    (_vec.result.creditos ? ' · ' + _vec.result.creditos + ' crédito(s)' : '') +
+    (_vec.result.modo === 'test' ? ' · MODO TESTE (com marca de água)' : '');
+  if (prev) {
+    if (_vec.result.formato === 'svg') {
+      prev.innerHTML = '<img src="data:image/svg+xml;base64,' + _vec.result.base64 + '" alt="vetor" style="max-width:100%;max-height:180px"/>';
+    } else {
+      prev.innerHTML = '<div style="font-size:32px;margin:6px">📐</div><div style="font-size:13px;color:#555">Ficheiro DXF pronto — abre no software da CNC/CAD para ajustar a escala métrica.</div>';
+    }
+  }
+  res.style.display = 'block';
+}
+
+// ── Download do vetor ────────────────────────────────────────────
+function vecDownload(){
+  var v = _vec.result || window._orcVetorAI;
+  if (!v) { _vecStatus('⚠ Ainda não há vetor gerado.', 'var(--r)'); return; }
+  var bin = atob(v.base64);
+  var bytes = new Uint8Array(bin.length);
+  for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  var blob = new Blob([bytes], { type: v.mime || 'application/octet-stream' });
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = v.nome || ('vetor.' + (v.formato || 'svg'));
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); }, 500);
+}
+
+// ── Reset (usado também por orcNew) ──────────────────────────────
+function vecReset(){
+  _vec.file = null; _vec.dataUrl = null; _vec.result = null;
+  window._orcVetorAI = null;
+  var res = document.getElementById('vec-result');
+  var prev = document.getElementById('vec-drop-preview');
+  var idle = document.getElementById('vec-drop-idle');
+  var inp = document.getElementById('vec-file-inp');
+  if (res) res.style.display = 'none';
+  if (prev) prev.style.display = 'none';
+  if (idle) idle.style.display = '';
+  if (inp) inp.value = '';
+  _vecStatus('');
+}
+
+// Exposição global (padrão do resto da app — handlers inline)
+window.vecSaveKey = vecSaveKey;
+window.vecToggle = vecToggle;
+window.vecDrop = vecDrop;
+window.vecFileSelect = vecFileSelect;
+window.vecRun = vecRun;
+window.vecDownload = vecDownload;
+window.vecReset = vecReset;
 
 })();
 </script>

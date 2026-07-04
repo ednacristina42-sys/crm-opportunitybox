@@ -1,3 +1,9 @@
+# Funções serverless (Vetorização IA — proxy Vectorizer.AI)
+# As rotas /.netlify/functions/* têm prioridade sobre o redirect abaixo.
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
+
 [[redirects]]
   from = "/*"
   to = "/ob-business-os-v2.html"
