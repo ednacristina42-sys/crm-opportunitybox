@@ -59,9 +59,12 @@ function subchkGetItem(type, itemId) {
     return (typeof homeTasksData !== 'undefined' ? homeTasksData : []).find(function(t) { return t.id == itemId; });
   }
   // uni-fabrica-producao, uni-design-tarefas, uni-fabrica-instalacoes, uni-admin-agenda
+  // FIX: uniItems é um array plano com campo .page (não um objecto por página) —
+  // a versão anterior usava uniItems[page] e nunca encontrava o item, pelo que o
+  // modal de subtarefas/checklists não abria nos kanbans uni.
   var page = type.replace('uni-', '');
-  if (typeof uniItems !== 'undefined' && uniItems[page]) {
-    return uniItems[page].find(function(i) { return i.id == itemId; });
+  if (typeof uniItems !== 'undefined' && Array.isArray(uniItems)) {
+    return uniItems.find(function(i) { return i.page === page && i.id == itemId; });
   }
   return null;
 }
@@ -86,7 +89,8 @@ function subchkRerender(type) {
     return;
   }
   var page = type.replace('uni-', '');
-  if (typeof uniRender === 'function') uniRender(page);
+  if (typeof uniRefreshPage === 'function') uniRefreshPage(page);
+  else if (typeof uniRender === 'function') uniRender(page);
 }
 
 // ── Abrir modal ───────────────────────────────────────────────
@@ -5897,10 +5901,11 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
   <button class="space-item" id="si-comercial" data-action="toggleSpace" data-space="comercial">
     <div class="space-icon" style="background:var(--dc)">D</div>
     <span class="space-name">Dep. Comercial</span>
+    <span id="ob-badge-pendencias-hdr" style="display:none;background:var(--r);color:#fff;font-size:10.5px;font-weight:700;font-family:'DM Mono',monospace;padding:1px 6px;border-radius:8px;margin-left:auto;flex-shrink:0" title="Pendências: leads parados e acções em atraso">0</span>
     <span class="space-chevron">›</span>
   </button>
   <div class="space-lists" id="sl-comercial">
-    <button class="sl-item" data-action="goPage" data-page="comercial-pipeline"><div class="sl-dot" style="background:var(--y)"></div>Pipeline de Leads</button>
+    <button class="sl-item" data-action="goPage" data-page="comercial-pipeline"><div class="sl-dot" style="background:var(--y)"></div>Pipeline de Leads<span id="ob-badge-pendencias" style="display:none;background:var(--r);color:#fff;font-size:10.5px;font-weight:700;font-family:'DM Mono',monospace;padding:1px 6px;border-radius:8px;margin-left:auto;flex-shrink:0" title="Pendências: leads parados e acções em atraso">0</span></button>
     <button class="sl-item" data-action="goPage" data-page="comercial-clientes"><div class="sl-dot" style="background:#4d94db"></div>Clientes</button>
     <button class="sl-item" data-action="goPage" data-page="comercial-orcamentos"><div class="sl-dot" style="background:#3fcf8e"></div>Orçamentos<span id="toco-vencidas-badge">!</span></button>
     <button class="sl-item" data-action="goPage" data-page="equipa-campo"><div class="sl-dot" style="background:#4d94db"></div>🗺️ Equipa em Campo</button>
@@ -6023,6 +6028,8 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
     <input class="filter-btn" type="date" id="hflt-data" onchange="HOME_FILTERS.data=this.value;homeApplyFilters()" style="width:auto"/>
     <button class="filter-btn" id="hflt-meus" onclick="homeToggleMeusFiltros()">👁 Os meus filtros</button>
   </div>
+  <!-- ADD: Pendências comerciais (leads parados + próximas acções) — preenchido por renderDashPendencias() -->
+  <div id="ob-dash-pendencias" style="display:none"></div>
   <div id="tasks-list-view" class="task-content"></div>
   <div id="tasks-board-view" class="kanban-wrap" style="display:none"></div>
 <div id="tasks-calendar-view" style="display:none;padding:16px 24px">
@@ -11979,7 +11986,12 @@ function uniSave(){
   }
   if(uniEditingId){
     const idx=uniItems.findIndex(i=>i.id===uniEditingId);
-    if(idx>=0) uniItems[idx]={...uniItems[idx],...data};
+    if(idx>=0){
+      // ADD: registo da passagem de etapa quando o estado muda via modal
+      const _stAntes=uniItems[idx].status;
+      uniItems[idx]={...uniItems[idx],...data};
+      if(_stAntes!==data.status && typeof obRegistarEtapa==='function') obRegistarEtapa(uniItems[idx],_stAntes,data.status);
+    }
   } else {
     data.id=Date.now(); uniItems.unshift(data);
   }
@@ -12202,6 +12214,7 @@ function uniRenderKanban(el, page, items){
             </div>` : ''}
           ${(i.subtarefas&&i.subtarefas.length)?`<div style="margin-top:4px" onclick="event.stopPropagation();subchkOpenModal('uni-'+page,i.id)"><span style="font-size:11px;background:rgba(77,148,219,.12);color:#4d94db;border:1px solid rgba(77,148,219,.25);border-radius:10px;padding:1px 6px;cursor:pointer">📋 ${i.subtarefas.filter(s=>s.concluida).length}/${i.subtarefas.length}</span></div>`:''}
           ${(i.checklists&&i.checklists.length&&i.checklists.some(c=>c.itens&&c.itens.length))?`<div style="margin-top:2px" onclick="event.stopPropagation();subchkOpenModal('uni-'+page,i.id)"><span style="font-size:11px;background:rgba(63,207,142,.1);color:var(--g);border:1px solid rgba(63,207,142,.2);border-radius:10px;padding:1px 6px;cursor:pointer">☑ ${i.checklists.reduce((a,c)=>a+(c.itens||[]).filter(it=>it.concluido).length,0)}/${i.checklists.reduce((a,c)=>a+(c.itens||[]).length,0)}</span></div>`:''}
+          ${typeof obCardExtras==='function'?obCardExtras(i,page):''}
           </div>`;
         }).join('')}
       </div>
@@ -12233,7 +12246,13 @@ function uniDragLeave(e){ const col=e.currentTarget.closest('.k-col'); if(col) c
 function uniDrop(e,st,page){
   e.preventDefault();
   const item=uniItems.find(i=>i.id===uniDragId);
-  if(item&&item.status!==st){ item.status=st; saveUniItems(); uniRefreshPage(page); }
+  if(item&&item.status!==st){
+    const _etapaAnterior=item.status;
+    item.status=st;
+    // ADD: registo da passagem de etapa com data e responsável (processos de produção)
+    if(typeof obRegistarEtapa==='function') obRegistarEtapa(item,_etapaAnterior,st);
+    saveUniItems(); uniRefreshPage(page);
+  }
   document.querySelectorAll('.k-col.drag-over').forEach(c=>c.classList.remove('drag-over'));
 }
 
@@ -22704,6 +22723,416 @@ function importarConfiguracao() {
     if (typeof fatCalcTotal === 'function') fatCalcTotal();
     fatGerarPDF();
   };
+
+})();
+</script>
+
+<script>
+/* ═══════════════════════════════════════════════════════════════════
+   OB AUTOMATIZAÇÕES & PROCESSOS
+   - Leads parados há mais de 7 dias → badge no menu + pendências no dashboard
+   - Orçamento Aprovado / Em Produção → cria projecto na Produção
+   - Lead "Ganho ✓" → cria cliente na lista de Clientes
+   - Próximas acções dos leads → hoje e em atraso no dashboard
+   - Checklists por tipo de projecto na Produção + registo de etapas
+   - Sincronização com Supabase (tabela ob_crm_dados) para nada se perder
+   Este bloco corre no fim do ficheiro, depois de todas as funções originais.
+   ═══════════════════════════════════════════════════════════════════ */
+(function(){
+'use strict';
+
+// ══ 1. CHECKLISTS POR TIPO DE PROJECTO ══════════════════════════════
+var OB_CHECKLIST_MODELOS = [
+  { match:['reclamo','luminoso','caixa de luz','led'], titulo:'Reclamo Luminoso',
+    itens:['Levantamento de medidas no local','Design / maquete para aprovação','Aprovação do cliente','Encomenda de materiais e LEDs','Produção do reclamo','Teste de iluminação','Instalação e ligação eléctrica','Fotos finais e fecho'] },
+  { match:['letras','monobloco','3d'], titulo:'Letras 3D',
+    itens:['Levantamento de medidas','Design e tipografia final','Aprovação do cliente','Corte e produção das letras','Pintura / acabamento','Controlo de qualidade','Instalação na fachada','Fotos finais e fecho'] },
+  { match:['totem'], titulo:'Totem',
+    itens:['Levantamento e verificação do local','Design estrutural do totem','Aprovação do cliente','Encomenda de estrutura e materiais','Produção e montagem','Preparação da base / fixação','Instalação e nivelamento','Fotos finais e fecho'] },
+  { match:['neon'], titulo:'Neon Flex',
+    itens:['Levantamento de medidas','Design do traçado do neon','Aprovação do cliente','Encomenda de neon flex e fonte','Produção e dobragem','Teste de iluminação','Instalação','Fotos finais e fecho'] },
+  { match:['painel'], titulo:'Painel LED',
+    itens:['Levantamento de medidas','Especificação técnica do painel','Aprovação do cliente','Encomenda do painel e estrutura','Montagem e configuração','Teste de conteúdos','Instalação e ligação','Fotos finais e fecho'] },
+  { match:['sinal'], titulo:'Sinalética',
+    itens:['Levantamento no local','Design das placas / pictogramas','Aprovação do cliente','Produção e impressão','Controlo de qualidade','Instalação','Fotos finais e fecho'] },
+  { match:['viatura','decora'], titulo:'Decoração de Viatura',
+    itens:['Medição da viatura','Design / mockup na viatura','Aprovação do cliente','Impressão e corte do vinil','Preparação e limpeza da viatura','Aplicação do vinil','Controlo de qualidade','Fotos finais e fecho'] }
+];
+var OB_CHECKLIST_PADRAO = { titulo:'Projecto',
+  itens:['Levantamento de medidas','Design / maquete','Aprovação do cliente','Produção','Instalação','Fotos finais e fecho'] };
+
+// Devolve a checklist adequada ao tipo de trabalho (pesquisa por palavra-chave no nome)
+function obChecklistParaTipo(nome){
+  var s=(nome||'').toLowerCase();
+  var m=null;
+  for(var i=0;i<OB_CHECKLIST_MODELOS.length && !m;i++){
+    if(OB_CHECKLIST_MODELOS[i].match.some(function(k){ return s.indexOf(k)!==-1; })) m=OB_CHECKLIST_MODELOS[i];
+  }
+  m = m || OB_CHECKLIST_PADRAO;
+  return { titulo:'Processo — '+m.titulo, itens:m.itens.map(function(t){ return {texto:t, concluido:false}; }) };
+}
+
+// Garante que todas as ordens de produção têm checklist do seu tipo
+function obGarantirChecklistsProducao(){
+  if(typeof uniItems==='undefined') return;
+  var mudou=false;
+  (uniItems||[]).forEach(function(i){
+    if(i.page!=='fabrica-producao' || i._ckAplicado) return;
+    if(!(i.checklists&&i.checklists.length)) i.checklists=[obChecklistParaTipo(i.n)];
+    i._ckAplicado=true; mudou=true;
+  });
+  if(mudou && typeof saveUniItems==='function') saveUniItems();
+}
+
+// uniGetItems semeia os dados iniciais na 1ª utilização (depois do arranque) —
+// garantir aqui que as ordens de produção ficam logo com checklist do seu tipo
+(function(){
+  if(typeof uniGetItems!=='function') return;
+  var _orig=uniGetItems;
+  window.uniGetItems=function(page){
+    var res=_orig(page);
+    if(page==='fabrica-producao') obGarantirChecklistsProducao();
+    return res;
+  };
+})();
+
+// Registo da passagem de etapa (chamado por uniDrop / uniSave)
+window.obRegistarEtapa = function(item, de, para){
+  if(!item) return;
+  if(!item.historico) item.historico=[];
+  item.historico.push({ de:de||null, para:para, em:new Date().toISOString(),
+    por:(typeof CU!=='undefined'&&CU&&CU.name)||'Sistema' });
+};
+
+// Extras na card do kanban de produção: barra de progresso + última etapa
+window.obCardExtras = function(i, page){
+  if(page!=='fabrica-producao') return '';
+  var html='';
+  var tot=0, done=0;
+  (i.checklists||[]).forEach(function(c){ (c.itens||[]).forEach(function(it){ tot++; if(it.concluido) done++; }); });
+  if(tot>0){
+    var pct=Math.round(done/tot*100);
+    html+='<div style="margin-top:6px" onclick="event.stopPropagation();subchkOpenModal(\'uni-fabrica-producao\','+i.id+')">'
+      +'<div style="display:flex;justify-content:space-between;font-size:10.5px;color:var(--muted);margin-bottom:2px"><span>Processo</span><span>'+done+'/'+tot+' · '+pct+'%</span></div>'
+      +'<div style="background:var(--bg4);border-radius:3px;height:4px;overflow:hidden;cursor:pointer"><div style="height:100%;width:'+pct+'%;background:'+(pct===100?'var(--g)':'var(--y)')+';border-radius:3px;transition:width .3s"></div></div></div>';
+  }
+  var h=(i.historico&&i.historico.length)?i.historico[i.historico.length-1]:null;
+  if(h&&h.de){
+    var dstr=new Date(h.em).toLocaleDateString('pt-PT',{day:'2-digit',month:'2-digit'});
+    html+='<div style="margin-top:4px;font-size:10.5px;color:var(--muted)" title="'+h.de+' → '+h.para+'">↪ '+h.para+' · '+dstr+' · '+((h.por||'—').split(' ')[0])+'</div>';
+  }
+  return html;
+};
+
+// Regista data+responsável ao concluir itens da checklist e persiste logo
+(function(){
+  if(typeof subchkToggleItem!=='function') return;
+  var _orig=subchkToggleItem;
+  window.subchkToggleItem=function(ci,ii,val){
+    try{
+      var item=subchkGetCurrent();
+      if(item&&item.checklists&&item.checklists[ci]&&item.checklists[ci].itens[ii]){
+        var it=item.checklists[ci].itens[ii];
+        if(val){ it.concluidoEm=new Date().toISOString(); it.concluidoPor=(typeof CU!=='undefined'&&CU&&CU.name)||'—'; }
+        else { delete it.concluidoEm; delete it.concluidoPor; }
+      }
+    }catch(e){}
+    _orig(ci,ii,val);
+    try{ if(typeof SUBCHK_CTX!=='undefined'&&SUBCHK_CTX.type) subchkSaveItem(SUBCHK_CTX.type); }catch(e){}
+  };
+})();
+
+// Novas ordens criadas no modal também recebem checklist do tipo
+(function(){
+  if(typeof uniSave!=='function') return;
+  var _orig=uniSave;
+  window.uniSave=function(){ _orig(); obGarantirChecklistsProducao(); };
+})();
+
+// ══ 2. ORÇAMENTO APROVADO/ADJUDICADO → PROJECTO NA PRODUÇÃO ═════════
+function obCriarProjetoProducao(orc){
+  if(!orc||!orc.num||typeof uniItems==='undefined') return;
+  if(uniItems.some(function(i){ return i.page==='fabrica-producao' && i.orcNum===orc.num; })) return;
+  var produto=(orc.linhas&&orc.linhas[0]&&orc.linhas[0].produto)||'Trabalho';
+  var prazo=new Date(); prazo.setDate(prazo.getDate()+(parseInt(orc.prazoEntrega)||25));
+  var item={
+    id:Date.now(), page:'fabrica-producao',
+    n:produto+' — '+orc.cli, client:orc.cli,
+    status:'Aguarda Arte', priority:'high',
+    assignee:'', date:prazo.toISOString().split('T')[0],
+    notes:'Criado automaticamente a partir do orçamento '+orc.num+(orc.vendedor?' (vendedor: '+orc.vendedor+')':''),
+    orcNum:orc.num, _ckAplicado:true,
+    checklists:[obChecklistParaTipo(produto)],
+    historico:[{de:null,para:'Aguarda Arte',em:new Date().toISOString(),por:(typeof CU!=='undefined'&&CU&&CU.name)||'Sistema'}],
+    dt:new Date().toLocaleDateString('pt-PT',{day:'2-digit',month:'2-digit',year:'numeric'})
+  };
+  uniItems.unshift(item);
+  if(typeof saveUniItems==='function') saveUniItems();
+  try{ if(typeof fpRender==='function') fpRender(); }catch(e){}
+  if(typeof showToast==='function') showToast('🏭 Projecto criado na Produção: '+item.n);
+}
+
+(function(){
+  if(typeof orcChangeStatus!=='function') return;
+  var _orig=orcChangeStatus;
+  window.orcChangeStatus=function(orcId,novoEstado){
+    var orc=(typeof orcData!=='undefined')?orcData.find(function(o){return o.num===orcId;}):null;
+    var stAntes=orc?orc.st:null;
+    _orig(orcId,novoEstado);
+    if(orc&&stAntes!==novoEstado&&(novoEstado==='Aprovado'||novoEstado==='Em Produção'||novoEstado==='Em Producao')){
+      obCriarProjetoProducao(orc);
+    }
+  };
+})();
+
+// ══ 3. LEAD "GANHO ✓" → CLIENTE AUTOMÁTICO ══════════════════════════
+function obCriarClienteDeLead(lead){
+  if(typeof cliData==='undefined') return;
+  var nome=lead.emp||lead.n;
+  if(!nome) return;
+  var existe=(cliData||[]).some(function(c){ return (c.n||'').trim().toLowerCase()===nome.trim().toLowerCase(); });
+  if(existe) return;
+  cliData.unshift({
+    id:Date.now(), n:nome, sec:'Outro', cont:lead.n||nome,
+    email:lead.email||'', tel:lead.tel||'', nif:'', morada:'',
+    projs:1, rev:lead.val||0, last:'hoje', st:'active'
+  });
+  if(typeof saveCliData==='function') saveCliData();
+  try{ if(typeof renderClientes==='function') renderClientes(); }catch(e){}
+  try{ if(typeof orcRefreshDatalist==='function') orcRefreshDatalist(); }catch(e){}
+  try{ if(typeof crmAddAtividade==='function') crmAddAtividade(lead.id,'nota','Cliente "'+nome+'" criado automaticamente na lista de Clientes','Sistema'); }catch(e){}
+  if(typeof showToast==='function') showToast('👤 Cliente criado automaticamente: '+nome);
+}
+
+(function(){
+  if(typeof saveCrmLeads!=='function') return;
+  var _orig=saveCrmLeads;
+  window.saveCrmLeads=function(){
+    // Antes de gravar: leads ganhos ainda sem cliente criado
+    try{
+      (crmLeads||[]).forEach(function(l){
+        if(l.st==='Ganho ✓'&&!l._clienteCriado){ l._clienteCriado=true; obCriarClienteDeLead(l); }
+      });
+    }catch(e){}
+    _orig();
+    obSbPush('ob-leads');
+    obAtualizarPendencias();
+  };
+})();
+
+// ══ 4. PENDÊNCIAS: LEADS PARADOS + PRÓXIMAS ACÇÕES ══════════════════
+var OB_DIAS_LEAD_PARADO = 7;
+
+// Última actividade conhecida de um lead (actividade registada ou data do lead)
+function obLeadUltimaAtividade(l){
+  var ts=null;
+  try{
+    var a=(crmAtividades||[]).find(function(x){ return x.leadId===l.id; }); // unshift → mais recente primeiro
+    if(a) ts=new Date(a.ts);
+  }catch(e){}
+  var dtLead=null;
+  if(l.dt){ var p=l.dt.split('/'); if(p.length===3) dtLead=new Date(p[2],p[1]-1,p[0]); }
+  if(dtLead&&(!ts||dtLead>ts)) ts=dtLead;
+  return ts;
+}
+
+function obLeadsParados(diasLimite){
+  diasLimite=diasLimite||OB_DIAS_LEAD_PARADO;
+  var agora=new Date();
+  return (crmLeads||[])
+    .filter(function(l){ return ['Ganho ✓','Perdido ✗'].indexOf(l.st)===-1; })
+    .map(function(l){ var t=obLeadUltimaAtividade(l); return {lead:l, dias:t?Math.floor((agora-t)/86400000):null}; })
+    .filter(function(x){ return x.dias!==null&&x.dias>diasLimite; })
+    .sort(function(a,b){ return b.dias-a.dias; });
+}
+
+function obAcoesAgendadas(){
+  var hoje=new Date().toISOString().split('T')[0];
+  var out={hoje:[],atraso:[]};
+  (crmLeads||[]).forEach(function(l){
+    if(['Ganho ✓','Perdido ✗'].indexOf(l.st)!==-1) return;
+    var pa=l.proximaAcao;
+    if(!pa||!pa.data) return;
+    if(pa.data===hoje) out.hoje.push({lead:l,pa:pa});
+    else if(pa.data<hoje) out.atraso.push({lead:l,pa:pa});
+  });
+  out.atraso.sort(function(a,b){ return a.pa.data.localeCompare(b.pa.data); });
+  return out;
+}
+
+// Pendências visíveis: comercial vê as suas; admin vê todas
+function obPendenciasDoUtilizador(){
+  var isAdmin=!!(typeof CU!=='undefined'&&CU&&CU.admin);
+  var nome=(typeof CU!=='undefined'&&CU)?CU.name:null;
+  var minhas=function(l){ return isAdmin||!nome||l.ass===nome; };
+  var acoes=obAcoesAgendadas();
+  return {
+    parados:obLeadsParados().filter(function(x){ return minhas(x.lead); }),
+    hoje:acoes.hoje.filter(function(x){ return minhas(x.lead); }),
+    atraso:acoes.atraso.filter(function(x){ return minhas(x.lead); })
+  };
+}
+
+function obAbrirLead(id){
+  try{ goPage('comercial-pipeline'); }catch(e){}
+  setTimeout(function(){ try{ crmOpenEdit(id); }catch(e){} },250);
+}
+window.obAbrirLead=obAbrirLead;
+
+function renderDashPendencias(p){
+  var el=document.getElementById('ob-dash-pendencias');
+  if(!el) return;
+  p=p||obPendenciasDoUtilizador();
+  var total=p.parados.length+p.atraso.length+p.hoje.length;
+  if(total===0){ el.style.display='none'; el.innerHTML=''; return; }
+
+  function rowLead(x){
+    var l=x.lead;
+    return '<div onclick="obAbrirLead('+l.id+')" style="display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:6px;cursor:pointer;font-size:13px" onmouseover="this.style.background=\'var(--bg3)\'" onmouseout="this.style.background=\'\'">'
+      +'<span style="color:var(--r);font-family:\'DM Mono\',monospace;font-size:12px;min-width:38px">'+x.dias+'d</span>'
+      +'<span style="color:var(--txt2);font-weight:600">'+(l.n||'—')+'</span>'
+      +'<span style="color:var(--muted)">'+(l.emp||'')+'</span>'
+      +'<span style="margin-left:auto;color:var(--muted);font-size:12px">'+(l.ass||'—')+' · '+(l.st||'')+'</span></div>';
+  }
+  function rowAcao(x,cor){
+    var l=x.lead, pa=x.pa;
+    var dstr=pa.data?pa.data.split('-').reverse().join('/'):'—';
+    return '<div onclick="obAbrirLead('+l.id+')" style="display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:6px;cursor:pointer;font-size:13px" onmouseover="this.style.background=\'var(--bg3)\'" onmouseout="this.style.background=\'\'">'
+      +'<span style="color:'+cor+';font-family:\'DM Mono\',monospace;font-size:12px;min-width:70px">'+dstr+'</span>'
+      +'<span style="color:var(--txt2);font-weight:600">'+(pa.tipo||'Acção')+'</span>'
+      +'<span style="color:var(--muted)">'+(pa.desc||'')+'</span>'
+      +'<span style="margin-left:auto;color:var(--muted);font-size:12px">'+(l.n||'')+' · '+(l.ass||'—')+'</span></div>';
+  }
+  function sec(titulo,cor,rows){
+    if(!rows.length) return '';
+    return '<div style="flex:1;min-width:260px">'
+      +'<div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:'+cor+';margin-bottom:5px">'+titulo+' ('+rows.length+')</div>'
+      +rows.join('')+'</div>';
+  }
+  el.innerHTML='<div style="margin:12px 24px 0;background:var(--bg2);border:1px solid var(--yb);border-radius:10px;padding:13px 15px">'
+    +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">'
+    +'<span style="font-size:15px">⚠️</span>'
+    +'<span style="font-size:14px;font-weight:700;color:var(--y)">Pendências Comerciais</span>'
+    +'<span style="font-size:12px;color:var(--muted)">'+total+' pendência'+(total===1?'':'s')+((typeof CU!=='undefined'&&CU&&CU.admin)?' (toda a equipa)':'')+'</span>'
+    +'<button onclick="goPage(\'comercial-pipeline\')" class="tbtn" style="margin-left:auto;font-size:12px;padding:3px 10px">Ver pipeline →</button>'
+    +'</div>'
+    +'<div style="display:flex;gap:18px;flex-wrap:wrap">'
+    +sec('🔴 Leads parados há mais de '+OB_DIAS_LEAD_PARADO+' dias','var(--r)',p.parados.slice(0,8).map(rowLead))
+    +sec('⏰ Acções em atraso','var(--a)',p.atraso.slice(0,8).map(function(x){return rowAcao(x,'var(--a)');}))
+    +sec('📅 Acções para hoje','var(--g)',p.hoje.slice(0,8).map(function(x){return rowAcao(x,'var(--g)');}))
+    +'</div></div>';
+  el.style.display='block';
+}
+window.renderDashPendencias=renderDashPendencias;
+
+function obAtualizarPendencias(){
+  try{
+    var p=obPendenciasDoUtilizador();
+    var total=p.parados.length+p.atraso.length+p.hoje.length;
+    ['ob-badge-pendencias','ob-badge-pendencias-hdr'].forEach(function(id){
+      var b=document.getElementById(id);
+      if(b){ b.style.display=total>0?'':'none'; b.textContent=total; }
+    });
+    renderDashPendencias(p);
+  }catch(e){ console.warn('[OB-AUTO] pendências:',e); }
+}
+window.obAtualizarPendencias=obAtualizarPendencias;
+
+// Actualizar pendências ao entrar no dashboard e após o login
+(function(){
+  if(typeof window.goPage==='function'){
+    var _origGo=window.goPage;
+    window.goPage=function(id){ _origGo(id); if(id==='home'||id==='todas') obAtualizarPendencias(); };
+  }
+  if(typeof window.doLogin==='function'){
+    var _origLogin=window.doLogin;
+    window.doLogin=function(){ _origLogin(); setTimeout(obAtualizarPendencias,400); };
+  }
+  // O botão "Entrar no Sistema" chama loginComSenha() directamente
+  if(typeof window.loginComSenha==='function'){
+    var _origSenha=window.loginComSenha;
+    window.loginComSenha=function(){ _origSenha(); setTimeout(obAtualizarPendencias,600); };
+  }
+})();
+
+// ══ 5. SINCRONIZAÇÃO SUPABASE (tabela ob_crm_dados) ═════════════════
+// Guarda cada chave do localStorage como uma linha jsonb no Supabase.
+// Estratégia conservadora: só adopta dados remotos quando o navegador
+// está vazio (1º arranque / dispositivo novo); caso contrário faz backup.
+var OB_SB_SYNC_KEYS=['ob-leads','ob-clients','ob-uni-items','ob-crm-atividades','ob-crm-historico'];
+var _obSbTimers={};
+
+function obSbPush(chave){
+  if(typeof _ORC_SB_URL==='undefined'||typeof _ORC_SB_KEY==='undefined') return;
+  clearTimeout(_obSbTimers[chave]);
+  _obSbTimers[chave]=setTimeout(function(){
+    try{
+      var dados=JSON.parse(localStorage.getItem(chave)||'[]');
+      fetch(_ORC_SB_URL+'/rest/v1/ob_crm_dados?on_conflict=chave',{
+        method:'POST',
+        headers:{'Content-Type':'application/json','apikey':_ORC_SB_KEY,'Authorization':'Bearer '+_ORC_SB_KEY,'Prefer':'resolution=merge-duplicates'},
+        body:JSON.stringify({chave:chave,dados:dados,updated_at:new Date().toISOString()})
+      }).catch(function(){});
+    }catch(e){}
+  },2500);
+}
+window.obSbPush=obSbPush;
+
+async function obSbBoot(){
+  if(typeof _ORC_SB_URL==='undefined'||typeof _ORC_SB_KEY==='undefined') return;
+  try{
+    var r=await fetch(_ORC_SB_URL+'/rest/v1/ob_crm_dados?select=chave,dados,updated_at',{
+      headers:{'apikey':_ORC_SB_KEY,'Authorization':'Bearer '+_ORC_SB_KEY}
+    });
+    if(r.ok){
+      var rows=await r.json();
+      var adoptou=false;
+      rows.forEach(function(row){
+        var localRaw=localStorage.getItem(row.chave);
+        var localVazio=!localRaw||localRaw==='[]'||localRaw==='null';
+        if(localVazio&&row.dados&&row.dados.length){
+          localStorage.setItem(row.chave,JSON.stringify(row.dados));
+          try{
+            if(row.chave==='ob-leads'&&typeof crmLeads!=='undefined'){ crmLeads=row.dados; leads=crmLeads; }
+            if(row.chave==='ob-clients'&&typeof cliData!=='undefined'){ cliData=row.dados; }
+            if(row.chave==='ob-uni-items'&&typeof uniItems!=='undefined'){ uniItems=row.dados; }
+            if(row.chave==='ob-crm-atividades'&&typeof crmAtividades!=='undefined'){ crmAtividades=row.dados; }
+            if(row.chave==='ob-crm-historico'&&typeof crmHistorico!=='undefined'){ crmHistorico=row.dados; }
+          }catch(e){}
+          adoptou=true;
+        }
+      });
+      if(adoptou){
+        console.log('[SB-CRM] Dados carregados do Supabase (dispositivo novo).');
+        try{ if(typeof crmRenderAll==='function') crmRenderAll(); }catch(e){}
+        try{ if(typeof renderClientes==='function') renderClientes(); }catch(e){}
+        try{ if(typeof uniInitAll==='function') uniInitAll(); }catch(e){}
+      }
+    }
+  }catch(e){ console.warn('[SB-CRM] boot sync falhou:',e); }
+  // Backup inicial de tudo o que existe localmente
+  OB_SB_SYNC_KEYS.forEach(obSbPush);
+}
+
+// Cada gravação local passa também a fazer backup para o Supabase
+(function(){
+  function wrap(fnName,chave){
+    var f=window[fnName];
+    if(typeof f!=='function') return;
+    window[fnName]=function(){ f.apply(this,arguments); obSbPush(chave); };
+  }
+  wrap('saveCliData','ob-clients');
+  wrap('saveUniItems','ob-uni-items');
+  wrap('saveCrmAtividades','ob-crm-atividades');
+  wrap('saveCrmHistorico','ob-crm-historico');
+  // 'ob-leads' já é enviado no wrapper de saveCrmLeads (secção 3)
+})();
+
+// ══ ARRANQUE ════════════════════════════════════════════════════════
+obGarantirChecklistsProducao();
+obSbBoot();
+setTimeout(obAtualizarPendencias,800);
+setInterval(obAtualizarPendencias,5*60*1000); // refresca a cada 5 minutos
 
 })();
 </script>
