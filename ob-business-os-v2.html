@@ -7424,6 +7424,7 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
       <div class="cc"><div class="sh"><h2 id="finMarChart-title">Margem por Projeto (%)</h2></div><canvas id="finMarChart"></canvas><div id="finMarChart-empty" style="display:none;text-align:center;color:var(--muted);padding:30px 0;font-size:13px">Sem dados para exibir</div></div>
       <div class="cc"><div class="sh"><h2>Fluxo de Caixa — 90 dias</h2></div><canvas id="cashChart"></canvas><div id="cashChart-empty" style="display:none;text-align:center;color:var(--muted);padding:30px 0;font-size:13px">Sem dados para exibir</div></div>
     </div>
+    <div class="cc" style="margin-bottom:18px"><div class="sh"><h2>🔮 Previsão de Tesouraria — próximos 90 dias</h2><span style="font-size:12px;color:var(--muted)">Entradas previstas (faturas a receber) vs saídas (contas a pagar) por data de vencimento</span></div><canvas id="finPrevChart" style="max-height:280px"></canvas><div id="finPrevChart-empty" style="display:none;text-align:center;color:var(--muted);padding:30px 0;font-size:13px">Sem vencimentos futuros. Regista contas a pagar e faturas a receber na Tesouraria para veres a previsão.</div></div>
     <div class="sh"><h2>Projetos — Rentabilidade</h2></div>
     <div class="tw"><table><thead><tr><th>Projeto</th><th>Cliente</th><th>Receita</th><th>Custo</th><th>Margem</th><th>Orçamento</th><th>Estado</th></tr></thead><tbody id="fin-tbody"></tbody></table></div>
 
@@ -7833,6 +7834,7 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
           <button onclick="foCarregarPicagens()" class="tbtn y" style="font-size:13px">⏱️ Carregar Picagens</button>
           <button onclick="foUsarColabsLocais()" class="tbtn" style="font-size:13px">💻 Usar Dados Locais</button>
           <button onclick="foGerarDocumento()" class="tbtn" style="font-size:13px;color:var(--g);border-color:var(--g)">📄 Gerar Documento</button>
+          <button onclick="foEnviarTesouraria()" class="tbtn" style="font-size:13px;color:var(--y);border-color:var(--y)" title="Cria a conta a pagar do mês (total líquido dos salários) na Tesouraria">🏦 Enviar p/ Tesouraria</button>
         </div>
         <div id="fo-status" style="font-size:13px;color:var(--muted);align-self:flex-end;padding-bottom:4px"></div>
       </div>
@@ -15852,14 +15854,31 @@ function renderRelatorios(){
            '<td>'+(c.projs||0)+'</td></tr>';
   }).join('');
 
-  // Departamentos
+  // Departamentos — calculado com dados reais (antes eram valores fixos de demonstração)
   var dp=document.getElementById('dept-perf');
-  if(dp)dp.innerHTML=[
-    {dept:'Dep. Comercial',kpi:'Pipeline activo',c:'#e74c3c',pct:67},
-    {dept:'Dep. Design',kpi:'Artes em curso',c:'#e67e22',pct:88},
-    {dept:'Chao da Fabrica',kpi:'Em producao',c:'#3b82f6',pct:78},
-    {dept:'Gestão Administrativa',kpi:'Documentos OK',c:'#8b5cf6',pct:92},
-  ].map(function(d){
+  var deptItems=[];
+  (function(){
+    // Comercial: taxa de aprovação dos orçamentos
+    var orcTodos=(typeof orcData!=='undefined'?orcData:[]);
+    var nEnv=orcTodos.filter(function(o){return o.st!=='Cancelado';}).length;
+    var nApr=orcTodos.filter(function(o){return ['Aprovado','Em Produção','Em Producao','Concluído','Concluido','Faturado'].indexOf(o.st)>=0;}).length;
+    deptItems.push({dept:'Dep. Comercial',kpi:nApr+' de '+nEnv+' orçamentos aprovados',c:'#e74c3c',pct:nEnv>0?Math.round(nApr/nEnv*100):0});
+    // Design: tarefas concluídas
+    var uni=(typeof uniItems!=='undefined'?uniItems:[]);
+    var des=uni.filter(function(i){return i.page==='design-tarefas';});
+    var desOk=des.filter(function(i){return /conclu|done|entregue|aprovad|final/i.test(i.status||'');}).length;
+    deptItems.push({dept:'Dep. Design',kpi:desOk+' de '+des.length+' tarefas concluídas',c:'#e67e22',pct:des.length>0?Math.round(desOk/des.length*100):0});
+    // Fábrica: progresso das checklists de produção
+    var prod=uni.filter(function(i){return i.page==='fabrica-producao';});
+    var tot=0,done=0;
+    prod.forEach(function(i){(i.checklists||[]).forEach(function(c){(c.itens||[]).forEach(function(it){tot++;if(it.concluido)done++;});});});
+    deptItems.push({dept:'Chão da Fábrica',kpi:done+' de '+tot+' etapas de produção',c:'#3b82f6',pct:tot>0?Math.round(done/tot*100):0});
+    // Administrativa: despesas tratadas (aprovadas/rejeitadas/reembolsadas)
+    var desp=(typeof FIN_DESPESAS!=='undefined'?FIN_DESPESAS:[]);
+    var trat=desp.filter(function(d){return d.estado&&d.estado!=='Pendente';}).length;
+    deptItems.push({dept:'Gestão Administrativa',kpi:trat+' de '+desp.length+' despesas tratadas',c:'#8b5cf6',pct:desp.length>0?Math.round(trat/desp.length*100):0});
+  })();
+  if(dp)dp.innerHTML=deptItems.map(function(d){
     return '<div style="margin-bottom:10px">'+
       '<div style="display:flex;justify-content:space-between;margin-bottom:4px">'+
       '<span style="font-size:14px;color:var(--txt2)">'+d.dept+'</span>'+
@@ -18943,6 +18962,7 @@ async function tesIvaSincronizar(){
     }
     TES_IVA_DATA = {iva:calc.iva, resumo:calc.resumo, ultimaSync: new Date().toLocaleString('pt-PT')};
     localStorage.setItem('ob-iva-dados', JSON.stringify(TES_IVA_DATA));
+    if(typeof obSbPush==='function') obSbPush('ob-iva-dados');
     tesIvaRender();
     if(info) info.textContent = 'Calculado (dados reais do CRM) às ' + TES_IVA_DATA.ultimaSync;
     return;
@@ -18953,6 +18973,7 @@ async function tesIvaSincronizar(){
     if(data && (data.iva || data.resumo)){
       TES_IVA_DATA = {iva: data.iva||[], resumo: data.resumo||[], ultimaSync: new Date().toLocaleString('pt-PT')};
       localStorage.setItem('ob-iva-dados', JSON.stringify(TES_IVA_DATA));
+      if(typeof obSbPush==='function') obSbPush('ob-iva-dados');
       tesIvaRender();
       if(info) info.textContent = 'Sincronizado às ' + TES_IVA_DATA.ultimaSync;
     } else {
@@ -23007,7 +23028,34 @@ function obAcoesAgendadas(){
   return out;
 }
 
-// Pendências visíveis: comercial vê as suas; admin vê todas
+// Alertas financeiros: contas a pagar vencidas / a vencer em 7 dias
+// e faturas a receber já vencidas (apenas para administradores)
+function obFinPendencias(){
+  var out={pagar:[],aVencer:[],receber:[]};
+  var hoje=new Date(); hoje.setHours(0,0,0,0);
+  var em7=new Date(hoje); em7.setDate(em7.getDate()+7);
+  function pv(s){
+    if(!s) return null;
+    var d=(typeof parseVencTes==='function')?parseVencTes(s):new Date(s);
+    return isNaN(d)?null:d;
+  }
+  (typeof TES_CONTAS!=='undefined'?TES_CONTAS:[]).forEach(function(c){
+    if(c.estado!=='Pendente') return;
+    var d=pv(c.vencimento); if(!d) return;
+    if(d<hoje) out.pagar.push({c:c,d:d});
+    else if(d<=em7) out.aVencer.push({c:c,d:d});
+  });
+  (typeof TES_RECEBER!=='undefined'?TES_RECEBER:[]).forEach(function(f){
+    if(f.estado==='Recebido') return;
+    var d=pv(f.vencimento); if(!d) return;
+    if(d<hoje) out.receber.push({c:f,d:d});
+  });
+  var porData=function(a,b){ return a.d-b.d; };
+  out.pagar.sort(porData); out.aVencer.sort(porData); out.receber.sort(porData);
+  return out;
+}
+
+// Pendências visíveis: comercial vê as suas; admin vê todas + financeiro
 function obPendenciasDoUtilizador(){
   var isAdmin=!!(typeof CU!=='undefined'&&CU&&CU.admin);
   var nome=(typeof CU!=='undefined'&&CU)?CU.name:null;
@@ -23016,7 +23064,8 @@ function obPendenciasDoUtilizador(){
   return {
     parados:obLeadsParados().filter(function(x){ return minhas(x.lead); }),
     hoje:acoes.hoje.filter(function(x){ return minhas(x.lead); }),
-    atraso:acoes.atraso.filter(function(x){ return minhas(x.lead); })
+    atraso:acoes.atraso.filter(function(x){ return minhas(x.lead); }),
+    fin:isAdmin?obFinPendencias():{pagar:[],aVencer:[],receber:[]}
   };
 }
 
@@ -23026,11 +23075,17 @@ function obAbrirLead(id){
 }
 window.obAbrirLead=obAbrirLead;
 
+function obPendenciasTotal(p){
+  var fin=p.fin||{pagar:[],aVencer:[],receber:[]};
+  return p.parados.length+p.atraso.length+p.hoje.length
+    +fin.pagar.length+fin.aVencer.length+fin.receber.length;
+}
+
 function renderDashPendencias(p){
   var el=document.getElementById('ob-dash-pendencias');
   if(!el) return;
   p=p||obPendenciasDoUtilizador();
-  var total=p.parados.length+p.atraso.length+p.hoje.length;
+  var total=obPendenciasTotal(p);
   if(total===0){ el.style.display='none'; el.innerHTML=''; return; }
 
   function rowLead(x){
@@ -23056,11 +23111,26 @@ function renderDashPendencias(p){
       +'<div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:'+cor+';margin-bottom:5px">'+titulo+' ('+rows.length+')</div>'
       +rows.join('')+'</div>';
   }
-  el.innerHTML='<div style="margin:12px 24px 0;background:var(--bg2);border:1px solid var(--yb);border-radius:10px;padding:13px 15px">'
+  // Linhas dos alertas financeiros (clicam para a Tesouraria na tab certa)
+  function fmtE(v){ return '€'+parseFloat(v||0).toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+  function rowFin(x,cor,tab){
+    var c=x.c;
+    var dstr=x.d.toLocaleDateString('pt-PT',{day:'2-digit',month:'2-digit'});
+    return '<div onclick="goPage(\'tesouraria\');setTimeout(function(){try{tesMostrarTab(\''+tab+'\')}catch(e){}},200)" style="display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:6px;cursor:pointer;font-size:13px" onmouseover="this.style.background=\'var(--bg3)\'" onmouseout="this.style.background=\'\'">'
+      +'<span style="color:'+cor+';font-family:\'DM Mono\',monospace;font-size:12px;min-width:44px">'+dstr+'</span>'
+      +'<span style="color:var(--txt2);font-weight:600">'+(c.descricao||'—')+'</span>'
+      +'<span style="color:var(--muted)">'+(c.cliente||c.tecnico||'')+'</span>'
+      +'<span style="margin-left:auto;color:'+cor+';font-family:\'DM Mono\',monospace;font-size:12.5px;font-weight:700">'+fmtE(c.valor!=null?c.valor:c.total)+'</span></div>';
+  }
+  var fin=p.fin||{pagar:[],aVencer:[],receber:[]};
+  var finTotal=fin.pagar.length+fin.aVencer.length+fin.receber.length;
+  var comTotal=p.parados.length+p.atraso.length+p.hoje.length;
+
+  var htmlCom=comTotal===0?'':'<div style="margin:12px 24px 0;background:var(--bg2);border:1px solid var(--yb);border-radius:10px;padding:13px 15px">'
     +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">'
     +'<span style="font-size:15px">⚠️</span>'
     +'<span style="font-size:14px;font-weight:700;color:var(--y)">Pendências Comerciais</span>'
-    +'<span style="font-size:12px;color:var(--muted)">'+total+' pendência'+(total===1?'':'s')+((typeof CU!=='undefined'&&CU&&CU.admin)?' (toda a equipa)':'')+'</span>'
+    +'<span style="font-size:12px;color:var(--muted)">'+comTotal+' pendência'+(comTotal===1?'':'s')+((typeof CU!=='undefined'&&CU&&CU.admin)?' (toda a equipa)':'')+'</span>'
     +'<button onclick="goPage(\'comercial-pipeline\')" class="tbtn" style="margin-left:auto;font-size:12px;padding:3px 10px">Ver pipeline →</button>'
     +'</div>'
     +'<div style="display:flex;gap:18px;flex-wrap:wrap">'
@@ -23068,6 +23138,21 @@ function renderDashPendencias(p){
     +sec('⏰ Acções em atraso','var(--a)',p.atraso.slice(0,8).map(function(x){return rowAcao(x,'var(--a)');}))
     +sec('📅 Acções para hoje','var(--g)',p.hoje.slice(0,8).map(function(x){return rowAcao(x,'var(--g)');}))
     +'</div></div>';
+
+  var htmlFin=finTotal===0?'':'<div style="margin:12px 24px 0;background:var(--bg2);border:1px solid rgba(224,85,85,.35);border-radius:10px;padding:13px 15px">'
+    +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">'
+    +'<span style="font-size:15px">💰</span>'
+    +'<span style="font-size:14px;font-weight:700;color:var(--r)">Alertas Financeiros</span>'
+    +'<span style="font-size:12px;color:var(--muted)">'+finTotal+' alerta'+(finTotal===1?'':'s')+' de vencimento</span>'
+    +'<button onclick="goPage(\'tesouraria\')" class="tbtn" style="margin-left:auto;font-size:12px;padding:3px 10px">Ver tesouraria →</button>'
+    +'</div>'
+    +'<div style="display:flex;gap:18px;flex-wrap:wrap">'
+    +sec('🔴 Contas a pagar vencidas','var(--r)',fin.pagar.slice(0,8).map(function(x){return rowFin(x,'var(--r)','pagar');}))
+    +sec('⏳ A vencer nos próximos 7 dias','var(--a)',fin.aVencer.slice(0,8).map(function(x){return rowFin(x,'var(--a)','pagar');}))
+    +sec('📥 Faturas por receber vencidas','var(--b)',fin.receber.slice(0,8).map(function(x){return rowFin(x,'var(--b)','receber');}))
+    +'</div></div>';
+
+  el.innerHTML=htmlCom+htmlFin;
   el.style.display='block';
 }
 window.renderDashPendencias=renderDashPendencias;
@@ -23075,7 +23160,7 @@ window.renderDashPendencias=renderDashPendencias;
 function obAtualizarPendencias(){
   try{
     var p=obPendenciasDoUtilizador();
-    var total=p.parados.length+p.atraso.length+p.hoje.length;
+    var total=obPendenciasTotal(p);
     ['ob-badge-pendencias','ob-badge-pendencias-hdr'].forEach(function(id){
       var b=document.getElementById(id);
       if(b){ b.style.display=total>0?'':'none'; b.textContent=total; }
@@ -23106,7 +23191,9 @@ window.obAtualizarPendencias=obAtualizarPendencias;
 // Guarda cada chave do localStorage como uma linha jsonb no Supabase.
 // Estratégia conservadora: só adopta dados remotos quando o navegador
 // está vazio (1º arranque / dispositivo novo); caso contrário faz backup.
-var OB_SB_SYNC_KEYS=['ob-leads','ob-clients','ob-uni-items','ob-crm-atividades','ob-crm-historico','ob-rh-colabs','ob-fo-ausencias','ob-rh-ferias-cfg','ob-rh-turnos'];
+var OB_SB_SYNC_KEYS=['ob-leads','ob-clients','ob-uni-items','ob-crm-atividades','ob-crm-historico','ob-rh-colabs','ob-fo-ausencias','ob-rh-ferias-cfg','ob-rh-turnos',
+  // Dados financeiros — tesouraria, despesas, IVA e faturas
+  'ob-tes-contas','ob-tes-receber','ob-tes-log','ob-tes-cartoes','ob-fin-despesas','ob-iva-dados','ob-faturas'];
 var _obSbTimers={};
 
 function obSbPush(chave){
@@ -23148,6 +23235,13 @@ async function obSbBoot(){
             if(row.chave==='ob-crm-historico'&&typeof crmHistorico!=='undefined'){ crmHistorico=row.dados; }
             if(row.chave==='ob-fo-ausencias'&&typeof FO_AUSENCIAS!=='undefined'){ FO_AUSENCIAS=row.dados; }
             if(row.chave==='ob-rh-colabs'&&typeof rhColabs!=='undefined'){ rhColabs=row.dados; }
+            if(row.chave==='ob-tes-contas'&&typeof TES_CONTAS!=='undefined'){ TES_CONTAS=row.dados; }
+            if(row.chave==='ob-tes-receber'&&typeof TES_RECEBER!=='undefined'){ TES_RECEBER=row.dados; }
+            if(row.chave==='ob-tes-log'&&typeof TES_LOG_DESPESAS!=='undefined'){ TES_LOG_DESPESAS=row.dados; }
+            if(row.chave==='ob-tes-cartoes'&&typeof TES_CARTOES!=='undefined'){ TES_CARTOES=row.dados; }
+            if(row.chave==='ob-fin-despesas'&&typeof FIN_DESPESAS!=='undefined'){ FIN_DESPESAS=row.dados; }
+            if(row.chave==='ob-iva-dados'&&typeof TES_IVA_DATA!=='undefined'){ TES_IVA_DATA=row.dados; }
+            if(row.chave==='ob-faturas'&&typeof fatData!=='undefined'){ fatData=row.dados; }
           }catch(e){}
           adoptou=true;
         }
@@ -23175,6 +23269,13 @@ async function obSbBoot(){
   wrap('saveUniItems','ob-uni-items');
   wrap('saveCrmAtividades','ob-crm-atividades');
   wrap('saveCrmHistorico','ob-crm-historico');
+  // Financeiro: tesouraria, despesas e faturas com backup automático
+  wrap('tesSave','ob-tes-contas');
+  wrap('tesSaveReceber','ob-tes-receber');
+  wrap('tesLogSave','ob-tes-log');
+  wrap('tesCartoesSave','ob-tes-cartoes');
+  wrap('finDespSave','ob-fin-despesas');
+  wrap('fatSave','ob-faturas');
   // 'ob-leads' já é enviado no wrapper de saveCrmLeads (secção 3)
 })();
 
@@ -23503,6 +23604,153 @@ function rhTurnosRender(){
   }).join('')||'<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:30px">Sem colaboradores. Adiciona colaboradores na tab "👥 Colaboradores" ou clica "🔄 App".</td></tr>';
 }
 window.rhTurnosRender=rhTurnosRender;
+
+})();
+</script>
+
+<script>
+/* ═══════════════════════════════════════════════════════════════════
+   FINANCEIRO — MELHORIAS
+   1. Fecho de Ordenados → conta a pagar "Salários" na Tesouraria
+   2. Previsão de tesouraria a 90 dias (entradas vs saídas por vencimento)
+   3. Pendências financeiras actualizadas quando a Tesouraria muda
+   ═══════════════════════════════════════════════════════════════════ */
+(function(){
+'use strict';
+
+var FIN_MESES=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+
+function finParseVenc(s){
+  if(!s) return null;
+  var d=(typeof parseVencTes==='function')?parseVencTes(s):new Date(s);
+  return isNaN(d)?null:d;
+}
+
+// ── 1. SALÁRIOS DO MÊS → TESOURARIA ─────────────────────────────────
+window.foEnviarTesouraria=function(){
+  if(typeof FO_DADOS==='undefined'||!FO_DADOS.length){
+    alert('Carrega primeiro os dados do mês ("Carregar Picagens" ou "Usar Dados Locais").'); return;
+  }
+  var mesVal=(document.getElementById('fo-mes')||{}).value;
+  if(!mesVal){ alert('Seleciona o mês.'); return; }
+  if(typeof TES_CONTAS==='undefined'){ alert('Tesouraria não disponível.'); return; }
+  var p=mesVal.split('-'), ano=parseInt(p[0],10), mes=parseInt(p[1],10);
+  var mesNome=FIN_MESES[mes-1]+' '+ano;
+  var total=FO_DADOS.reduce(function(s,d){ return s+(d.salLiquido||0); },0);
+  total=Math.round(total*100)/100;
+  if(total<=0){ alert('O total líquido do mês é €0 — nada para enviar.'); return; }
+  var desc='Salários — '+mesNome;
+  var existente=TES_CONTAS.find(function(c){ return c.descricao===desc; });
+  if(existente){
+    if(existente.estado==='Paga'){ alert('"'+desc+'" já foi paga na Tesouraria — não foi alterada.'); return; }
+    if(!confirm('Já existe "'+desc+'" na Tesouraria (€'+(existente.valor||0).toFixed(2)+', pendente).\nSubstituir pelo novo total de €'+total.toFixed(2)+'?')) return;
+    existente.valor=total;
+    existente.data=new Date().toLocaleDateString('pt-PT');
+  } else {
+    var ultimoDia=new Date(ano,mes,0); // último dia do mês
+    TES_CONTAS.unshift({
+      id:'sal-'+mesVal+'-'+Date.now(),
+      data:new Date().toLocaleDateString('pt-PT'),
+      descricao:desc,
+      categoria:'Salários',
+      tecnico:'RH — Fecho de Ordenados',
+      projeto:'—',
+      valor:total,
+      vencimento:ultimoDia.toLocaleDateString('pt-PT'),
+      estado:'Pendente'
+    });
+  }
+  if(typeof tesSave==='function') tesSave();
+  try{ if(typeof tesRender==='function') tesRender(); }catch(e){}
+  try{ if(typeof finPrevRender==='function') finPrevRender(); }catch(e){}
+  if(typeof showToast==='function') showToast('🏦 '+desc+' → Tesouraria: €'+total.toLocaleString('pt-PT',{minimumFractionDigits:2}));
+  else alert('✓ '+desc+' enviado para a Tesouraria: €'+total.toFixed(2));
+};
+
+// ── 2. PREVISÃO DE TESOURARIA — PRÓXIMOS 90 DIAS ────────────────────
+// Semana a semana: entradas (faturas a receber pendentes) vs saídas
+// (contas a pagar pendentes), por data de vencimento. Vencidos contam
+// para a 1.ª semana (dinheiro que devia entrar/sair já).
+function finPrevRender(){
+  var canvas=document.getElementById('finPrevChart');
+  var empty=document.getElementById('finPrevChart-empty');
+  if(!canvas||typeof Chart==='undefined') return;
+  var hoje=new Date(); hoje.setHours(0,0,0,0);
+  var N=13, MS_SEM=7*86400000;
+  var labels=[], ent=[], sai=[];
+  for(var i=0;i<N;i++){
+    var d=new Date(hoje.getTime()+i*MS_SEM);
+    labels.push(String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0'));
+    ent.push(0); sai.push(0);
+  }
+  function bucket(d){
+    if(d<hoje) return 0;
+    var idx=Math.floor((d-hoje)/MS_SEM);
+    return idx<N?idx:-1;
+  }
+  (typeof TES_RECEBER!=='undefined'?TES_RECEBER:[]).forEach(function(f){
+    if(f.estado==='Recebido') return;
+    var d=finParseVenc(f.vencimento); if(!d) return;
+    var b=bucket(d); if(b>=0) ent[b]+=parseFloat(f.total||f.valorLiq||0)||0;
+  });
+  (typeof TES_CONTAS!=='undefined'?TES_CONTAS:[]).forEach(function(c){
+    if(c.estado!=='Pendente') return;
+    var d=finParseVenc(c.vencimento); if(!d) return;
+    var b=bucket(d); if(b>=0) sai[b]+=parseFloat(c.valor||0)||0;
+  });
+  var temDados=ent.some(function(v){return v>0;})||sai.some(function(v){return v>0;});
+  var existente=Chart.getChart(canvas);
+  if(existente) existente.destroy();
+  if(!temDados){
+    canvas.style.display='none';
+    if(empty) empty.style.display='block';
+    return;
+  }
+  canvas.style.display='block';
+  if(empty) empty.style.display='none';
+  var saldo=[], acc=0;
+  for(var j=0;j<N;j++){ acc+=ent[j]-sai[j]; saldo.push(Math.round(acc*100)/100); }
+  var MUT='#8a8f98';
+  new Chart(canvas,{
+    type:'bar',
+    data:{labels:labels,datasets:[
+      {label:'Entradas previstas',data:ent,backgroundColor:'rgba(63,207,142,.55)',borderRadius:4},
+      {label:'Saídas previstas',data:sai,backgroundColor:'rgba(224,85,85,.55)',borderRadius:4},
+      {label:'Saldo acumulado',data:saldo,type:'line',borderColor:'#F5C400',backgroundColor:'rgba(245,196,0,.08)',tension:.35,pointBackgroundColor:'#F5C400',pointRadius:3}
+    ]},
+    options:{
+      responsive:true,
+      plugins:{legend:{display:true,labels:{color:MUT,boxWidth:12,font:{size:11}}},
+        tooltip:{callbacks:{label:function(ctx){ return ctx.dataset.label+': €'+(ctx.parsed.y||0).toLocaleString('pt-PT',{minimumFractionDigits:2}); }}}},
+      scales:{
+        x:{grid:{display:false},ticks:{color:MUT,font:{size:11}},title:{display:true,text:'Semana (data de início)',color:MUT,font:{size:11}}},
+        y:{grid:{color:'rgba(255,255,255,.05)'},ticks:{color:MUT,callback:function(v){return '€'+v.toLocaleString('pt-PT');}}}
+      }
+    }
+  });
+}
+window.finPrevRender=finPrevRender;
+
+// Renderizar junto com os restantes gráficos e ao entrar no Financeiro
+if(typeof window.initCharts==='function'){
+  var _origInitCharts=window.initCharts;
+  window.initCharts=function(){ _origInitCharts.apply(this,arguments); try{finPrevRender();}catch(e){} };
+}
+if(typeof window.goPage==='function'){
+  var _origGoPageFin=window.goPage;
+  window.goPage=function(id){ _origGoPageFin(id); if(id==='financeiro') setTimeout(function(){ try{finPrevRender();}catch(e){} },100); };
+}
+
+// ── 3. TESOURARIA MUDOU → ACTUALIZAR PENDÊNCIAS E PREVISÃO ──────────
+['tesSave','tesSaveReceber'].forEach(function(fn){
+  var f=window[fn];
+  if(typeof f!=='function') return;
+  window[fn]=function(){
+    f.apply(this,arguments);
+    try{ if(typeof obAtualizarPendencias==='function') obAtualizarPendencias(); }catch(e){}
+    try{ finPrevRender(); }catch(e){}
+  };
+});
 
 })();
 </script>
