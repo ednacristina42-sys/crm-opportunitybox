@@ -7797,6 +7797,8 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
       <button class="vt on" onclick="rhTab('colabs')">👥 Colaboradores</button>
       <button class="vt" onclick="rhTab('admissoes')">✅ Admissões</button>
       <button class="vt" onclick="rhTab('recrutamento')">🔍 Recrutamento</button>
+      <button class="vt" onclick="rhTab('ferias')">🏖️ Férias</button>
+      <button class="vt" onclick="rhTab('turnos')">📅 Turnos</button>
       <button class="vt" onclick="rhTab('ordenados')">💶 Ordenados</button>
       <button class="vt" onclick="rhTab('horas')">⏱️ Pica-ponto</button>
     </div>
@@ -7889,6 +7891,46 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
         </tr></thead>
         <tbody id="wd-tbody"></tbody>
       </table></div>
+    </div>
+
+    <!-- Férias: mapa anual, saldos e marcação -->
+    <div id="rh-panel-ferias" style="display:none">
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:16px">
+        <button class="tbtn" onclick="rhFeriasMudaAno(-1)" style="font-size:13px">‹</button>
+        <span id="rhf-ano-label" style="font-size:16px;font-weight:700;color:var(--txt2);min-width:52px;text-align:center">—</span>
+        <button class="tbtn" onclick="rhFeriasMudaAno(1)" style="font-size:13px">›</button>
+        <span id="rhf-status" style="font-size:13px;color:var(--muted);margin-left:6px"></span>
+      </div>
+      <div id="rhf-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:18px"></div>
+      <div class="tw"><table>
+        <thead><tr>
+          <th>Colaborador</th>
+          <th style="text-align:right" title="Dias de férias a que tem direito no ano">Direito</th>
+          <th style="text-align:right" title="Dias de férias já gozados">Gozadas</th>
+          <th style="text-align:right" title="Dias marcados para o futuro">Marcadas</th>
+          <th style="text-align:right" title="Dias ainda por marcar">Por marcar</th>
+          <th>Períodos de férias</th>
+          <th>Ações</th>
+        </tr></thead>
+        <tbody id="rhf-tbody"></tbody>
+      </table></div>
+    </div>
+
+    <!-- Turnos: escala semanal da equipa -->
+    <div id="rh-panel-turnos" style="display:none">
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
+        <button class="tbtn" onclick="rhTurnosMudaSemana(-1)" style="font-size:13px">‹ Semana</button>
+        <span id="rht-semana-label" style="font-size:15px;font-weight:700;color:var(--txt2)">—</span>
+        <button class="tbtn" onclick="rhTurnosMudaSemana(1)" style="font-size:13px">Semana ›</button>
+        <button class="tbtn" onclick="rhTurnosHoje()" style="font-size:13px">Hoje</button>
+        <button class="tbtn" onclick="rhTurnosCopiarSemanaAnterior()" style="font-size:13px;margin-left:auto" title="Copia a escala da semana anterior para esta semana">📋 Copiar semana anterior</button>
+      </div>
+      <div id="rht-legenda" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;font-size:12px;color:var(--muted)"></div>
+      <div class="tw"><table id="rht-tabela">
+        <thead id="rht-thead"></thead>
+        <tbody id="rht-tbody"></tbody>
+      </table></div>
+      <div style="margin-top:10px;font-size:12px;color:var(--muted)">💡 Clica numa célula para alternar o turno (Completo → Manhã → Tarde → Noite → Folga → vazio). 🏖️ indica férias marcadas nesse dia.</div>
     </div>
 
 </div>
@@ -12678,17 +12720,19 @@ var RH_ESTADO_COLORS = {
 
 // ── TABS ──
 function rhTab(tab){
-  ['colabs','admissoes','recrutamento','ordenados','horas'].forEach(t=>{
+  ['colabs','admissoes','recrutamento','ferias','turnos','ordenados','horas'].forEach(t=>{
     var p=document.getElementById('rh-panel-'+t);
     if(p) p.style.display=t===tab?'block':'none';
   });
   document.querySelectorAll('#page-admin-rh .vt').forEach((b,i)=>{
-    const tabs=['colabs','admissoes','recrutamento','ordenados','horas'];
+    const tabs=['colabs','admissoes','recrutamento','ferias','turnos','ordenados','horas'];
     b.classList.toggle('on',tabs[i]===tab);
   });
   if(tab==='colabs') rhRenderColabs();
   if(tab==='admissoes') rhRenderAdms();
   if(tab==='recrutamento') rhRenderRecs();
+  if(tab==='ferias' && typeof rhFeriasInit==='function') rhFeriasInit();
+  if(tab==='turnos' && typeof rhTurnosInit==='function') rhTurnosInit();
   if(tab==='ordenados') foInit();
   if(tab==='horas' && !window._wdLoaded) wdLoad();
 }
@@ -12912,9 +12956,12 @@ window.foUsarColabsLocais = foUsarColabsLocais;
 // ── Processar e renderizar ─────────────────────────────────────
 function foProcessar(colabs, pics, ano, mes, statusEl) {
   var diasUteis = foDiasUteis(ano, mes);
+  // Só as ausências do mês em causa contam para o fecho
+  var mesStr = ano + '-' + String(mes).padStart(2,'0');
+  var ausMes = FO_AUSENCIAS.filter(function(a){ return (a.data||'').indexOf(mesStr) === 0; });
   FO_DADOS = colabs.map(function(c) {
     var picCol = pics.filter(function(p){ return String(p.funcionario_id||p.user_id) === String(c.id||c.n); });
-    return foCalcColab(c, picCol, FO_AUSENCIAS, diasUteis);
+    return foCalcColab(c, picCol, ausMes, diasUteis);
   });
   foRenderTabela(ano, mes);
   if (statusEl) statusEl.textContent = '✅ ' + FO_DADOS.length + ' colaboradores · ' + diasUteis + ' dias úteis em ' + mes + '/' + ano;
@@ -13032,8 +13079,8 @@ function foModalGuardar() {
     var diasUteis = foDiasUteis(parseInt(p[0]), parseInt(p[1]));
     FO_DADOS = FO_DADOS.map(function(d) {
       var picCol = []; // não temos as picagens em cache — deixa horas como estão
-      // Recalcular só ausências
-      var aus = FO_AUSENCIAS.filter(function(a){ return String(a.colabId)===String(d.id); });
+      // Recalcular só ausências (apenas as do mês em causa)
+      var aus = FO_AUSENCIAS.filter(function(a){ return String(a.colabId)===String(d.id) && (a.data||'').indexOf(mesVal)===0; });
       var df = aus.filter(function(a){ return a.tipo==='falta'||a.tipo==='atestado'; }).length;
       var dfv = aus.filter(function(a){ return a.tipo==='ferias'; }).length;
       return Object.assign({}, d, { diasFalta: df, diasFerias: dfv, diasTrab: Math.max(0, diasUteis-df-dfv) });
@@ -23059,7 +23106,7 @@ window.obAtualizarPendencias=obAtualizarPendencias;
 // Guarda cada chave do localStorage como uma linha jsonb no Supabase.
 // Estratégia conservadora: só adopta dados remotos quando o navegador
 // está vazio (1º arranque / dispositivo novo); caso contrário faz backup.
-var OB_SB_SYNC_KEYS=['ob-leads','ob-clients','ob-uni-items','ob-crm-atividades','ob-crm-historico'];
+var OB_SB_SYNC_KEYS=['ob-leads','ob-clients','ob-uni-items','ob-crm-atividades','ob-crm-historico','ob-rh-colabs','ob-fo-ausencias','ob-rh-ferias-cfg','ob-rh-turnos'];
 var _obSbTimers={};
 
 function obSbPush(chave){
@@ -23089,8 +23136,9 @@ async function obSbBoot(){
       var adoptou=false;
       rows.forEach(function(row){
         var localRaw=localStorage.getItem(row.chave);
-        var localVazio=!localRaw||localRaw==='[]'||localRaw==='null';
-        if(localVazio&&row.dados&&row.dados.length){
+        var localVazio=!localRaw||localRaw==='[]'||localRaw==='{}'||localRaw==='null';
+        var remotoTem=row.dados&&(row.dados.length||Object.keys(row.dados).length);
+        if(localVazio&&remotoTem){
           localStorage.setItem(row.chave,JSON.stringify(row.dados));
           try{
             if(row.chave==='ob-leads'&&typeof crmLeads!=='undefined'){ crmLeads=row.dados; leads=crmLeads; }
@@ -23098,6 +23146,8 @@ async function obSbBoot(){
             if(row.chave==='ob-uni-items'&&typeof uniItems!=='undefined'){ uniItems=row.dados; }
             if(row.chave==='ob-crm-atividades'&&typeof crmAtividades!=='undefined'){ crmAtividades=row.dados; }
             if(row.chave==='ob-crm-historico'&&typeof crmHistorico!=='undefined'){ crmHistorico=row.dados; }
+            if(row.chave==='ob-fo-ausencias'&&typeof FO_AUSENCIAS!=='undefined'){ FO_AUSENCIAS=row.dados; }
+            if(row.chave==='ob-rh-colabs'&&typeof rhColabs!=='undefined'){ rhColabs=row.dados; }
           }catch(e){}
           adoptou=true;
         }
@@ -23133,6 +23183,326 @@ obGarantirChecklistsProducao();
 obSbBoot();
 setTimeout(obAtualizarPendencias,800);
 setInterval(obAtualizarPendencias,5*60*1000); // refresca a cada 5 minutos
+
+})();
+</script>
+
+<script>
+/* ═══════════════════════════════════════════════════════════════════
+   RH — FÉRIAS (mapa anual + saldos) e TURNOS (escala semanal)
+   - Férias reutiliza o registo de ausências existente (ob-fo-ausencias),
+     por isso o Fecho de Ordenados continua a funcionar como antes.
+   - Turnos guarda em ob-rh-turnos: { "colabId|AAAA-MM-DD": "M|T|N|C|F" }
+   - Tudo em localStorage com backup para o Supabase via obSbPush.
+   ═══════════════════════════════════════════════════════════════════ */
+(function(){
+'use strict';
+
+// ── Lista unificada de colaboradores (App de Pontos + locais + fallback USERS)
+function rhFtColabs(){
+  var out=[], seen={};
+  function add(id,nome,cargo){
+    var k=(nome||'').trim().toLowerCase();
+    if(!k||seen[k]) return; seen[k]=1;
+    out.push({id:String(id), nome:nome, cargo:cargo||''});
+  }
+  (typeof EC_FUNCIONARIOS!=='undefined'?EC_FUNCIONARIOS:[]).forEach(function(c){ add(c.ec_id,c.nome,c.cargo); });
+  (typeof rhColabs!=='undefined'?rhColabs:[]).forEach(function(c){ add(c.id,c.nome,c.cargo); });
+  if(!out.length&&typeof USERS!=='undefined'){
+    (USERS||[]).forEach(function(u){ add(u.id,u.name||u.nome,u.role); });
+  }
+  out.sort(function(a,b){ return a.nome.localeCompare(b.nome,'pt'); });
+  return out;
+}
+
+// Sincroniza colaboradores do App na 1ª abertura (só leitura, uma tentativa)
+var _rhFtSyncTentado=false;
+function rhFtGarantirColabs(depois){
+  var tem=(typeof EC_FUNCIONARIOS!=='undefined'&&EC_FUNCIONARIOS.length)||(typeof rhColabs!=='undefined'&&rhColabs.length);
+  if(tem||_rhFtSyncTentado||typeof ecSyncFuncionarios!=='function'){ depois(); return; }
+  _rhFtSyncTentado=true;
+  ecSyncFuncionarios().then(depois).catch(depois);
+}
+
+function rhFtEsc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;'); }
+// Data em AAAA-MM-DD no fuso local (toISOString recuaria um dia à meia-noite no verão)
+function rhFtIsoLocal(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function rhFtHoje(){ return rhFtIsoLocal(new Date()); }
+
+// ════════════════════ FÉRIAS ════════════════════
+var RHF_DIREITO_PADRAO=22;
+var rhfAno=new Date().getFullYear();
+
+function rhfCfg(){ try{ return JSON.parse(localStorage.getItem('ob-rh-ferias-cfg')||'{}'); }catch(e){ return {}; } }
+function rhfCfgSave(cfg){
+  localStorage.setItem('ob-rh-ferias-cfg',JSON.stringify(cfg));
+  try{ if(typeof obSbPush==='function') obSbPush('ob-rh-ferias-cfg'); }catch(e){}
+}
+
+function rhfDiasDe(colabId,ano){
+  return (typeof FO_AUSENCIAS!=='undefined'?FO_AUSENCIAS:[])
+    .filter(function(a){ return a.tipo==='ferias' && String(a.colabId)===String(colabId) && (a.data||'').indexOf(ano+'-')===0; })
+    .map(function(a){ return a.data; })
+    .sort()
+    .filter(function(d,i,arr){ return arr.indexOf(d)===i; });
+}
+
+// Agrupa dias úteis consecutivos em períodos (sexta → segunda conta como seguido)
+function rhfPeriodos(dias){
+  var per=[];
+  function proximoUtil(iso){
+    var d=new Date(iso+'T00:00:00');
+    do{ d.setDate(d.getDate()+1); }while(d.getDay()===0||d.getDay()===6);
+    return rhFtIsoLocal(d);
+  }
+  dias.forEach(function(d){
+    var ult=per[per.length-1];
+    if(ult&&proximoUtil(ult.fim)===d){ ult.fim=d; ult.n++; }
+    else per.push({inicio:d,fim:d,n:1});
+  });
+  return per;
+}
+
+function rhFeriasInit(){
+  rhFtGarantirColabs(rhFeriasRender);
+}
+window.rhFeriasInit=rhFeriasInit;
+
+function rhFeriasMudaAno(delta){ rhfAno+=delta; rhFeriasRender(); }
+window.rhFeriasMudaAno=rhFeriasMudaAno;
+
+function rhFeriasDireitoSet(colabId,val){
+  var n=parseInt(val,10);
+  if(isNaN(n)||n<0||n>60) n=RHF_DIREITO_PADRAO;
+  var cfg=rhfCfg();
+  cfg['dias-'+colabId]=n;
+  rhfCfgSave(cfg);
+  rhFeriasRender();
+}
+window.rhFeriasDireitoSet=rhFeriasDireitoSet;
+
+function rhFeriasMarcar(colabId){
+  if(typeof foAbrirModal==='function') foAbrirModal(String(colabId),'ferias');
+}
+window.rhFeriasMarcar=rhFeriasMarcar;
+
+function rhFeriasRemPeriodo(colabId,inicio,fim){
+  if(!confirm('Remover as férias de '+inicio.split('-').reverse().join('/')+' a '+fim.split('-').reverse().join('/')+'?')) return;
+  if(typeof FO_AUSENCIAS==='undefined') return;
+  FO_AUSENCIAS=FO_AUSENCIAS.filter(function(a){
+    return !(a.tipo==='ferias'&&String(a.colabId)===String(colabId)&&a.data>=inicio&&a.data<=fim);
+  });
+  localStorage.setItem('ob-fo-ausencias',JSON.stringify(FO_AUSENCIAS));
+  try{ if(typeof obSbPush==='function') obSbPush('ob-fo-ausencias'); }catch(e){}
+  rhFeriasRender();
+  if(typeof showToast==='function') showToast('🏖️ Período de férias removido');
+}
+window.rhFeriasRemPeriodo=rhFeriasRemPeriodo;
+
+function rhFeriasRender(){
+  var tbody=document.getElementById('rhf-tbody');
+  var lbl=document.getElementById('rhf-ano-label');
+  if(!tbody) return;
+  if(lbl) lbl.textContent=rhfAno;
+  var colabs=rhFtColabs();
+  var cfg=rhfCfg();
+  var hoje=rhFtHoje();
+  var totGozadas=0, totMarcadas=0, emFeriasHoje=0;
+
+  tbody.innerHTML=colabs.map(function(c){
+    var dias=rhfDiasDe(c.id,rhfAno);
+    var gozadas=dias.filter(function(d){ return d<=hoje; }).length;
+    var marcadas=dias.length-gozadas;
+    var direito=cfg['dias-'+c.id]!=null?cfg['dias-'+c.id]:RHF_DIREITO_PADRAO;
+    var porMarcar=direito-dias.length;
+    var deFeriasHoje=dias.indexOf(hoje)!==-1;
+    totGozadas+=gozadas; totMarcadas+=marcadas; if(deFeriasHoje) emFeriasHoje++;
+
+    var chips=rhfPeriodos(dias).map(function(p){
+      var i=p.inicio.split('-'), f=p.fim.split('-');
+      var txt=(p.inicio===p.fim)?(i[2]+'/'+i[1]):(i[2]+'/'+i[1]+' → '+f[2]+'/'+f[1]);
+      var passado=p.fim<hoje;
+      return '<span style="display:inline-flex;align-items:center;gap:4px;background:'+(passado?'var(--bg4)':'rgba(77,148,219,.15)')+';border:1px solid '+(passado?'var(--border)':'rgba(77,148,219,.4)')+';border-radius:5px;padding:2px 7px;font-size:12px;color:'+(passado?'var(--muted)':'var(--b)')+';margin:2px 3px 2px 0">'
+        +txt+' ('+p.n+'d)'
+        +'<span onclick="rhFeriasRemPeriodo(\''+rhFtEsc(c.id)+'\',\''+p.inicio+'\',\''+p.fim+'\')" style="cursor:pointer;color:var(--r);font-weight:700" title="Remover período">✕</span></span>';
+    }).join('');
+
+    return '<tr'+(deFeriasHoje?' style="background:rgba(77,148,219,.07)"':'')+'>'
+      +'<td><strong style="color:var(--txt2)">'+rhFtEsc(c.nome)+(deFeriasHoje?' <span title="Em férias hoje">🏖️</span>':'')+'</strong><br><span style="font-size:12px;color:var(--muted)">'+rhFtEsc(c.cargo)+'</span></td>'
+      +'<td style="text-align:right"><input type="number" min="0" max="60" value="'+direito+'" onchange="rhFeriasDireitoSet(\''+rhFtEsc(c.id)+'\',this.value)" style="width:56px;background:var(--bg3);border:1px solid var(--border);color:var(--txt2);border-radius:6px;padding:3px 6px;font-size:13px;text-align:right"/></td>'
+      +'<td style="text-align:right;font-family:\'DM Mono\',monospace;font-size:13px;color:'+(gozadas>0?'var(--g)':'var(--muted)')+'">'+gozadas+'d</td>'
+      +'<td style="text-align:right;font-family:\'DM Mono\',monospace;font-size:13px;color:'+(marcadas>0?'var(--b)':'var(--muted)')+'">'+marcadas+'d</td>'
+      +'<td style="text-align:right;font-family:\'DM Mono\',monospace;font-size:13px;font-weight:700;color:'+(porMarcar<0?'var(--r)':(porMarcar===0?'var(--muted)':'var(--y)'))+'">'+porMarcar+'d</td>'
+      +'<td>'+(chips||'<span style="font-size:12px;color:var(--muted);font-style:italic">Sem férias marcadas em '+rhfAno+'</span>')+'</td>'
+      +'<td><button class="tbtn" style="font-size:12px;padding:3px 9px;color:var(--b);border-color:var(--b)" onclick="rhFeriasMarcar(\''+rhFtEsc(c.id)+'\')">🏖️ Marcar</button></td>'
+      +'</tr>';
+  }).join('')||'<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:30px">Sem colaboradores. Adiciona colaboradores na tab "👥 Colaboradores" ou clica "🔄 App".</td></tr>';
+
+  var kpis=document.getElementById('rhf-kpis');
+  if(kpis){
+    function kpi(l,v,s,cor){ return '<div class="mn" style="background:var(--bg3)"><div class="mnl">'+l+'</div><div class="mnv"'+(cor?' style="color:'+cor+'"':'')+'>'+v+'</div><div class="mns">'+s+'</div></div>'; }
+    kpis.innerHTML=kpi('Colaboradores',colabs.length,'na equipa')
+      +kpi('Em férias hoje',emFeriasHoje,emFeriasHoje===1?'colaborador':'colaboradores',emFeriasHoje>0?'var(--b)':null)
+      +kpi('Dias gozados',totGozadas+'d','em '+rhfAno,'var(--g)')
+      +kpi('Dias marcados',totMarcadas+'d','para o futuro','var(--y)');
+  }
+  var st=document.getElementById('rhf-status');
+  if(st) st.textContent='Direito padrão: '+RHF_DIREITO_PADRAO+' dias úteis/ano (editável por colaborador)';
+}
+window.rhFeriasRender=rhFeriasRender;
+
+// Depois de marcar férias/falta no mini-modal, actualizar o mapa e o backup
+(function(){
+  if(typeof window.foModalGuardar!=='function') return;
+  var _orig=window.foModalGuardar;
+  window.foModalGuardar=function(){
+    _orig();
+    try{ if(typeof obSbPush==='function') obSbPush('ob-fo-ausencias'); }catch(e){}
+    try{
+      var painel=document.getElementById('rh-panel-ferias');
+      if(painel&&painel.style.display!=='none') rhFeriasRender();
+      var painelT=document.getElementById('rh-panel-turnos');
+      if(painelT&&painelT.style.display!=='none') rhTurnosRender();
+    }catch(e){}
+  };
+})();
+
+// Alterações locais aos colaboradores passam a ter backup no Supabase
+(function(){
+  if(typeof window.rhSave!=='function') return;
+  var _orig=window.rhSave;
+  window.rhSave=function(key,data){
+    _orig(key,data);
+    try{ if(typeof obSbPush==='function'&&key==='ob-rh-colabs') obSbPush(key); }catch(e){}
+  };
+})();
+
+// ════════════════════ TURNOS ════════════════════
+var RHT_DEF=[
+  {c:'C', n:'Completo', h:'09:00–18:00', cor:'#F5C400'},
+  {c:'M', n:'Manhã',    h:'06:00–14:00', cor:'#4d94db'},
+  {c:'T', n:'Tarde',    h:'14:00–22:00', cor:'#d9822b'},
+  {c:'N', n:'Noite',    h:'22:00–06:00', cor:'#8b5cf6'},
+  {c:'F', n:'Folga',    h:'',            cor:'#6b7280'}
+];
+var RHT_CICLO=['','C','M','T','N','F'];
+
+function rhtSegunda(d){
+  var x=new Date(d); x.setHours(0,0,0,0);
+  var dow=(x.getDay()+6)%7; // 0=segunda
+  x.setDate(x.getDate()-dow);
+  return x;
+}
+var rhtSemana=rhtSegunda(new Date());
+
+function rhtDados(){ try{ return JSON.parse(localStorage.getItem('ob-rh-turnos')||'{}'); }catch(e){ return {}; } }
+function rhtSave(dados){
+  localStorage.setItem('ob-rh-turnos',JSON.stringify(dados));
+  try{ if(typeof obSbPush==='function') obSbPush('ob-rh-turnos'); }catch(e){}
+}
+function rhtIso(d){ return rhFtIsoLocal(d); }
+function rhtDiasSemana(){
+  var out=[];
+  for(var i=0;i<7;i++){ var d=new Date(rhtSemana); d.setDate(d.getDate()+i); out.push(d); }
+  return out;
+}
+function rhtDef(c){ for(var i=0;i<RHT_DEF.length;i++) if(RHT_DEF[i].c===c) return RHT_DEF[i]; return null; }
+
+function rhTurnosInit(){ rhFtGarantirColabs(rhTurnosRender); }
+window.rhTurnosInit=rhTurnosInit;
+
+function rhTurnosMudaSemana(delta){
+  rhtSemana.setDate(rhtSemana.getDate()+delta*7);
+  rhTurnosRender();
+}
+window.rhTurnosMudaSemana=rhTurnosMudaSemana;
+
+function rhTurnosHoje(){ rhtSemana=rhtSegunda(new Date()); rhTurnosRender(); }
+window.rhTurnosHoje=rhTurnosHoje;
+
+function rhTurnosCiclo(colabId,iso){
+  var dados=rhtDados();
+  var k=colabId+'|'+iso;
+  var atual=dados[k]||'';
+  var prox=RHT_CICLO[(RHT_CICLO.indexOf(atual)+1)%RHT_CICLO.length];
+  if(prox==='') delete dados[k]; else dados[k]=prox;
+  rhtSave(dados);
+  rhTurnosRender();
+}
+window.rhTurnosCiclo=rhTurnosCiclo;
+
+function rhTurnosCopiarSemanaAnterior(){
+  var dados=rhtDados();
+  var colabs=rhFtColabs();
+  var dias=rhtDiasSemana();
+  var temAtual=colabs.some(function(c){ return dias.some(function(d){ return dados[c.id+'|'+rhtIso(d)]; }); });
+  if(temAtual&&!confirm('Esta semana já tem turnos definidos. Substituir pela escala da semana anterior?')) return;
+  var copiados=0;
+  colabs.forEach(function(c){
+    dias.forEach(function(d){
+      var ant=new Date(d); ant.setDate(ant.getDate()-7);
+      var vAnt=dados[c.id+'|'+rhtIso(ant)];
+      var k=c.id+'|'+rhtIso(d);
+      if(vAnt){ dados[k]=vAnt; copiados++; } else delete dados[k];
+    });
+  });
+  rhtSave(dados);
+  rhTurnosRender();
+  if(typeof showToast==='function') showToast('📋 '+copiados+' turnos copiados da semana anterior');
+}
+window.rhTurnosCopiarSemanaAnterior=rhTurnosCopiarSemanaAnterior;
+
+function rhTurnosRender(){
+  var thead=document.getElementById('rht-thead');
+  var tbody=document.getElementById('rht-tbody');
+  if(!thead||!tbody) return;
+  var colabs=rhFtColabs();
+  var dias=rhtDiasSemana();
+  var hoje=rhFtHoje();
+  var nomes=['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'];
+
+  var lbl=document.getElementById('rht-semana-label');
+  if(lbl){
+    var i=dias[0], f=dias[6];
+    lbl.textContent='Semana de '+String(i.getDate()).padStart(2,'0')+'/'+String(i.getMonth()+1).padStart(2,'0')
+      +' a '+String(f.getDate()).padStart(2,'0')+'/'+String(f.getMonth()+1).padStart(2,'0')+'/'+f.getFullYear();
+  }
+
+  var leg=document.getElementById('rht-legenda');
+  if(leg) leg.innerHTML=RHT_DEF.map(function(t){
+    return '<span style="display:inline-flex;align-items:center;gap:5px"><span style="width:14px;height:14px;border-radius:4px;background:'+t.cor+';display:inline-block"></span>'+t.c+' — '+t.n+(t.h?' ('+t.h+')':'')+'</span>';
+  }).join('');
+
+  thead.innerHTML='<tr><th>Colaborador</th>'+dias.map(function(d,i){
+    var iso=rhtIso(d);
+    var fds=i>=5;
+    return '<th style="text-align:center;min-width:74px;'+(iso===hoje?'color:var(--y)':(fds?'color:var(--muted)':''))+'">'
+      +nomes[i]+'<br><span style="font-size:11px;font-weight:400">'+String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'</span></th>';
+  }).join('')+'</tr>';
+
+  var dados=rhtDados();
+  tbody.innerHTML=colabs.map(function(c){
+    var feriasAno={};
+    rhfDiasDe(c.id,dias[0].getFullYear()).forEach(function(d){ feriasAno[d]=1; });
+    if(dias[6].getFullYear()!==dias[0].getFullYear())
+      rhfDiasDe(c.id,dias[6].getFullYear()).forEach(function(d){ feriasAno[d]=1; });
+    return '<tr><td><strong style="color:var(--txt2)">'+rhFtEsc(c.nome)+'</strong><br><span style="font-size:11px;color:var(--muted)">'+rhFtEsc(c.cargo)+'</span></td>'
+      +dias.map(function(d,i){
+        var iso=rhtIso(d);
+        var t=rhtDef(dados[c.id+'|'+iso]);
+        var deFerias=feriasAno[iso];
+        var fds=i>=5;
+        var estilo='text-align:center;cursor:pointer;user-select:none;'
+          +(iso===hoje?'background:rgba(245,196,0,.06);':(fds?'background:var(--bg3);':''));
+        var conteudo=t
+          ? '<span title="'+t.n+(t.h?' · '+t.h:'')+'" style="display:inline-block;min-width:30px;background:'+t.cor+'22;color:'+t.cor+';border:1px solid '+t.cor+'55;border-radius:6px;padding:3px 8px;font-weight:700;font-size:12.5px">'+t.c+'</span>'
+          : '<span style="color:var(--bg4);font-size:13px">—</span>';
+        if(deFerias) conteudo+='<span style="font-size:11px" title="Férias marcadas neste dia"> 🏖️</span>';
+        return '<td style="'+estilo+'" onclick="rhTurnosCiclo(\''+rhFtEsc(c.id)+'\',\''+iso+'\')">'+conteudo+'</td>';
+      }).join('')+'</tr>';
+  }).join('')||'<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:30px">Sem colaboradores. Adiciona colaboradores na tab "👥 Colaboradores" ou clica "🔄 App".</td></tr>';
+}
+window.rhTurnosRender=rhTurnosRender;
 
 })();
 </script>
