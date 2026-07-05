@@ -1,0 +1,95 @@
+/* ═══════════════════════════════════════════════════════════════════
+   ESTILO — Módulo de Orçamentos OpportunityBox
+   Variáveis e classes copiadas do CRM principal (ob-business-os-v2.html)
+   para manter exactamente o mesmo aspecto visual (dark + amarelo #F5C400).
+   ═══════════════════════════════════════════════════════════════════ */
+
+:root{
+  --y:#F5C400;--ys:rgba(245,196,0,.1);--yb:rgba(245,196,0,.28);
+  --bg:#161618;--bg2:#1c1c1e;--bg3:#242426;--bg4:#2c2c2f;--bg5:#353538;
+  --txt:#c4c4c8;--txt2:#e8e8ec;--muted:#606068;--muted2:#38383c;
+  --border:rgba(255,255,255,.06);--border2:rgba(255,255,255,.11);
+  --g:#3fcf8e;--g2:rgba(63,207,142,.1);
+  --r:#e05555;--r2:rgba(224,85,85,.1);
+  --a:#d9822b;--a2:rgba(217,130,43,.1);
+  --b:#4d94db;--b2:rgba(77,148,219,.1);
+}
+
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  background:var(--bg);color:var(--txt);font-size:14px;line-height:1.5;
+}
+
+/* ── Cabeçalho da página ─────────────────────────────────────────── */
+.pg-hdr{padding:16px 24px;border-bottom:1px solid var(--border);background:var(--bg2)}
+.pg-hdr-top{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.pg-space-icon{width:30px;height:30px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-weight:800;color:#fff;background:#e74c3c}
+.pg-title{font-size:19px;font-weight:700;color:var(--txt2);letter-spacing:-.01em}
+.pg-actions{margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+
+/* ── Botões ──────────────────────────────────────────────────────── */
+.tbtn{
+  background:var(--bg3);border:1px solid var(--border2);color:var(--txt);
+  border-radius:7px;padding:6px 13px;font-size:14px;cursor:pointer;
+  font-family:inherit;transition:all .15s;
+}
+.tbtn:hover{background:var(--bg4);color:var(--txt2)}
+.tbtn.y{background:var(--y);border-color:var(--y);color:#000;font-weight:600}
+.tbtn.y:hover{background:#ffd426}
+.tbtn:disabled{opacity:.4;cursor:not-allowed}
+
+/* ── Layout ──────────────────────────────────────────────────────── */
+.task-content{padding:16px 24px}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:22px}
+.g4{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+@media (max-width:1100px){.g2{grid-template-columns:1fr}}
+@media (max-width:700px){.g4{grid-template-columns:repeat(2,1fr)}}
+.sh{margin-bottom:12px}
+.sh h2{font-size:16px;font-weight:700;color:var(--txt2)}
+
+/* ── Formulários ─────────────────────────────────────────────────── */
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.form-group{display:flex;flex-direction:column}
+.form-label{font-size:12.5px;font-weight:600;color:var(--muted);margin-bottom:5px;text-transform:uppercase;letter-spacing:.04em}
+.form-input,.form-select{
+  background:var(--bg3);border:1px solid var(--border2);color:var(--txt2);
+  border-radius:7px;padding:7px 10px;font-size:14px;font-family:inherit;width:100%;
+}
+.form-input:focus,.form-select:focus{outline:none;border-color:var(--yb)}
+.form-input::placeholder{color:var(--muted)}
+
+/* ── Linhas de produto ───────────────────────────────────────────── */
+.orc-line-header{
+  display:grid;grid-template-columns:1.4fr 1.4fr 60px 90px 90px 28px;gap:7px;
+  font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;
+  padding:0 2px 6px;
+}
+.orc-line{
+  display:grid;grid-template-columns:1.4fr 1.4fr 60px 90px 90px 28px;gap:7px;
+  align-items:center;margin-bottom:7px;
+}
+.sub-val{font-family:'DM Mono',monospace;font-size:13px;color:var(--y);text-align:right}
+.del-btn{
+  background:none;border:none;color:var(--muted);font-size:17px;cursor:pointer;
+  line-height:1;border-radius:5px;
+}
+.del-btn:hover{color:var(--r)}
+
+/* ── KPIs (mini-cards) ───────────────────────────────────────────── */
+.mn{background:var(--bg2);border:1px solid var(--border);border-radius:9px;padding:11px 13px}
+.mnl{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px}
+.mnv{font-size:21px;font-weight:800;color:var(--txt2);font-family:'DM Mono',monospace}
+.mns{font-size:12px;color:var(--muted);margin-top:1px}
+
+/* ── Tabela ──────────────────────────────────────────────────────── */
+.tw{background:var(--bg2);border:1px solid var(--border);border-radius:10px;overflow:auto}
+table{width:100%;border-collapse:collapse;font-size:14px}
+thead th{
+  text-align:left;font-size:11.5px;color:var(--muted);text-transform:uppercase;
+  letter-spacing:.05em;padding:9px 12px;border-bottom:1px solid var(--border2);
+  background:var(--bg3);white-space:nowrap;
+}
+tbody td{padding:8px 12px;border-bottom:1px solid var(--border);vertical-align:middle}
+tbody tr:hover{background:var(--bg3)}

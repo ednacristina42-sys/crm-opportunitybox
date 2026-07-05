@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Módulo de Orçamentos — OpportunityBox</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="css/estilo.css"/>
+</head>
+<body>
+
+<!-- ══ CABEÇALHO ══════════════════════════════════════════════════ -->
+<div class="pg-hdr">
+  <div class="pg-hdr-top">
+    <div class="pg-space-icon">D</div>
+    <div class="pg-title">Orçamentos</div>
+    <div class="pg-actions">
+      <span id="orc-num-badge" style="font-family:'DM Mono',monospace;font-size:13px;background:var(--bg3);border:1px solid var(--border);padding:4px 10px;border-radius:6px;color:var(--y)">ORC-2026-001</span>
+      <button class="tbtn y" style="font-size:13px" onclick="orcNew()">+ Novo</button>
+    </div>
+  </div>
+</div>
+
+<div class="task-content">
+  <div class="g2">
+
+    <!-- ══ FORMULÁRIO ═══════════════════════════════════════════ -->
+    <div>
+      <div class="sh"><h2>Novo Orçamento</h2></div>
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:18px">
+
+        <div class="form-row" style="margin-bottom:10px">
+          <div class="form-group">
+            <label class="form-label" style="display:flex;justify-content:space-between;align-items:center">Cliente<button type="button" onclick="orcNovoCliOpen()" style="background:none;border:none;color:var(--y);font-size:13px;cursor:pointer;padding:0;font-weight:500">➕ Novo</button></label>
+            <input id="orc-cliente" class="form-input" placeholder="Nome do cliente" list="orc-clientes-list" oninput="orcAutoFillCliente(this.value)"/>
+            <datalist id="orc-clientes-list"></datalist>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Validade</label>
+            <input type="date" id="orc-validade" class="form-input"/>
+          </div>
+        </div>
+
+        <div class="form-row" style="margin-bottom:10px">
+          <div class="form-group">
+            <label class="form-label">Morada do cliente (para PDF)</label>
+            <input id="orc-morada" class="form-input" placeholder="Rua, Cidade"/>
+          </div>
+          <div class="form-group">
+            <label class="form-label">NIF do cliente</label>
+            <input id="orc-nif" class="form-input" placeholder="PT 000 000 000"/>
+          </div>
+        </div>
+
+        <div class="form-row" style="margin-bottom:10px">
+          <div class="form-group">
+            <label class="form-label">Email do cliente</label>
+            <input type="email" id="orc-email" class="form-input" placeholder="cliente@empresa.pt"/>
+          </div>
+          <div class="form-group">
+            <label class="form-label">WhatsApp do cliente</label>
+            <input type="tel" id="orc-whatsapp" class="form-input" placeholder="+351 9XX XXX XXX"/>
+          </div>
+        </div>
+
+        <div class="form-row" style="margin-bottom:10px">
+          <div class="form-group">
+            <label class="form-label">Prazo de Pagamento</label>
+            <select id="orc-prazo" class="form-select">
+              <option value="">— Seleccionar —</option>
+              <option value="Imediato">Imediato</option>
+              <option value="15 dias">15 dias</option>
+              <option value="30 dias">30 dias</option>
+              <option value="45 dias">45 dias</option>
+              <option value="60 dias">60 dias</option>
+              <option value="90 dias">90 dias</option>
+              <option value="50% adjudicação + 50% entrega">50% adjudicação + 50% entrega</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Prazo de Entrega (dias úteis)</label>
+            <input type="text" id="orc-prazo-entrega" class="form-input" value="25" placeholder="25"/>
+          </div>
+        </div>
+
+        <div class="form-row" style="margin-bottom:10px">
+          <div class="form-group">
+            <label class="form-label">Imagem da Obra</label>
+            <input type="file" accept="image/*" id="orc-imagem-obra" class="form-input" onchange="orcImagemObraUpload(this)"/>
+            <div id="orc-imagem-preview" style="font-size:12px;color:var(--muted);margin-top:6px">Nenhuma imagem associada a este orçamento.</div>
+          </div>
+        </div>
+
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+          <div class="form-label">Linhas de produto</div>
+          <button class="tbtn y" style="padding:4px 9px;font-size:12px" onclick="orcAddLine()">+ Linha</button>
+        </div>
+
+        <!-- HEADER LINHAS -->
+        <div class="orc-line-header">
+          <span>Produto / Serviço</span><span>Descrição</span><span style="text-align:center">Qtd</span><span style="text-align:right">Preço unit.</span><span style="text-align:right">Subtotal</span><span></span>
+        </div>
+        <div id="orc-lines-container"></div>
+
+        <div class="form-row" style="margin-top:12px">
+          <div class="form-group">
+            <label class="form-label">Desconto (%)</label>
+            <input type="number" id="orc-desconto" class="form-input" value="0" min="0" max="100" oninput="orcCalcTotal()"/>
+          </div>
+          <div class="form-group">
+            <label class="form-label">IVA (%)</label>
+            <input type="number" id="orc-iva" class="form-input" value="23" min="0" max="100" oninput="orcCalcTotal()"/>
+          </div>
+        </div>
+
+        <div style="margin-top:12px;background:var(--bg3);border:1px solid var(--yb);border-radius:8px;padding:12px 14px">
+          <div style="display:flex;justify-content:space-between;font-size:14px;color:var(--muted);margin-bottom:4px">
+            <span>Subtotal</span><span id="orc-subtotal">€0,00</span>
+          </div>
+          <div id="orc-desconto-row" style="display:none;justify-content:space-between;font-size:14px;color:var(--r);margin-bottom:4px">
+            <span>Desconto</span><span id="orc-desconto-val">-€0,00</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:14px;color:var(--muted);margin-bottom:8px;padding-bottom:8px;border-bottom:1px dashed var(--border)">
+            <span>IVA (<span id="orc-iva-pct">23</span>%)</span><span id="orc-iva-val">€0,00</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <span style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--y)">Total c/ IVA</span>
+            <span style="font-size:24px;font-weight:800;color:var(--y);font-family:'Inter',sans-serif;letter-spacing:-.02em" id="orc-total-val">€0,00</span>
+          </div>
+        </div>
+
+        <div style="display:flex;gap:7px;margin-top:12px">
+          <button class="tbtn y" style="flex:1" onclick="orcGuardar()">💾 Guardar</button>
+          <button class="tbtn" style="flex:1" onclick="orcWhatsApp()">📱 WhatsApp</button>
+          <button class="tbtn" style="flex:1" onclick="orcEmail()">📧 Email</button>
+          <button class="tbtn" style="flex:1;background:rgba(77,148,219,.12);border-color:rgba(77,148,219,.3);color:#4d94db" onclick="orcPDF()">📄 PDF</button>
+        </div>
+
+        <div id="orc-save-msg" style="display:none;margin-top:8px;font-size:13.5px;color:var(--g);text-align:center;font-family:'DM Mono',monospace"></div>
+      </div>
+    </div>
+
+    <!-- ══ LISTA ════════════════════════════════════════════════ -->
+    <div>
+      <div class="sh"><h2>Orçamentos recentes</h2></div>
+
+      <!-- KPIs -->
+      <div class="g4" style="margin-bottom:14px">
+        <div class="mn"><div class="mnl">Total</div><div class="mnv" id="orc-kpi-total">—</div><div class="mns">orçamentos</div></div>
+        <div class="mn" style="border-color:rgba(63,207,142,.2)"><div class="mnl">Aprovados</div><div class="mnv" style="color:var(--g)" id="orc-kpi-aprovados">—</div><div class="mns">€<span id="orc-kpi-aprovados-val">0</span></div></div>
+        <div class="mn" style="border-color:rgba(245,196,0,.2)"><div class="mnl">Pendentes</div><div class="mnv" style="color:var(--y)" id="orc-kpi-pendentes">—</div><div class="mns">em aberto</div></div>
+        <div class="mn" style="border-color:rgba(77,148,219,.2)"><div class="mnl">Faturados</div><div class="mnv" style="color:#4d94db" id="orc-kpi-faturados">—</div><div class="mns">em faturação</div></div>
+      </div>
+
+      <!-- Filtros -->
+      <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
+        <input type="text" id="orc-filtro-busca" placeholder="🔎 Cliente ou Nº orçamento..." style="background:var(--bg3);border:1px solid var(--border);color:var(--txt2);border-radius:7px;padding:5px 10px;font-size:14px;flex:1;min-width:180px"/>
+        <select id="orc-filtro-estado" style="background:var(--bg3);border:1px solid var(--border);color:var(--txt2);border-radius:7px;padding:5px 10px;font-size:14px">
+          <option value="">— Todos os estados —</option>
+          <option value="Pendente">Pendente</option>
+          <option value="Em análise">Em análise</option>
+          <option value="Aprovado">Aprovado</option>
+          <option value="Em Produção">Em Produção</option>
+          <option value="Concluído">Concluído</option>
+          <option value="Faturado">Faturado</option>
+          <option value="Cancelado">Cancelado</option>
+        </select>
+        <select id="orc-filtro-vendedor" style="background:var(--bg3);border:1px solid var(--border);color:var(--txt2);border-radius:7px;padding:5px 10px;font-size:14px">
+          <option value="">— Todos os vendedores —</option>
+        </select>
+        <input type="date" id="orc-filtro-data" style="background:var(--bg3);border:1px solid var(--border);color:var(--txt2);border-radius:7px;padding:5px 10px;font-size:14px"/>
+        <button class="tbtn" id="orc-filtro-limpar" style="font-size:13px">✕ Limpar</button>
+        <button class="tbtn y" id="orc-exportar-csv" style="font-size:13px">⬇ Exportar CSV</button>
+      </div>
+
+      <div class="tw">
+        <table>
+          <thead><tr><th>Nº</th><th>Cliente</th><th>Valor</th><th>Vendedor</th><th>Estado</th><th>Data</th></tr></thead>
+          <tbody id="orc-tbody"></tbody>
+        </table>
+      </div>
+      <div style="display:flex;justify-content:center;align-items:center;gap:10px;margin-top:10px">
+        <button class="tbtn" id="orc-pag-prev" style="font-size:13px">← Anterior</button>
+        <span id="orc-pag-info" style="color:var(--muted);font-size:13px"></span>
+        <button class="tbtn" id="orc-pag-next" style="font-size:13px">Próximo →</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ══ MODAL NOVO CLIENTE ═════════════════════════════════════════ -->
+<div id="orc-novo-cli-modal" style="display:none;position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,.7);backdrop-filter:blur(4px);align-items:center;justify-content:center">
+  <div style="background:var(--bg2);border:1px solid var(--border2);border-radius:12px;padding:24px;width:100%;max-width:440px;margin:20px;box-shadow:0 20px 60px rgba(0,0,0,.5)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px">
+      <div style="font-size:16px;font-weight:700;color:var(--txt2)">➕ Novo Cliente</div>
+      <button onclick="orcNovoCliClose()" style="background:none;border:none;color:var(--muted);font-size:19px;cursor:pointer;line-height:1">×</button>
+    </div>
+    <div class="form-group" style="margin-bottom:10px">
+      <label class="form-label">Nome do cliente <span style="color:var(--r)">*</span></label>
+      <input class="form-input" id="oncli-nome" placeholder="Ex: Hotel Serra da Lua"/>
+    </div>
+    <div class="form-group" style="margin-bottom:10px">
+      <label class="form-label">NIF</label>
+      <input class="form-input" id="oncli-nif" placeholder="500 000 000"/>
+    </div>
+    <div class="form-group" style="margin-bottom:10px">
+      <label class="form-label">Morada</label>
+      <input class="form-input" id="oncli-morada" placeholder="Rua, nº, Localidade"/>
+    </div>
+    <div class="form-group" style="margin-bottom:10px">
+      <label class="form-label">Email</label>
+      <input class="form-input" type="email" id="oncli-email" placeholder="geral@empresa.pt"/>
+    </div>
+    <div class="form-group" style="margin-bottom:18px">
+      <label class="form-label">Telefone</label>
+      <input class="form-input" id="oncli-tel" placeholder="+351 912 345 678"/>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="tbtn y" style="flex:1;padding:10px" onclick="orcNovoCliSave()">💾 Criar e seleccionar</button>
+      <button class="tbtn" onclick="orcNovoCliClose()">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ SCRIPTS ════════════════════════════════════════════════════ -->
+<script src="js/config.js"></script>
+<script src="js/logo.js"></script>
+<script src="js/supabase.js"></script>
+<script src="js/pdf.js"></script>
+<script src="js/orcamentos.js"></script>
+
+</body>
+</html>
