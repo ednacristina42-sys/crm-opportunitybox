@@ -11123,11 +11123,11 @@ function crmUpdateStats(){
   });
   set('crm-parados', parados.length);
 
-  // Top Comercial: quem tem mais leads activos
-  const contagem = {};
-  ativos.forEach(l=>{ if(l.ass) contagem[l.ass]=(contagem[l.ass]||0)+1; });
-  const top = Object.entries(contagem).sort((a,b)=>b[1]-a[1])[0];
-  set('crm-top-comercial', top ? `${top[0]} (${top[1]})` : '—');
+  // Top Comercial: quem gerou mais receita em leads Ganhos ✓ (não quem tem mais leads em aberto)
+  const receitaPorComercial = {};
+  crmLeads.filter(l=>l.st==='Ganho ✓').forEach(l=>{ if(l.ass) receitaPorComercial[l.ass]=(receitaPorComercial[l.ass]||0)+(l.val||0); });
+  const top = Object.entries(receitaPorComercial).sort((a,b)=>b[1]-a[1])[0];
+  set('crm-top-comercial', top ? `${top[0]} (${fmt(top[1])})` : '—');
 }
 
 // ── MODAL NOVO/EDITAR LEAD ───────────────────────────────
