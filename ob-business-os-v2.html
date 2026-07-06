@@ -2452,6 +2452,11 @@ function ecInit(){
   });
   // Verificar se já está logado no Supabase
   ecSupabase.auth.getSession().then(function(res){
+    // ADD: ecInit() corre no arranque da página (via _boot), de forma assíncrona,
+    // independente de loadEquipaCampoData(). Se entretanto o modo endpoint (público,
+    // por omissão) já tiver assumido o dashboard, esta resolução tardia não pode
+    // sobrepor-se — caso contrário o ecrã "salta" de volta para Modo Local/Supabase.
+    if(_ecEndpointMode) return;
     var data = res.data;
     if(data && data.session && data.session.user){
       ecUser = data.session.user;
@@ -2470,6 +2475,7 @@ function ecInit(){
       }
     }
   }).catch(function(){
+    if(_ecEndpointMode) return;
     // Erro Supabase — tentar modo local
     ecShowDashboardLocal();
   });
