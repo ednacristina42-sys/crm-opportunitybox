@@ -2994,43 +2994,20 @@ window.ecRefresh = ecRefresh;
 
 
 // ══════════════════════════════════════════════════════════════════
-// ADD: EQUIPA EM CAMPO — Endpoint directo (Lovable, sem login)
-// Terceira via de dados, mais simples que o login Supabase e que o
-// modo local: um único pedido a um endpoint já agregado, autenticado
-// por chave própria. Só entra em acção quando a chave está configurada
-// (localStorage) — sem chave, o comportamento existente (login/local)
-// mantém-se exactamente igual.
+// ADD: EQUIPA EM CAMPO — Endpoint directo (Lovable, público)
+// Via de dados por omissão: um único pedido GET a um endpoint público
+// (sem autenticação) já agregado, sem precisar de login nem de
+// partilhar o browser com o app de campo. É a que corre automaticamente
+// ao entrar na página; o login Supabase e o modo local continuam
+// disponíveis manualmente (botão "Desligar" → ecrã de login) para quem
+// precisar de dados em bruto das tabelas.
 // ══════════════════════════════════════════════════════════════════
 var EC_DADOS_EQUIPA_URL = "https://xtiguuyvotnpwqzmggnc.supabase.co/functions/v1/crm-dados-equipa";
 var _ecEndpointMode = false;
 var _ecEndpointTimer = null;
 
-function ecDadosEquipaGetKey(){ return localStorage.getItem('ob-ec-dados-equipa-key') || ''; }
-function ecDadosEquipaTemKey(){ return !!ecDadosEquipaGetKey(); }
-
-function ecDadosEquipaConfigurarKey(){
-  var actual = ecDadosEquipaGetKey();
-  var nova = prompt('Chave da API do endpoint "Equipa em Campo" (crm-dados-equipa).\n\nObtém esta chave no painel do app equipaopportunitybox.lovable.app.\n\nDeixa vazio e confirma para remover a chave guardada.', actual || '');
-  if(nova === null) return; // cancelado
-  nova = nova.trim();
-  if(nova){
-    localStorage.setItem('ob-ec-dados-equipa-key', nova);
-    if(typeof showToast === 'function') showToast('🔑 Chave guardada — a carregar dados da equipa...');
-    ecShowDashboardEndpoint();
-  } else {
-    localStorage.removeItem('ob-ec-dados-equipa-key');
-    _ecEndpointMode = false;
-    if(_ecEndpointTimer){ clearInterval(_ecEndpointTimer); _ecEndpointTimer = null; }
-    if(typeof showToast === 'function') showToast('Chave removida.');
-    if(typeof ecInit === 'function') ecInit();
-  }
-}
-window.ecDadosEquipaConfigurarKey = ecDadosEquipaConfigurarKey;
-
 async function ecFetchDadosEquipa(){
-  var key = ecDadosEquipaGetKey();
-  if(!key) throw new Error('Sem chave configurada');
-  var resp = await fetch(EC_DADOS_EQUIPA_URL, { headers: { 'x-api-key': key } });
+  var resp = await fetch(EC_DADOS_EQUIPA_URL);
   if(!resp.ok) throw new Error('HTTP ' + resp.status);
   return await resp.json();
 }
@@ -3176,8 +3153,8 @@ window.ecShowDashboardEndpoint = ecShowDashboardEndpoint;
 // Prioridade de refresh: endpoint > modo local > login Supabase (comportamento original)
 var _ecRefreshPreEndpoint = window.ecRefresh;
 window.ecRefresh = function(){
-  if(_ecEndpointMode){ ecRefreshEndpoint(); return; }
-  if(typeof _ecRefreshPreEndpoint === 'function') _ecRefreshPreEndpoint();
+  if(_ecEndpointMode){ return ecRefreshEndpoint(); }
+  if(typeof _ecRefreshPreEndpoint === 'function') return _ecRefreshPreEndpoint();
 };
 ecRefresh = window.ecRefresh;
 
@@ -3203,12 +3180,11 @@ ecLogout = async function(){
 };
 window.ecLogout = ecLogout;
 
-// Entrar directamente no modo endpoint quando a chave já está configurada;
-// sem chave, comportamento 100% igual ao que já existia (login/local).
-var _loadEquipaCampoDataPreEndpoint = loadEquipaCampoData;
+// Entrar sempre no modo endpoint (público, sem configuração necessária).
+// O login Supabase/modo local antigos ficam disponíveis a partir do
+// ecrã de login, alcançável clicando em "Desligar" no novo dashboard.
 loadEquipaCampoData = function(){
-  if(ecDadosEquipaTemKey()){ ecShowDashboardEndpoint(); return; }
-  _loadEquipaCampoDataPreEndpoint();
+  ecShowDashboardEndpoint();
 };
 window.loadEquipaCampoData = loadEquipaCampoData;
 
@@ -8938,7 +8914,6 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
       <div class="pg-space-icon" style="background:#4d94db">🗺️</div>
       <div class="pg-title">Equipa em Campo · GPS &amp; Picagens</div>
       <div class="pg-actions" id="ec-header-actions">
-        <button class="tbtn" style="font-size:12px" onclick="ecDadosEquipaConfigurarKey()" title="Configurar a chave do endpoint directo do app Equipa em Campo (não precisa de login)">🔑 API Equipa</button>
         <span class="ec-conn-state off" id="ec-conn">
           <span class="pulse"></span>
           <span id="ec-conn-text">Não ligado ao Supabase</span>
