@@ -2993,6 +2993,226 @@ window.ecRefresh = ecRefresh;
 
 
 
+// ══════════════════════════════════════════════════════════════════
+// ADD: EQUIPA EM CAMPO — Endpoint directo (Lovable, sem login)
+// Terceira via de dados, mais simples que o login Supabase e que o
+// modo local: um único pedido a um endpoint já agregado, autenticado
+// por chave própria. Só entra em acção quando a chave está configurada
+// (localStorage) — sem chave, o comportamento existente (login/local)
+// mantém-se exactamente igual.
+// ══════════════════════════════════════════════════════════════════
+var EC_DADOS_EQUIPA_URL = "https://xtiguuyvotnpwqzmggnc.supabase.co/functions/v1/crm-dados-equipa";
+var _ecEndpointMode = false;
+var _ecEndpointTimer = null;
+
+function ecDadosEquipaGetKey(){ return localStorage.getItem('ob-ec-dados-equipa-key') || ''; }
+function ecDadosEquipaTemKey(){ return !!ecDadosEquipaGetKey(); }
+
+function ecDadosEquipaConfigurarKey(){
+  var actual = ecDadosEquipaGetKey();
+  var nova = prompt('Chave da API do endpoint "Equipa em Campo" (crm-dados-equipa).\n\nObtém esta chave no painel do app equipaopportunitybox.lovable.app.\n\nDeixa vazio e confirma para remover a chave guardada.', actual || '');
+  if(nova === null) return; // cancelado
+  nova = nova.trim();
+  if(nova){
+    localStorage.setItem('ob-ec-dados-equipa-key', nova);
+    if(typeof showToast === 'function') showToast('🔑 Chave guardada — a carregar dados da equipa...');
+    ecShowDashboardEndpoint();
+  } else {
+    localStorage.removeItem('ob-ec-dados-equipa-key');
+    _ecEndpointMode = false;
+    if(_ecEndpointTimer){ clearInterval(_ecEndpointTimer); _ecEndpointTimer = null; }
+    if(typeof showToast === 'function') showToast('Chave removida.');
+    if(typeof ecInit === 'function') ecInit();
+  }
+}
+window.ecDadosEquipaConfigurarKey = ecDadosEquipaConfigurarKey;
+
+async function ecFetchDadosEquipa(){
+  var key = ecDadosEquipaGetKey();
+  if(!key) throw new Error('Sem chave configurada');
+  var resp = await fetch(EC_DADOS_EQUIPA_URL, { headers: { 'x-api-key': key } });
+  if(!resp.ok) throw new Error('HTTP ' + resp.status);
+  return await resp.json();
+}
+
+function ecFmtHora(iso){
+  if(!iso) return '—';
+  var d = new Date(iso);
+  return isNaN(d) ? '—' : d.toLocaleTimeString('pt-PT',{hour:'2-digit',minute:'2-digit'});
+}
+function ecFmtRelativo(iso){
+  if(!iso) return '—';
+  var d = new Date(iso);
+  if(isNaN(d)) return '—';
+  var minutos = Math.floor((Date.now() - d.getTime())/60000);
+  if(minutos < 1) return 'agora';
+  if(minutos < 60) return 'há ' + minutos + ' min';
+  return 'há ' + Math.floor(minutos/60) + 'h';
+}
+function ecIniciaisNome(nome){
+  return (nome||'?').split(' ').filter(Boolean).slice(0,2).map(function(w){return w[0];}).join('').toUpperCase();
+}
+
+function ecRenderDadosEquipa(d){
+  d = d || {};
+
+  var ativos = d.ao_ponto_agora || [];
+  var cntA = document.getElementById('ec-cnt-active');
+  if(cntA) cntA.textContent = ativos.length;
+  var elA = document.getElementById('ec-active-list');
+  if(elA){
+    elA.innerHTML = ativos.length ? ativos.slice(0,8).map(function(p){
+      return '<div class="ec-row" data-started="' + (p.hora_entrada||'') + '">'
+        + '<div class="ava online">' + ecIniciaisNome(p.nome) + '</div>'
+        + '<div class="info"><div class="name">' + (p.nome||'—') + '</div>'
+        + '<div class="sub"><span>⏱ desde ' + ecFmtHora(p.hora_entrada) + '</span></div></div>'
+        + '<div class="right"><div class="timer" data-timer="' + (p.hora_entrada||'') + '">--:--:--</div><div class="since">no ponto</div></div>'
+        + '</div>';
+    }).join('') : '<div class="ec-row empty">Ninguém ao ponto neste momento</div>';
+  }
+
+  var visitas = d.visitas_hoje || [];
+  var cntV = document.getElementById('ec-cnt-visits');
+  var badgeV = document.getElementById('ec-visits-badge');
+  if(cntV) cntV.textContent = visitas.length;
+  if(badgeV) badgeV.textContent = visitas.length;
+  var elV = document.getElementById('ec-visits-list');
+  if(elV){
+    elV.innerHTML = visitas.length ? visitas.slice(0,8).map(function(v){
+      return '<div class="ec-row">'
+        + '<div class="ava">' + ecIniciaisNome(v.colaborador) + '</div>'
+        + '<div class="info"><div class="name">' + (v.cliente||'Cliente') + '</div>'
+        + '<div class="sub"><span>👤 ' + (v.colaborador||'—') + '</span></div></div>'
+        + '<div class="right"><div class="timer" style="color:var(--txt2);font-size:13.5px">' + ecFmtHora(v.hora) + '</div></div>'
+        + '</div>';
+    }).join('') : '<div class="ec-row empty">Nenhuma visita registada hoje</div>';
+  }
+
+  var gps = d.ultimos_gps || [];
+  var cntG = document.getElementById('ec-cnt-pings');
+  if(cntG) cntG.textContent = gps.length;
+  var elG = document.getElementById('ec-loc-list');
+  if(elG){
+    elG.innerHTML = gps.length ? gps.slice(0,8).map(function(p){
+      var lat = parseFloat(p.lat), lng = parseFloat(p.lng);
+      var temCoord = !isNaN(lat) && !isNaN(lng);
+      var mapUrl = 'https://www.google.com/maps?q=' + lat + ',' + lng;
+      return '<div class="ec-row">'
+        + '<div class="ava online">' + ecIniciaisNome(p.colaborador) + '</div>'
+        + '<div class="info"><div class="name">' + (p.colaborador||'—') + '</div>'
+        + '<div class="sub"><span>' + (temCoord ? ('<a href="' + mapUrl + '" target="_blank" style="color:var(--y);text-decoration:none">📍 ' + lat.toFixed(4) + ', ' + lng.toFixed(4) + ' ↗</a>') : '📍 —') + '</span></div></div>'
+        + '<div class="right"><div class="timer" style="color:var(--txt2);font-size:13px">' + ecFmtRelativo(p.hora) + '</div></div>'
+        + '</div>';
+    }).join('') : '<div class="ec-row empty">Nenhum ping GPS registado</div>';
+  }
+
+  var frota = d.frota_em_uso || [];
+  var cntF = document.getElementById('ec-cnt-vehicles');
+  var badgeF = document.getElementById('ec-fleet-badge');
+  if(cntF) cntF.textContent = frota.length;
+  if(badgeF) badgeF.textContent = frota.length;
+  var elF = document.getElementById('ec-fleet-list');
+  if(elF){
+    elF.innerHTML = frota.length ? frota.slice(0,8).map(function(f){
+      return '<div class="ec-row">'
+        + '<div class="ava">' + ecIniciaisNome(f.colaborador) + '</div>'
+        + '<div class="info"><div class="name">' + (f.colaborador||'—') + '</div>'
+        + '<div class="sub"><span>🚗 ' + (f.viatura||'—') + '</span></div></div>'
+        + '<div class="right"><div class="timer" style="color:var(--muted);font-size:12px">' + ecFmtHora(f.hora_saida) + '</div></div>'
+        + '</div>';
+    }).join('') : '<div class="ec-row empty">Nenhuma viatura em uso</div>';
+  }
+
+  var lu = document.getElementById('ec-last-update');
+  if(lu) lu.textContent = new Date().toLocaleTimeString('pt-PT');
+}
+
+function ecMostrarErroEndpoint(e){
+  var el = document.getElementById('ec-endpoint-erro');
+  if(!el) return;
+  if(!e){ el.style.display = 'none'; el.innerHTML = ''; return; }
+  el.style.display = 'block';
+  el.innerHTML = '⚠️ Dados do app de equipa indisponíveis. Clique em "Actualizar" ou <a href="https://equipaopportunitybox.netlify.app/admin" target="_blank" style="color:var(--y)">"Abrir app completo"</a>.';
+}
+
+async function ecRefreshEndpoint(){
+  var icon = document.getElementById('ec-spinner-icon');
+  if(icon) icon.innerHTML = '<span class="ec-loading-mini"></span>';
+  try{
+    var dados = await ecFetchDadosEquipa();
+    ecRenderDadosEquipa(dados);
+    ecMostrarErroEndpoint(null);
+  }catch(e){
+    console.warn('[EC] endpoint crm-dados-equipa falhou:', e);
+    ecMostrarErroEndpoint(e);
+  }finally{
+    if(icon) icon.textContent = '↻';
+  }
+}
+window.ecRefreshEndpoint = ecRefreshEndpoint;
+
+function ecShowDashboardEndpoint(){
+  _ecEndpointMode = true;
+  _ecLocalMode = false;
+  // Garantir que não ficam ciclos de actualização de outros modos a correr em paralelo
+  if(ecRefreshTimer){ clearInterval(ecRefreshTimer); ecRefreshTimer = null; }
+  if(_ecRefreshTimer2){ clearInterval(_ecRefreshTimer2); _ecRefreshTimer2 = null; }
+  var authV = document.getElementById('ec-auth-view');
+  var dashV = document.getElementById('ec-dashboard-view');
+  if(authV) authV.style.display = 'none';
+  if(dashV) dashV.style.display = 'block';
+  var conn = document.getElementById('ec-conn');
+  if(conn){ conn.classList.remove('off'); conn.style.color = 'var(--g)'; }
+  var connTxt = document.getElementById('ec-conn-text');
+  if(connTxt) connTxt.textContent = '● App Equipa em Campo (ligação directa)';
+  ecRefreshEndpoint();
+  if(_ecEndpointTimer) clearInterval(_ecEndpointTimer);
+  _ecEndpointTimer = setInterval(ecRefreshEndpoint, 60000); // 60s, conforme pedido
+  if(ecTimerInterval) clearInterval(ecTimerInterval);
+  if(typeof ecUpdateTimers === 'function') ecTimerInterval = setInterval(ecUpdateTimers, 1000);
+}
+window.ecShowDashboardEndpoint = ecShowDashboardEndpoint;
+
+// Prioridade de refresh: endpoint > modo local > login Supabase (comportamento original)
+var _ecRefreshPreEndpoint = window.ecRefresh;
+window.ecRefresh = function(){
+  if(_ecEndpointMode){ ecRefreshEndpoint(); return; }
+  if(typeof _ecRefreshPreEndpoint === 'function') _ecRefreshPreEndpoint();
+};
+ecRefresh = window.ecRefresh;
+
+// "Desligar" em modo endpoint não depende de sessão Supabase (que nem chega a ser
+// iniciada neste modo) — sem este ajuste, clicar em Desligar rebentava (ecSupabase null)
+var _ecLogoutPreEndpoint = ecLogout;
+ecLogout = async function(){
+  if(_ecEndpointMode){
+    _ecEndpointMode = false;
+    if(_ecEndpointTimer){ clearInterval(_ecEndpointTimer); _ecEndpointTimer = null; }
+    if(ecTimerInterval){ clearInterval(ecTimerInterval); ecTimerInterval = null; }
+    var authV = document.getElementById('ec-auth-view');
+    var dashV = document.getElementById('ec-dashboard-view');
+    if(authV) authV.style.display = 'block';
+    if(dashV) dashV.style.display = 'none';
+    var conn = document.getElementById('ec-conn');
+    if(conn) conn.classList.add('off');
+    var connTxt = document.getElementById('ec-conn-text');
+    if(connTxt) connTxt.textContent = 'Não ligado ao Supabase';
+    return;
+  }
+  return _ecLogoutPreEndpoint();
+};
+window.ecLogout = ecLogout;
+
+// Entrar directamente no modo endpoint quando a chave já está configurada;
+// sem chave, comportamento 100% igual ao que já existia (login/local).
+var _loadEquipaCampoDataPreEndpoint = loadEquipaCampoData;
+loadEquipaCampoData = function(){
+  if(ecDadosEquipaTemKey()){ ecShowDashboardEndpoint(); return; }
+  _loadEquipaCampoDataPreEndpoint();
+};
+window.loadEquipaCampoData = loadEquipaCampoData;
+
+
 // ═══════════════════════════════════════════════════════
 // CLICKUP — Integrações sync (real)
 // ═══════════════════════════════════════════════════════
@@ -8718,6 +8938,7 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
       <div class="pg-space-icon" style="background:#4d94db">🗺️</div>
       <div class="pg-title">Equipa em Campo · GPS &amp; Picagens</div>
       <div class="pg-actions" id="ec-header-actions">
+        <button class="tbtn" style="font-size:12px" onclick="ecDadosEquipaConfigurarKey()" title="Configurar a chave do endpoint directo do app Equipa em Campo (não precisa de login)">🔑 API Equipa</button>
         <span class="ec-conn-state off" id="ec-conn">
           <span class="pulse"></span>
           <span id="ec-conn-text">Não ligado ao Supabase</span>
@@ -8771,6 +8992,8 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
           <button class="ec-logout" data-action="ecLogout">Desligar</button>
         </div>
       </div>
+
+      <div id="ec-endpoint-erro" style="display:none;background:rgba(224,85,85,.1);border:1px solid rgba(224,85,85,.35);color:var(--r);border-radius:8px;padding:10px 14px;font-size:13px;margin-bottom:14px"></div>
 
       <!-- COUNTERS -->
       <div class="ec-counters">
