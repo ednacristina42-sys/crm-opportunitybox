@@ -6115,6 +6115,7 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
     <button class="sl-item" onclick="homeFilterTasks('Dep. Comercial','Rui Mota')"><div class="sl-dot" style="background:#e74c3c"></div>👤 Rui Mota</button>
     <button class="sl-item" onclick="homeFilterTasks('Dep. Comercial','Paulo Faria')"><div class="sl-dot" style="background:#e74c3c"></div>👤 Paulo Faria</button>
     <button class="sl-item" onclick="homeFilterTasks('Dep. Comercial','Humberto Estrelinha')"><div class="sl-dot" style="background:#e74c3c"></div>👤 Humberto Estrelinha</button>
+    <button class="sl-item" onclick="homeFilterTasks('Dep. Comercial','André Nolasco')"><div class="sl-dot" style="background:#e74c3c"></div>👤 André Nolasco</button>
   </div>
 
   <!-- Dep. Design -->
@@ -9888,6 +9889,7 @@ var USERS=[
   {id:'edna',name:'Edna Faria',role:'CFO · Direcção',dept:'Direcção',color:'#F5C400',admin:true,online:true},
   {id:'rui',name:'Rui Mota',role:'Comercial Sénior',dept:'Dep. Comercial',color:'#e74c3c',admin:false,online:true},
   {id:'humberto',name:'Humberto Estrelinha',role:'Comercial',dept:'Dep. Comercial',color:'#e74c3c',admin:false,online:false},
+  {id:'andre_nolasco',name:'André Nolasco',role:'Comercial',dept:'Dep. Comercial',color:'#e74c3c',admin:false,online:true},
   {id:'filipa',name:'Filipa Santos',role:'Comercial',dept:'Dep. Comercial',color:'#e74c3c',admin:false,online:true},
   {id:'sara',name:'Sara Antunes',role:'Designer Sénior',dept:'Dep. Design',color:'#e67e22',admin:false,online:true},
   {id:'tomas',name:'Tomás Figueiredo',role:'Designer',dept:'Dep. Design',color:'#e67e22',admin:false,online:true},
@@ -10995,6 +10997,7 @@ var crmComerciais; try{ crmComerciais=JSON.parse(localStorage.getItem('ob-comerc
   {id:1, nome:'Paulo Faria',   email:'paulo@opportunitybox.pt',   cor:'#e74c3c', ativo:true},
   {id:2, nome:'Rui Mota',      email:'rui@opportunitybox.pt',     cor:'#3b82f6', ativo:true},
   {id:3, nome:'Humberto Estrelinha', email:'humberto@opportunitybox.pt', cor:'#8b5cf6', ativo:true},
+  {id:4, nome:'André Nolasco', email:'andre.nolasco@opportunitybox.pt', cor:'#3fcf8e', ativo:true},
 ];
 
 function saveComerciaisData(){ localStorage.setItem('ob-comerciais', JSON.stringify(crmComerciais)); }
@@ -14946,6 +14949,7 @@ var FALLBACK_USERS=[
 {id:'edna',name:'Edna Faria',role:'CFO · Direcção',dept:'Direcção',color:'#F5C400',admin:true,online:true},
 {id:'rui',name:'Rui Mota',role:'Comercial Sénior',dept:'Dep. Comercial',color:'#e74c3c',admin:false,online:true},
 {id:'humberto',name:'Humberto Estrelinha',role:'Comercial',dept:'Dep. Comercial',color:'#e74c3c',admin:false,online:true},
+{id:'andre_nolasco',name:'André Nolasco',role:'Comercial',dept:'Dep. Comercial',color:'#e74c3c',admin:false,online:true},
 {id:'filipa',name:'Filipa Santos',role:'Administrativa Comercial',dept:'Dep. Comercial',color:'#e74c3c',admin:false,online:false},
 {id:'sara',name:'Sara Antunes',role:'Designer Gráfico',dept:'Dep. Design',color:'#e67e22',admin:false,online:true},
 {id:'tomas',name:'Tomás Figueiredo',role:'Designer 3D',dept:'Dep. Design',color:'#e67e22',admin:false,online:true},
