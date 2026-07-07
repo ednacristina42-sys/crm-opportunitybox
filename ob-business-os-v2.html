@@ -21252,11 +21252,33 @@ async function tocoSincronizarFaturasUI() {
 // para não perder histórico de outros anos já sincronizados anteriormente.
 async function tocoSincronizarFaturas(silent, ano) {
   console.log('TocOnline: a sincronizar faturas...');
+
+  // Agente seguro: tenta sempre primeiro a Edge Function (OAuth2 tratado no
+  // servidor — nunca expõe API key no browser). Mescla com a cache existente
+  // (_tocoFatCache), a mesma usada pela Análise de Vendas, por isso nunca perde
+  // dados já sincronizados. Só se isto falhar é que caímos no método antigo
+  // (API key directa no browser / proxy Make).
+  var viaAgenteSeguro = false;
+  if(typeof avSyncTocOnlineViaEF === 'function'){
+    try{ await avSyncTocOnlineViaEF(); viaAgenteSeguro = true; }
+    catch(e){ console.warn('[TocOnline] Agente seguro (Edge Function) falhou, a tentar via API Key/Make:', e); }
+  }
+
   var cfg = tocoGetConfig();
   // ADD: só bloqueia se não houver NEM API key directa NEM proxy Make configurado.
   // Com o proxy (caso por omissão), a "API Key" do browser é irrelevante — as
   // credenciais OAuth reais do TocOnline ficam só no Make, nunca no browser.
   if(!cfg || (!cfg.key && !(cfg.proxy && cfg.webhook))) {
+    if(viaAgenteSeguro){
+      // Já há dados reais via agente seguro — não é preciso API Key/Make para os mostrar.
+      tocoRenderFaturas(_tocoFatCache);
+      var agoraAS = new Date().toLocaleTimeString('pt-PT', {hour:'2-digit',minute:'2-digit'});
+      var syncStatusAS = document.getElementById('toco-sync-status');
+      if(syncStatusAS) syncStatusAS.textContent = '✅ Sincronizado às ' + agoraAS + ' (agente seguro) — ' + (_tocoFatCache||[]).length + ' documentos';
+      if(typeof tocoUpdateConexaoUI === 'function') tocoUpdateConexaoUI('ok', '● Ligado (agente seguro) · Sync: agora · ' + (_tocoFatCache||[]).length + ' documentos');
+      localStorage.setItem('ob-toco-last-sync', JSON.stringify({ ts: Date.now(), ok: true, total: (_tocoFatCache||[]).length }));
+      return;
+    }
     if(!silent) tocoAbrirConfig();
     return;
   }
