@@ -3044,7 +3044,7 @@ function ecRenderDadosEquipa(d){
   if(cntA) cntA.textContent = ativos.length;
   var elA = document.getElementById('ec-active-list');
   if(elA){
-    elA.innerHTML = ativos.length ? ativos.slice(0,8).map(function(p){
+    elA.innerHTML = ativos.length ? ativos.map(function(p){
       return '<div class="ec-row" data-started="' + (p.hora_entrada||'') + '">'
         + '<div class="ava online">' + ecIniciaisNome(p.nome) + '</div>'
         + '<div class="info"><div class="name">' + (p.nome||'—') + '</div>'
