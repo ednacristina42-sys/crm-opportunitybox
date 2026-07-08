@@ -9403,6 +9403,20 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
       </div>
     </div>
 
+    <!-- Pré-requisitos de Produção (só para Instalações) -->
+    <div id="uni-inst-check-wrap" style="display:none;margin-top:4px">
+      <div style="font-size:13px;font-weight:600;color:var(--g);letter-spacing:.05em;border-top:1px solid var(--border);padding-top:14px;margin-bottom:10px">PRÉ-REQUISITOS DE PRODUÇÃO — Confirma antes de agendar</div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:10px">Uma instalação só deve ser agendada depois de a peça passar por Qualidade e ser Expedida.</div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px">
+        <label class="inst-check-lbl" style="display:flex;align-items:center;gap:6px;background:var(--bg3);border:1px solid var(--border);border-radius:7px;padding:7px 12px;cursor:pointer;font-size:13px;color:var(--txt2);transition:border-color .15s">
+          <input type="checkbox" class="inst-check" value="Qualidade" style="accent-color:var(--g);width:13px;height:13px"/> 🔍 Qualidade
+        </label>
+        <label class="inst-check-lbl" style="display:flex;align-items:center;gap:6px;background:var(--bg3);border:1px solid var(--border);border-radius:7px;padding:7px 12px;cursor:pointer;font-size:13px;color:var(--txt2);transition:border-color .15s">
+          <input type="checkbox" class="inst-check" value="Expedição" style="accent-color:var(--g);width:13px;height:13px"/> 🚚 Expedição
+        </label>
+      </div>
+    </div>
+
     <!-- Equipa de Montagem (só para Instalações) -->
     <div id="uni-equipa-wrap" style="display:none;margin-top:4px">
       <div style="font-size:13px;font-weight:600;color:var(--b);letter-spacing:.05em;border-top:1px solid var(--border);padding-top:14px;margin-bottom:10px">EQUIPA DE MONTAGEM — Selecciona os colaboradores</div>
@@ -12188,6 +12202,14 @@ function uniOpen(page, itemId){
   // Equipa de montagem (instalações)
   const equipaW = document.getElementById('uni-equipa-wrap');
   if(equipaW) equipaW.style.display = page==='fabrica-instalacoes'?'block':'none';
+  // Pré-requisitos de produção — só Qualidade/Expedição (instalações)
+  const instCheckW = document.getElementById('uni-inst-check-wrap');
+  if(instCheckW) instCheckW.style.display = page==='fabrica-instalacoes'?'block':'none';
+  if(page==='fabrica-instalacoes'){
+    const editForInstChk = itemId ? uniItems.find(i=>i.id===itemId) : null;
+    const marcados = (editForInstChk && editForInstChk.prodChecks) || [];
+    document.querySelectorAll('.inst-check').forEach(cb=>{ cb.checked = marcados.includes(cb.value); });
+  }
   // Atualizar datalist de clientes
   const dlU=document.getElementById('uni-cli-dl');
   if(dlU && typeof cliData!=='undefined' && cliData && cliData.length){
@@ -12222,6 +12244,7 @@ function uniSave(){
     notes:document.getElementById('uni-notes').value,
     extra:extraVal,
     equipa:uniCurrentPage==='fabrica-instalacoes'?[...document.querySelectorAll('.equipa-check:checked')].map(c=>c.value):(uniEditingId?(uniItems.find(i=>i.id===uniEditingId)||{}).equipa||[]:undefined),
+    prodChecks:uniCurrentPage==='fabrica-instalacoes'?[...document.querySelectorAll('.inst-check:checked')].map(c=>c.value):(uniEditingId?(uniItems.find(i=>i.id===uniEditingId)||{}).prodChecks||[]:undefined),
     dt:new Date().toLocaleDateString('pt-PT',{day:'2-digit',month:'2-digit',year:'numeric'})
   };
   // Subtarefas de departamento (só para produção, só em novo item)
@@ -12364,8 +12387,11 @@ function instRender(){
     const dStr=i.date?new Date(i.date).toLocaleDateString('pt-PT',{weekday:'short',day:'2-digit',month:'short'}):'—';
     const equipa=(i.equipa&&i.equipa.length)?i.equipa.join(', '):i.assignee||'—';
     const temGuia=!!(i.guiaTransporte);
+    const pChecks=i.prodChecks||[];
+    const preReqTxt='Pré-requisitos: '+(pChecks.length?pChecks.join(', '):'nenhum confirmado')+' de Qualidade/Expedição';
+    const preReqIco=pChecks.length===2?'✅':pChecks.length===1?'🟡':'⚪';
     return `<tr onclick="uniOpen('fabrica-instalacoes',${i.id})" style="cursor:pointer">
-      <td><strong style="color:var(--txt2)">${i.n}</strong>${temGuia?'<span title="Guia de transporte gerada" style="margin-left:5px;font-size:12px;color:var(--g)">🚛</span>':''}</td>
+      <td><strong style="color:var(--txt2)">${i.n}</strong>${temGuia?'<span title="Guia de transporte gerada" style="margin-left:5px;font-size:12px;color:var(--g)">🚛</span>':''}<span title="${preReqTxt}" style="margin-left:5px;font-size:12px">${preReqIco}</span></td>
       <td style="font-size:13px">${i.client||'—'}</td>
       <td style="font-family:'DM Mono',monospace;font-size:13px">${dStr}</td>
       <td style="font-family:'DM Mono',monospace;font-size:13px">${i.extra||'—'}</td>
@@ -19345,20 +19371,53 @@ function tesGetRecebidos(){ return TES_RECEBER.filter(r=>r.estado==='Recebido');
 // Liga as faturas reais do TocOnline (tocoFaturasCache) à Tesouraria.
 // Atualiza/cria entradas em TES_RECEBER a partir das faturas (FT) e notas de crédito (NC) reais — nunca apaga lançamentos manuais.
 // Não renderiza nada (sem recursão); quem chama decide se/quando renderizar.
+// Uma fatura (FT) só está realmente paga quando existe um Recibo (RC) emitido
+// para ela no TocOnline — o "Status"/"state" da própria fatura só indica se o
+// documento está fechado/emitido, não se o cliente já pagou. Por isso cruzamos
+// sempre com os Recibos já sincronizados, em vez de confiar só no estado da fatura.
+// Tenta primeiro uma ligação explícita (vários nomes de campo possíveis consoante
+// a versão da API), e usa cliente+valor como reserva quando não há ligação
+// explícita — na prática a TocOnline emite 1 recibo por fatura liquidada.
+function tocoRecibosLigadosAFatura(recibo){
+  var ids=[];
+  [recibo.related_document_id, recibo.document_id, recibo.sales_invoice_id,
+   recibo.commercial_sales_document_id, recibo.RelatedDocumentId, recibo.DocumentId,
+   recibo.invoice_id, recibo.InvoiceId].forEach(function(v){ if(v) ids.push(String(v)); });
+  if(Array.isArray(recibo.settles)) recibo.settles.forEach(function(s){ if(s) ids.push(String(s.document_id||s.id||s)); });
+  if(Array.isArray(recibo.lines)) recibo.lines.forEach(function(l){ if(l && (l.document_id||l.commercial_sales_document_id)) ids.push(String(l.document_id||l.commercial_sales_document_id)); });
+  return ids;
+}
+function tocoFaturaTemRecibo(d, id, recibos){
+  if(!recibos || !recibos.length) return false;
+  var ligados = {};
+  recibos.forEach(function(r){ tocoRecibosLigadosAFatura(r).forEach(function(rid){ ligados[rid]=true; }); });
+  if(ligados[String(id)]) return true;
+  // Reserva: mesmo cliente + mesmo valor total (arredondado aos cêntimos)
+  var totalD = Math.round((parseFloat(d.TotalAmount||d.Total||d.Amount||0))*100);
+  var cliD = (d.CustomerName||'').trim().toLowerCase();
+  if(!cliD || !totalD) return false;
+  return recibos.some(function(r){
+    var totalR = Math.round((parseFloat(r.TotalAmount||r.Total||r.Amount||0))*100);
+    var cliR = (r.CustomerName||'').trim().toLowerCase();
+    return cliR===cliD && totalR===totalD;
+  });
+}
+
 function tocoMergeFaturasCacheReceber(){
   var docs = (typeof tocoFaturasCache==='function') ? tocoFaturasCache() : [];
   if(!docs.length) return false;
   var alterou = false;
   var faturas = docs.filter(function(d){ return (d._tipo||d.DocumentType)==='FT'; });
   var notas = docs.filter(function(d){ return (d._tipo||d.DocumentType)==='NC'; });
+  var recibos = docs.filter(function(d){ return (d._tipo||d.DocumentType)==='RC'; });
   var porId = {}; TES_RECEBER.forEach(function(r){ if(r._tocoId) porId[r._tocoId]=r; });
   faturas.forEach(function(d){
     var id = d.Id || d.Number || d.DocumentNumber;
     if(!id) return;
     var total = parseFloat(d.TotalAmount||d.Total||d.Amount||0)||0;
     var liq = parseFloat(d.NetAmount||d.Net||0) || (total/1.23);
-    var estado = (typeof tocoGetEstado==='function') ? tocoGetEstado(d) : 'Em Aberto';
-    var pago = estado==='Pago';
+    var estadoDoc = (typeof tocoGetEstado==='function') ? tocoGetEstado(d) : 'Em Aberto';
+    var pago = estadoDoc==='Pago' || tocoFaturaTemRecibo(d, id, recibos);
     var existente = porId[id];
     if(existente){
       if(existente.total!==total || existente.valorLiq!==liq) alterou=true;
