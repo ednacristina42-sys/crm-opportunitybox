@@ -6162,7 +6162,6 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
     <button class="sni" id="ni-stock" data-action="goPage" data-page="stock"><span class="si">📦</span>Stock</button>
     <button class="sni" id="ni-relatorios" data-action="goPage" data-page="relatorios"><span class="si">📊</span>Relatórios</button>
     <button class="sni" data-action="goPage" data-page="admin-analise-vendas"><span class="si">📈</span>Análise de Vendas</button>
-    <button class="sni" id="ni-equipa" data-action="goPage" data-page="equipa"><span class="si">👥</span>Equipa (22)</button>
     <button class="sni" id="ni-integracoes" data-action="goPage" data-page="integracoes"><span class="si">⚙</span>Integrações</button>
   </div>
 
@@ -7833,21 +7832,6 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
 </div>
 
 <!-- EQUIPA (admin only) -->
-<div id="page-equipa" class="app-page">
-  <div class="pg-hdr">
-    <div class="pg-hdr-top">
-      <div class="pg-space-icon" style="background:var(--y)">★</div>
-      <div class="pg-title">Equipa — 22 colaboradores</div>
-      <div class="pg-actions"><button class="tbtn y" data-action="openEquipaModal">+ Novo utilizador</button></div>
-    </div>
-  </div>
-  <div class="admin-page">
-  
-    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px" id="equipa-grid"></div>
-    </div>
-
-</div>
-
 <!-- INTEGRAÇÕES (admin only) -->
 <div id="page-integracoes" class="app-page">
   <div class="pg-hdr">
@@ -10227,7 +10211,6 @@ window.goPage=function goPage(id){
   if(id==='dashboard')           { try{ renderDashLeads(); setTimeout(initCharts,50); }catch(e){} }
   if(id==='financeiro')          { try{ renderFinanceiro(); setTimeout(initCharts,50); }catch(e){} }
   if(id==='relatorios')          { try{ renderRelatorios(); setTimeout(initCharts,50); }catch(e){} }
-  if(id==='equipa')              { try{ renderEquipa(); }catch(e){} }
   if(id==='alerts')              { try{ renderAlerts(); }catch(e){} }
   if(id==='chat')                { try{ renderChat(); }catch(e){} }
   if(id==='wa')                  { try{ renderWA(); }catch(e){} }
@@ -15421,7 +15404,7 @@ function globalSearch(q){
   // Pesquisar membros equipa
   (typeof USERS!=='undefined'?USERS:[]).forEach(u=>{
     if(u.name.toLowerCase().includes(lq)||u.dept.toLowerCase().includes(lq)||u.role.toLowerCase().includes(lq)){
-      results.push({type:'👥 Membro',title:u.name,sub:u.role+' · '+u.dept,action:`goPage('equipa')`});
+      results.push({type:'👥 Membro',title:u.name,sub:u.role+' · '+u.dept,action:`goPage('admin-rh')`});
     }
   });
 
@@ -15898,79 +15881,12 @@ async function despSyncApp(){
 }
 
 // ── PROFILE EDIT ─────────────────────────────────────────
-var editColor='#F5C400';
-
-function openEdit(uid){
-  const u=USERS.find(x=>x.id===uid);if(!u)return;
-  document.getElementById('edit-uid').value=uid;
-  document.getElementById('edit-name').value=u.name;
-  document.getElementById('edit-role').value=u.role;
-  document.getElementById('edit-dept').value=u.dept;
-  document.getElementById('edit-admin').value=String(u.admin);
-  editColor=u.color;
-  document.querySelectorAll('.cpick').forEach(c=>{
-    c.style.border=c.style.background===u.color||c.getAttribute('style').includes(u.color)?'2px solid white':'2px solid transparent';
-  });
-  document.getElementById('edit-modal').style.display='flex';
-}
-
-function pickColor(c){
-  editColor=c;
-  document.querySelectorAll('.cpick').forEach(el=>{
-    el.style.border=el.style.background.includes(c)?'2px solid white':'2px solid transparent';
-  });
-}
-
-function saveEdit(){
-  const uid=document.getElementById('edit-uid').value;
-  const u=USERS.find(x=>x.id===uid);if(!u)return;
-  u.name=document.getElementById('edit-name').value||u.name;
-  u.role=document.getElementById('edit-role').value||u.role;
-  u.dept=document.getElementById('edit-dept').value;
-  u.admin=document.getElementById('edit-admin').value==='true';
-  u.color=editColor;
-  closeEdit();
-  renderEquipa();
-  renderLogin();
-  // update current user display if editing self
-  if(CU&&CU.id===uid){
-    CU=u;
-    document.getElementById('tb-ava').style.background=u.color;
-    document.getElementById('tb-uname').textContent=u.name.split(' ')[0];
-    document.getElementById('sb-ava').style.background=u.color;
-    document.getElementById('sb-uname').textContent=u.name;
-    document.getElementById('sb-urole').textContent=u.role;
-  }
-  showToast('✓ Perfil de '+u.name+' actualizado!');
-}
-
-function closeEdit(){document.getElementById('edit-modal').style.display='none'}
-
 function showToast(msg){
   const t=document.createElement('div');
   t.style.cssText='position:fixed;bottom:20px;right:20px;z-index:9999;background:var(--bg2);border:1px solid var(--yb);color:var(--y);padding:10px 18px;border-radius:8px;font-size:14px;font-weight:600;box-shadow:0 4px 20px rgba(0,0,0,.5);animation:slideIn .2s ease';
   t.textContent=msg;
   document.body.appendChild(t);
   setTimeout(()=>t.remove(),3000);
-}
-
-// ── EQUIPA with edit buttons ──────────────────────────────
-function renderEquipa(){
-  const el=document.getElementById('equipa-grid');if(!el)return;
-  const isAdmin=CU&&CU.admin;
-  el.innerHTML=USERS.map(u=>`<div class="user-card" style="position:relative">
-    <div class="uava" style="background:${u.color}">${ini(u.name)}</div>
-    <div style="flex:1">
-      <div class="uname2">${u.name}${u.admin?' <span style="color:var(--y);font-size:12px">★ Admin</span>':''}</div>
-      <div class="urole2">${u.role}</div>
-      <div class="ustatus">
-        <div class="${u.online?'odot':'xdot'}"></div>
-        <span>${u.online?'Online':'Offline'}</span>
-        <span class="b bm" style="margin-left:4px;font-size:10.5px">${u.dept}</span>
-      </div>
-    </div>
-    ${isAdmin?`<button onclick="openEdit('${u.id}')" style="position:absolute;top:8px;right:8px;background:var(--bg4);border:1px solid var(--border);color:var(--muted);border-radius:5px;padding:3px 8px;font-size:12px;cursor:pointer;transition:all .15s" onmouseover="this.style.color='var(--y)';this.style.borderColor='var(--yb)'" onmouseout="this.style.color='var(--muted)';this.style.borderColor='var(--border)'">✏ Editar</button>`:''}
-  </div>`).join('');
 }
 
 // ── DASHBOARD CHARTS ──────────────────────────────────────
@@ -16627,7 +16543,7 @@ async function gsSync(){
           USERS[idx].admin=u.admin==='true'||u.admin===true;
         }
       });
-      renderEquipa();renderLogin();
+      renderLogin();
     }
     if(d.leads&&d.leads.length>0)window._gsLeads=d.leads;
     if(d.chat&&d.chat.length>0){window._gsChat=d.chat;gsRefreshChat();}
@@ -16748,7 +16664,6 @@ function renderAll(){
   safe(renderDespesas,'despesas');
   // Carregar App de Pontos automaticamente ao iniciar
   if(typeof despSyncApp==='function' && !_despAppSynced) despSyncApp();
-  safe(renderEquipa,'equipa');
   safe(renderDashLeads,'dash-leads');
   safe(renderDashboardCFO,'dashboard-cfo');
   safe(renderFinanceiro,'financeiro');
@@ -17170,18 +17085,6 @@ window.waNovaConversa = function(){
   if(typeof waRenderContacts==='function') waRenderContacts(waContacts);
 };
 
-window.openEquipaModal = function(){
-  var nome=prompt('Nome completo:');
-  if(!nome) return;
-  var cargo=prompt('Cargo / Funcao:');
-  var d=prompt('Departamento (1=Comercial 2=Design 3=Fabrica 4=Admin 5=Direccao):');
-  var depts=['Dep. Comercial','Dep. Design','Chao da Fabrica','Gestão Administrativa','Direccao'];
-  var cores=['#e74c3c','#e67e22','#3b82f6','#8b5cf6','#F5C400'];
-  var di=Math.max(0,Math.min(4,(parseInt(d)||1)-1));
-  USERS.push({id:'u'+Date.now(),name:nome,role:cargo||'Colaborador',dept:depts[di],color:cores[di],admin:false,online:false});
-  if(typeof renderEquipa==='function') renderEquipa();
-  alert('Utilizador "'+nome+'" adicionado.');
-};
 
 
 // Sidebar navigation: onclick directo em cada botão
@@ -17396,47 +17299,6 @@ if(typeof initNovosModulos==='function') setTimeout(initNovosModulos, 200);
 </div>
 
 <!-- PROFILE EDIT MODAL -->
-<div id="edit-modal" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.8);backdrop-filter:blur(6px);align-items:center;justify-content:center">
-  <div style="background:var(--bg2);border:1px solid var(--border2);border-radius:12px;padding:24px;width:100%;margin:20px">
-    <div style="font-size:16px;font-weight:700;color:var(--txt2);margin-bottom:4px">✏ Editar Perfil</div>
-    <div style="font-size:13px;color:var(--muted);margin-bottom:18px">Alterações guardadas localmente</div>
-    <input type="hidden" id="edit-uid"/>
-    <div class="form-group"><label class="form-label">Nome completo</label><input class="form-input" id="edit-name"/></div>
-    <div class="form-group"><label class="form-label">Função / Cargo</label><input class="form-input" id="edit-role"/></div>
-    <div class="form-group"><label class="form-label">Departamento</label>
-      <select class="form-select" id="edit-dept">
-        <option>Direcção</option>
-        <option>Dep. Comercial</option>
-        <option>Dep. Design</option>
-        <option>Chão da Fábrica</option>
-        <option>Gestão Administrativa</option>
-      </select>
-    </div>
-    <div class="form-group"><label class="form-label">Acesso admin? (ver tudo)</label>
-      <select class="form-select" id="edit-admin">
-        <option value="false">Não — vê apenas o seu departamento</option>
-        <option value="true">Sim — acesso total (admin)</option>
-      </select>
-    </div>
-    <div class="form-group"><label class="form-label">Cor do perfil</label>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px" id="color-picker">
-        <div data-action="pickColor" data-color="#F5C400" style="width:28px;height:28px;border-radius:50%;background:#F5C400;cursor:pointer;border:2px solid transparent" class="cpick"></div>
-        <div data-action="pickColor" data-color="#e74c3c" style="width:28px;height:28px;border-radius:50%;background:#e74c3c;cursor:pointer;border:2px solid transparent" class="cpick"></div>
-        <div data-action="pickColor" data-color="#e67e22" style="width:28px;height:28px;border-radius:50%;background:#e67e22;cursor:pointer;border:2px solid transparent" class="cpick"></div>
-        <div data-action="pickColor" data-color="#3b82f6" style="width:28px;height:28px;border-radius:50%;background:#3b82f6;cursor:pointer;border:2px solid transparent" class="cpick"></div>
-        <div data-action="pickColor" data-color="#8b5cf6" style="width:28px;height:28px;border-radius:50%;background:#8b5cf6;cursor:pointer;border:2px solid transparent" class="cpick"></div>
-        <div data-action="pickColor" data-color="#3fcf8e" style="width:28px;height:28px;border-radius:50%;background:#3fcf8e;cursor:pointer;border:2px solid transparent" class="cpick"></div>
-        <div data-action="pickColor" data-color="#e05555" style="width:28px;height:28px;border-radius:50%;background:#e05555;cursor:pointer;border:2px solid transparent" class="cpick"></div>
-        <div data-action="pickColor" data-color="#16a085" style="width:28px;height:28px;border-radius:50%;background:#16a085;cursor:pointer;border:2px solid transparent" class="cpick"></div>
-      </div>
-    </div>
-    <div style="display:flex;gap:8px;margin-top:18px">
-      <button class="tbtn y" style="flex:1" data-action="saveEdit">💾 Guardar</button>
-      <button class="tbtn" data-action="closeEdit">Cancelar</button>
-    </div>
-  </div>
-</div>
-
 <!-- HOSTING GUIDE MODAL -->
 <div id="host-modal" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.8);backdrop-filter:blur(6px);align-items:center;justify-content:center">
   <div style="background:var(--bg2);border:1px solid var(--border2);border-radius:12px;padding:24px;width:100%;margin:20px;max-height:80vh;overflow-y:auto">
@@ -21053,7 +20915,6 @@ document.addEventListener('click', function(e){
     case 'alertMsg': alert(ms); break;
     case 'openUniModal': safe(openUniModal,[pg]); break;
     case 'crmOpenNew': safe(crmOpenNew,[col||'Novo Lead']); break;
-    case 'pickColor': safe(pickColor,[co]); break;
     case 'crmSelectCor': safe(crmSelectCor,[co,el]); break;
     case 'designSelectCor': safe(designSelectCor,[co,el]); break;
     case 'toggleGroup': safe(toggleGroup,[el]); break;
@@ -21087,7 +20948,6 @@ document.addEventListener('click', function(e){
     case 'sendChatMsg': safe(sendChatMsg); break;
     case 'sendWA': safe(sendWA); break;
     case 'waNovaConversa': safe(waNovaConversa); break;
-    case 'openEquipaModal': safe(openEquipaModal); break;
     case 'adminDocsUpload': safe(adminDocsUpload); break;
     case 'openDespesaModal': safe(openDespesaModal); break;
     case 'ecRefresh': safe(ecRefresh); break;
@@ -21101,8 +20961,6 @@ document.addEventListener('click', function(e){
     case 'closeImport': safe(closeImport); break;
     case 'finishImport': safe(finishImport); break;
     case 'runImport': safe(runImport); break;
-    case 'saveEdit': safe(saveEdit); break;
-    case 'closeEdit': safe(closeEdit); break;
     // Novos módulos
     case 'stockOpenNew': if(typeof stockOpenNew==='function') stockOpenNew(); break;
     case 'stockSave': if(typeof stockSave==='function') stockSave(); break;
