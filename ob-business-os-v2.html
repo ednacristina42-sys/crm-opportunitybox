@@ -2435,9 +2435,7 @@ var CRM_SB_URL = "https://ddzlbmnmsdyodouqxbjx.supabase.co";
 var CRM_SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRkemxibW5tc2R5b2RvdXF4Ymp4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkyMDQ2NTUsImV4cCI6MjA5NDc4MDY1NX0.P8nyU1zL4bd6Vhs8MGsTqHcB_bSeQsbNHXtQgatVt-Y";
 var crmSB = null;
 function crmSBClient(){
-  if(!crmSB && window.supabase) crmSB = window.supabase.createClient(CRM_SB_URL, CRM_SB_KEY, {
-    auth: { persistSession: true, autoRefreshToken: true, storage: window.localStorage, storageKey: 'ob-crm-auth' }
-  });
+  if(!crmSB && window.supabase) crmSB = window.supabase.createClient(CRM_SB_URL, CRM_SB_KEY);
   return crmSB;
 }
 
@@ -9897,29 +9895,29 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
 // Alias para compatibilidade (leads é referenciado no Dashboard)
 var leads = [];
 var USERS=[
-  {id:'paulo',name:'Paulo Faria',role:'CEO · Direcção',dept:'Direcção',color:'#F5C400',admin:true,online:true,email:'paulo@opportunitybox.pt'},
-  {id:'edna',name:'Edna Faria',role:'CFO · Direcção',dept:'Direcção',color:'#F5C400',admin:true,online:true,email:'edna@opportunitybox.pt'},
-  {id:'rui',name:'Rui Mota',role:'Comercial Sénior',dept:'Dep. Comercial',color:'#e74c3c',admin:false,online:true,email:'rui@opportunitybox.pt'},
-  {id:'humberto',name:'Humberto Estrelinha',role:'Comercial',dept:'Dep. Comercial',color:'#e74c3c',admin:false,online:false,email:'humberto@opportunitybox.pt'},
-  {id:'andre_nolasco',name:'André Nolasco',role:'Comercial',dept:'Dep. Comercial',color:'#e74c3c',admin:false,online:true,email:'andre.nolasco@opportunitybox.pt'},
-  {id:'filipa',name:'Filipa Santos',role:'Comercial',dept:'Dep. Comercial',color:'#e74c3c',admin:false,online:true,email:'filipa@opportunitybox.pt'},
-  {id:'sara',name:'Sara Antunes',role:'Designer Sénior',dept:'Dep. Design',color:'#e67e22',admin:false,online:true,email:'sara@opportunitybox.pt'},
-  {id:'tomas',name:'Tomás Figueiredo',role:'Designer',dept:'Dep. Design',color:'#e67e22',admin:false,online:true,email:'tomas@opportunitybox.pt'},
-  {id:'andre',name:'André Costa',role:'Chefe de Produção',dept:'Chão da Fábrica',color:'#3b82f6',admin:false,online:true,email:'andre.costa@opportunitybox.pt'},
-  {id:'carlos',name:'Carlos Melo',role:'Técnico Produção',dept:'Chão da Fábrica',color:'#3b82f6',admin:false,online:true,email:'carlos@opportunitybox.pt'},
-  {id:'bruno',name:'Bruno Ferreira',role:'Técnico Produção',dept:'Chão da Fábrica',color:'#3b82f6',admin:false,online:false,email:'bruno@opportunitybox.pt'},
-  {id:'tiago',name:'Tiago Nunes',role:'Técnico Produção',dept:'Chão da Fábrica',color:'#3b82f6',admin:false,online:true,email:'tiago@opportunitybox.pt'},
-  {id:'diogo',name:'Diogo Alves',role:'Técnico Produção',dept:'Chão da Fábrica',color:'#3b82f6',admin:false,online:true,email:'diogo@opportunitybox.pt'},
-  {id:'mauro',name:'Mauro Silva',role:'Técnico Produção',dept:'Chão da Fábrica',color:'#3b82f6',admin:false,online:false,email:'mauro@opportunitybox.pt'},
-  {id:'ricardo',name:'Ricardo Pinto',role:'Instalador Sénior',dept:'Chão da Fábrica',color:'#3b82f6',admin:false,online:true,email:'ricardo@opportunitybox.pt'},
-  {id:'pedro_c',name:'Pedro Carvalho',role:'Instalador',dept:'Chão da Fábrica',color:'#3b82f6',admin:false,online:true,email:'pedro.carvalho@opportunitybox.pt'},
-  {id:'luis',name:'Luís Rodrigues',role:'Instalador',dept:'Chão da Fábrica',color:'#3b82f6',admin:false,online:false,email:'luis@opportunitybox.pt'},
-  {id:'sergio',name:'Sérgio Martins',role:'Instalador',dept:'Chão da Fábrica',color:'#3b82f6',admin:false,online:true,email:'sergio@opportunitybox.pt'},
-  {id:'nuno',name:'Nuno Pereira',role:'Instalador',dept:'Chão da Fábrica',color:'#3b82f6',admin:false,online:false,email:'nuno@opportunitybox.pt'},
-  {id:'joana',name:'Joana Lopes',role:'Secretariado',dept:'Gestão Administrativa',color:'#8b5cf6',admin:false,online:true,email:'joana@opportunitybox.pt'},
-  {id:'marta',name:'Marta Gomes',role:'Secretariado',dept:'Gestão Administrativa',color:'#8b5cf6',admin:false,online:true,email:'marta@opportunitybox.pt'},
-  {id:'ines',name:'Inês Sousa',role:'Financeira',dept:'Gestão Administrativa',color:'#8b5cf6',admin:false,online:true,email:'ines@opportunitybox.pt'},
-  {id:'vasco',name:'Vasco Cunha',role:'Suporte TI',dept:'Gestão Administrativa',color:'#8b5cf6',admin:false,online:true,email:'vasco@opportunitybox.pt'},
+  {id:'paulo',name:'Paulo Faria',role:'CEO · Direcção',dept:'Direcção',color:'#F5C400',admin:true,online:true},
+  {id:'edna',name:'Edna Faria',role:'CFO · Direcção',dept:'Direcção',color:'#F5C400',admin:true,online:true},
+  {id:'rui',name:'Rui Mota',role:'Comercial Sénior',dept:'Dep. Comercial',color:'#e74c3c',admin:false,online:true},
+  {id:'humberto',name:'Humberto Estrelinha',role:'Comercial',dept:'Dep. Comercial',color:'#e74c3c',admin:false,online:false},
+  {id:'andre_nolasco',name:'André Nolasco',role:'Comercial',dept:'Dep. Comercial',color:'#e74c3c',admin:false,online:true},
+  {id:'filipa',name:'Filipa Santos',role:'Comercial',dept:'Dep. Comercial',color:'#e74c3c',admin:false,online:true},
+  {id:'sara',name:'Sara Antunes',role:'Designer Sénior',dept:'Dep. Design',color:'#e67e22',admin:false,online:true},
+  {id:'tomas',name:'Tomás Figueiredo',role:'Designer',dept:'Dep. Design',color:'#e67e22',admin:false,online:true},
+  {id:'andre',name:'André Costa',role:'Chefe de Produção',dept:'Chão da Fábrica',color:'#3b82f6',admin:false,online:true},
+  {id:'carlos',name:'Carlos Melo',role:'Técnico Produção',dept:'Chão da Fábrica',color:'#3b82f6',admin:false,online:true},
+  {id:'bruno',name:'Bruno Ferreira',role:'Técnico Produção',dept:'Chão da Fábrica',color:'#3b82f6',admin:false,online:false},
+  {id:'tiago',name:'Tiago Nunes',role:'Técnico Produção',dept:'Chão da Fábrica',color:'#3b82f6',admin:false,online:true},
+  {id:'diogo',name:'Diogo Alves',role:'Técnico Produção',dept:'Chão da Fábrica',color:'#3b82f6',admin:false,online:true},
+  {id:'mauro',name:'Mauro Silva',role:'Técnico Produção',dept:'Chão da Fábrica',color:'#3b82f6',admin:false,online:false},
+  {id:'ricardo',name:'Ricardo Pinto',role:'Instalador Sénior',dept:'Chão da Fábrica',color:'#3b82f6',admin:false,online:true},
+  {id:'pedro_c',name:'Pedro Carvalho',role:'Instalador',dept:'Chão da Fábrica',color:'#3b82f6',admin:false,online:true},
+  {id:'luis',name:'Luís Rodrigues',role:'Instalador',dept:'Chão da Fábrica',color:'#3b82f6',admin:false,online:false},
+  {id:'sergio',name:'Sérgio Martins',role:'Instalador',dept:'Chão da Fábrica',color:'#3b82f6',admin:false,online:true},
+  {id:'nuno',name:'Nuno Pereira',role:'Instalador',dept:'Chão da Fábrica',color:'#3b82f6',admin:false,online:false},
+  {id:'joana',name:'Joana Lopes',role:'Secretariado',dept:'Gestão Administrativa',color:'#8b5cf6',admin:false,online:true},
+  {id:'marta',name:'Marta Gomes',role:'Secretariado',dept:'Gestão Administrativa',color:'#8b5cf6',admin:false,online:true},
+  {id:'ines',name:'Inês Sousa',role:'Financeira',dept:'Gestão Administrativa',color:'#8b5cf6',admin:false,online:true},
+  {id:'vasco',name:'Vasco Cunha',role:'Suporte TI',dept:'Gestão Administrativa',color:'#8b5cf6',admin:false,online:true},
 ];
 
 // Dept → which spaces are visible
@@ -9945,8 +9943,22 @@ var _adminUser=null; // utilizador admin original, quando em modo "ver como"
 // ── RENDER LOGIN ──────────────────────────────────────────
 
 // ════════════════════════════════════════════════════════════════
-// LOGIN — Supabase Auth real (dropdown + senha verificada no servidor)
+// LOGIN — Novo sistema com dropdown + senha
 // ════════════════════════════════════════════════════════════════
+// Mapa de senhas: { userId: 'senha' }
+var LOGIN_PASSWORDS = {
+  'paulo':   'paulo2026',
+  'edna':    'edna2026',
+  'rui':     '1234',
+  'andreia': '1234',
+  'tiago':   '1234',
+  'fatima':  '1234',
+  'jose':    '1234',
+  'mario':   '1234',
+  'carlos':  '1234',
+  'ana':     '1234',
+  'pedro':   '1234',
+};
 var LOGIN_SELECTED_ID = null;
 
 function loginSelectFromDropdown(userId) {
@@ -9967,12 +9979,31 @@ function loginSelectFromDropdown(userId) {
   }
 }
 
-// Finaliza o login (chamado tanto após verificar a senha como ao restaurar
-// uma sessão já autenticada do Supabase, para nunca duplicar esta lógica).
-function loginFinalizar(user){
-  CU = user;
-  selectedUser = user;
-  _adminUser = user.admin === true ? user : null;
+function loginComSenha() {
+  var userId = LOGIN_SELECTED_ID;
+  var senha = (document.getElementById('login-senha') || {}).value || '';
+  var erro = document.getElementById('login-erro');
+  var senhaInp = document.getElementById('login-senha');
+
+  if (!userId) { return; }
+
+  // Verificar senha (admin tem senhas específicas, restantes usam '1234')
+  var senhaCorrecta = LOGIN_PASSWORDS[userId] || '1234';
+  if (senha !== senhaCorrecta) {
+    if (erro) erro.style.display = 'block';
+    if (senhaInp) {
+      senhaInp.style.borderColor = 'var(--r)';
+      senhaInp.value = '';
+      setTimeout(function(){ senhaInp.focus(); }, 50);
+    }
+    return;
+  }
+
+  // Senha correcta — fazer login
+  if (erro) erro.style.display = 'none';
+  CU = selectedUser || USERS.find(function(u){ return u.id === userId; });
+  selectedUser = CU;
+  _adminUser = CU.admin === true ? CU : null;
   // Restaurar modo "ver como" se existia antes de recarregar a página
   try{
     var _imp = JSON.parse(localStorage.getItem('ob-impersonate') || 'null');
@@ -9991,60 +10022,8 @@ function loginFinalizar(user){
     try{ if(typeof initNovosModulos === 'function') initNovosModulos(); } catch(e){}
   }, 0);
 }
-
-async function loginComSenha() {
-  var userId = LOGIN_SELECTED_ID;
-  var senha = (document.getElementById('login-senha') || {}).value || '';
-  var erro = document.getElementById('login-erro');
-  var senhaInp = document.getElementById('login-senha');
-  var btn = document.getElementById('login-btn');
-
-  if (!userId) { return; }
-  var user = USERS.find(function(u){ return u.id === userId; });
-  if (!user || !user.email) { return; }
-
-  var sb = (typeof crmSBClient === 'function') ? crmSBClient() : null;
-  if (!sb) {
-    if (erro) erro.style.display = 'block';
-    return;
-  }
-
-  if (btn) { btn.disabled = true; btn.dataset.txt = btn.textContent; btn.textContent = 'A entrar...'; }
-  var resp = await sb.auth.signInWithPassword({ email: user.email, password: senha });
-  if (btn) { btn.disabled = false; if(btn.dataset.txt) btn.textContent = btn.dataset.txt; }
-
-  if (resp.error) {
-    if (erro) erro.style.display = 'block';
-    if (senhaInp) {
-      senhaInp.style.borderColor = 'var(--r)';
-      senhaInp.value = '';
-      setTimeout(function(){ senhaInp.focus(); }, 50);
-    }
-    return;
-  }
-
-  if (erro) erro.style.display = 'none';
-  loginFinalizar(user);
-}
 window.loginSelectFromDropdown = loginSelectFromDropdown;
 window.loginComSenha = loginComSenha;
-
-// Restaura sessão já autenticada (Supabase Auth persiste no localStorage) —
-// evita ter de fazer login outra vez a cada recarregamento da página.
-async function loginRestaurarSessao(){
-  var sb = (typeof crmSBClient === 'function') ? crmSBClient() : null;
-  if (!sb) return false;
-  try{
-    var res = await sb.auth.getSession();
-    var session = res && res.data && res.data.session;
-    if (!session || !session.user || !session.user.email) return false;
-    var user = USERS.find(function(u){ return u.email === session.user.email; });
-    if (!user) return false;
-    loginFinalizar(user);
-    return true;
-  }catch(e){ console.warn('[login] restaurar sessão falhou:', e); return false; }
-}
-window.loginRestaurarSessao = loginRestaurarSessao;
 
 // Override do doLogin para usar o novo sistema
 window.doLogin = function() { loginComSenha(); };
@@ -10090,7 +10069,6 @@ window._activeChatRoom='geral';
 function doLogout(){
   CU=null;selectedUser=null;_adminUser=null;
   localStorage.removeItem('ob-impersonate');
-  if(typeof crmSBClient==='function'){ var sb=crmSBClient(); if(sb) sb.auth.signOut().catch(function(){}); }
   document.getElementById('app').style.display='none';
   document.getElementById('login').style.display='flex';
   document.querySelectorAll('.ucard').forEach(c=>c.classList.remove('sel'));
@@ -17193,8 +17171,6 @@ window.renderLogin=renderLogin;
 
 // Init
 renderLogin();
-// Restaurar sessão do Supabase Auth, se existir (evita pedir login a cada reload)
-if(typeof loginRestaurarSessao==='function') loginRestaurarSessao();
 // Init novos módulos (Stock, Financeiro)
 if(typeof initNovosModulos==='function') setTimeout(initNovosModulos, 200);
 </script>
@@ -20049,7 +20025,7 @@ async function analisarDesignComIA(file) {
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
       body: JSON.stringify({
         model: 'gpt-4o',
-        max_tokens: 4096,
+        max_tokens: 2048,
         messages: [
           { role: 'system', content: _copSystemPrompt(exemplos) },
           { role: 'user', content: userContent }
@@ -20059,7 +20035,7 @@ async function analisarDesignComIA(file) {
     if (!resp.ok) throw new Error('OpenAI API ' + resp.status);
     var data = await resp.json();
     var raw = data.choices[0].message.content || '';
-    var parsed = _copParsearJSON(raw, data.choices[0].finish_reason);
+    var parsed = JSON.parse(raw.trim().replace(/^```json\s*/i,'').replace(/```$/,''));
     return _copNormalizarResposta(parsed);
   }
 
@@ -20089,7 +20065,7 @@ async function analisarDesignComIA(file) {
       },
       body: JSON.stringify({
         model: 'claude-sonnet-5',
-        max_tokens: 4096,
+        max_tokens: 2048,
         system: _copSystemPrompt(exemplosC),
         messages: [{ role: 'user', content: contentBlocks }]
       })
@@ -20097,23 +20073,8 @@ async function analisarDesignComIA(file) {
     if (!respC.ok) throw new Error('Claude API ' + respC.status);
     var dataC = await respC.json();
     var rawC = (dataC.content && dataC.content[0] && dataC.content[0].text) || '';
-    var parsedC = _copParsearJSON(rawC, dataC.stop_reason);
+    var parsedC = JSON.parse(rawC.trim().replace(/^```json\s*/i,'').replace(/```$/,''));
     return _copNormalizarResposta(parsedC);
-  }
-}
-
-// Interpreta o JSON devolvido pela IA, com uma mensagem clara quando a resposta
-// vem cortada por ter atingido o limite de tokens (em vez do erro genérico
-// "Unexpected end of JSON input", que não diz nada ao utilizador).
-function _copParsearJSON(texto, motivoParagem) {
-  var limpo = (texto || '').trim().replace(/^```json\s*/i, '').replace(/```$/, '');
-  try {
-    return JSON.parse(limpo);
-  } catch (e) {
-    if (motivoParagem === 'length' || motivoParagem === 'max_tokens') {
-      throw new Error('A resposta da IA foi cortada por exceder o limite de tokens. Tenta novamente.');
-    }
-    throw new Error('A IA não devolveu um JSON válido. Tenta novamente.');
   }
 }
 
