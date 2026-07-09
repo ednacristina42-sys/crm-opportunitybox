@@ -13090,7 +13090,8 @@ function foCalcColab(c, picagens, ausencias, diasUteis) {
   // Dias trabalhados efectivos (para subsídio de alimentação)
   var diasTrab = Math.max(0, diasUteis - diasFalta - diasFerias);
 
-  // Horas extra / falta
+  // Horas extra / diferença face às picagens (só informativo — ver nota abaixo
+  // sobre porque o desconto NÃO usa "horasFalta").
   var difHoras  = hPicadas - hContrato;
   var horasExtra = Math.max(0,  difHoras);
   var horasFalta = Math.max(0, -difHoras);
@@ -13099,8 +13100,14 @@ function foCalcColab(c, picagens, ausencias, diasUteis) {
   var totalSubAlim  = subAlimConf * diasTrab;
   var totalSubTrans = subTrans;
 
-  // Desconto por falta (proporcional)
-  var descontoFalta = hContrato > 0 ? (salBase / hContrato) * horasFalta : 0;
+  // Desconto por falta: baseado nas FALTAS REGISTADAS (ausências), nunca na
+  // diferença entre horas do contrato e horas picadas. Enquanto as picagens do
+  // mês não estiverem todas carregadas (normal a meio do mês, ou se a empresa
+  // não usa picagens), hPicadas fica a 0 e "horasFalta" ficaria igual às horas
+  // do contrato inteiro — descontando o salário todo mesmo sem nenhuma falta
+  // registada. Isto já causou situações de líquido negativo.
+  var horasPorDiaUtil = diasUteis > 0 ? hContrato / diasUteis : 0;
+  var descontoFalta = hContrato > 0 ? (salBase / hContrato) * (diasFalta * horasPorDiaUtil) : 0;
 
   // Bónus de horas extra
   var bonoExtra = vHoraExtra * horasExtra;
@@ -24055,7 +24062,7 @@ window.foEnviarTesouraria=function(){
   var mesNome=FIN_MESES[mes-1]+' '+ano;
   var total=FO_DADOS.reduce(function(s,d){ return s+(d.salLiquido||0); },0);
   total=Math.round(total*100)/100;
-  if(total<=0){ alert('O total líquido do mês é €0 — nada para enviar.'); return; }
+  if(total<=0){ alert('O total líquido do mês é €'+total.toFixed(2)+' — nada para enviar.'); return; }
   var desc='Salários — '+mesNome;
   var existente=TES_CONTAS.find(function(c){ return c.descricao===desc; });
   if(existente){
