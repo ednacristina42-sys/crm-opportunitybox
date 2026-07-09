@@ -13242,7 +13242,8 @@ function foRenderTabela(ano, mes) {
       '<td style="text-align:right;font-family:DM Mono,monospace;font-size:13px;font-weight:700;color:var(--y)">' + fmt(d.salLiquido) + '</td>' +
       '<td style="white-space:nowrap">' +
         '<button class="tbtn" style="font-size:11px;padding:2px 6px" onclick="foAbrirModal(' + JSON.stringify(String(d.id)) + ',\'falta\')" title="Registar falta">📋</button> ' +
-        '<button class="tbtn" style="font-size:11px;padding:2px 6px;color:var(--b)" onclick="foAbrirModal(' + JSON.stringify(String(d.id)) + ',\'ferias\')" title="Marcar férias">🏖️</button>' +
+        '<button class="tbtn" style="font-size:11px;padding:2px 6px;color:var(--b)" onclick="foAbrirModal(' + JSON.stringify(String(d.id)) + ',\'ferias\')" title="Marcar férias">🏖️</button> ' +
+        '<button class="tbtn" style="font-size:11px;padding:2px 6px;color:var(--y)" onclick="foEditarColaborador(' + JSON.stringify(String(d.id)) + ')" title="Editar nome, cargo e salário">✏️</button>' +
       '</td>' +
     '</tr>';
   }).join('');
@@ -13256,6 +13257,31 @@ function foRenderTabela(ano, mes) {
   var el3=document.getElementById('fo-kpi-liquido');  if(el3) el3.textContent='€'+totLiquido.toLocaleString('pt-PT',{minimumFractionDigits:2});
   var el4=document.getElementById('fo-kpi-extra');    if(el4) el4.textContent=totExtra.toFixed(1)+'h';
 }
+
+// ── Editar nome/cargo/salário de um colaborador a partir de Ordenados ──
+// Enquanto não houver uma ficha real em RH → Colaboradores, o Fecho de
+// Ordenados usa dados genéricos (nome do login, salário 1200 fixo para
+// todos). Este botão abre o mesmo modal de Colaborador já existente —
+// se a ficha já existir, edita-a; se ainda não existir, cria-a com o
+// mesmo id do login, para o Ordenados passar a usar dados reais.
+function foEditarColaborador(colabId){
+  if(typeof rhColabs==='undefined'){ alert('RH não disponível.'); return; }
+  var existente = rhColabs.find(function(c){ return String(c.id)===String(colabId); });
+  if(existente){ rhEditColab(existente.id); return; }
+  if(typeof rhOpenColab!=='function'){ alert('RH não disponível.'); return; }
+  var u = (typeof USERS!=='undefined' ? USERS : []).find(function(x){ return x.id===colabId; });
+  rhOpenColab();
+  if(u){
+    var nomeEl=document.getElementById('rh-c-nome'); if(nomeEl) nomeEl.value=u.name||'';
+    var cargoEl=document.getElementById('rh-c-cargo'); if(cargoEl) cargoEl.value=u.role||'';
+    var deptEl=document.getElementById('rh-c-dept'); if(deptEl && u.dept) deptEl.value=u.dept;
+    var emailEl=document.getElementById('rh-c-email'); if(emailEl && u.email) emailEl.value=u.email;
+  }
+  rhEditColabId = colabId;
+  var tituloEl=document.getElementById('rh-colab-title');
+  if(tituloEl) tituloEl.textContent = '✏️ Completar dados' + (u?' — '+u.name:'');
+}
+window.foEditarColaborador = foEditarColaborador;
 
 // ── Mini-modal Falta / Férias ──────────────────────────────────
 function foAbrirModal(colabId, tipo) {
@@ -13612,7 +13638,7 @@ function rhSaveColab(){
     morada:document.getElementById('rh-c-morada').value.trim(),
     color:'#ec4899'
   };
-  if(rhEditColabId){ const i=rhColabs.findIndex(c=>c.id===rhEditColabId); if(i>=0) rhColabs[i]=data; }
+  if(rhEditColabId){ const i=rhColabs.findIndex(c=>c.id===rhEditColabId); if(i>=0) rhColabs[i]=data; else rhColabs.push(data); }
   else { rhColabs.push(data); }
   rhSave('ob-rh-colabs',rhColabs);
   document.getElementById('rh-colab-modal').classList.remove('open');
