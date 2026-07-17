@@ -2071,7 +2071,8 @@ function tesCalcTotal(){
 }
 
 function tesToggleCartao(){
-  var met = document.getElementById('tes-m-pagmet').value;
+  var metEl = document.getElementById('tes-m-pagmet');
+  var met = metEl ? metEl.value : '';
   var cw = document.getElementById('tes-m-cartao-wrap');
   var pw = document.getElementById('tes-m-cartao-placeholder');
   if(cw) cw.style.display = met==='Cartão Montepio Pré-Pago'?'block':'none';
@@ -2089,24 +2090,28 @@ function tesToggleCartao(){
 function tesAbrirModal(id) {
   var modal = document.getElementById('tes-modal');
   if (!modal) return;
-  // Limpar campos
-  ['tes-m-desc','tes-m-tec','tes-m-venc','tes-m-proj','tes-m-notas','tes-m-liq','tes-m-pagref'].forEach(function(fid) {
-    var el = document.getElementById(fid); if(el) el.value = '';
-  });
-  var valEl = document.getElementById('tes-m-valor'); if(valEl) valEl.value = '';
-  var liqEl = document.getElementById('tes-m-liq'); if(liqEl) liqEl.value = '';
-  var ivaEl = document.getElementById('tes-m-iva'); if(ivaEl) ivaEl.value = '23';
-  var totEl = document.getElementById('tes-m-total-preview'); if(totEl) totEl.textContent = '€ 0,00';
-  var catEl = document.getElementById('tes-m-cat'); if(catEl) catEl.value = 'Fornecedor';
-  var emEl = document.getElementById('tes-m-emissao'); if(emEl) emEl.value = new Date().toISOString().split('T')[0];
-  var pagEl = document.getElementById('tes-m-pagmet'); if(pagEl) pagEl.value = '';
-  tesToggleCartao();
-  var idEl = document.getElementById('tes-m-id'); if(idEl) idEl.value = id || '';
-  var prevEl = document.getElementById('tes-m-id-preview');
-  if (prevEl) prevEl.textContent = id ? id : 'TES-' + Date.now();
-  var erEl = document.getElementById('tes-modal-erro'); if(erEl) erEl.style.display = 'none';
-  var tit = document.getElementById('tes-modal-titulo');
-  if (tit) tit.textContent = 'Nova Conta a Pagar';
+  // Limpar campos — isolado em try/catch para que uma falha ao limpar um campo
+  // nunca impeça o modal de abrir (era o que acontecia antes: uma excepção aqui
+  // travava a função a meio, antes de chegar ao display:flex, em silêncio).
+  try{
+    ['tes-m-desc','tes-m-tec','tes-m-venc','tes-m-proj','tes-m-notas','tes-m-liq','tes-m-pagref'].forEach(function(fid) {
+      var el = document.getElementById(fid); if(el) el.value = '';
+    });
+    var valEl = document.getElementById('tes-m-valor'); if(valEl) valEl.value = '';
+    var liqEl = document.getElementById('tes-m-liq'); if(liqEl) liqEl.value = '';
+    var ivaEl = document.getElementById('tes-m-iva'); if(ivaEl) ivaEl.value = '23';
+    var totEl = document.getElementById('tes-m-total-preview'); if(totEl) totEl.textContent = '€ 0,00';
+    var catEl = document.getElementById('tes-m-cat'); if(catEl) catEl.value = 'Fornecedor';
+    var emEl = document.getElementById('tes-m-emissao'); if(emEl) emEl.value = new Date().toISOString().split('T')[0];
+    var pagEl = document.getElementById('tes-m-pagmet'); if(pagEl) pagEl.value = '';
+    if(typeof tesToggleCartao==='function') tesToggleCartao();
+    var idEl = document.getElementById('tes-m-id'); if(idEl) idEl.value = id || '';
+    var prevEl = document.getElementById('tes-m-id-preview');
+    if (prevEl) prevEl.textContent = id ? id : 'TES-' + Date.now();
+    var erEl = document.getElementById('tes-modal-erro'); if(erEl) erEl.style.display = 'none';
+    var tit = document.getElementById('tes-modal-titulo');
+    if (tit) tit.textContent = 'Nova Conta a Pagar';
+  }catch(e){ console.warn('[tesAbrirModal] falha ao limpar campos:', e); }
   modal.style.display = 'flex';
   setTimeout(function(){ var el=document.getElementById('tes-m-desc');if(el)el.focus(); }, 80);
 }
