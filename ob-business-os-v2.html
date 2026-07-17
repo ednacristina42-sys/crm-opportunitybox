@@ -9454,6 +9454,8 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
       </div>
       <!-- Subtarefas geradas -->
       <div id="uni-subtasks-preview" style="margin-top:12px;display:flex;flex-direction:column;gap:4px"></div>
+      <!-- Actividades por departamento -->
+      <div id="uni-dept-atividades" style="margin-top:14px;display:flex;flex-direction:column;gap:10px"></div>
     </div>
 
     <!-- ── ABAS: Subtarefas · Itens de Ação ── -->
@@ -12096,6 +12098,16 @@ function uniGetItems(page){
 }
 function saveUniItems(){ localStorage.setItem('ob-uni-items',JSON.stringify(uniItems)); }
 
+// ── ATIVIDADES POR DEPARTAMENTO (Pipeline de Produção) ──────────────
+var uniAtividades; try{ uniAtividades=JSON.parse(localStorage.getItem('ob-uni-atividades')||'[]'); }catch(e){ uniAtividades=[]; }
+function saveUniAtividades(){ localStorage.setItem('ob-uni-atividades', JSON.stringify(uniAtividades.slice(0,5000))); }
+function uniAddAtividade(itemId, dept, texto, link){
+  if(!texto || !texto.trim()) return;
+  const autor = (typeof CU!=='undefined'&&CU&&CU.name) ? CU.name : 'Sistema';
+  uniAtividades.unshift({ id:Date.now()+Math.floor(Math.random()*1000), itemId, dept, texto:texto.trim(), link:(link||'').trim()||null, autor, ts:new Date().toISOString() });
+  saveUniAtividades();
+}
+
 // ── MODAL OPEN / SAVE / DELETE ──────────────────────────────────────
 var uniCurrentPage = null;
 var uniEditingId = null;
@@ -12218,6 +12230,19 @@ function uniOpen(page, itemId){
     if(cfg.extraRow){ document.getElementById('uni-extra').value=''; document.getElementById('uni-time').value=''; }
     document.getElementById('uni-del-btn').style.display = 'none';
   }
+  // Departamentos + Actividades por departamento (só produção)
+  if(typeof uniToggleDeptSection==='function') uniToggleDeptSection(page);
+  if(page==='fabrica-producao'){
+    const editedSubtasks = itemId ? ((uniItems.find(i=>i.id===itemId)||{}).subtasks||[]) : [];
+    const checkedDepts = editedSubtasks.map(s=>s.dept);
+    document.querySelectorAll('.dept-check').forEach(cb=>{ cb.checked = checkedDepts.includes(cb.value); });
+    document.querySelectorAll('.dept-check-lbl').forEach(lbl=>{
+      const cb=lbl.querySelector('.dept-check');
+      lbl.style.borderColor = cb.checked ? 'var(--y)' : '';
+      lbl.style.background = cb.checked ? 'rgba(245,196,0,.08)' : '';
+    });
+    if(typeof uniRenderDeptAtividades==='function') uniRenderDeptAtividades();
+  }
   // Equipa de montagem (instalações)
   const equipaW = document.getElementById('uni-equipa-wrap');
   if(equipaW) equipaW.style.display = page==='fabrica-instalacoes'?'block':'none';
@@ -12257,14 +12282,13 @@ function uniSave(){
     equipa:uniCurrentPage==='fabrica-instalacoes'?[...document.querySelectorAll('.equipa-check:checked')].map(c=>c.value):(uniEditingId?(uniItems.find(i=>i.id===uniEditingId)||{}).equipa||[]:undefined),
     dt:new Date().toLocaleDateString('pt-PT',{day:'2-digit',month:'2-digit',year:'numeric'})
   };
-  // Subtarefas de departamento (só para produção, só em novo item)
-  if(uniCurrentPage==='fabrica-producao' && !uniEditingId){
+  // Subtarefas de departamento (produção) — reflecte sempre os departamentos marcados,
+  // tanto em novos itens como ao editar; preserva o estado "done" dos já existentes.
+  // O estado (coluna) da ordem é controlado só pelo dropdown de estado, não por isto.
+  if(uniCurrentPage==='fabrica-producao'){
     const checked=[...document.querySelectorAll('.dept-check:checked')].map(c=>c.value);
-    if(checked.length>0){
-      data.subtasks = checked.map(dept=>({dept, done:false}));
-      // Primeiro status = primeiro dept seleccionado
-      data.status = checked[0];
-    }
+    const prevSubtasks = uniEditingId ? ((uniItems.find(i=>i.id===uniEditingId)||{}).subtasks||[]) : [];
+    data.subtasks = checked.map(dept=>prevSubtasks.find(s=>s.dept===dept) || {dept, done:false});
   }
   if(uniEditingId){
     const idx=uniItems.findIndex(i=>i.id===uniEditingId);
@@ -12479,12 +12503,14 @@ function uniRenderKanban(el, page, items){
           const elapsed = isProd ? fpGetElapsed(i.id) : 0;
           const elapsedStr = elapsed>0 ? fpFmtTime(elapsed) : '';
           const doneAll = isProd && i.subtasks && i.subtasks.length>0 && i.subtasks.every(s=>s.done);
+          const nAtiv = isProd && typeof uniAtividades!=='undefined' ? uniAtividades.filter(a=>a.itemId===i.id).length : 0;
           return `<div class="k-card" id="ukcard-${i.id}" draggable="true"
             ondragstart="uniDragStart(event,${i.id},'${page}')" ondragend="uniDragEnd(event)"
             onclick="uniOpen('${page}',${i.id})">
             <div class="k-card-title">${i.n}</div>
             <div class="k-card-sub">${i.client||''}</div>
             ${isProd && i.subtasks && i.subtasks.length>0 ? `<div style="margin:4px 0;display:flex;flex-wrap:wrap;gap:3px">${i.subtasks.map(s=>`<span onclick="event.stopPropagation();fpToggleSubtask(${i.id},'${s.dept}')" style="font-size:11px;padding:1px 5px;border-radius:4px;cursor:pointer;border:1px solid ${s.done?'var(--g)':'var(--border)'};color:${s.done?'var(--g)':'var(--muted)'};background:${s.done?'rgba(63,207,142,.1)':'var(--bg3)'};text-decoration:${s.done?'line-through':''}">${s.done?'✓ ':''} ${s.dept}</span>`).join('')}</div>` : ''}
+            ${nAtiv>0 ? `<div style="margin-top:2px"><span style="font-size:11px;background:rgba(245,196,0,.1);color:var(--y);border:1px solid rgba(245,196,0,.25);border-radius:10px;padding:1px 6px">📌 ${nAtiv}</span></div>` : ''}
             <div class="k-card-meta">
               ${avHtml(i.assignee, com.cor||'#4d94db')}
               <div style="display:flex;align-items:center;gap:4px;margin-left:auto">
@@ -12658,8 +12684,56 @@ document.addEventListener('change', function(e){
       lbl.style.borderColor = cb.checked ? 'var(--y)' : '';
       lbl.style.background = cb.checked ? 'rgba(245,196,0,.08)' : '';
     });
+    if(typeof uniRenderDeptAtividades==='function') uniRenderDeptAtividades();
   }
 });
+
+// Painel de indicações/pedidos por departamento (visível a quem a ordem estiver atribuída;
+// sem mapeamento pessoa↔departamento por agora — fica para depois)
+function uniRenderDeptAtividades(){
+  const el = document.getElementById('uni-dept-atividades');
+  if(!el) return;
+  if(uniCurrentPage!=='fabrica-producao'){ el.innerHTML=''; return; }
+  const checked = [...document.querySelectorAll('.dept-check:checked')].map(c=>c.value);
+  if(!checked.length){ el.innerHTML=''; return; }
+  if(!uniEditingId){
+    el.innerHTML = '<div style="font-size:12px;color:var(--muted);font-style:italic;padding:8px 0">Grava a ordem primeiro para poderes adicionar indicações por departamento.</div>';
+    return;
+  }
+  const itemId = uniEditingId;
+  el.innerHTML = checked.map(dept=>{
+    const entradas = uniAtividades.filter(a=>a.itemId===itemId && a.dept===dept);
+    const lista = entradas.length
+      ? entradas.map(a=>{
+          const dt = new Date(a.ts).toLocaleString('pt-PT',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+          const txt = (a.texto||'').replace(/</g,'&lt;');
+          return '<div style="border-top:1px solid var(--border);padding:6px 0;font-size:12.5px">'
+            + '<div style="color:var(--muted);font-size:11px">'+dt+' · '+a.autor+'</div>'
+            + '<div style="color:var(--txt2)">'+txt+'</div>'
+            + (a.link ? '<a href="'+a.link+'" target="_blank" rel="noopener" style="color:var(--b);font-size:12px">🔗 '+a.link+'</a>' : '')
+            + '</div>';
+        }).join('')
+      : '<div style="font-size:12px;color:var(--muted);font-style:italic;padding:4px 0">Sem indicações para este departamento.</div>';
+    const dk = dept.replace(/[^a-zA-Z0-9]/g,'');
+    return '<div style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px 12px">'
+      + '<div style="font-size:12.5px;font-weight:700;color:var(--y);margin-bottom:4px">📌 '+dept+'</div>'
+      + lista
+      + '<div style="display:flex;gap:6px;margin-top:8px">'
+      + '<input type="text" id="uni-dept-txt-'+dk+'" placeholder="Indicação, pedido..." style="flex:1;background:var(--bg);border:1px solid var(--border2);border-radius:6px;padding:6px 8px;font-size:12.5px;color:var(--txt2)"/>'
+      + '<input type="text" id="uni-dept-link-'+dk+'" placeholder="Link (opcional)" style="width:120px;background:var(--bg);border:1px solid var(--border2);border-radius:6px;padding:6px 8px;font-size:12.5px;color:var(--txt2)"/>'
+      + '<button type="button" onclick="uniSubmitDeptAtividade('+itemId+',\''+dept+'\',\''+dk+'\')" style="background:rgba(245,196,0,.12);border:1px solid rgba(245,196,0,.4);color:var(--y);border-radius:6px;padding:6px 10px;font-size:12.5px;cursor:pointer">Enviar</button>'
+      + '</div>'
+      + '</div>';
+  }).join('');
+}
+
+function uniSubmitDeptAtividade(itemId, dept, dk){
+  const txtEl = document.getElementById('uni-dept-txt-'+dk);
+  const linkEl = document.getElementById('uni-dept-link-'+dk);
+  if(!txtEl || !txtEl.value.trim()) return;
+  uniAddAtividade(itemId, dept, txtEl.value, linkEl?linkEl.value:'');
+  uniRenderDeptAtividades();
+}
 
 
 // ══════════════════════════════════════════════════════════════════
@@ -16858,6 +16932,7 @@ window.openUniModal = function(page){
     });
     var prev=document.getElementById('uni-subtasks-preview');
     if(prev) prev.innerHTML='<div style="font-size:12px;color:var(--muted);font-style:italic;padding:4px">Entra em "Entrada de Obra" — o coordenador distribui pelos departamentos.</div>';
+    if(typeof uniRenderDeptAtividades==='function') uniRenderDeptAtividades();
   }
   m.classList.add('open');
 };
