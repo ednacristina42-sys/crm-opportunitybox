@@ -9203,6 +9203,9 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
         <!-- Sugestão de próximo passo -->
         <div id="clm-sugestao" style="display:none;margin:10px 0;background:rgba(245,196,0,.08);border:1px solid rgba(245,196,0,.3);border-radius:8px;padding:10px 14px;font-size:13px;color:var(--y)"></div>
 
+        <!-- Orçamento(s) ligado(s) a esta lead -->
+        <div id="clm-orc-link" style="display:none;margin:10px 0"></div>
+
         <div class="form-group" style="margin-bottom:0">
           <label class="form-label">📎 Fotos / Ficheiros</label>
           <div style="background:var(--bg3);border:1px dashed var(--border2);border-radius:8px;padding:8px;cursor:pointer;min-height:44px" data-action="clmFileInput">
@@ -11428,6 +11431,8 @@ function crmOpenEdit(id){
   // Timeline de actividades
   const tlCol = document.getElementById('clm-timeline-col');
   if(tlCol){ tlCol.style.display='block'; crmRenderTimeline(id); }
+  // Orçamento(s) ligado(s)
+  if(typeof crmRenderOrcLink==='function') crmRenderOrcLink(id);
 
   // Próxima acção
   const pa = lead.proximaAcao || {};
@@ -11661,9 +11666,13 @@ function crmRenderTimeline(leadId){
     'Visita': 'background:rgba(167,139,250,.12);color:#a78bfa',
     'nota':   'background:rgba(245,196,0,.12);color:#F5C400',
     'criado': 'background:rgba(34,197,94,.1);color:#22c55e',
+    'orcamento':   'background:rgba(77,148,219,.12);color:#4d94db',
+    'adjudicacao': 'background:rgba(245,196,0,.15);color:#F5C400',
+    'obra':        'background:rgba(63,207,142,.15);color:#3fcf8e',
   };
   const dotIcon = {
-    'estado':'→','Nota':'📝','Chamada':'📞','Email':'✉','Visita':'🚗','nota':'📝','criado':'＋'
+    'estado':'→','Nota':'📝','Chamada':'📞','Email':'✉','Visita':'🚗','nota':'📝','criado':'＋',
+    'orcamento':'📄','adjudicacao':'📋','obra':'🏭'
   };
   el.innerHTML = entradas.map(h=>{
     const dt = new Date(h.ts).toLocaleString('pt-PT',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
@@ -11677,6 +11686,25 @@ function crmRenderTimeline(leadId){
       </div>
     </div>`;
   }).join('');
+}
+
+function crmRenderOrcLink(leadId){
+  const el = document.getElementById('clm-orc-link');
+  if(!el) return;
+  const lead = (typeof crmLeads!=='undefined') ? crmLeads.find(l=>l.id===leadId) : null;
+  const ligados = (typeof orcData!=='undefined' && lead)
+    ? (orcData||[]).filter(o=>o.leadId===leadId || (!o.leadId && lead.emp && o.cli===lead.emp))
+    : [];
+  if(!ligados.length){ el.style.display='none'; el.innerHTML=''; return; }
+  el.style.display='block';
+  el.innerHTML = '<div style="font-size:11px;font-weight:700;color:var(--muted);letter-spacing:.06em;text-transform:uppercase;margin-bottom:6px">📄 Orçamentos ligados</div>'
+    + ligados.map(o=>{
+      const cor = o.st==='Aprovado' ? 'var(--g)' : (o.st==='Em Produção' ? 'var(--y)' : 'var(--muted)');
+      return '<span onclick="goPage(\'comercial-orcamentos\')" style="display:inline-flex;align-items:center;gap:5px;cursor:pointer;font-size:12.5px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:4px 9px;margin:0 6px 6px 0">'
+        + '<strong style="color:var(--txt2)">Nº '+o.num+'</strong>'
+        + '<span style="color:'+cor+'">'+(o.st||'—')+'</span>'
+        + '</span>';
+    }).join('');
 }
 
 function crmToggleHistCampos(){
@@ -14362,11 +14390,13 @@ function orcInitPage(){
   }
   orcCalcTotal();
   // ── Receiver: pré-preencher a partir de lead do CRM ──────
+  window._orcCurrentLeadId = null;
   const _fromLead = sessionStorage.getItem('ob-orc-from-lead');
   if(_fromLead){
     sessionStorage.removeItem('ob-orc-from-lead');
     try{
       const ld = JSON.parse(_fromLead);
+      window._orcCurrentLeadId = ld.leadId || null;
       const setV = (id,v)=>{ const el=document.getElementById(id); if(el&&v!==undefined&&v!=='') el.value=v; };
       setV('orc-cliente', ld.cliente);
       if(typeof orcAutoFillCliente==='function') orcAutoFillCliente(ld.cliente);
@@ -14465,7 +14495,7 @@ function orcGetData(){
   const _geradoPorIA = !!(window._orcGeradoPorIA) || !!(_orcGuardado && _orcGuardado._geradoPorIA);
   return {num, cli, prazo, prazoEntrega, morada, nif, val, linhas, totais, vendedor, email,
     cliEmail, cliWA, pagamento50, sinal, saldo, imagem, imagemObra: imagem, imagemFachadaGerada,
-    _geradoPorIA,
+    _geradoPorIA, leadId: window._orcCurrentLeadId || null,
     data: new Date().toLocaleDateString('pt-PT',{day:'2-digit',month:'2-digit',year:'numeric'})
   };
 }
@@ -14508,6 +14538,9 @@ function orcGuardar(){
   orcData.unshift(d);
   localStorage.setItem('ob-orcamentos', JSON.stringify(orcData.slice(0,5000)));
   _sbOrcUpsert(d);
+  if(d.leadId && typeof crmAddAtividade==='function'){
+    crmAddAtividade(d.leadId, 'orcamento', 'Orçamento '+d.num+' criado — €'+(d.totais&&d.totais.total?d.totais.total.toFixed(2):'0,00'), d.vendedor);
+  }
   if (typeof _copExemplosCache !== 'undefined') _copExemplosCache = {};
   orcRenderList();
   // Próximo número
@@ -14521,6 +14554,7 @@ function orcGuardar(){
 function orcNew(){
   // ADD: Correção botão +Novo — garante tab Orçamentos visível
   window._orcGeradoPorIA = false;
+  window._orcCurrentLeadId = null;
   if(typeof orcSwitchTab==='function') orcSwitchTab('orcamentos');
   const cont = document.getElementById('orc-lines-container');
   if(cont) cont.innerHTML='';
@@ -14608,7 +14642,7 @@ function crmAbrirAdjudicacaoModal(leadId){
   if(!lead) return;
 
   const cli = (cliData||[]).find(c=>c.n.toLowerCase()===lead.emp.toLowerCase())||{};
-  const orc = (typeof orcData!=='undefined' ? (orcData||[]).find(o=>o.cli===lead.emp) : null)||{};
+  const orc = (typeof orcData!=='undefined' ? ((orcData||[]).find(o=>o.leadId===lead.id) || (orcData||[]).find(o=>o.cli===lead.emp)) : null)||{};
 
   const pre = {
     finNome:    cli.finNome||'',
@@ -14672,10 +14706,42 @@ function crmSubmeterAdjudicacao(){
     alert('Preenche os campos obrigatórios da adjudicação.');
     return;
   }
+  const lead = (typeof crmLeads!=='undefined') ? crmLeads.find(l=>l.id===leadId) : null;
+  if(!lead){ alert('Lead não encontrada.'); return; }
+  const autor = (typeof CU!=='undefined'&&CU&&CU.name)?CU.name:'Sistema';
+
+  // Liga a adjudicação ao orçamento desta lead (por leadId, com fallback por nome do cliente)
+  const orc = (typeof orcData!=='undefined')
+    ? ((orcData||[]).find(o=>o.leadId===leadId) || (orcData||[]).find(o=>o.cli===lead.emp))
+    : null;
+
+  lead.adjudicacao = dados;
+  if(typeof crmAddAtividade==='function'){
+    crmAddAtividade(leadId, 'adjudicacao', 'Adjudicação submetida — NIF '+dados.nif+(orc?' · Orçamento '+orc.num:' · sem orçamento associado'), autor);
+  }
+
+  if(orc && typeof orcChangeStatus==='function'){
+    orcChangeStatus(orc.num, 'Aprovado');
+  }
+
+  // Marca a lead como Ganha — dispara a criação automática do Cliente
+  lead.st = 'Ganho ✓';
+  if(!lead.dtFecho) lead.dtFecho = new Date().toISOString().split('T')[0];
+  if(typeof saveCrmLeads==='function') saveCrmLeads();
+  if(typeof crmRenderAll==='function') crmRenderAll();
+
+  // Refrescar o modal, se ainda estiver a editar esta lead
+  if(typeof crmEditingId!=='undefined' && crmEditingId===leadId){
+    const stEl = document.getElementById('clm-st'); if(stEl) stEl.value = 'Ganho ✓';
+    const dtFEl = document.getElementById('clm-dt-fecho'); if(dtFEl) dtFEl.value = lead.dtFecho;
+    if(typeof crmRenderTimeline==='function') crmRenderTimeline(leadId);
+    if(typeof crmRenderOrcLink==='function') crmRenderOrcLink(leadId);
+  }
+
   if(typeof OB_WEBHOOK_ADJUDICACAO === 'string' && OB_WEBHOOK_ADJUDICACAO){
     fetch(OB_WEBHOOK_ADJUDICACAO, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(dados)}).catch(()=>{});
   }
-  showToast('✓ Adjudicação submetida com sucesso!');
+  showToast(orc ? ('✓ Adjudicação submetida — Orçamento '+orc.num+' aprovado, Obra criada') : '✓ Adjudicação submetida — sem orçamento associado, cria um orçamento para gerar a Obra');
   crmFecharAdjudicacaoModal();
 }
 
@@ -23244,6 +23310,9 @@ function obCriarProjetoProducao(orc){
   if(typeof saveUniItems==='function') saveUniItems();
   try{ if(typeof fpRender==='function') fpRender(); }catch(e){}
   if(typeof showToast==='function') showToast('🏭 Projecto criado na Produção: '+item.n);
+  if(orc.leadId && typeof crmAddAtividade==='function'){
+    crmAddAtividade(orc.leadId, 'obra', 'Obra iniciada a partir do orçamento '+orc.num+' — "'+item.n+'"', 'Sistema');
+  }
 }
 
 (function(){
