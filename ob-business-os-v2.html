@@ -9892,6 +9892,7 @@ var USERS=[
   {id:'sara',name:'Sara Antunes',role:'Designer Sénior',dept:'Dep. Design',color:'#e67e22',admin:false,online:true},
   {id:'tomas',name:'Tomás Figueiredo',role:'Designer',dept:'Dep. Design',color:'#e67e22',admin:false,online:true},
   {id:'andre',name:'André Costa',role:'Chefe de Produção',dept:'Chão da Fábrica',color:'#3b82f6',admin:false,online:true},
+  {id:'ivan',name:'Ivan Miguel Nunes',role:'Coordenador de Produção',dept:'Chão da Fábrica',color:'#3b82f6',admin:false,coordinator:true,online:true},
   {id:'carlos',name:'Carlos Melo',role:'Técnico Produção',dept:'Chão da Fábrica',color:'#3b82f6',admin:false,online:true},
   {id:'bruno',name:'Bruno Ferreira',role:'Técnico Produção',dept:'Chão da Fábrica',color:'#3b82f6',admin:false,online:false},
   {id:'tiago',name:'Tiago Nunes',role:'Técnico Produção',dept:'Chão da Fábrica',color:'#3b82f6',admin:false,online:true},
@@ -11991,8 +11992,8 @@ var UNI_CFG = {
   },
   'fabrica-producao': {
     title:'Ordem de Produção', icon:'🔧',
-    statuses:['Aguarda Arte','Encomenda','Em Produção','Pintura','Acabamento','Qualidade','Expedição','Concluído ✓'],
-    colors:{'Aguarda Arte':'#e67e22','Encomenda':'#d9822b','Em Produção':'#F5C400','Pintura':'#8b5cf6','Acabamento':'#4d94db','Qualidade':'#3fcf8e','Expedição':'#27ae60','Concluído ✓':'#6b7280'},
+    statuses:['Entrada de Obra','Aguarda Arte','Encomenda','Em Produção','Pintura','Acabamento','Qualidade','Expedição','Concluído ✓'],
+    colors:{'Entrada de Obra':'#e74c3c','Aguarda Arte':'#e67e22','Encomenda':'#d9822b','Em Produção':'#F5C400','Pintura':'#8b5cf6','Acabamento':'#4d94db','Qualidade':'#3fcf8e','Expedição':'#27ae60','Concluído ✓':'#6b7280'},
     kanban:true, nameLabel:'Trabalho / Produto', dateLabel:'Prazo entrega', extraRow:false
   },
   'fabrica-instalacoes': {
@@ -12146,7 +12147,9 @@ function uniOpen(page, itemId){
   // Assignees — designers para design, comerciais para o resto
   const aSel = document.getElementById('uni-assignee');
   let teamList = [];
-  if(page && page.startsWith('design')){
+  if(page==='fabrica-producao' && typeof USERS!=='undefined' && USERS){
+    teamList = USERS.filter(u=>u.dept==='Chão da Fábrica').map(u=>u.name);
+  } else if(page && page.startsWith('design')){
     teamList = typeof designComerciais!=='undefined' ? designComerciais.filter(c=>c.ativo).map(c=>c.nome) : ['Sara Antunes','Tomás Figueiredo','João Lopes'];
   } else {
     const comTeam = typeof crmComerciais!=='undefined' ? crmComerciais.filter(c=>c.ativo).map(c=>c.nome) : [];
@@ -12335,7 +12338,10 @@ function fpView(v){
 }
 
 function fpRender(){
-  const items=uniGetItems('fabrica-producao');
+  const allItems=uniGetItems('fabrica-producao');
+  // Só Ivan/coordenadores/admin veem o board completo; cada colaborador vê só as suas ordens.
+  const canSeeAllProducao = !CU || CU.admin===true || CU.coordinator===true;
+  const items = canSeeAllProducao ? allItems : allItems.filter(i=>i.assignee===CU.name);
   if(fpCurrentView==='list'){
     const el=document.getElementById('fp-list-view'); if(!el) return;
     const cfg=UNI_CFG['fabrica-producao'];
@@ -16707,7 +16713,7 @@ window.openUniModal = function(page){
   var CFGS = {
     'design-tarefas':     ['Em fila','Em progresso','Aguarda aprovacao','Aprovado','Conclusao'],
     'design-ficheiros':   ['Rascunho','Em progresso','Aguarda aprovacao','Aprovado','Arquivo'],
-    'fabrica-producao':   ['Aguarda Arte','Encomenda','Em Producao','Pintura','Acabamento','Qualidade','Expedicao','Concluido'],
+    'fabrica-producao':   ['Entrada de Obra','Aguarda Arte','Encomenda','Em Produção','Pintura','Acabamento','Qualidade','Expedição','Concluído ✓'],
     'fabrica-instalacoes':['Planeada','Agendada','Em curso','Concluida','Cancelada'],
     'admin-agenda':       ['Reuniao','Visita a cliente','Instalacao','Follow-up','Entrega','Outro'],
     'home-tasks':         ['A fazer','Em progresso','Em revisao','Concluido']
@@ -16737,7 +16743,10 @@ window.openUniModal = function(page){
   var as=document.getElementById('uni-assignee');
   if(as){
     var team=[];
-    if(page.indexOf('design')>=0&&typeof designComerciais!=='undefined'&&designComerciais){
+    if(page==='fabrica-producao'&&typeof USERS!=='undefined'&&USERS){
+      team=USERS.filter(function(u){return u.dept==='Chão da Fábrica';}).map(function(u){return u.name;});
+    }
+    if(!team.length&&page.indexOf('design')>=0&&typeof designComerciais!=='undefined'&&designComerciais){
       team=designComerciais.filter(function(c){return c.ativo;}).map(function(c){return c.nome;});
     }
     if(!team.length&&typeof crmComerciais!=='undefined'&&crmComerciais){
@@ -16776,14 +16785,13 @@ window.openUniModal = function(page){
   // Departamentos (só para produção)
   if(typeof uniToggleDeptSection==='function') uniToggleDeptSection(page);
   if(page==='fabrica-producao'){
-    document.querySelectorAll('.dept-check').forEach(function(cb){ cb.checked = cb.value==='Em Produção'; });
+    document.querySelectorAll('.dept-check').forEach(function(cb){ cb.checked = false; });
     document.querySelectorAll('.dept-check-lbl').forEach(function(lbl){
-      var cb=lbl.querySelector('.dept-check');
-      lbl.style.borderColor = cb.checked?'var(--y)':'';
-      lbl.style.background  = cb.checked?'rgba(245,196,0,.08)':'';
+      lbl.style.borderColor = '';
+      lbl.style.background  = '';
     });
     var prev=document.getElementById('uni-subtasks-preview');
-    if(prev) prev.innerHTML='<div style="font-size:12px;color:var(--muted);font-style:italic;padding:4px">Subtarefa: ⚙️ Em Produção</div>';
+    if(prev) prev.innerHTML='<div style="font-size:12px;color:var(--muted);font-style:italic;padding:4px">Entra em "Entrada de Obra" — o coordenador distribui pelos departamentos.</div>';
   }
   m.classList.add('open');
 };
@@ -23224,12 +23232,12 @@ function obCriarProjetoProducao(orc){
   var item={
     id:Date.now(), page:'fabrica-producao',
     n:produto+' — '+orc.cli, client:orc.cli,
-    status:'Aguarda Arte', priority:'high',
+    status:'Entrada de Obra', priority:'high',
     assignee:'', date:prazo.toISOString().split('T')[0],
     notes:'Criado automaticamente a partir do orçamento '+orc.num+(orc.vendedor?' (vendedor: '+orc.vendedor+')':''),
     orcNum:orc.num, _ckAplicado:true,
     checklists:[obChecklistParaTipo(produto)],
-    historico:[{de:null,para:'Aguarda Arte',em:new Date().toISOString(),por:(typeof CU!=='undefined'&&CU&&CU.name)||'Sistema'}],
+    historico:[{de:null,para:'Entrada de Obra',em:new Date().toISOString(),por:(typeof CU!=='undefined'&&CU&&CU.name)||'Sistema'}],
     dt:new Date().toLocaleDateString('pt-PT',{day:'2-digit',month:'2-digit',year:'numeric'})
   };
   uniItems.unshift(item);
