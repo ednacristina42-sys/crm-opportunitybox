@@ -12104,8 +12104,10 @@ function saveUniAtividades(){ localStorage.setItem('ob-uni-atividades', JSON.str
 function uniAddAtividade(itemId, dept, texto, link){
   if(!texto || !texto.trim()) return;
   const autor = (typeof CU!=='undefined'&&CU&&CU.name) ? CU.name : 'Sistema';
-  uniAtividades.unshift({ id:Date.now()+Math.floor(Math.random()*1000), itemId, dept, texto:texto.trim(), link:(link||'').trim()||null, autor, ts:new Date().toISOString() });
+  const entry = { id:Date.now()+Math.floor(Math.random()*1000), itemId, dept, texto:texto.trim(), link:(link||'').trim()||null, autor, ts:new Date().toISOString() };
+  uniAtividades.unshift(entry);
   saveUniAtividades();
+  if(typeof _sbUniAtividadeInsert==='function') _sbUniAtividadeInsert(entry);
 }
 
 // ── MODAL OPEN / SAVE / DELETE ──────────────────────────────────────
@@ -12302,6 +12304,10 @@ function uniSave(){
     data.id=Date.now(); uniItems.unshift(data);
   }
   saveUniItems();
+  if(typeof _sbUniItemUpsert==='function'){
+    const savedItem = uniEditingId ? uniItems.find(i=>i.id===uniEditingId) : uniItems[0];
+    if(savedItem) _sbUniItemUpsert(savedItem);
+  }
   document.getElementById('uni-modal').classList.remove('open');
   uniRefreshPage(uniCurrentPage);
 }
@@ -12309,8 +12315,11 @@ function uniSave(){
 function uniDelete(){
   if(!uniEditingId) return;
   if(!confirm('Eliminar este item?')) return;
-  uniItems = uniItems.filter(i=>i.id!==uniEditingId);
+  const _delId = uniEditingId;
+  const _delPage = uniCurrentPage;
+  uniItems = uniItems.filter(i=>i.id!==_delId);
   saveUniItems();
+  if(typeof _sbUniItemDelete==='function') _sbUniItemDelete(_delId, _delPage);
   document.getElementById('uni-modal').classList.remove('open');
   uniRefreshPage(uniCurrentPage);
 }
@@ -12444,6 +12453,7 @@ function agendaDeleteDireto(id, e){
   if(!confirm('Apagar este evento?')) return;
   uniItems = uniItems.filter(i=>i.id!==id);
   saveUniItems();
+  if(typeof _sbUniItemDelete==='function') _sbUniItemDelete(id, 'admin-agenda');
   agendaRender();
 }
 
@@ -14378,6 +14388,85 @@ async function _sbOrcLoadAll() {
     // Migrar dados locais para Supabase
     for (var i = 0; i < orcData.length; i++) { await _sbOrcUpsert(orcData[i]); }
     console.log('[SB-ORC] ' + orcData.length + ' orçamentos migrados para Supabase.');
+  }
+})();
+
+// ══════════════════════════════════════════════════════════════════
+// SUPABASE — Pipeline de Produção (uniItems) + Actividades por departamento.
+// Tabela por item (ob_uni_items/ob_uni_atividades), não um blob único —
+// ao contrário do obSbPush/obSbBoot genérico (que só adopta o remoto se o
+// local estiver vazio, e pode por isso perder dados entre dispositivos que
+// já têm dados locais diferentes), aqui o remoto é sempre adotado quando
+// tem dados, tal como já acontece com os orçamentos (_orcInitFromSB acima).
+// ══════════════════════════════════════════════════════════════════
+// Nota: o "id" de um uniItem (Date.now()+idx nos dados de exemplo, ou Date.now() em
+// itens criados manualmente) só é garantidamente único DENTRO da mesma página — dois
+// itens de páginas diferentes podem colidir no mesmo id. Por isso a chave primária
+// em ob_uni_items é composta (id, page), nunca só id.
+async function _sbUniItemUpsert(item){
+  try{
+    var row = { id:item.id, page:item.page, payload:item, updated_at:new Date().toISOString() };
+    await fetch(_ORC_SB_URL+'/rest/v1/ob_uni_items?on_conflict=id,page', {
+      method:'POST', headers:_sbOrcHeaders(), body:JSON.stringify(row)
+    });
+  }catch(e){ console.warn('[SB-UNI] upsert falhou:', e); }
+}
+async function _sbUniItemDelete(id, page){
+  try{
+    await fetch(_ORC_SB_URL+'/rest/v1/ob_uni_items?id=eq.'+id+'&page=eq.'+encodeURIComponent(page), {
+      method:'DELETE', headers:_sbOrcHeaders()
+    });
+  }catch(e){ console.warn('[SB-UNI] delete falhou:', e); }
+}
+async function _sbUniItemsLoadAll(){
+  try{
+    var r = await fetch(_ORC_SB_URL+'/rest/v1/ob_uni_items?select=payload&order=updated_at.desc&limit=5000', {
+      headers:{ 'apikey':_ORC_SB_KEY, 'Authorization':'Bearer '+_ORC_SB_KEY }
+    });
+    if(!r.ok) return null;
+    var rows = await r.json();
+    return rows.map(function(row){ return row.payload; });
+  }catch(e){ console.warn('[SB-UNI] load falhou:', e); return null; }
+}
+async function _sbUniAtividadeInsert(a){
+  try{
+    var row = { id:a.id, item_id:a.itemId, dept:a.dept, texto:a.texto, link:a.link, autor:a.autor, ts:a.ts };
+    await fetch(_ORC_SB_URL+'/rest/v1/ob_uni_atividades?on_conflict=id', {
+      method:'POST', headers:_sbOrcHeaders(), body:JSON.stringify(row)
+    });
+  }catch(e){ console.warn('[SB-UNI-ATIV] insert falhou:', e); }
+}
+async function _sbUniAtividadesLoadAll(){
+  try{
+    var r = await fetch(_ORC_SB_URL+'/rest/v1/ob_uni_atividades?select=*&order=ts.desc&limit=5000', {
+      headers:{ 'apikey':_ORC_SB_KEY, 'Authorization':'Bearer '+_ORC_SB_KEY }
+    });
+    if(!r.ok) return null;
+    var rows = await r.json();
+    return rows.map(function(row){
+      return { id:row.id, itemId:row.item_id, dept:row.dept, texto:row.texto, link:row.link, autor:row.autor, ts:row.ts };
+    });
+  }catch(e){ console.warn('[SB-UNI-ATIV] load falhou:', e); return null; }
+}
+
+(async function _uniInitFromSB(){
+  var sbItems = await _sbUniItemsLoadAll();
+  if(sbItems && sbItems.length>0){
+    uniItems = sbItems;
+    saveUniItems();
+    if(typeof fpRender==='function') fpRender();
+    if(typeof uniInitAll==='function') uniInitAll();
+  } else if(uniItems.length>0){
+    for(var i=0;i<uniItems.length;i++){ await _sbUniItemUpsert(uniItems[i]); }
+    console.log('[SB-UNI] '+uniItems.length+' itens da Produção migrados para Supabase.');
+  }
+  var sbAtiv = await _sbUniAtividadesLoadAll();
+  if(sbAtiv && sbAtiv.length>0){
+    uniAtividades = sbAtiv;
+    saveUniAtividades();
+  } else if(uniAtividades.length>0){
+    for(var j=0;j<uniAtividades.length;j++){ await _sbUniAtividadeInsert(uniAtividades[j]); }
+    console.log('[SB-UNI-ATIV] '+uniAtividades.length+' actividades migradas para Supabase.');
   }
 })();
 
@@ -23641,7 +23730,10 @@ window.obAtualizarPendencias=obAtualizarPendencias;
 // Guarda cada chave do localStorage como uma linha jsonb no Supabase.
 // Estratégia conservadora: só adopta dados remotos quando o navegador
 // está vazio (1º arranque / dispositivo novo); caso contrário faz backup.
-var OB_SB_SYNC_KEYS=['ob-leads','ob-clients','ob-uni-items','ob-crm-atividades','ob-crm-historico','ob-rh-colabs','ob-fo-ausencias','ob-rh-ferias-cfg','ob-rh-turnos',
+// Nota: 'ob-uni-items' e 'ob-uni-atividades' NÃO estão aqui de propósito — têm
+// a sua própria sincronização por item (ob_uni_items/ob_uni_atividades, ver
+// _sbUniItemUpsert/_uniInitFromSB), mais robusta que este mecanismo de blob único.
+var OB_SB_SYNC_KEYS=['ob-leads','ob-clients','ob-crm-atividades','ob-crm-historico','ob-rh-colabs','ob-fo-ausencias','ob-rh-ferias-cfg','ob-rh-turnos',
   // Dados financeiros — tesouraria, despesas, IVA e faturas
   'ob-tes-contas','ob-tes-receber','ob-tes-log','ob-tes-cartoes','ob-fin-despesas','ob-iva-dados','ob-faturas'];
 var _obSbTimers={};
@@ -23672,6 +23764,9 @@ async function obSbBoot(){
       var rows=await r.json();
       var adoptou=false;
       rows.forEach(function(row){
+        // 'ob-uni-items' tem agora a sua própria sincronização por item (ver
+        // _sbUniItemUpsert/_uniInitFromSB) — ignorado aqui para não competir com ela.
+        if(row.chave==='ob-uni-items') return;
         var localRaw=localStorage.getItem(row.chave);
         var localVazio=!localRaw||localRaw==='[]'||localRaw==='{}'||localRaw==='null';
         var remotoTem=row.dados&&(row.dados.length||Object.keys(row.dados).length);
@@ -23680,7 +23775,6 @@ async function obSbBoot(){
           try{
             if(row.chave==='ob-leads'&&typeof crmLeads!=='undefined'){ crmLeads=row.dados; leads=crmLeads; }
             if(row.chave==='ob-clients'&&typeof cliData!=='undefined'){ cliData=row.dados; }
-            if(row.chave==='ob-uni-items'&&typeof uniItems!=='undefined'){ uniItems=row.dados; }
             if(row.chave==='ob-crm-atividades'&&typeof crmAtividades!=='undefined'){ crmAtividades=row.dados; }
             if(row.chave==='ob-crm-historico'&&typeof crmHistorico!=='undefined'){ crmHistorico=row.dados; }
             if(row.chave==='ob-fo-ausencias'&&typeof FO_AUSENCIAS!=='undefined'){ FO_AUSENCIAS=row.dados; }
@@ -23716,7 +23810,6 @@ async function obSbBoot(){
     window[fnName]=function(){ f.apply(this,arguments); obSbPush(chave); };
   }
   wrap('saveCliData','ob-clients');
-  wrap('saveUniItems','ob-uni-items');
   wrap('saveCrmAtividades','ob-crm-atividades');
   wrap('saveCrmHistorico','ob-crm-historico');
   // Financeiro: tesouraria, despesas e faturas com backup automático
