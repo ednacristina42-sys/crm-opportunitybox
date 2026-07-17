@@ -3061,7 +3061,7 @@ function ecRenderDadosEquipa(d){
   if(badgeV) badgeV.textContent = visitas.length;
   var elV = document.getElementById('ec-visits-list');
   if(elV){
-    elV.innerHTML = visitas.length ? visitas.slice(0,8).map(function(v){
+    elV.innerHTML = visitas.length ? visitas.map(function(v){
       return '<div class="ec-row">'
         + '<div class="ava">' + ecIniciaisNome(v.colaborador) + '</div>'
         + '<div class="info"><div class="name">' + (v.cliente||'Cliente') + '</div>'
@@ -3076,7 +3076,7 @@ function ecRenderDadosEquipa(d){
   if(cntG) cntG.textContent = gps.length;
   var elG = document.getElementById('ec-loc-list');
   if(elG){
-    elG.innerHTML = gps.length ? gps.slice(0,8).map(function(p){
+    elG.innerHTML = gps.length ? gps.map(function(p){
       var lat = parseFloat(p.lat), lng = parseFloat(p.lng);
       var temCoord = !isNaN(lat) && !isNaN(lng);
       var mapUrl = 'https://www.google.com/maps?q=' + lat + ',' + lng;
@@ -3096,7 +3096,7 @@ function ecRenderDadosEquipa(d){
   if(badgeF) badgeF.textContent = frota.length;
   var elF = document.getElementById('ec-fleet-list');
   if(elF){
-    elF.innerHTML = frota.length ? frota.slice(0,8).map(function(f){
+    elF.innerHTML = frota.length ? frota.map(function(f){
       return '<div class="ec-row">'
         + '<div class="ava">' + ecIniciaisNome(f.colaborador) + '</div>'
         + '<div class="info"><div class="name">' + (f.colaborador||'—') + '</div>'
