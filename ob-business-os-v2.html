@@ -5988,17 +5988,6 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
         <select id="login-user-select" onchange="loginSelectFromDropdown(this.value)"
           style="width:100%;background:var(--bg3);border:1.5px solid var(--border);border-radius:12px;color:var(--txt2);padding:14px 40px 14px 16px;font-size:16px;font-family:Inter,sans-serif;appearance:none;cursor:pointer;transition:border-color .2s;outline:none">
           <option value="">— Seleciona —</option>
-          <option value="paulo">Paulo Faria — CEO · Direcção</option>
-          <option value="edna">Edna Faria — CFO · Direcção</option>
-          <option value="rui">Rui Mota — Comercial Sénior</option>
-          <option value="andreia">Andreia Santos — Design Sénior</option>
-          <option value="tiago">Tiago Carvalho — Comercial</option>
-          <option value="fatima">Fátima Silva — Comercial</option>
-          <option value="jose">José Pereira — Fábrica · Chefe</option>
-          <option value="mario">Mário Costa — Fábrica</option>
-          <option value="carlos">Carlos Dias — Fábrica</option>
-          <option value="ana">Ana Rodrigues — Administrativo</option>
-          <option value="pedro">Pedro Ferreira — Fábrica</option>
         </select>
         <div style="position:absolute;right:14px;top:50%;transform:translateY(-50%);pointer-events:none;color:var(--muted);font-size:14px">▾</div>
       </div>
@@ -10029,14 +10018,28 @@ window.doLogin = function() { loginComSenha(); };
 
 function renderLogin(){
   const grid=document.getElementById('user-grid');
-  grid.innerHTML=USERS.map(u=>`
-    <div class="ucard${u.admin?' admin-card':''}" onclick="selectUser('${u.id}')" id="ucard-${u.id}" style="position:relative">
-      ${u.admin?'<div class="ucard-admin" title="Admin">★</div>':''}
-      <div class="ucard-ava" style="background:${u.color}">${ini(u.name)}</div>
-      <div class="ucard-name">${u.name}</div>
-      <div class="ucard-role">${u.role}</div>
-      <div class="ucard-dept" style="background:${u.color}20;color:${u.color}">${u.dept}</div>
-    </div>`).join('');
+  if(grid){
+    grid.innerHTML=USERS.map(u=>`
+      <div class="ucard${u.admin?' admin-card':''}" onclick="selectUser('${u.id}')" id="ucard-${u.id}" style="position:relative">
+        ${u.admin?'<div class="ucard-admin" title="Admin">★</div>':''}
+        <div class="ucard-ava" style="background:${u.color}">${ini(u.name)}</div>
+        <div class="ucard-name">${u.name}</div>
+        <div class="ucard-role">${u.role}</div>
+        <div class="ucard-dept" style="background:${u.color}20;color:${u.color}">${u.dept}</div>
+      </div>`).join('');
+  }
+  // Dropdown de login (#login-user-select) — gerado a partir de USERS, a mesma
+  // lista usada em todo o resto da app. Antes havia uma lista à parte, escrita à
+  // mão no HTML, com nomes/ids diferentes dos de USERS — ids que não existiam em
+  // USERS faziam loginComSenha() rebentar a meio (CU ficava undefined) e o ecrã
+  // de login ficava preso, sem erro visível, exactamente como "o botão não faz nada".
+  const sel=document.getElementById('login-user-select');
+  if(sel){
+    const selected=sel.value;
+    sel.innerHTML='<option value="">— Seleciona —</option>'
+      + USERS.map(u=>`<option value="${u.id}">${u.name} — ${u.role}</option>`).join('');
+    if(selected) sel.value=selected;
+  }
 }
 
 function selectUser(id){
