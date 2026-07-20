@@ -1,3 +1,19 @@
 node_modules/
 package-lock.json
 package.json
+
+# Negação: os padrões acima não têm barra, por isso aplicam-se a qualquer
+# profundidade e ignorariam também o manifesto/lockfile do opportunity-ai-os.
+!opportunity-ai-os/package.json
+!opportunity-ai-os/package-lock.json
+
+# Ficheiros de ambiente locais — nunca commitar segredos reais
+opportunity-ai-os/.env
+opportunity-ai-os/.env.local
+
+# Artefactos de build/teste
+opportunity-ai-os/dist/
+opportunity-ai-os/coverage/
+opportunity-ai-os/*.tsbuildinfo
+opportunity-ai-os/vite.config.d.ts
+opportunity-ai-os/vite.config.js
