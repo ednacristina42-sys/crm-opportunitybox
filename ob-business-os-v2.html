@@ -14351,11 +14351,19 @@ async function _sbOrcUpsert(orc) {
       imagem: orc.imagem || null, obs: orc.obs || '',
       cliemail: orc.cliEmail || '', cliwa: orc.cliWA || '',
       pagamento50: orc.pagamento50 || false, sinal: orc.sinal || null, saldo: orc.saldo || null,
-      extra: { dtProducao: orc.dtProducao, aprovado_em: orc.aprovado_em, aprovado_por: orc.aprovado_por, _importadoPlanilha: orc._importadoPlanilha }
+      // leadId não tem coluna própria em ob_orcamentos — guarda-se dentro de extra (jsonb) para não exigir migration.
+      extra: {
+        dtProducao: orc.dtProducao, aprovado_em: orc.aprovado_em, aprovado_por: orc.aprovado_por,
+        _importadoPlanilha: orc._importadoPlanilha,
+        leadId: (orc.leadId === undefined || orc.leadId === null) ? null : orc.leadId
+      }
     };
-    await fetch(_ORC_SB_URL + '/rest/v1/ob_orcamentos?on_conflict=id', {
+    var r = await fetch(_ORC_SB_URL + '/rest/v1/ob_orcamentos?on_conflict=id', {
       method: 'POST', headers: _sbOrcHeaders(), body: JSON.stringify(row)
     });
+    if (!r.ok && row.extra.leadId !== null) {
+      console.warn('[SB-ORC] upsert do orçamento ' + row.num + ' falhou (HTTP ' + r.status + ') — ligação a leadId pode não ter sido persistida.');
+    }
   } catch(e) { console.warn('[SB-ORC] upsert falhou:', e); }
 }
 
@@ -14367,6 +14375,11 @@ async function _sbOrcLoadAll() {
     if (!r.ok) return null;
     var rows = await r.json();
     return rows.map(function(row) {
+      var extra = row.extra || {};
+      if (row.extra && typeof row.extra !== 'object') {
+        console.warn('[SB-ORC] orçamento ' + row.num + ': campo extra em formato inesperado — leadId não recuperado.');
+        extra = {};
+      }
       return {
         num: row.num, cli: row.cli, vendedor: row.vendedor, email: row.email,
         st: row.st, stc: row.stc, dt: row.dt, data: row.data,
@@ -14377,9 +14390,9 @@ async function _sbOrcLoadAll() {
         imagem: row.imagem, obs: row.obs,
         cliEmail: row.cliemail, cliWA: row.cliwa,
         pagamento50: row.pagamento50, sinal: row.sinal, saldo: row.saldo,
-        dtProducao: (row.extra||{}).dtProducao,
-        aprovado_em: (row.extra||{}).aprovado_em, aprovado_por: (row.extra||{}).aprovado_por,
-        _importadoPlanilha: (row.extra||{})._importadoPlanilha
+        dtProducao: extra.dtProducao, aprovado_em: extra.aprovado_em, aprovado_por: extra.aprovado_por,
+        _importadoPlanilha: extra._importadoPlanilha,
+        leadId: (extra.leadId === undefined || extra.leadId === null) ? null : extra.leadId
       };
     });
   } catch(e) { console.warn('[SB-ORC] load falhou:', e); return null; }
