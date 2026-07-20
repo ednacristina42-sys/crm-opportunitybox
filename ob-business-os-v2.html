@@ -9900,27 +9900,6 @@ var leads = [];
 var USERS=[
   {id:'paulo',name:'Paulo Faria',role:'CEO · Direcção',dept:'Direcção',color:'#F5C400',admin:true,online:true},
   {id:'edna',name:'Edna Faria',role:'CFO · Direcção',dept:'Direcção',color:'#F5C400',admin:true,online:true},
-  {id:'rui',name:'Rui Mota',role:'Comercial Sénior',dept:'Dep. Comercial',color:'#e74c3c',admin:false,online:true},
-  {id:'humberto',name:'Humberto Estrelinha',role:'Comercial',dept:'Dep. Comercial',color:'#e74c3c',admin:false,online:false},
-  {id:'filipa',name:'Filipa Santos',role:'Comercial',dept:'Dep. Comercial',color:'#e74c3c',admin:false,online:true},
-  {id:'sara',name:'Sara Antunes',role:'Designer Sénior',dept:'Dep. Design',color:'#e67e22',admin:false,online:true},
-  {id:'tomas',name:'Tomás Figueiredo',role:'Designer',dept:'Dep. Design',color:'#e67e22',admin:false,online:true},
-  {id:'andre',name:'André Costa',role:'Comercial',dept:'Dep. Comercial',color:'#e74c3c',admin:false,online:true},
-  {id:'ivan',name:'Ivan Miguel Nunes',role:'Coordenador de Produção',dept:'Chão da Fábrica',color:'#3b82f6',admin:false,coordinator:true,online:true},
-  {id:'carlos',name:'Carlos Melo',role:'Técnico Produção',dept:'Chão da Fábrica',color:'#3b82f6',admin:false,online:true},
-  {id:'bruno',name:'Bruno Ferreira',role:'Técnico Produção',dept:'Chão da Fábrica',color:'#3b82f6',admin:false,online:false},
-  {id:'tiago',name:'Tiago Nunes',role:'Técnico Produção',dept:'Chão da Fábrica',color:'#3b82f6',admin:false,online:true},
-  {id:'diogo',name:'Diogo Alves',role:'Técnico Produção',dept:'Chão da Fábrica',color:'#3b82f6',admin:false,online:true},
-  {id:'mauro',name:'Mauro Silva',role:'Técnico Produção',dept:'Chão da Fábrica',color:'#3b82f6',admin:false,online:false},
-  {id:'ricardo',name:'Ricardo Pinto',role:'Instalador Sénior',dept:'Chão da Fábrica',color:'#3b82f6',admin:false,online:true},
-  {id:'pedro_c',name:'Pedro Carvalho',role:'Instalador',dept:'Chão da Fábrica',color:'#3b82f6',admin:false,online:true},
-  {id:'luis',name:'Luís Rodrigues',role:'Instalador',dept:'Chão da Fábrica',color:'#3b82f6',admin:false,online:false},
-  {id:'sergio',name:'Sérgio Martins',role:'Instalador',dept:'Chão da Fábrica',color:'#3b82f6',admin:false,online:true},
-  {id:'nuno',name:'Nuno Pereira',role:'Instalador',dept:'Chão da Fábrica',color:'#3b82f6',admin:false,online:false},
-  {id:'joana',name:'Joana Lopes',role:'Secretariado',dept:'Gestão Administrativa',color:'#8b5cf6',admin:false,online:true},
-  {id:'marta',name:'Marta Gomes',role:'Secretariado',dept:'Gestão Administrativa',color:'#8b5cf6',admin:false,online:true},
-  {id:'ines',name:'Inês Sousa',role:'Financeira',dept:'Gestão Administrativa',color:'#8b5cf6',admin:false,online:true},
-  {id:'vasco',name:'Vasco Cunha',role:'Suporte TI',dept:'Gestão Administrativa',color:'#8b5cf6',admin:false,online:true},
 ];
 
 // Dept → which spaces are visible
@@ -15221,24 +15200,7 @@ ${d.imagemFachadaGerada ? `
 
 var FALLBACK_USERS=[
 {id:'paulo',name:'Paulo Faria',role:'CEO · Direcção',dept:'Direcção',color:'#F5C400',admin:true,online:true},
-{id:'edna',name:'Edna Faria',role:'CFO · Direcção',dept:'Direcção',color:'#F5C400',admin:true,online:true},
-{id:'rui',name:'Rui Mota',role:'Comercial Sénior',dept:'Dep. Comercial',color:'#e74c3c',admin:false,online:true},
-{id:'humberto',name:'Humberto Estrelinha',role:'Comercial',dept:'Dep. Comercial',color:'#e74c3c',admin:false,online:true},
-{id:'filipa',name:'Filipa Santos',role:'Administrativa Comercial',dept:'Dep. Comercial',color:'#e74c3c',admin:false,online:false},
-{id:'sara',name:'Sara Antunes',role:'Designer Gráfico',dept:'Dep. Design',color:'#e67e22',admin:false,online:true},
-{id:'tomas',name:'Tomás Figueiredo',role:'Designer 3D',dept:'Dep. Design',color:'#e67e22',admin:false,online:true},
-{id:'andre',name:'André Costa',role:'Comercial',dept:'Dep. Comercial',color:'#e74c3c',admin:false,online:true},
-{id:'carlos',name:'Carlos Melo',role:'Técnico Produção',dept:'Chão da Fábrica',color:'#3b82f6',admin:false,online:true},
-{id:'bruno',name:'Bruno Ferreira',role:'Técnico Instalação',dept:'Chão da Fábrica',color:'#3b82f6',admin:false,online:false},
-{id:'ricardo',name:'Ricardo Pinto',role:'Instalador Sénior',dept:'Chão da Fábrica',color:'#3b82f6',admin:false,online:true},
-{id:'pedro_c',name:'Pedro Carvalho',role:'Instalador',dept:'Chão da Fábrica',color:'#3b82f6',admin:false,online:true},
-{id:'luis',name:'Luís Rodrigues',role:'Instalador',dept:'Chão da Fábrica',color:'#3b82f6',admin:false,online:false},
-{id:'sergio',name:'Sérgio Martins',role:'Instalador',dept:'Chão da Fábrica',color:'#3b82f6',admin:false,online:true},
-{id:'nuno',name:'Nuno Pereira',role:'Instalador',dept:'Chão da Fábrica',color:'#3b82f6',admin:false,online:false},
-{id:'joana',name:'Joana Lopes',role:'Secretariado',dept:'Gestão Administrativa',color:'#8b5cf6',admin:false,online:true},
-{id:'marta',name:'Marta Gomes',role:'Secretariado',dept:'Gestão Administrativa',color:'#8b5cf6',admin:false,online:true},
-{id:'ines',name:'Inês Sousa',role:'Financeira',dept:'Gestão Administrativa',color:'#8b5cf6',admin:false,online:true},
-{id:'vasco',name:'Vasco Cunha',role:'Suporte TI',dept:'Gestão Administrativa',color:'#8b5cf6',admin:false,online:true}
+{id:'edna',name:'Edna Faria',role:'CFO · Direcção',dept:'Direcção',color:'#F5C400',admin:true,online:true}
 ];
 
 function _getUsers(){
