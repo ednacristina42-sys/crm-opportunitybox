@@ -6102,6 +6102,7 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
   </button>
   <div class="space-lists" id="sl-comercial">
     <button class="sl-item" data-action="goPage" data-page="comercial-pipeline"><div class="sl-dot" style="background:var(--y)"></div>Pipeline de Leads<span id="ob-badge-pendencias" style="display:none;background:var(--r);color:#fff;font-size:10.5px;font-weight:700;font-family:'DM Mono',monospace;padding:1px 6px;border-radius:8px;margin-left:auto;flex-shrink:0" title="Pendências: leads parados e acções em atraso">0</span></button>
+    <button class="sl-item" data-action="goPage" data-page="comercial-followup"><div class="sl-dot" style="background:#f5c400"></div>Follow-up</button>
     <button class="sl-item" data-action="goPage" data-page="comercial-clientes"><div class="sl-dot" style="background:#4d94db"></div>Clientes</button>
     <button class="sl-item" data-action="goPage" data-page="comercial-orcamentos"><div class="sl-dot" style="background:#3fcf8e"></div>Orçamentos<span id="toco-vencidas-badge">!</span></button>
     <button class="sl-item" data-action="goPage" data-page="equipa-campo"><div class="sl-dot" style="background:#4d94db"></div>🗺️ Equipa em Campo</button>
@@ -6306,6 +6307,19 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
   </div>
   <div id="crm-funnel-bar" class="crm-funnel-bar"></div>
   <div class="crm-kanban" id="crm-kanban"></div>
+</div>
+
+<!-- ─── COMERCIAL FOLLOW-UP -->
+<div id="page-comercial-followup" class="app-page">
+  <div class="pg-hdr">
+    <div class="pg-hdr-top">
+      <div class="pg-space-icon" style="background:var(--dc)">D</div>
+      <div class="pg-title">Follow-up</div>
+    </div>
+  </div>
+  <div class="task-content">
+    <div class="tw"><table><thead><tr><th>Cliente</th><th>Comercial</th><th>Valor</th><th>Dias sem contacto</th><th>Prioridade</th><th>Próxima acção</th><th>Registar contacto</th></tr></thead><tbody id="fu-tbody"></tbody></table></div>
+  </div>
 </div>
 
 <!-- ─── COMERCIAL CLIENTES -->
@@ -9217,6 +9231,7 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
           <button class="crm-ativ-btn" onclick="crmOpenAddAtiv('Chamada')">📞 Chamada</button>
           <button class="crm-ativ-btn" onclick="crmOpenAddAtiv('Email')">✉ Email</button>
           <button class="crm-ativ-btn" onclick="crmOpenAddAtiv('Visita')">🚗 Visita</button>
+          <button class="crm-ativ-btn" onclick="crmOpenAddAtiv('WhatsApp')">💬 WhatsApp</button>
         </div>
         <div id="clm-add-ativ-form" style="display:none;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:10px">
           <div style="font-size:12px;font-weight:600;color:var(--txt2);margin-bottom:6px" id="clm-ativ-tipo-label">Adicionar Nota</div>
@@ -9918,7 +9933,7 @@ var DEPT_ACCESS={
 };
 // Pages accessible per role
 var DEPT_PAGES={
-  'Dep. Comercial':['home','todas','comercial-pipeline','comercial-clientes','comercial-orcamentos','wa','equipa-campo','alerts','chat'],
+  'Dep. Comercial':['home','todas','comercial-pipeline','comercial-followup','comercial-clientes','comercial-orcamentos','wa','equipa-campo','alerts','chat'],
   'Dep. Design':['home','todas','design-tarefas','design-ficheiros','alerts','chat'],
   'Chão da Fábrica':['home','todas','fabrica-producao','fabrica-instalacoes','alerts','chat'],
   'Gestão Administrativa':['home','todas','admin-agenda','admin-docs','admin-despesas','admin-analise-vendas','admin-rh','stock','alerts','chat','comercial-orcamentos'],
@@ -10201,6 +10216,7 @@ window.goPage=function goPage(id){
   if(id==='admin-analise-vendas'&&typeof afLoad==='function')afLoad();
   if(id==='comercial-orcamentos'&&typeof orcInitPage==='function')orcInitPage();
   if(id==='comercial-pipeline'&&typeof crmInit==='function')crmInit();
+  if(id==='comercial-followup'&&typeof fuRender==='function')fuRender();
   if(id==='crm'){ try{ renderCRMKanban('crm-kanban-admin'); }catch(e){} }
   if(id==='equipa-campo'&&typeof loadEquipaCampoData==='function')loadEquipaCampoData();
   // ── Renders por página ────────────────────────────────────
@@ -11630,10 +11646,14 @@ function saveCrmAtividades(){ localStorage.setItem('ob-crm-atividades', JSON.str
 
 var _crmAtivTipo = 'Nota'; // tipo em curso no formulário inline
 
-function crmAddAtividade(leadId, tipo, texto, autor){
+function crmAddAtividade(leadId, tipo, texto, autor, opts){
   if(!texto||!texto.trim()) return;
   autor = autor || ((typeof CU!=='undefined'&&CU&&CU.name)?CU.name:'Sistema');
-  crmAtividades.unshift({ leadId, ts: new Date().toISOString(), tipo, texto: texto.trim(), autor });
+  opts = opts || {};
+  crmAtividades.unshift({
+    leadId, ts: new Date().toISOString(), tipo, texto: texto.trim(), autor,
+    orcId: opts.orcId || null, resultado: opts.resultado || null
+  });
   saveCrmAtividades();
 }
 
@@ -11643,7 +11663,7 @@ function crmOpenAddAtiv(tipo){
   const lbl  = document.getElementById('clm-ativ-tipo-label');
   const txt  = document.getElementById('clm-ativ-texto');
   if(!form) return;
-  const icons = {'Nota':'📝','Chamada':'📞','Email':'✉','Visita':'🚗'};
+  const icons = {'Nota':'📝','Chamada':'📞','Email':'✉','Visita':'🚗','WhatsApp':'💬'};
   if(lbl) lbl.textContent = (icons[tipo]||'')+' Registar '+tipo;
   if(txt){ txt.value=''; txt.placeholder = tipo==='Chamada'?'Ex: Falei com o gestor, vai analisar a proposta':tipo==='Visita'?'Ex: Visita às instalações, tirei medidas':'Descrição...'; }
   form.style.display='block';
@@ -11660,10 +11680,10 @@ function crmSaveAtiv(){
   crmRenderTimeline(crmEditingId);
 }
 
-function crmRenderTimeline(leadId){
+function crmRenderTimeline(leadId, orcId){
   const el = document.getElementById('clm-timeline');
   if(!el) return;
-  const entradas = crmAtividades.filter(h=>h.leadId===leadId);
+  const entradas = crmAtividades.filter(h=>h.leadId===leadId || (orcId && h.orcId===orcId));
   if(!entradas.length){
     el.innerHTML='<div style="color:var(--muted);font-size:13px;padding:8px 0;font-style:italic">Sem actividades registadas. Usa os botões acima para adicionar.</div>';
     return;
@@ -11674,6 +11694,7 @@ function crmRenderTimeline(leadId){
     'Chamada':'background:rgba(63,207,142,.12);color:#3fcf8e',
     'Email':  'background:rgba(59,130,246,.12);color:#60a5fa',
     'Visita': 'background:rgba(167,139,250,.12);color:#a78bfa',
+    'WhatsApp':'background:rgba(37,211,102,.12);color:#25d366',
     'nota':   'background:rgba(245,196,0,.12);color:#F5C400',
     'criado': 'background:rgba(34,197,94,.1);color:#22c55e',
     'orcamento':   'background:rgba(77,148,219,.12);color:#4d94db',
@@ -11681,7 +11702,7 @@ function crmRenderTimeline(leadId){
     'obra':        'background:rgba(63,207,142,.15);color:#3fcf8e',
   };
   const dotIcon = {
-    'estado':'→','Nota':'📝','Chamada':'📞','Email':'✉','Visita':'🚗','nota':'📝','criado':'＋',
+    'estado':'→','Nota':'📝','Chamada':'📞','Email':'✉','Visita':'🚗','WhatsApp':'💬','nota':'📝','criado':'＋',
     'orcamento':'📄','adjudicacao':'📋','obra':'🏭'
   };
   el.innerHTML = entradas.map(h=>{
@@ -11691,7 +11712,7 @@ function crmRenderTimeline(leadId){
     return `<div class="crm-tl-item">
       <div class="crm-tl-dot" style="${ds}">${di}</div>
       <div class="crm-tl-body">
-        <div class="crm-tl-action">${h.texto}</div>
+        <div class="crm-tl-action">${h.texto}${h.resultado?' — <em>'+h.resultado+'</em>':''}</div>
         <div class="crm-tl-meta">${dt} · ${h.autor}</div>
       </div>
     </div>`;
@@ -23551,6 +23572,14 @@ function obCriarClienteDeLead(lead){
 // ══ 4. PENDÊNCIAS: LEADS PARADOS + PRÓXIMAS ACÇÕES ══════════════════
 var OB_DIAS_LEAD_PARADO = 7;
 
+// Diferença em dias inteiros entre uma data e agora — fonte única desta
+// aritmética, reutilizada por obLeadsParados() e pelo motor de follow-up
+// (fuDiasSemContacto, mais abaixo) em vez de reimplementá-la.
+function obDiasEntre(data){
+  if(!data) return null;
+  return Math.floor((new Date()-data)/86400000);
+}
+
 // Última actividade conhecida de um lead (actividade registada ou data do lead)
 function obLeadUltimaAtividade(l){
   var ts=null;
@@ -23566,10 +23595,9 @@ function obLeadUltimaAtividade(l){
 
 function obLeadsParados(diasLimite){
   diasLimite=diasLimite||OB_DIAS_LEAD_PARADO;
-  var agora=new Date();
   return (crmLeads||[])
     .filter(function(l){ return ['Ganho ✓','Perdido ✗'].indexOf(l.st)===-1; })
-    .map(function(l){ var t=obLeadUltimaAtividade(l); return {lead:l, dias:t?Math.floor((agora-t)/86400000):null}; })
+    .map(function(l){ var dias=obDiasEntre(obLeadUltimaAtividade(l)); return {lead:l, dias:dias}; })
     .filter(function(x){ return x.dias!==null&&x.dias>diasLimite; })
     .sort(function(a,b){ return b.dias-a.dias; });
 }
@@ -23746,6 +23774,140 @@ window.obAtualizarPendencias=obAtualizarPendencias;
     window.loginComSenha=function(){ _origSenha(); setTimeout(obAtualizarPendencias,600); };
   }
 })();
+
+// ══ 4b. MOTOR DE FOLLOW-UP — cálculo único de dias-sem-contacto +
+// prioridade automática. Reutiliza obLeadUltimaAtividade/obDiasEntre/
+// obAcoesAgendadas/crmAtividades/proximaAcao/crmRenderTimeline em vez de
+// duplicar lógica. Não substitui os KPIs próprios do Kanban (crmUpdateStats,
+// badge SLA) nem o Agente 2 de automação — ficam fora do âmbito desta fase.
+// Prioridade é puramente calculada, nunca persistida — não é um novo
+// estado comercial. ═══════════════════════════════════════════════
+
+// Última actividade conhecida de um orçamento: crmAtividades ligadas por
+// orcId, OU pelo leadId do lead associado (uma actividade registada no
+// lead conta como contacto sobre o mesmo negócio), com fallback para a
+// data de criação do orçamento — mesmo padrão de obLeadUltimaAtividade.
+function obOrcUltimaAtividade(orc){
+  var ts=null;
+  try{
+    var a=(crmAtividades||[]).find(function(x){
+      return x.orcId===orc.num || (orc.leadId && x.leadId===orc.leadId);
+    });
+    if(a) ts=new Date(a.ts);
+  }catch(e){}
+  var dStr=orc.data||orc.dt, dtOrc=null;
+  if(dStr){ var p=dStr.split('/'); if(p.length===3) dtOrc=new Date(p[2],p[1]-1,p[0]); }
+  if(dtOrc&&(!ts||dtOrc>ts)) ts=dtOrc;
+  return ts;
+}
+
+// Dias sem contacto — fonte única para leads e orçamentos.
+function fuDiasSemContacto(item){
+  var t = item.tipo==='lead' ? obLeadUltimaAtividade(item.obj) : obOrcUltimaAtividade(item.obj);
+  return obDiasEntre(t);
+}
+
+// Prioridade automática (regras: 1/3/7/14/30 dias sem contacto).
+var FU_PRIORIDADES = [
+  {min:30, key:'perdido_sugerido', label:'Perdido (sugerido)', cor:'var(--r)'},
+  {min:14, key:'critica',          label:'Crítica',            cor:'var(--r)'},
+  {min:7,  key:'alta',             label:'Alta',               cor:'var(--a)'},
+  {min:3,  key:'normal',           label:'Normal',             cor:'var(--y)'},
+  {min:1,  key:'lembrete',         label:'Lembrete',           cor:'var(--b)'}
+];
+function fuPrioridade(dias){
+  if(dias===null||dias===undefined) return {key:'sem_dados', label:'—', cor:'var(--muted)'};
+  for(var i=0;i<FU_PRIORIDADES.length;i++){ if(dias>=FU_PRIORIDADES[i].min) return FU_PRIORIDADES[i]; }
+  return {key:'em_dia', label:'Em dia', cor:'var(--g)'};
+}
+
+// Estados terminais fora do âmbito do follow-up — nenhum estado novo,
+// só reutiliza os já existentes no pipeline (crmLeads.st / orcData.st).
+var FU_ESTADOS_LEAD_TERMINAIS = ['Ganho ✓','Perdido ✗'];
+var FU_ESTADOS_ORC_TERMINAIS = ['Faturado','Cancelado'];
+
+// Lista unificada de leads + orçamentos activos a acompanhar. A "próxima
+// acção" reutiliza sempre lead.proximaAcao (do próprio lead, ou do lead
+// ligado ao orçamento) — não introduz um campo novo em orcData.
+function fuListaItens(){
+  var itens=[];
+  (crmLeads||[]).forEach(function(l){
+    if(FU_ESTADOS_LEAD_TERMINAIS.indexOf(l.st)!==-1) return;
+    itens.push({tipo:'lead', obj:l, id:l.id, leadId:l.id, orcId:null,
+      cliente:l.emp||l.n||'—', comercial:l.ass||'—', valor:l.val||0, proximaAcao:l.proximaAcao||null});
+  });
+  (orcData||[]).forEach(function(o){
+    if(FU_ESTADOS_ORC_TERMINAIS.indexOf(o.st)!==-1) return;
+    var leadLigado = o.leadId ? (crmLeads||[]).find(function(l){return l.id===o.leadId;}) : null;
+    itens.push({tipo:'orc', obj:o, id:o.num, leadId:o.leadId||null, orcId:o.num,
+      cliente:o.cli||'—', comercial:o.vendedor||'—',
+      valor:(typeof orcGetValorTotal==='function')?orcGetValorTotal(o):(o.val||0),
+      proximaAcao:leadLigado?leadLigado.proximaAcao||null:null});
+  });
+  itens.forEach(function(it){ it.dias=fuDiasSemContacto(it); it.prioridade=fuPrioridade(it.dias); });
+  itens.sort(function(a,b){ return (b.dias===null?-1:b.dias)-(a.dias===null?-1:a.dias); });
+  return itens;
+}
+
+// Renderiza a vista "Follow-up" (tabela). Reutiliza fuListaItens (que por
+// sua vez reutiliza obLeadUltimaAtividade/obDiasEntre/proximaAcao).
+function fuRender(){
+  var tbody=document.getElementById('fu-tbody');
+  if(!tbody) return;
+  var itens=fuListaItens();
+  if(!itens.length){
+    tbody.innerHTML='<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:22px">Sem leads ou orçamentos activos a acompanhar.</td></tr>';
+    return;
+  }
+  tbody.innerHTML=itens.map(function(it){
+    var pa=it.proximaAcao;
+    var paTxt = (pa&&pa.data) ? (pa.tipo||'Acção')+' — '+pa.data.split('-').reverse().join('/') : '—';
+    var diasTxt = it.dias===null ? '—' : it.dias+'d';
+    var idAttr = String(it.id).replace(/'/g,"\\'");
+    function btn(tipoContacto,icone){
+      return '<button class="tbtn" title="'+tipoContacto+'" style="font-size:12px;padding:3px 8px;margin-right:3px" onclick="fuRegistarContacto(\''+it.tipo+'\',\''+idAttr+'\',\''+tipoContacto+'\')">'+icone+'</button>';
+    }
+    return '<tr>'
+      +'<td>'+(it.cliente)+'</td>'
+      +'<td>'+(it.comercial)+'</td>'
+      +'<td>€'+(it.valor||0).toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2})+'</td>'
+      +'<td>'+diasTxt+'</td>'
+      +'<td><span style="color:'+it.prioridade.cor+';font-weight:700">'+it.prioridade.label+'</span></td>'
+      +'<td>'+paTxt+'</td>'
+      +'<td style="white-space:nowrap">'+btn('Chamada','📞')+btn('WhatsApp','💬')+btn('Email','✉')+btn('Nota','📝')+'</td>'
+      +'</tr>';
+  }).join('');
+}
+window.fuRender=fuRender;
+
+// Botões da vista Follow-up: apenas registam actividade (crmAddAtividade)
+// — nunca abrem wa.me/mailto nem enviam nada automaticamente.
+function fuRegistarContacto(tipoItem, id, tipoContacto){
+  var lead=null, orc=null;
+  if(tipoItem==='lead'){ lead=(crmLeads||[]).find(function(l){ return l.id===id || l.id===parseInt(id,10); }); }
+  else{
+    orc=(orcData||[]).find(function(o){ return o.num===id; });
+    if(orc && orc.leadId) lead=(crmLeads||[]).find(function(l){ return l.id===orc.leadId; });
+  }
+  if(!lead && !orc) return;
+  var alvo = lead ? (lead.emp||lead.n) : orc.cli;
+  var texto = prompt((tipoContacto==='Nota'?'Nota sobre '+alvo+':':tipoContacto+' com '+alvo+' — nota (opcional):'), '');
+  if(texto===null) return; // cancelado pelo utilizador
+  if(!texto.trim()) texto = tipoContacto;
+  var resultado = null;
+  if(tipoContacto!=='Nota'){
+    resultado = prompt('Resultado do contacto (opcional — ex: Interessado, Sem resposta, Vai pensar, Agendado):','') || null;
+  }
+  var autor = (typeof CU!=='undefined'&&CU)?CU.name:'Sistema';
+  var leadIdAlvo = lead ? lead.id : null;
+  var orcIdAlvo = orc ? orc.num : null;
+  crmAddAtividade(leadIdAlvo, tipoContacto, texto, autor, {orcId:orcIdAlvo, resultado:resultado});
+  if(typeof fuRender==='function') fuRender();
+  if(typeof crmRenderTimeline==='function' && leadIdAlvo) crmRenderTimeline(leadIdAlvo, orcIdAlvo);
+  if(typeof obAtualizarPendencias==='function') obAtualizarPendencias();
+  if(typeof showToast==='function') showToast('✓ '+tipoContacto+' registado'+(alvo?' — '+alvo:''));
+}
+window.fuRegistarContacto=fuRegistarContacto;
 
 // ══ 5. SINCRONIZAÇÃO SUPABASE (tabela ob_crm_dados) ═════════════════
 // Guarda cada chave do localStorage como uma linha jsonb no Supabase.
