@@ -5604,6 +5604,30 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
 .crm-modal .form-row.full{grid-template-columns:1fr}
 .crm-modal-btns{display:flex;gap:8px;margin-top:18px;justify-content:flex-end}
 
+/* GESTÃO DE TAREFAS — eliminar tarefas/listas, menus de acções, animações */
+@keyframes homeModalPop{from{opacity:0;transform:scale(.92)}to{opacity:1;transform:scale(1)}}
+@keyframes homeFadeOutShrink{from{opacity:1;max-height:200px;transform:scale(1)}to{opacity:0;max-height:0;transform:scale(.96);margin:0;padding:0;border-width:0}}
+.home-fade-out{animation:homeFadeOutShrink .18s ease forwards;overflow:hidden;pointer-events:none}
+#home-confirm-modal .crm-modal{animation:homeModalPop .18s ease}
+.home-menu-wrap{position:relative;display:inline-flex}
+.home-list-menu-btn,.home-task-menu-btn{background:transparent;border:none;color:var(--muted);font-size:16px;cursor:pointer;padding:2px 7px;border-radius:5px;line-height:1;transition:all .15s}
+.home-list-menu-btn:hover,.home-task-menu-btn:hover{background:var(--bg4);color:var(--txt2)}
+.home-dropdown-menu{display:none;position:absolute;top:100%;right:0;z-index:120;background:var(--bg2);border:1px solid var(--border2);border-radius:9px;box-shadow:0 8px 28px rgba(0,0,0,.4);padding:5px;min-width:180px;animation:slideIn .15s ease}
+.home-dropdown-menu.open{display:block}
+.home-dropdown-menu button{display:flex;align-items:center;gap:7px;width:100%;text-align:left;background:none;border:none;color:var(--txt2);font-size:13.5px;padding:7px 9px;border-radius:6px;cursor:pointer;font-family:'Inter',sans-serif;white-space:nowrap}
+.home-dropdown-menu button:hover{background:var(--bg4)}
+.home-dropdown-menu button.danger{color:var(--r)}
+.home-dropdown-menu button.danger:hover{background:rgba(224,85,85,.12)}
+.home-dropdown-sep{height:1px;background:var(--border);margin:5px 2px}
+.home-empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 20px;text-align:center}
+.home-empty-icon{font-size:44px;margin-bottom:12px;opacity:.6}
+.home-empty-text{font-size:15px;color:var(--muted);margin-bottom:16px}
+@media (max-width:768px){
+  .home-dropdown-menu{min-width:160px;font-size:13px}
+  .home-empty-icon{font-size:36px}
+  .home-empty-state{padding:40px 16px}
+}
+
 /* COMERCIAIS TABLE */
 .com-row{display:grid;grid-template-columns:auto 1fr 1fr auto;gap:12px;align-items:center;padding:10px 12px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;margin-bottom:6px}
 .com-ava{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;color:#fff;flex-shrink:0}
@@ -9307,6 +9331,18 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
 
 
 <!-- ═══ MODAL NOVA TAREFA (HOME) ═══════════════════════════════════ -->
+<!-- Confirmação genérica (eliminar tarefa / eliminar lista) -->
+<div id="home-confirm-modal" class="crm-modal-overlay" onclick="if(event.target===this)homeCloseConfirmModal()">
+  <div class="crm-modal" style="max-width:400px">
+    <h2 id="home-confirm-title">Eliminar</h2>
+    <p id="home-confirm-msg" style="color:var(--muted);font-size:14px;line-height:1.55;white-space:pre-line;margin-bottom:4px"></p>
+    <div class="crm-modal-btns">
+      <button class="tbtn" onclick="homeCloseConfirmModal()">Cancelar</button>
+      <button class="tbtn" id="home-confirm-btn" style="background:var(--r);border-color:var(--r);color:#fff">Eliminar</button>
+    </div>
+  </div>
+</div>
+
 <div id="home-task-modal" class="crm-modal-overlay">
   <div class="crm-modal">
     <h2>+ Nova Tarefa</h2>
@@ -10476,36 +10512,215 @@ function homeSortTasks(arr){
   });
 }
 
+// ── GESTÃO DE TAREFAS: eliminar/gerir listas + eliminar tarefas ──────
+// "Listas" (ex.: "Dep. Comercial") são, por omissão, derivadas das tarefas
+// existentes (t.group). homeExtraListas/homeListasArquivadas permitem que
+// uma lista exista mesmo sem tarefas (criada de novo, ou esvaziada) e que
+// possa ser arquivada/eliminada de vez, sem depender só das tarefas.
+var homeExtraListas;
+try{ homeExtraListas=JSON.parse(localStorage.getItem('ob-home-extra-listas')||'null'); }catch(e){ homeExtraListas=null; }
+homeExtraListas=homeExtraListas||[];
+function saveHomeExtraListas(){ localStorage.setItem('ob-home-extra-listas', JSON.stringify(homeExtraListas)); }
+
+var homeListasArquivadas;
+try{ homeListasArquivadas=JSON.parse(localStorage.getItem('ob-home-listas-arquivadas')||'null'); }catch(e){ homeListasArquivadas=null; }
+homeListasArquivadas=homeListasArquivadas||[];
+function saveHomeListasArquivadas(){ localStorage.setItem('ob-home-listas-arquivadas', JSON.stringify(homeListasArquivadas)); }
+
+function homeListasVisiveis(tasks){
+  var base=tasks||homeTasksData||[];
+  var doTasks=[...new Set(base.map(function(t){return t.group;}).filter(Boolean))];
+  var todas=[...new Set([...doTasks, ...homeExtraListas])];
+  return todas.filter(function(g){ return homeListasArquivadas.indexOf(g)===-1; });
+}
+
+function homeEscAttr(s){ return String(s).replace(/"/g,'&quot;'); }
+function homeEscJs(s){ return String(s).replace(/\\/g,'\\\\').replace(/'/g,"\\'"); }
+
+function homeListasEmptyStateHtml(){
+  return '<div class="home-empty-state">'
+    +'<div class="home-empty-icon">📋</div>'
+    +'<div class="home-empty-text">Ainda não existem listas.</div>'
+    +'<button class="tbtn y" onclick="homeCriarPrimeiraLista()">+ Criar primeira lista</button>'
+    +'</div>';
+}
+function homeCriarPrimeiraLista(){
+  var nome=prompt('Nome da nova lista:');
+  if(!nome||!nome.trim()) return;
+  nome=nome.trim();
+  if(homeExtraListas.indexOf(nome)===-1){ homeExtraListas.push(nome); saveHomeExtraListas(); }
+  var idxArq=homeListasArquivadas.indexOf(nome);
+  if(idxArq!==-1){ homeListasArquivadas.splice(idxArq,1); saveHomeListasArquivadas(); }
+  renderTasksList(); renderTasksBoard();
+}
+
+// ── Menus de acções (⋮) — genérico, usado por listas e por tarefas ──
+function homeFecharMenus(){
+  document.querySelectorAll('.home-dropdown-menu.open').forEach(function(el){ el.classList.remove('open'); });
+}
+function homeToggleMenu(ev,id){
+  if(ev) ev.stopPropagation();
+  var el=document.getElementById(id);
+  if(!el) return;
+  var wasOpen=el.classList.contains('open');
+  homeFecharMenus();
+  if(!wasOpen) el.classList.add('open');
+}
+document.addEventListener('click', homeFecharMenus);
+
+// ── Confirmação genérica (modal moderno, reutilizado por tarefa/lista) ──
+var _homeConfirmCallback=null;
+function homeOpenConfirmModal(title,msg,confirmLabel,onConfirm){
+  document.getElementById('home-confirm-title').textContent=title;
+  document.getElementById('home-confirm-msg').textContent=msg;
+  document.getElementById('home-confirm-btn').textContent=confirmLabel;
+  _homeConfirmCallback=onConfirm;
+  document.getElementById('home-confirm-modal').classList.add('open');
+}
+function homeCloseConfirmModal(){
+  document.getElementById('home-confirm-modal').classList.remove('open');
+  _homeConfirmCallback=null;
+}
+document.addEventListener('DOMContentLoaded', function(){
+  var btn=document.getElementById('home-confirm-btn');
+  if(btn) btn.addEventListener('click', function(){
+    var cb=_homeConfirmCallback;
+    homeCloseConfirmModal();
+    if(cb) cb();
+  });
+});
+
+// ── Eliminar tarefa ──────────────────────────────────────────────────
+function homeConfirmDeleteTask(id){
+  homeFecharMenus();
+  var t=homeTasksData.find(function(x){return x.id===id;});
+  if(!t) return;
+  homeOpenConfirmModal(
+    'Eliminar tarefa',
+    'Tem a certeza que pretende eliminar esta tarefa?\n\nEsta ação não pode ser anulada.',
+    'Eliminar',
+    function(){ homeDeleteTaskConfirmed(id); }
+  );
+}
+function homeDeleteTaskConfirmed(id){
+  var els=[document.getElementById('htask-'+id), document.getElementById('htask-row-'+id)].filter(Boolean);
+  function finish(){
+    homeTasksData=homeTasksData.filter(function(t){ return t.id!==id; });
+    saveHomeTasksData();
+    renderTasksList(); renderTasksBoard();
+    if(typeof showToast==='function') showToast('🗑 Tarefa eliminada');
+  }
+  if(els.length){
+    els.forEach(function(el){ el.classList.add('home-fade-out'); });
+    setTimeout(finish, 180);
+  } else {
+    finish();
+  }
+}
+
+// ── Eliminar / gerir listas ────────────────────────────────────────
+function homeConfirmDeleteLista(nome){
+  homeFecharMenus();
+  homeOpenConfirmModal(
+    'Eliminar lista',
+    'A lista "'+nome+'" será eliminada juntamente com todas as tarefas existentes.\n\nEsta ação é irreversível.',
+    'Eliminar Lista',
+    function(){ homeDeleteListaConfirmed(nome); }
+  );
+}
+function homeDeleteListaConfirmed(nome){
+  function finish(){
+    homeTasksData=homeTasksData.filter(function(t){ return t.group!==nome; });
+    saveHomeTasksData();
+    var idxE=homeExtraListas.indexOf(nome); if(idxE!==-1){ homeExtraListas.splice(idxE,1); saveHomeExtraListas(); }
+    var idxA=homeListasArquivadas.indexOf(nome); if(idxA!==-1){ homeListasArquivadas.splice(idxA,1); saveHomeListasArquivadas(); }
+    renderTasksList(); renderTasksBoard();
+    if(typeof showToast==='function') showToast('🗑 Lista "'+nome+'" eliminada');
+  }
+  var wrap=Array.prototype.find.call(document.querySelectorAll('[data-lista]'), function(el){ return el.getAttribute('data-lista')===nome; });
+  if(wrap){ wrap.classList.add('home-fade-out'); setTimeout(finish, 180); }
+  else finish();
+}
+function homeListaEditarNome(nomeAntigo){
+  homeFecharMenus();
+  var novo=prompt('Novo nome da lista:', nomeAntigo);
+  if(!novo||!novo.trim()||novo.trim()===nomeAntigo) return;
+  novo=novo.trim();
+  homeTasksData.forEach(function(t){ if(t.group===nomeAntigo) t.group=novo; });
+  saveHomeTasksData();
+  var idxE=homeExtraListas.indexOf(nomeAntigo);
+  if(idxE!==-1) homeExtraListas[idxE]=novo; else homeExtraListas.push(novo);
+  saveHomeExtraListas();
+  renderTasksList(); renderTasksBoard();
+  if(typeof showToast==='function') showToast('✓ Lista renomeada para "'+novo+'"');
+}
+function homeListaDuplicar(nome){
+  homeFecharMenus();
+  var existentes=homeListasVisiveis();
+  var novoNome=nome+' (cópia)', i=2;
+  while(existentes.indexOf(novoNome)!==-1){ novoNome=nome+' (cópia '+i+')'; i++; }
+  homeExtraListas.push(novoNome);
+  saveHomeExtraListas();
+  renderTasksList(); renderTasksBoard();
+  if(typeof showToast==='function') showToast('📋 Lista duplicada como "'+novoNome+'"');
+}
+function homeListaArquivar(nome){
+  homeFecharMenus();
+  if(homeListasArquivadas.indexOf(nome)===-1){ homeListasArquivadas.push(nome); saveHomeListasArquivadas(); }
+  renderTasksList(); renderTasksBoard();
+  if(typeof showToast==='function') showToast('🗄 Lista "'+nome+'" arquivada');
+}
+
 // ── RENDER TASKS LIST ─────────────────────────────────────
 function renderTasksList(){
   homePopularFiltroResponsavel();
   const tasks=homeGetFilteredTasks();
-  const groups=[...new Set(tasks.map(t=>t.group))];
+  const groups=homeListasVisiveis(tasks);
   const el=document.getElementById('tasks-list-view');
   if(!el)return;
-  el.innerHTML=groups.map(grp=>{
+  if(!groups.length){
+    el.innerHTML=homeListasEmptyStateHtml();
+    return;
+  }
+  el.innerHTML=groups.map((grp,gi)=>{
     const gtasks=homeSortTasks(tasks.filter(t=>t.group===grp));
     const deptColors={'Dep. Comercial':'#e74c3c','Dep. Design':'#e67e22','Chão da Fábrica':'#3b82f6','Gestão Administrativa':'#8b5cf6'};
     const dc=deptColors[grp]||'#888';
-    return `<div>
+    return `<div data-lista="${homeEscAttr(grp)}">
       <div class="group-hdr" data-action="toggleGroup">
         <div class="group-dot" style="background:${dc}"></div>
         <div class="group-name">${grp}</div>
         <div class="group-count">${gtasks.length} tarefas</div>
+        <span class="home-menu-wrap">
+          <button class="home-list-menu-btn" onclick="homeToggleMenu(event,'home-lista-menu-${gi}')" title="Mais opções">⋮</button>
+          <div class="home-dropdown-menu" id="home-lista-menu-${gi}">
+            <button onclick="homeListaEditarNome('${homeEscJs(grp)}')">✏️ Editar nome</button>
+            <button onclick="homeListaDuplicar('${homeEscJs(grp)}')">📋 Duplicar lista</button>
+            <button onclick="homeListaArquivar('${homeEscJs(grp)}')">🗄 Arquivar lista</button>
+            <div class="home-dropdown-sep"></div>
+            <button class="danger" onclick="homeConfirmDeleteLista('${homeEscJs(grp)}')">🗑 Eliminar lista</button>
+          </div>
+        </span>
         <div class="group-chevron">▼</div>
       </div>
       <div class="group-body">
         <table class="task-table">
           <thead><tr>
-            <th style="width:40%">Tarefa</th><th>Estado</th><th>Prioridade</th><th>Responsável</th><th>Prazo</th>
+            <th style="width:38%">Tarefa</th><th>Estado</th><th>Prioridade</th><th>Responsável</th><th>Prazo</th><th style="width:36px"></th>
           </tr></thead>
           <tbody>
-          ${gtasks.map(t=>`<tr onclick="homeOpenFullEdit(${t.id})" style="cursor:pointer">
+          ${gtasks.map(t=>`<tr id="htask-row-${t.id}" onclick="homeOpenFullEdit(${t.id})" style="cursor:pointer">
             <td><div class="task-name-cell"><div class="task-check"></div><div class="task-name">${t.title}</div></div></td>
             <td><span class="status" style="background:${t.statusC}20;color:${t.statusC};border:1px solid ${t.statusC}40">${t.status}</span></td>
             <td><div class="prio"><div class="prio-dot" style="background:${t.prioBg}"></div>${t.prio}</div></td>
             <td><div class="ass" style="background:${t.assC}">${t.ass}</div></td>
             <td><div class="due ${t.dueType}">${t.due}</div></td>
+            <td onclick="event.stopPropagation()"><span class="home-menu-wrap">
+              <button class="home-task-menu-btn" onclick="homeToggleMenu(event,'home-task-menu-${t.id}')" title="Mais opções">⋮</button>
+              <div class="home-dropdown-menu" id="home-task-menu-${t.id}">
+                <button class="danger" onclick="homeConfirmDeleteTask(${t.id})">🗑 Eliminar tarefa</button>
+              </div>
+            </span></td>
           </tr>`).join('')}
           </tbody>
         </table>
@@ -10543,7 +10758,15 @@ function renderTasksBoard(){
           <div class="k-col-count" style="background:${dc}25;color:${dc}">${ptasks.length}</div>
         </div>
         ${ptasks.map(t=>`<div class="k-card" id="htask-${t.id}" onclick="homeOpenFullEdit(${t.id})">
-          <div class="k-card-title">${t.title}</div>
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:4px">
+            <div class="k-card-title" style="flex:1">${t.title}</div>
+            <span class="home-menu-wrap" onclick="event.stopPropagation()">
+              <button class="home-task-menu-btn" onclick="homeToggleMenu(event,'home-task-menu-${t.id}')" title="Mais opções">⋮</button>
+              <div class="home-dropdown-menu" id="home-task-menu-${t.id}">
+                <button class="danger" onclick="homeConfirmDeleteTask(${t.id})">🗑 Eliminar tarefa</button>
+              </div>
+            </span>
+          </div>
           <div class="k-card-sub" style="color:${dc}">${t.status}</div>
           <div class="k-card-meta">
             <div class="prio"><div class="prio-dot" style="background:${t.prioBg}"></div>${t.prio}</div>
@@ -10579,7 +10802,7 @@ function renderTasksBoard(){
           onclick="homeOpenFullEdit(${t.id})"
           ondragstart="homeDragId=${t.id};event.dataTransfer.effectAllowed='move';setTimeout(()=>{const e=document.getElementById('htask-${t.id}');if(e)e.classList.add('dragging');},0)"
           ondragend="document.querySelectorAll('.k-card.dragging,.k-col.drag-over').forEach(e=>{e.classList.remove('dragging');e.classList.remove('drag-over');})">
-          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:4px"><div class="k-card-title" style="flex:1">${t.title}</div>${t.origem==='app'?'<span style="font-size:10px;background:rgba(77,148,219,.15);color:#4d94db;border:1px solid rgba(77,148,219,.3);border-radius:4px;padding:1px 4px;white-space:nowrap;flex-shrink:0">📱 App</span>':''}</div>
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:4px"><div class="k-card-title" style="flex:1">${t.title}</div>${t.origem==='app'?'<span style="font-size:10px;background:rgba(77,148,219,.15);color:#4d94db;border:1px solid rgba(77,148,219,.3);border-radius:4px;padding:1px 4px;white-space:nowrap;flex-shrink:0">📱 App</span>':''}<span class="home-menu-wrap" onclick="event.stopPropagation()"><button class="home-task-menu-btn" onclick="homeToggleMenu(event,'home-task-menu-${t.id}')" title="Mais opções">⋮</button><div class="home-dropdown-menu" id="home-task-menu-${t.id}"><button class="danger" onclick="homeConfirmDeleteTask(${t.id})">🗑 Eliminar tarefa</button></div></span></div>
           <div class="k-card-sub" style="color:${dc}">${t.group}</div>
           <div class="k-card-meta">
             <div class="prio"><div class="prio-dot" style="background:${t.prioBg}"></div>${t.prio}</div>
