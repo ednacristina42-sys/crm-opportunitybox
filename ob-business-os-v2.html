@@ -24161,9 +24161,25 @@ var _obSbTimers={};
 function obSbPush(chave){
   if(typeof _ORC_SB_URL==='undefined'||typeof _ORC_SB_KEY==='undefined') return;
   clearTimeout(_obSbTimers[chave]);
-  _obSbTimers[chave]=setTimeout(function(){
+  _obSbTimers[chave]=setTimeout(async function(){
     try{
       var dados=JSON.parse(localStorage.getItem(chave)||'[]');
+      // Leads: qualquer gravação local (mesmo sem relação nenhuma com o
+      // WhatsApp) reenvia sempre a cópia inteira. Sem isto, uma foto/
+      // conversa recebida da Leonor depois do arranque deste browser era
+      // apagada assim que o utilizador fizesse a próxima gravação local.
+      if(chave==='ob-leads'&&typeof obSbLerRemoto==='function'&&typeof obSbMesclarCamposLeonor==='function'){
+        try{
+          var remoto=await obSbLerRemoto('ob-leads');
+          var mesclado=obSbMesclarCamposLeonor(dados, remoto);
+          if(mesclado!==dados){
+            dados=mesclado;
+            localStorage.setItem('ob-leads', JSON.stringify(dados));
+            if(typeof crmLeads!=='undefined'){ crmLeads=dados; if(typeof leads!=='undefined') leads=dados; }
+            if(typeof crmRenderAll==='function') crmRenderAll();
+          }
+        }catch(e){}
+      }
       fetch(_ORC_SB_URL+'/rest/v1/ob_crm_dados?on_conflict=chave',{
         method:'POST',
         headers:{'Content-Type':'application/json','apikey':_ORC_SB_KEY,'Authorization':'Bearer '+_ORC_SB_KEY,'Prefer':'resolution=merge-duplicates'},
