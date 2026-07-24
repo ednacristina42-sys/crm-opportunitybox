@@ -24248,12 +24248,39 @@ function obSbMesclarPorChave(local, remoto, chaveId){
   if(!extras.length) return local;
   return extras.concat(local||[]);
 }
+// Alguns campos do lead só são escritos pela integração WhatsApp/Leonor —
+// nunca pelo próprio CRM. Para esses, mesmo em leads que já existem
+// localmente, o valor do Supabase pode ser mais recente que o deste
+// browser (ex.: foto/conversa chegou depois da última vez que este browser
+// gravou o lead), por isso o remoto ganha sempre que existir e for diferente.
+var OB_SB_CAMPOS_SO_LEONOR = ['fotoFachadaUrl','conversaHistorico','conversaMensagens'];
+function obSbMesclarCamposLeonor(local, remoto){
+  if(!Array.isArray(remoto)||!remoto.length||!Array.isArray(local)||!local.length) return local;
+  var remotoPorId={};
+  remoto.forEach(function(r){ if(r&&r.id!=null) remotoPorId[r.id]=r; });
+  var mudou=false;
+  var novo=local.map(function(l){
+    var r=l&&remotoPorId[l.id];
+    if(!r) return l;
+    var copia=null;
+    OB_SB_CAMPOS_SO_LEONOR.forEach(function(campo){
+      if(r[campo]&&r[campo]!==l[campo]){
+        if(!copia) copia=Object.assign({}, l);
+        copia[campo]=r[campo];
+      }
+    });
+    if(copia){ mudou=true; return copia; }
+    return l;
+  });
+  return mudou?novo:local;
+}
 async function obSbMesclarRemotoAntesDoBackup(){
   try{
     if(typeof crmLeads!=='undefined'){
       var remLeads=await obSbLerRemoto('ob-leads');
       var antesN=crmLeads.length;
       var mescladoLeads=obSbMesclarPorChave(crmLeads, remLeads, 'id');
+      mescladoLeads=obSbMesclarCamposLeonor(mescladoLeads, remLeads);
       if(mescladoLeads!==crmLeads){
         crmLeads=mescladoLeads; if(typeof leads!=='undefined') leads=crmLeads;
         localStorage.setItem('ob-leads', JSON.stringify(crmLeads.slice(0,5000)));
