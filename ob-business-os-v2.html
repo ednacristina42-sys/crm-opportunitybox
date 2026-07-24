@@ -24166,8 +24166,59 @@ async function obSbBoot(){
       }
     }
   }catch(e){ console.warn('[SB-CRM] boot sync falhou:',e); }
+  // ADD: antes do backup, incorpora leads/actividades que só existem no
+  // Supabase (ex.: criados por integrações externas como o WhatsApp/Leonor,
+  // sem passar por este browser) — sem isto, o "backup" a seguir reenviava
+  // sempre a cópia local (que não sabe deles) e apagava-os do Supabase.
+  await obSbMesclarRemotoAntesDoBackup();
   // Backup inicial de tudo o que existe localmente
   OB_SB_SYNC_KEYS.forEach(obSbPush);
+}
+
+async function obSbLerRemoto(chave){
+  if(typeof _ORC_SB_URL==='undefined'||typeof _ORC_SB_KEY==='undefined') return null;
+  try{
+    var r=await fetch(_ORC_SB_URL+'/rest/v1/ob_crm_dados?chave=eq.'+chave+'&select=dados',{
+      headers:{'apikey':_ORC_SB_KEY,'Authorization':'Bearer '+_ORC_SB_KEY}
+    });
+    if(!r.ok) return null;
+    var rows=await r.json();
+    if(rows[0]&&Array.isArray(rows[0].dados)) return rows[0].dados;
+  }catch(e){}
+  return null;
+}
+// Junta ao array local as entradas que só existem no remoto (por chave de
+// identidade própria de cada array), sem tocar nas que já existem local.
+function obSbMesclarPorChave(local, remoto, chaveId){
+  if(!Array.isArray(remoto)||!remoto.length) return local;
+  var locaisIds=new Set((local||[]).map(function(x){ return x&&x[chaveId]; }));
+  var extras=remoto.filter(function(x){ return x&&!locaisIds.has(x[chaveId]); });
+  if(!extras.length) return local;
+  return extras.concat(local||[]);
+}
+async function obSbMesclarRemotoAntesDoBackup(){
+  try{
+    if(typeof crmLeads!=='undefined'){
+      var remLeads=await obSbLerRemoto('ob-leads');
+      var antesN=crmLeads.length;
+      var mescladoLeads=obSbMesclarPorChave(crmLeads, remLeads, 'id');
+      if(mescladoLeads!==crmLeads){
+        crmLeads=mescladoLeads; if(typeof leads!=='undefined') leads=crmLeads;
+        localStorage.setItem('ob-leads', JSON.stringify(crmLeads.slice(0,5000)));
+        console.log('[SB-CRM] '+(crmLeads.length-antesN)+' lead(s) recuperado(s) do Supabase antes do backup.');
+      }
+    }
+    if(typeof crmAtividades!=='undefined'){
+      var remAtiv=await obSbLerRemoto('ob-crm-atividades');
+      var mescladoAtiv=obSbMesclarPorChave(crmAtividades, remAtiv, 'ts');
+      if(mescladoAtiv!==crmAtividades){
+        crmAtividades=mescladoAtiv;
+        localStorage.setItem('ob-crm-atividades', JSON.stringify(crmAtividades.slice(0,2000)));
+      }
+    }
+    if(typeof crmRenderAll==='function') crmRenderAll();
+    if(typeof obAtualizarPendencias==='function') obAtualizarPendencias();
+  }catch(e){ console.warn('[SB-CRM] mesclar remoto falhou:',e); }
 }
 
 // Cada gravação local passa também a fazer backup para o Supabase
