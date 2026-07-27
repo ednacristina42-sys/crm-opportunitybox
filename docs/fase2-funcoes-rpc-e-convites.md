@@ -187,9 +187,112 @@ cautela, é uma limitação real de acesso. Os payloads abaixo estão prontos a 
 | Rui Mota | `ruimota@opportunitybox.pt` | `{"full_name":"Rui Mota","ob_role":"comercial","department":"Comercial"}` |
 | Humberto Estrelinha | `humberto@opportunitybox.pt` | `{"full_name":"Humberto Estrelinha","ob_role":"comercial","department":"Comercial"}` |
 
-Estado: **convites não enviados**. Assim que confirmares que os 3 aceitaram, corro a
-verificação da secção 2.5 para cada um antes de avançarmos para o plano de teste
-(`fase2-plano-teste-3-contas.md`) e, mais tarde, a migration #7.
+**Estado anterior (substituído):** decidiste não usar convite por email — ver secção 4.
+Mantenho esta secção 3 só como registo dos dados que continuam válidos (email, nome,
+role, department de cada pessoa); o mecanismo de criação mudou.
+
+---
+
+## 4. Procedimento adaptado — criação manual (`Add user → Create new user`)
+
+Substitui a secção 2 (convite por email). Nada disto foi executado — é o
+procedimento pronto a seguires tu/o Paulo no Dashboard, e a query de correção que eu
+corro depois, só depois de confirmares que as 3 contas existem.
+
+### 4.1 O trigger `ob_handle_new_user` funciona com criação manual?
+
+**Sim, confirmei isto.** O trigger foi criado como:
+
+```sql
+create trigger ob_on_auth_user_created
+  after insert on auth.users
+  for each row execute function public.ob_handle_new_user();
+```
+
+Isto é exatamente o padrão que a própria documentação do Supabase usa e recomenda
+("trigger the function every time a user is created") — é um gatilho `AFTER INSERT`
+na **tabela** `auth.users`, ao nível do Postgres. Dispara sempre que uma linha é
+inserida nessa tabela, **independentemente do caminho que a criou**: convite por
+email, `Create new user` no Dashboard, `signUp` público, ou a API de administração.
+Não é um comportamento exclusivo do fluxo de convite.
+
+### 4.2 O que acontece se o Dashboard não tiver campo para `full_name`/`ob_role`
+
+Aqui já não tenho a mesma certeza — não consigo confirmar, só a partir da
+documentação, se o modal `Create new user` da versão atual do teu Dashboard tem um
+campo de "User Metadata" igual ao do ecrã de convite. Pode ter, pode não ter, ou pode
+estar limitado. Por isso, o procedimento abaixo **não depende disso**:
+
+- **Se o modal tiver campo de metadata** e conseguires colar lá o JSON (igual ao da
+  secção 3), o trigger cria o `ob_profiles` completo (nome, role, department) logo na
+  criação — ótimo, mas não é obrigatório.
+- **Se não tiver, ou deixares em branco:** a condição do trigger
+  (`if new.raw_user_meta_data->>'ob_role' is not null`) não se verifica, e **não é
+  criada nenhuma linha em `ob_profiles`** — não é um erro, só significa que fica por
+  fazer o passo seguinte.
+- **Em qualquer um dos dois casos**, corro a query da secção 4.4 a seguir, que
+  funciona nos dois cenários (cria se faltar, corrige se tiver vindo incompleta ou
+  errada) — não precisas de saber de antemão qual dos dois vai acontecer.
+
+### 4.3 Passos no Dashboard (repetir 3x)
+
+1. `Authentication → Users → Add user → Create new user`.
+2. Email: um dos 3 confirmados (secção 3).
+3. Password: definida por ti (temporária) — entregas depois diretamente à pessoa.
+4. **Ativar "Auto Confirm User"** (ou equivalente) — sem isto a conta fica criada mas
+   sem conseguir entrar, porque ficaria à espera de confirmação por email, que não
+   vamos enviar.
+5. Se houver campo de metadata, colar o JSON da secção 3 (opcional, ver 4.2).
+6. Guardar.
+
+### 4.4 Query de correção/associação de `ob_profiles` (preparada, não corrida)
+
+Idempotente — funciona tanto para criar o perfil que faltou como para corrigir um que
+tenha vindo incompleto. Usa o email para encontrar o `id` gerado pelo Supabase (que tu
+não escolhes manualmente no Dashboard):
+
+```sql
+-- Paulo Faria
+insert into public.ob_profiles (id, full_name, email, role, department)
+select u.id, 'Paulo Faria', u.email, 'admin'::public.ob_user_role, 'Direcção'
+from auth.users u where u.email = 'paulofaria@opportunitybox.pt'
+on conflict (id) do update set
+  full_name = excluded.full_name, role = excluded.role,
+  department = excluded.department, updated_at = now();
+
+-- Rui Mota
+insert into public.ob_profiles (id, full_name, email, role, department)
+select u.id, 'Rui Mota', u.email, 'comercial'::public.ob_user_role, 'Comercial'
+from auth.users u where u.email = 'ruimota@opportunitybox.pt'
+on conflict (id) do update set
+  full_name = excluded.full_name, role = excluded.role,
+  department = excluded.department, updated_at = now();
+
+-- Humberto Estrelinha
+insert into public.ob_profiles (id, full_name, email, role, department)
+select u.id, 'Humberto Estrelinha', u.email, 'comercial'::public.ob_user_role, 'Comercial'
+from auth.users u where u.email = 'humberto@opportunitybox.pt'
+on conflict (id) do update set
+  full_name = excluded.full_name, role = excluded.role,
+  department = excluded.department, updated_at = now();
+```
+
+Não inclui `manager_id` porque, como já confirmado, nenhum dos 3 precisa (ninguém tem
+`role='manager'` hoje). Se um dia precisares de o definir, é o `UPDATE` isolado já
+descrito na secção 2.4 (continua válido, mudou só a forma de criar a conta em si, não
+a forma de gerir `manager_id` depois).
+
+**O que vou fazer, só depois de confirmares que as 3 contas foram criadas no
+Dashboard:**
+1. Correr `select id, email, created_at, email_confirmed_at from auth.users where email in (...)` — confirma que as 3 existem e que `email_confirmed_at` está preenchido (senão, o "Auto Confirm" não ficou ativo e a pessoa não vai conseguir entrar).
+2. Correr a query da secção 4.4 (idempotente, sem risco de duplicar nada).
+3. Correr a verificação da secção 2.5 (adaptada — já não "depois de aceitar o
+   convite", mas "depois de criada a conta") para confirmar `role`/`department`
+   corretos nos 3.
+
+Só depois disso avançamos para o plano de teste (`fase2-plano-teste-3-contas.md`) e,
+mais tarde, para a migration #7 — nada disto corre até teres confirmado que as 3
+contas existem no Dashboard.
 
 ---
 
@@ -200,8 +303,10 @@ verificação da secção 2.5 para cada um antes de avançarmos para o plano de 
 | Funções expostas, o que devolvem, quem precisa | ✅ Secção 1 |
 | Comandos REVOKE/GRANT propostos | ✅ Secção 1 — só `ob_handle_new_user` recomendado; resto fica como está por agora |
 | Impacto nas políticas RLS | ✅ Secção 1 |
-| Procedimento de convite (7 pontos) | ✅ Secção 2 |
-| Emails confirmados e pacote de convite pronto | ✅ Secção 3 — Paulo, Rui, Humberto |
+| Procedimento de convite por email (7 pontos) | ✅ Secção 2 — **substituído**, ver secção 4 |
+| Emails/roles/departamentos confirmados | ✅ Secção 3 — Paulo, Rui, Humberto |
+| Confirmação de que o trigger funciona com criação manual | ✅ Secção 4.1 |
+| O que acontece sem campo de metadata no Dashboard | ✅ Secção 4.2 |
+| Query de correção de `ob_profiles` (id/role/department/manager_id) | ✅ Secção 4.4 — preparada, não corrida |
 | Contas reais criadas | ❌ Nenhuma |
-| Convites enviados | ❌ Nenhum — ação manual pendente (sem ferramenta de admin Auth disponível) |
-| REVOKE/GRANT aplicado | ❌ Nenhum |
+| Query de correção executada | ❌ Nenhuma — aguarda confirmação de que as 3 contas existem |
