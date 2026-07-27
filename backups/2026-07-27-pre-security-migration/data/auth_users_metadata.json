@@ -1,0 +1,5 @@
+[
+  {"id":"de000000-0000-0000-0000-000000000001","email":"demo@ispmanager.com","created_at":"2026-05-26 18:07:36.958472+00","last_sign_in_at":null,"raw_user_meta_data":{"role":"admin","full_name":"Admin Demo","tenant_id":"a1b2c3d4-e5f6-0000-0000-000000000001"},"confirmed_at":"2026-05-26 18:07:36.958472+00"},
+  {"id":"6f81b36a-0cbc-4bc5-b4c2-6451206703d0","email":"ednacristina42@gmail.com","created_at":"2026-06-16 18:02:35.657318+00","last_sign_in_at":null,"raw_user_meta_data":{"role":"admin","full_name":"Edna Faria","tenant_id":"a1b2c3d4-e5f6-0000-0000-000000000001"},"confirmed_at":"2026-06-16 18:02:35.657318+00"},
+  {"id":"71be6bef-6646-4423-b769-8cef8ee89e44","email":"geral@opportunitybox.pt","created_at":"2026-06-23 10:39:59.035182+00","last_sign_in_at":"2026-06-23 11:14:12.376427+00","raw_user_meta_data":{},"confirmed_at":"2026-06-23 10:39:59.035182+00"}
+]

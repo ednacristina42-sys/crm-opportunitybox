@@ -1,0 +1,4 @@
+[
+  {"id":"de000000-0000-0000-0000-000000000001","cnh":null,"role":"admin","email":"demo@ispmanager.com","phone":null,"active":true,"driver":false,"full_name":"Admin Demo","tenant_id":"a1b2c3d4-e5f6-0000-0000-000000000001","avatar_url":null,"created_at":"2026-05-26T18:07:36.958472+00:00"},
+  {"id":"6f81b36a-0cbc-4bc5-b4c2-6451206703d0","cnh":null,"role":"admin","email":"ednacristina42@gmail.com","phone":null,"active":true,"driver":false,"full_name":"Edna Faria","tenant_id":"a1b2c3d4-e5f6-0000-0000-000000000001","avatar_url":null,"created_at":"2026-06-16T18:02:35.657318+00:00"}
+]

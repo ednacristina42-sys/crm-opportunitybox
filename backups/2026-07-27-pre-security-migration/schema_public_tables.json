@@ -1,0 +1,32 @@
+{
+  "captured_at": "2026-07-27",
+  "project_id": "ddzlbmnmsdyodouqxbjx",
+  "note": "Estrutura completa das tabelas do schema public (colunas, tipos, defaults, checks, PKs, FKs) tal como existia antes da reconstrução de segurança. rls_enabled=true em TODAS as tabelas, mas ver rls_policies.json neste mesmo diretório: quase todas as políticas são USING(true)/WITH CHECK(true), ou seja, sem isolamento real por utilizador.",
+  "tables": [
+    {"name":"public.isp_tenants","rls_enabled":true,"rows":0,"primary_keys":["id"]},
+    {"name":"public.isp_profiles","rls_enabled":true,"rows":1,"primary_keys":["id"],"note":"role check: admin|manager|technician|attendant|client; tenant_id FK -> isp_tenants; id FK -> auth.users"},
+    {"name":"public.isp_plans","rls_enabled":true,"rows":0,"primary_keys":["id"]},
+    {"name":"public.isp_clients","rls_enabled":true,"rows":0,"primary_keys":["id"]},
+    {"name":"public.isp_service_orders","rls_enabled":true,"rows":0,"primary_keys":["id"]},
+    {"name":"public.isp_so_materials","rls_enabled":true,"rows":0,"primary_keys":["id"]},
+    {"name":"public.isp_team_members","rls_enabled":true,"rows":0,"primary_keys":["id"],"note":"role check: admin|manager|technician|attendant"},
+    {"name":"public.isp_attendance","rls_enabled":true,"rows":0,"primary_keys":["id"]},
+    {"name":"public.isp_vehicles","rls_enabled":true,"rows":0,"primary_keys":["id"]},
+    {"name":"public.isp_vehicle_checkins","rls_enabled":true,"rows":0,"primary_keys":["id"]},
+    {"name":"public.isp_tickets","rls_enabled":true,"rows":0,"primary_keys":["id"]},
+    {"name":"public.profiles","rls_enabled":true,"rows":0,"primary_keys":["id"],"columns":["id","company_id","created_at","full_name","phone","team_label"],"note":"usada pelo módulo 'Equipa em Campo'; id FK -> auth.users"},
+    {"name":"public.ob_despesas","rls_enabled":true,"rows":1,"primary_keys":["id"],"columns":["id","data","funcionario","categoria","descricao","valor","metodo_pagamento","estado","origem","created_at"]},
+    {"name":"public.work_days","rls_enabled":true,"rows":0,"primary_keys":["id"],"columns":["id","user_id","started_at","ended_at","start_lat","start_lng","vehicle_id","total_visits","tracked_km"]},
+    {"name":"public.visits","rls_enabled":true,"rows":0,"primary_keys":["id"],"columns":["id","user_id","client_name","entered_at"]},
+    {"name":"public.location_pings","rls_enabled":true,"rows":0,"primary_keys":["id"],"columns":["id","user_id","lat","lng","recorded_at","accuracy","speed","battery"]},
+    {"name":"public.vehicles","rls_enabled":true,"rows":0,"primary_keys":["id"],"columns":["id","plate","brand","model","current_km","active"]},
+    {"name":"public.vehicle_assignments","rls_enabled":true,"rows":0,"primary_keys":["id"],"columns":["id","user_id","vehicle_id","is_primary","assigned_from","assigned_until"]},
+    {"name":"public.ob_tarefas","rls_enabled":true,"rows":0,"primary_keys":["id"],"columns":["id","assignee_name","tipo","status","created_at","updated_at"]},
+    {"name":"public.expenses","rls_enabled":true,"rows":0,"primary_keys":["id"],"columns":["id","colab","data","categoria","referencia","valor","estado","notas","file_url","file_name","created_at","updated_at"]},
+    {"name":"public.ob_orcamentos","rls_enabled":true,"rows":577,"primary_keys":["id"],"columns":["id","num","cli","vendedor","email","st","stc","dt","data","prazo","morada","nif","val","linhas(jsonb)","totais(jsonb)","materiais(jsonb)","mo_linhas(jsonb)","logistica(jsonb)","markup","imagem","obs","cliemail","cliwa","pagamento50","sinal","saldo","extra(jsonb)","created_at","updated_at"],"note":"NÃO tem assigned_user_id nem created_by. 'vendedor' é apenas texto livre, sem FK para nenhum utilizador."},
+    {"name":"public.ob_stock","rls_enabled":true,"rows":4,"primary_keys":["id"],"columns":["id","ref","nome","cat","qty","qty_min","un","preco","forn","loc","extra(jsonb)","created_at","updated_at"]},
+    {"name":"public.ob_crm_dados","rls_enabled":true,"rows":16,"primary_keys":["chave"],"columns":["chave","dados(jsonb array)","updated_at"],"note":"TABELA GENÉRICA KEY-VALUE. Cada linha é um blob JSON inteiro (ex: chave='ob-clients' guarda TODOS os clientes da empresa num único array). Não há isolamento por linha possível nesta estrutura — é o principal motivo pelo qual a reconstrução exige normalizar estes blobs em tabelas reais. Chaves existentes: ob-clients(30), ob-crm-atividades(11), ob-crm-historico(6), ob-faturas(4), ob-fin-despesas(1), ob-fo-ausencias(0), ob-iva-dados(0), ob-leads(11), ob-rh-colabs(0), ob-rh-ferias-cfg(0), ob-rh-turnos(0), ob-tes-cartoes(0), ob-tes-contas(1), ob-tes-log(0), ob-tes-receber(345), ob-rh-colabs(0), ob-uni-items(25)."},
+    {"name":"public.ob_uni_items","rls_enabled":true,"rows":25,"primary_keys":["id","page"],"columns":["id","page","payload(jsonb)","updated_at"],"note":"kanban 'Universal' (fábrica, design, admin) — usado pelos dashboards por departamento"},
+    {"name":"public.ob_uni_atividades","rls_enabled":true,"rows":0,"primary_keys":["id"],"columns":["id","item_id","dept","texto","link","autor","ts"]}
+  ]
+}

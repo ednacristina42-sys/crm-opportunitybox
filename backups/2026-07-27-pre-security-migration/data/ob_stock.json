@@ -1,0 +1,6 @@
+[
+  {"id":"s1","un":"m²","cat":"Acrílico","loc":"","qty":48.5,"ref":"ACR-3mm-TRN","forn":"AcrylicPT, Lda","nome":"Acrílico Transparente 3mm","extra":{},"preco":18.5,"qty_min":10,"created_at":"2026-07-06T18:03:42.85957+00:00","updated_at":"2026-07-06T18:03:42.85957+00:00"},
+  {"id":"s2","un":"m²","cat":"Acrílico","loc":"","qty":32,"ref":"ACR-3mm-BCO","forn":"AcrylicPT, Lda","nome":"Acrílico Branco Leitoso 3mm","extra":{},"preco":19,"qty_min":10,"created_at":"2026-07-06T18:03:43.20907+00:00","updated_at":"2026-07-06T18:03:43.20907+00:00"},
+  {"id":"s3","un":"m²","cat":"Acrílico","loc":"","qty":8,"ref":"ACR-5mm-TRN","forn":"AcrylicPT, Lda","nome":"Acrílico Transparente 5mm","extra":{},"preco":24,"qty_min":5,"created_at":"2026-07-06T18:03:43.541484+00:00","updated_at":"2026-07-06T18:03:43.541484+00:00"},
+  {"id":"s4","un":"rolo","cat":"LED","loc":"","qty":22,"ref":"LED-5050-BCO","forn":"LedTech Portugal","nome":"Fita LED 5050 Branco Quente (5m)","extra":{},"preco":12.5,"qty_min":5,"created_at":"2026-07-24T15:55:29.709705+00:00","updated_at":"2026-07-24T15:55:29.709705+00:00"}
+]
