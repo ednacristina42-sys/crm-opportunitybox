@@ -229,15 +229,75 @@ esquema, como já tinha explicado na Fase 2 inicial.
 
 ---
 
+## 6. Ronda 2 — verificação dirigida do Make.com + execução das migrations aditivas
+
+### 6.1 Verificação dirigida (não às cegas) do webhook de despesas
+
+Em vez de abrir os 20 blueprints, filtrei primeiro por scenarios **ativos**
+(`isActive: true`) — só 3 dos 20: "CRM — Sync Leonor → Pipeline de Leads", "Design" e
+"Leonor (John)". Inspecionei os 3 blueprints e procurei, sem os copiar para nenhum
+ficheiro: `ob_despesas`, `despesa`, `/rest/v1/ob_despesas`, o URL do projeto Supabase,
+e o cabeçalho `apikey`.
+
+- **Nenhum dos 3 scenarios ativos referencia `ob_despesas`.** Os únicos pontos de
+  contacto com o Supabase são chamadas à edge function `crm-lead-intake` (módulo de
+  leads, não despesas) e um webhook do Google Apps Script (scenario "Design", sem
+  relação com Supabase).
+- Nenhum usa o cabeçalho `apikey` — a chamada ao `crm-lead-intake` usa
+  `Authorization: Bearer <chave anon>`, mas para um endpoint que nada tem a ver com
+  `ob_despesas`.
+- Também revi a lista completa de 43 webhooks da conta (`hooks_list`) — nenhum tem
+  nome relacionado com "despesa"/"expense".
+- Nenhuma chave ou segredo foi copiado para este documento ou para o repositório.
+
+**Classificação: risco baixo, não confirmado** — não há nenhuma automação ativa
+identificável a escrever em `ob_despesas` via chave anon. Consistente com a hipótese
+de que o único registo existente veio de um teste manual único. Isto **não bloqueia**
+o resto da Fase 2 — só continua a impedir (como já estava combinado) apertar a RLS de
+`ob_despesas` sem confirmação adicional.
+
+### 6.2 Migrations executadas (todas aditivas, aprovadas nesta ronda)
+
+| # | Nome | Resultado |
+|---|---|---|
+| 1 | `ob_orcamentos_rename_owner_and_audit_columns` | ✅ Aplicada. `owner_id`/`created_by`/`updated_by` confirmados via `information_schema`; `ob_orcamentos` continua com 577 linhas. |
+| 2 | `ob_new_tables_rename_owner_and_audit_columns` | ✅ Aplicada em `ob_clientes`/`ob_leads`/`ob_tasks`/`ob_visitas`. Colunas confirmadas; as 4 tabelas continuam com 0 linhas. |
+| 3 | `ob_policies_rename_owner_references` | **Não executada — verificada como desnecessária.** O `RENAME COLUMN` do Postgres já reescreve automaticamente as políticas RLS dependentes (o mesmo mecanismo usado para `views`/`constraints`). Confirmado via `pg_policies`: as 12 políticas das 4 tabelas já apontavam para `owner_id` antes de eu correr qualquer coisa extra. |
+| 4 | `ob_tasks_restrict_delete_to_admin` | ✅ Aplicada. `ob_tasks_delete` passou a `ob_is_admin()` — comercial deixou de poder apagar as próprias tarefas, alinhado com as outras 3 tabelas novas. |
+| 5 | `ob_soft_delete_columns` | ✅ Aplicada nas 5 tabelas (`ob_orcamentos` incluída). Colunas confirmadas; `deleted_at is not null` = 0 em todas — nenhuma política de SELECT foi alterada para as usar. |
+| 6 | `ob_handle_new_user_trigger` | ✅ Aplicada. Função e trigger confirmados via `pg_proc`/`pg_trigger`. `ob_profiles` continua com 0 linhas — nenhuma conta real foi criada. |
+| 7 | `ob_orcamentos_owner_backfill` | **Pendente** — só depois de existirem as 3 contas (Paulo, Rui, Humberto) confirmadas. |
+| 8 | `ob_orcamentos_tighten_rls` | **Pendente** — só depois de #7. |
+
+**Verificação de segurança pós-lote (`get_advisors`):** as novas funções (`ob_is_admin`,
+`ob_current_role`, `ob_manages`, `ob_can_see`, `ob_handle_new_user`) **não** aparecem no
+aviso de "search_path mutável" que as funções antigas (`isp_*`) têm — confirma que o
+`set search_path = public` está a funcionar como esperado.
+
+**Achado secundário, não corrigido (fora do que foi aprovado nesta ronda):** o
+advisor assinala que estas mesmas funções novas são executáveis diretamente via RPC
+por `anon`/`authenticated` (ex: `POST /rest/v1/rpc/ob_is_admin`). É o mesmo padrão que
+já existia nas funções `isp_*` antigas — não é uma regressão introduzida agora. Risco
+baixo: todas devolvem só um booleano/papel sobre o **próprio** utilizador que chama, ou
+uma verificação de "consigo ver X" sem devolver dados. A única que merece atenção é
+`ob_handle_new_user()` (função de trigger, sem razão para ser chamada diretamente) —
+não fiz `REVOKE EXECUTE` porque isso pode interferir com a forma como as políticas RLS
+invocam estas funções e não estava no lote aprovado; fica registado para decisão numa
+próxima ronda, não é urgente.
+
+---
+
 ## Resumo do que está e não está feito
 
 | Item pedido | Estado |
 |---|---|
-| 1. Lista detalhada das 8 migrations | ✅ Entregue (secção 1) — nenhuma executada |
+| 1. Lista detalhada das 8 migrations | ✅ Entregue (secção 1) |
 | 2. Testes preparados | ✅ Entregue (secção 2) — não corridos, dependem de contas reais |
-| 3. Correção segura do Make.com | ✅ Proposta entregue (secção 3) — **preciso que confirmes o scenario exato**; nada foi criado/alterado no Supabase nem no Make.com |
-| 4. Prévia da associação dos 577 orçamentos | ✅ Entregue (secção 4) — só leitura; nenhum `UPDATE` corrido |
+| 3. Correção segura do Make.com | ✅ Proposta entregue (secção 3); verificação dirigida concluída (secção 6.1) — risco baixo, não confirmado. Edge Function continua **não implementada** |
+| 4. Prévia da associação dos 577 orçamentos | ✅ Entregue (secção 4) — só leitura |
 | 5. Sistema de convite preparado | ✅ Confirmado (secção 5) — sem contas criadas, sem convites enviados |
+| 6. Migrations aditivas #1, #2, #4, #5, #6 | ✅ Executadas e verificadas (secção 6.2). #3 desnecessária. #7 e #8 continuam pendentes. |
 
-Nenhuma migration nova, nenhuma alteração de RLS antiga, nenhuma atualização dos 577
-orçamentos e nenhuma publicação em produção foi feita nesta ronda.
+Nenhuma alteração de RLS em `ob_stock`/`ob_despesas`/`ob_crm_dados`/`ob_orcamentos`,
+nenhuma atualização dos 577 orçamentos, nenhuma conta real, nenhum deploy de Edge
+Function e nenhuma publicação em produção (Netlify/`main`) foi feita nesta ronda.
