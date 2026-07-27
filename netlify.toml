@@ -1,13 +1,13 @@
 [[redirects]]
   from = "/*"
-  to = "/ob-business-os-v2.html"
+ to = "/index.html"
   status = 200
 
 # O CRM é um único ficheiro HTML sem nome com hash — sem isto, browsers e o
 # CDN da Netlify podem continuar a servir uma cópia em cache mesmo depois de
 # um novo deploy, fazendo parecer que as alterações "não chegaram".
 [[headers]]
-  for = "/ob-business-os-v2.html"
+for = "/index.html"
   [headers.values]
     Cache-Control = "no-cache, no-store, must-revalidate"
 
