@@ -174,6 +174,25 @@ real** — `active=false` por si só não é suficiente.
 
 ---
 
+## 3. Emails confirmados (2026-07-27) — pacote pronto, convites ainda não enviados
+
+**Nota técnica:** não existe, entre as ferramentas disponíveis nesta sessão, nenhum
+acesso de administração ao Supabase Auth (criar/convidar utilizadores). O envio tem de
+ser feito manualmente por um admin humano no Supabase Dashboard — não é uma escolha de
+cautela, é uma limitação real de acesso. Os payloads abaixo estão prontos a colar.
+
+| Pessoa | Email | Metadata do convite |
+|---|---|---|
+| Paulo Faria | `paulofaria@opportunitybox.pt` | `{"full_name":"Paulo Faria","ob_role":"admin","department":"Direcção"}` |
+| Rui Mota | `ruimota@opportunitybox.pt` | `{"full_name":"Rui Mota","ob_role":"comercial","department":"Comercial"}` |
+| Humberto Estrelinha | `humberto@opportunitybox.pt` | `{"full_name":"Humberto Estrelinha","ob_role":"comercial","department":"Comercial"}` |
+
+Estado: **convites não enviados**. Assim que confirmares que os 3 aceitaram, corro a
+verificação da secção 2.5 para cada um antes de avançarmos para o plano de teste
+(`fase2-plano-teste-3-contas.md`) e, mais tarde, a migration #7.
+
+---
+
 ## Resumo
 
 | Pedido | Estado |
@@ -182,6 +201,7 @@ real** — `active=false` por si só não é suficiente.
 | Comandos REVOKE/GRANT propostos | ✅ Secção 1 — só `ob_handle_new_user` recomendado; resto fica como está por agora |
 | Impacto nas políticas RLS | ✅ Secção 1 |
 | Procedimento de convite (7 pontos) | ✅ Secção 2 |
-| Contas reais criadas | ❌ Nenhuma — aguarda os 3 e-mails confirmados |
-| Convites enviados | ❌ Nenhum |
+| Emails confirmados e pacote de convite pronto | ✅ Secção 3 — Paulo, Rui, Humberto |
+| Contas reais criadas | ❌ Nenhuma |
+| Convites enviados | ❌ Nenhum — ação manual pendente (sem ferramenta de admin Auth disponível) |
 | REVOKE/GRANT aplicado | ❌ Nenhum |
