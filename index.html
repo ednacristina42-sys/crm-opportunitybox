@@ -2567,6 +2567,9 @@ function crmEnterAppWithProfile(profile){
     try{ if(typeof gsInitUI === 'function') gsInitUI(); } catch(e){}
     try{ if(typeof goPage === 'function') goPage('home'); } catch(e){}
     try{ if(typeof initNovosModulos === 'function') initNovosModulos(); } catch(e){}
+    // Fase 4, Etapa 6: só agora (sessão + perfil já validados) é que os
+    // orçamentos são pedidos ao Supabase — nunca antes de existir CU.
+    try{ if(typeof _orcInitFromSB === 'function') _orcInitFromSB(); } catch(e){}
   }, 0);
 }
 
@@ -2749,6 +2752,14 @@ async function crmRealLogout(){
     console.warn('[crmRealLogout] falha ao terminar sessão no servidor (estado local limpo à mesma):', e && e.message);
   }
   if(typeof doLogout === 'function') doLogout();
+  // Fase 4, Etapa 6: limpa a cópia local de orçamentos ao sair — sem isto,
+  // um próximo login (noutra conta, no mesmo browser) podia mostrar por
+  // instantes a cache de orçamentos da conta anterior antes da próxima
+  // sincronização terminar. Só ob_orcamentos — nenhum outro módulo é tocado.
+  try{
+    if(typeof orcData !== 'undefined'){ orcData = []; localStorage.removeItem('ob-orcamentos'); }
+    if(typeof orcRenderList === 'function') orcRenderList();
+  }catch(e){}
 }
 window.crmRealLogout = crmRealLogout;
 
@@ -14963,7 +14974,50 @@ function _sbOrcHeaders() {
   return { 'Content-Type': 'application/json', 'apikey': _ORC_SB_KEY, 'Authorization': 'Bearer ' + _ORC_SB_KEY, 'Prefer': 'return=representation' };
 }
 
-async function _sbOrcUpsert(orc) {
+// ── Fase 4, Etapa 6 — leitura/escrita de ob_orcamentos passa a depender
+// sempre da sessão Supabase autenticada (crmSBClient()), nunca da chave
+// anon fixa. _sbOrcHeaders()/fetch direto acima NÃO são tocados aqui —
+// continuam a servir só ob_uni_items (fora do âmbito desta etapa).
+// A partir de agora, quem decide o que cada utilizador vê/altera é
+// sempre a política RLS da tabela — o frontend nunca é a barreira real.
+
+// Classifica o erro devolvido pelo cliente Supabase para dar uma
+// mensagem própria a cada categoria — nunca esconder um erro em
+// silêncio nem confundir categorias diferentes entre si.
+function _sbOrcClassificarErro(error, status) {
+  if (!error && !status) return 'unknown';
+  var code = (error && error.code) || '';
+  var msg = (error && error.message) || '';
+  if (status === 401) return 'session-expired';
+  if (status === 403 || code === '42501' || /row-level security/i.test(msg)) return 'rls-denied';
+  if (/^(22|23)/.test(code)) return 'invalid-data';
+  return 'unknown';
+}
+function _sbOrcErroLegivel(error, status) {
+  switch (_sbOrcClassificarErro(error, status)) {
+    case 'session-expired': return 'A tua sessão expirou. Inicia sessão novamente.';
+    case 'rls-denied': return 'Não tens permissão para esta operação neste orçamento.';
+    case 'invalid-data': return 'Dados do orçamento inválidos — verifica os campos e tenta novamente.';
+    default: return 'Não foi possível comunicar com o servidor. Tenta novamente dentro de momentos.';
+  }
+}
+
+// Cria/atualiza um orçamento no Supabase, sempre através da sessão
+// autenticada. owner_id NUNCA vem livre do formulário: para quem não é
+// admin, o dono é sempre a própria sessão (CU.id); um admin só reatribui
+// o dono se passar opts.reassignOwnerId explicitamente — e mesmo assim
+// é a política RLS de INSERT/UPDATE que decide se é permitido, não esta
+// função. opts.isCreate marca uma criação verdadeira (define created_by);
+// nas atualizações (ex.: mudança de estado) created_by não é enviado, para
+// nunca reescrever o valor já gravado na primeira criação.
+async function _sbOrcUpsert(orc, opts) {
+  opts = opts || {};
+  var sb = crmSBClient();
+  var cu = (typeof CU !== 'undefined') ? CU : null;
+  if (!sb || !cu || !cu.id) {
+    console.warn('[SB-ORC] upsert bloqueado: sem sessão autenticada.');
+    return { ok: false, reason: 'no-session', message: 'Sem sessão iniciada — o orçamento não foi sincronizado.' };
+  }
   try {
     var row = {
       id: orc.num || orc.id || ('ORC-' + Date.now()),
@@ -14983,25 +15037,44 @@ async function _sbOrcUpsert(orc) {
         dtProducao: orc.dtProducao, aprovado_em: orc.aprovado_em, aprovado_por: orc.aprovado_por,
         _importadoPlanilha: orc._importadoPlanilha,
         leadId: (orc.leadId === undefined || orc.leadId === null) ? null : orc.leadId
-      }
+      },
+      owner_id: (cu.admin === true && opts.reassignOwnerId) ? opts.reassignOwnerId : cu.id,
+      updated_by: cu.id
     };
-    var r = await fetch(_ORC_SB_URL + '/rest/v1/ob_orcamentos?on_conflict=id', {
-      method: 'POST', headers: _sbOrcHeaders(), body: JSON.stringify(row)
-    });
-    if (!r.ok && row.extra.leadId !== null) {
-      console.warn('[SB-ORC] upsert do orçamento ' + row.num + ' falhou (HTTP ' + r.status + ') — ligação a leadId pode não ter sido persistida.');
+    if (opts.isCreate) row.created_by = cu.id;
+
+    var res = await sb.from('ob_orcamentos').upsert(row, { onConflict: 'id' });
+    if (res.error) {
+      var msg = _sbOrcErroLegivel(res.error, res.status);
+      console.warn('[SB-ORC] upsert do orçamento ' + row.num + ' falhou: ' + msg, res.error);
+      return { ok: false, reason: _sbOrcClassificarErro(res.error, res.status), error: res.error, message: msg };
     }
-  } catch(e) { console.warn('[SB-ORC] upsert falhou:', e); }
+    return { ok: true };
+  } catch(e) {
+    console.warn('[SB-ORC] upsert falhou (rede?):', e);
+    return { ok: false, reason: 'network', error: e, message: 'Não foi possível ligar ao servidor. O orçamento ficou guardado só neste dispositivo.' };
+  }
 }
 
+// Lê todos os orçamentos visíveis para a sessão autenticada atual — a
+// política RLS de SELECT (ob_can_see) é quem decide as linhas devolvidas:
+// admin/manager vê tudo o que gere, comercial só vê os seus. Sem sessão,
+// nem tenta ir à rede.
 async function _sbOrcLoadAll() {
+  var sb = crmSBClient();
+  var cu = (typeof CU !== 'undefined') ? CU : null;
+  if (!sb || !cu || !cu.id) {
+    console.warn('[SB-ORC] load bloqueado: sem sessão autenticada.');
+    return { ok: false, reason: 'no-session', rows: null };
+  }
   try {
-    var r = await fetch(_ORC_SB_URL + '/rest/v1/ob_orcamentos?order=created_at.desc&limit=2000', {
-      headers: { 'apikey': _ORC_SB_KEY, 'Authorization': 'Bearer ' + _ORC_SB_KEY }
-    });
-    if (!r.ok) return null;
-    var rows = await r.json();
-    return rows.map(function(row) {
+    var res = await sb.from('ob_orcamentos').select('*').order('created_at', { ascending: false }).limit(2000);
+    if (res.error) {
+      var msg = _sbOrcErroLegivel(res.error, res.status);
+      console.warn('[SB-ORC] load falhou: ' + msg, res.error);
+      return { ok: false, reason: _sbOrcClassificarErro(res.error, res.status), error: res.error, message: msg, rows: null };
+    }
+    var rows = (res.data || []).map(function(row) {
       var extra = row.extra || {};
       if (row.extra && typeof row.extra !== 'object') {
         console.warn('[SB-ORC] orçamento ' + row.num + ': campo extra em formato inesperado — leadId não recuperado.');
@@ -15019,25 +15092,37 @@ async function _sbOrcLoadAll() {
         pagamento50: row.pagamento50, sinal: row.sinal, saldo: row.saldo,
         dtProducao: extra.dtProducao, aprovado_em: extra.aprovado_em, aprovado_por: extra.aprovado_por,
         _importadoPlanilha: extra._importadoPlanilha,
-        leadId: (extra.leadId === undefined || extra.leadId === null) ? null : extra.leadId
+        leadId: (extra.leadId === undefined || extra.leadId === null) ? null : extra.leadId,
+        owner_id: row.owner_id || null
       };
     });
-  } catch(e) { console.warn('[SB-ORC] load falhou:', e); return null; }
+    return { ok: true, rows: rows };
+  } catch(e) {
+    console.warn('[SB-ORC] load falhou (rede?):', e);
+    return { ok: false, reason: 'network', error: e, rows: null, message: 'Não foi possível ligar ao servidor. A mostrar a última cópia local conhecida.' };
+  }
 }
 
-// Carregar orçamentos do Supabase ao iniciar (substitui localStorage se houver dados)
-(async function _orcInitFromSB() {
-  var sbData = await _sbOrcLoadAll();
-  if (sbData && sbData.length > 0) {
-    orcData = sbData;
-    localStorage.setItem('ob-orcamentos', JSON.stringify(orcData.slice(0, 5000)));
+// Carrega os orçamentos do Supabase — já NÃO corre sozinho ao carregar a
+// página (isso corria antes de qualquer login existir). Passa a ser
+// chamado explicitamente por crmEnterAppWithProfile(), só depois de uma
+// sessão válida e um perfil aprovado existirem. Substitui sempre pela
+// resposta da BD (mesmo vazia) — nunca mistura com o que ficou em cache
+// de uma sessão anterior; uma lista vazia devolvida sem erro é uma
+// resposta legítima (RLS a filtrar corretamente), não uma falha.
+async function _orcInitFromSB() {
+  var res = await _sbOrcLoadAll();
+  if (!res.ok) {
+    console.warn('[SB-ORC] não foi possível carregar orçamentos do Supabase (' + res.reason + ') — mantém-se a última cópia local conhecida.');
+    if (typeof showToast === 'function' && res.reason !== 'no-session') showToast('⚠ ' + (res.message || 'Falha ao sincronizar orçamentos.'));
     if (typeof orcRenderList === 'function') orcRenderList();
-  } else if (orcData.length > 0) {
-    // Migrar dados locais para Supabase
-    for (var i = 0; i < orcData.length; i++) { await _sbOrcUpsert(orcData[i]); }
-    console.log('[SB-ORC] ' + orcData.length + ' orçamentos migrados para Supabase.');
+    return;
   }
-})();
+  orcData = res.rows;
+  localStorage.setItem('ob-orcamentos', JSON.stringify(orcData.slice(0, 5000)));
+  if (typeof orcRenderList === 'function') orcRenderList();
+}
+window._orcInitFromSB = _orcInitFromSB;
 
 // ══════════════════════════════════════════════════════════════════
 // SUPABASE — Pipeline de Produção (uniItems) + Actividades por departamento.
@@ -15340,7 +15425,7 @@ function orcImagemObraUpload(input){
 }
 window.orcImagemObraUpload = orcImagemObraUpload;
 
-function orcGuardar(){
+async function orcGuardar(){
   const d = orcGetData();
   if(!d.cli.trim()){ alert('Por favor preenche o nome do cliente.'); return; }
   if(!d.linhas.length){ alert('Adiciona pelo menos uma linha de produto.'); return; }
@@ -15348,7 +15433,10 @@ function orcGuardar(){
   d._geradoPorIA = !!(window._orcGeradoPorIA);
   orcData.unshift(d);
   localStorage.setItem('ob-orcamentos', JSON.stringify(orcData.slice(0,5000)));
-  _sbOrcUpsert(d);
+  // Fase 4, Etapa 6: guarda sempre localmente primeiro (não perde o
+  // trabalho do utilizador), depois tenta sincronizar com o Supabase — se
+  // falhar, o utilizador é avisado de forma clara, nunca em silêncio.
+  const _syncRes = await _sbOrcUpsert(d, { isCreate: true });
   if(d.leadId && typeof crmAddAtividade==='function'){
     crmAddAtividade(d.leadId, 'orcamento', 'Orçamento '+d.num+' criado — €'+(d.totais&&d.totais.total?d.totais.total.toFixed(2):'0,00'), d.vendedor);
   }
@@ -15359,7 +15447,14 @@ function orcGuardar(){
   if(badge) badge.textContent = orcNextNum();
   // Feedback
   const msg = document.getElementById('orc-save-msg');
-  if(msg){ msg.textContent = '✓ Orçamento '+d.num+' guardado com sucesso'; msg.style.display='block'; setTimeout(()=>msg.style.display='none',3000); }
+  if(msg){
+    if(_syncRes && _syncRes.ok){
+      msg.textContent = '✓ Orçamento '+d.num+' guardado com sucesso';
+    } else {
+      msg.textContent = '⚠ Orçamento '+d.num+' guardado só neste dispositivo — ' + (_syncRes && _syncRes.message ? _syncRes.message : 'falha ao sincronizar.');
+    }
+    msg.style.display='block'; setTimeout(()=>msg.style.display='none',3000);
+  }
 }
 
 function orcNew(){
@@ -19048,7 +19143,7 @@ function finExportDespesas() {
 // ════════════════════════════════════════════════════════════════════════
 // HOOK: Baixa de Stock ao alterar estado de orçamento para Aprovado/Em Produção
 // ════════════════════════════════════════════════════════════════════════
-function orcChangeStatus(orcId, novoEstado) {
+async function orcChangeStatus(orcId, novoEstado) {
   var orc = orcData.find(function(o){return o.num===orcId;});
   if (!orc) return;
   var estadoAnterior = orc.st;
@@ -19059,7 +19154,13 @@ function orcChangeStatus(orcId, novoEstado) {
     orc.dtProducao = new Date().toLocaleDateString('pt-PT');
   }
   localStorage.setItem('ob-orcamentos', JSON.stringify(orcData.slice(0,5000)));
-  _sbOrcUpsert(orc);
+  // Fase 4, Etapa 6: aguarda o resultado real da sincronização — uma
+  // negação de RLS (ex.: comercial a tentar alterar um orçamento que já
+  // não é dele) ou falha de rede é avisada, nunca escondida em silêncio.
+  var _syncRes = await _sbOrcUpsert(orc);
+  if(!_syncRes.ok && typeof showToast === 'function'){
+    showToast('⚠ Estado alterado só neste dispositivo — ' + (_syncRes.message || 'falha ao sincronizar.'));
+  }
   orcRenderList();
   // ADD: Item 2 — enviar para ClickUp via Make.com quando aprovado (só uma vez)
   if (novoEstado === 'Aprovado' && estadoAnterior !== 'Aprovado') {
