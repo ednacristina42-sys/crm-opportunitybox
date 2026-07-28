@@ -1,16 +1,13 @@
 [[redirects]]
   from = "/*"
-  to = "/maintenance.html"
+  to = "/index.html"
   status = 200
-  force = true
 
-# MODO DE MANUTENÇÃO — 2026-07-27. Auditoria de segurança encontrou
-# falhas graves (login sem autenticação real, RLS efetivamente aberta
-# na base de dados). Site suspenso ao público enquanto a reconstrução
-# de autenticação/permissões (backups/2026-07-27-pre-security-migration/
-# no branch claude/crm-opportunitybox-cleanup-q737hx) está em curso.
-# Para reverter: remover este bloco e o comentário acima, restaurando
-# "to = \"/index.html\"" e "force = true" pode ser removido.
+# Modo de manutenção desativado em 2026-07-28, a pedido, para visualização.
+# As falhas de segurança identificadas na auditoria (login sem autenticação
+# real, RLS efetivamente aberta na base de dados) continuam por corrigir —
+# ver backups/2026-07-27-pre-security-migration/ e docs/fase2-*.md no
+# branch claude/crm-opportunitybox-cleanup-q737hx.
 
 # O CRM é um único ficheiro HTML sem nome com hash — sem isto, browsers e o
 # CDN da Netlify podem continuar a servir uma cópia em cache mesmo depois de
