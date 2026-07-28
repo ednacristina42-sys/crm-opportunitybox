@@ -2570,18 +2570,79 @@ function crmEnterAppWithProfile(profile){
   }, 0);
 }
 
-// Incrementado sempre que uma tentativa de arranque é abandonada ou
-// substituída (login mostrado, logout, sessão expirada). Protege
-// contra a corrida em que um logout (ou um novo arranque) acontece
+// Incrementado sempre que uma tentativa de arranque/login é abandonada
+// ou substituída (login mostrado, logout, sessão expirada). Protege
+// contra a corrida em que um logout (ou uma nova tentativa) acontece
 // enquanto uma consulta a ob_profiles anterior ainda está pendente —
 // ao resolver, essa tentativa antiga verifica a geração e desiste em
 // silêncio, em vez de reabrir a app com dados já inválidos.
 var _crmAuthGen = 0;
 
+// Núcleo partilhado: dado um `session` (do arranque OU de um login
+// feito agora), carrega ob_profiles, valida-o, e só então constrói o
+// CU e entra na app — ou mostra o login com a mensagem certa. Usado
+// tanto por crmAuthBootGate() como por crmRealLogin(), para nunca
+// haver duas implementações da mesma validação a divergirem uma da
+// outra. Falha de rede/erro do servidor nunca é tratada como
+// credenciais erradas nem confundida com "sem sessão".
+async function crmValidateSessionAndEnter(session, myGen){
+  if(!session || !session.user || !session.user.id){
+    crmShowLoginWithMessage(null);
+    return false;
+  }
+
+  var profile;
+  try{
+    profile = await crmAuthLoadProfile(session.user.id);
+  }catch(e){
+    console.warn('[crmValidateSessionAndEnter] falha ao carregar perfil:', e && e.message);
+    if(myGen !== _crmAuthGen) return false;
+    crmShowLoginWithMessage('Não foi possível verificar a tua conta. Tenta novamente dentro de momentos.');
+    return false;
+  }
+  if(myGen !== _crmAuthGen) return false; // logout/nova tentativa aconteceu enquanto o perfil carregava
+
+  // Exige exatamente um perfil correspondente ao id da sessão. A coluna
+  // ob_profiles.id é chave primária (referencia auth.users) — duplicados
+  // são impossíveis na base de dados; esta verificação cobre o caso de
+  // a resposta, por qualquer motivo, não corresponder à sessão pedida.
+  if(!profile || typeof profile !== 'object' || profile.id !== session.user.id){
+    try{ await crmAuthLogout(); }catch(e){}
+    crmShowLoginWithMessage(
+      profile ? 'Os dados da conta são inválidos. Contacta um administrador.'
+              : 'Esta conta ainda não tem perfil associado no CRM. Contacta um administrador.'
+    );
+    return false;
+  }
+  if(profile.active !== true){
+    try{ await crmAuthLogout(); }catch(e){}
+    crmShowLoginWithMessage('Esta conta está desativada. Contacta um administrador.');
+    return false;
+  }
+  if(CRM_VALID_ROLES.indexOf(profile.role) === -1){
+    try{ await crmAuthLogout(); }catch(e){}
+    console.warn('[crmValidateSessionAndEnter] função desconhecida:', profile.role);
+    crmShowLoginWithMessage('A função associada a esta conta não é reconhecida. Contacta um administrador.');
+    return false;
+  }
+  if(!profile.department || !String(profile.department).trim()){
+    try{ await crmAuthLogout(); }catch(e){}
+    crmShowLoginWithMessage('Perfil incompleto (falta departamento). Contacta um administrador.');
+    return false;
+  }
+  if(!profile.full_name || !String(profile.full_name).trim()){
+    try{ await crmAuthLogout(); }catch(e){}
+    crmShowLoginWithMessage('Perfil incompleto (falta nome). Contacta um administrador.');
+    return false;
+  }
+
+  crmEnterAppWithProfile(profile);
+  return true;
+}
+
 // Ponto de entrada do gate — chamado no arranque em vez de renderLogin()
 // direto. Nunca deixa a app nem o ecrã de login aparecerem antes de
-// decidir. Falha de rede/erro do servidor nunca é tratada como
-// credenciais erradas nem confundida com "sem sessão".
+// decidir.
 async function crmAuthBootGate(){
   var myGen = ++_crmAuthGen;
 
@@ -2604,59 +2665,92 @@ async function crmAuthBootGate(){
   }
   if(myGen !== _crmAuthGen) return; // outra tentativa/logout já decidiu entretanto
 
-  if(!session || !session.user || !session.user.id){
-    crmShowLoginWithMessage(null);
-    return;
-  }
-
-  var profile;
-  try{
-    profile = await crmAuthLoadProfile(session.user.id);
-  }catch(e){
-    console.warn('[crmAuthBootGate] falha ao carregar perfil:', e && e.message);
-    if(myGen !== _crmAuthGen) return;
-    crmShowLoginWithMessage('Não foi possível verificar a tua conta. Tenta novamente dentro de momentos.');
-    return;
-  }
-  if(myGen !== _crmAuthGen) return; // logout/novo arranque aconteceu enquanto o perfil carregava
-
-  // Exige exatamente um perfil correspondente ao id da sessão. A coluna
-  // ob_profiles.id é chave primária (referencia auth.users) — duplicados
-  // são impossíveis na base de dados; esta verificação cobre o caso de
-  // a resposta, por qualquer motivo, não corresponder à sessão pedida.
-  if(!profile || typeof profile !== 'object' || profile.id !== session.user.id){
-    try{ await crmAuthLogout(); }catch(e){}
-    crmShowLoginWithMessage(
-      profile ? 'Os dados da conta são inválidos. Contacta um administrador.'
-              : 'Esta conta ainda não tem perfil associado no CRM. Contacta um administrador.'
-    );
-    return;
-  }
-  if(profile.active !== true){
-    try{ await crmAuthLogout(); }catch(e){}
-    crmShowLoginWithMessage('Esta conta está desativada. Contacta um administrador.');
-    return;
-  }
-  if(CRM_VALID_ROLES.indexOf(profile.role) === -1){
-    try{ await crmAuthLogout(); }catch(e){}
-    console.warn('[crmAuthBootGate] função desconhecida:', profile.role);
-    crmShowLoginWithMessage('A função associada a esta conta não é reconhecida. Contacta um administrador.');
-    return;
-  }
-  if(!profile.department || !String(profile.department).trim()){
-    try{ await crmAuthLogout(); }catch(e){}
-    crmShowLoginWithMessage('Perfil incompleto (falta departamento). Contacta um administrador.');
-    return;
-  }
-  if(!profile.full_name || !String(profile.full_name).trim()){
-    try{ await crmAuthLogout(); }catch(e){}
-    crmShowLoginWithMessage('Perfil incompleto (falta nome). Contacta um administrador.');
-    return;
-  }
-
-  crmEnterAppWithProfile(profile);
+  await crmValidateSessionAndEnter(session, myGen);
 }
 window.crmAuthBootGate = crmAuthBootGate;
+
+// ── Fase 4, Etapa 5 — login e logout reais ────────────────────────────
+// Impede duplo clique / pedidos simultâneos de login.
+var _crmLoginInFlight = false;
+
+function crmSetLoginFormBusy(busy){
+  var btn = document.getElementById('login-btn');
+  var emailInp = document.getElementById('login-email');
+  var passInp = document.getElementById('login-senha');
+  if(btn){ btn.disabled = busy; btn.textContent = busy ? 'A entrar…' : 'Entrar no Sistema'; }
+  if(emailInp) emailInp.disabled = busy;
+  if(passInp) passInp.disabled = busy;
+}
+
+// Handler real do formulário de login — liga-se ao botão/Enter do HTML.
+// Email e password só são enviados ao crmAuthLogin() (Supabase Auth);
+// nunca são comparados a LOGIN_PASSWORDS nem usados para procurar em
+// USERS. A password nunca fica guardada em nenhuma variável para além
+// do tempo mínimo necessário para a enviar — é lida do campo, usada, e
+// o campo é limpo logo a seguir, sucesso ou falha.
+async function crmRealLogin(){
+  if(_crmLoginInFlight) return;
+
+  var emailInp = document.getElementById('login-email');
+  var passInp = document.getElementById('login-senha');
+  var email = (emailInp && emailInp.value || '').trim();
+  var password = (passInp && passInp.value) || '';
+  if(!email || !password) return;
+
+  _crmLoginInFlight = true;
+  crmSetLoginFormBusy(true);
+  var erro = document.getElementById('login-erro');
+  if(erro) erro.style.display = 'none';
+
+  var myGen = ++_crmAuthGen;
+  var result;
+  try{
+    result = await crmAuthLogin(email, password);
+  }catch(e){
+    if(passInp) passInp.value = '';
+    _crmLoginInFlight = false;
+    crmSetLoginFormBusy(false);
+    if(myGen !== _crmAuthGen) return;
+    console.warn('[crmRealLogin] falha ao contactar o servidor:', e && e.message);
+    crmShowLoginWithMessage('Não foi possível ligar ao servidor. Tenta novamente dentro de momentos.');
+    return;
+  }
+  // Limpa a password do formulário imediatamente após a tentativa,
+  // sucesso ou falha — nunca fica retida em mais lado nenhum.
+  if(passInp) passInp.value = '';
+
+  if(!result || result.error || !result.data || !result.data.session){
+    _crmLoginInFlight = false;
+    crmSetLoginFormBusy(false);
+    if(myGen !== _crmAuthGen) return;
+    // Mensagem genérica de propósito — nunca revela se o email existe
+    // ou não; o próprio Supabase Auth já devolve o mesmo erro genérico
+    // para "password errada" e para "email inexistente".
+    crmShowLoginWithMessage('Email ou password incorretos.');
+    return;
+  }
+
+  crmShowAuthLoading('A verificar conta…');
+  await crmValidateSessionAndEnter(result.data.session, myGen);
+  _crmLoginInFlight = false;
+  crmSetLoginFormBusy(false);
+}
+window.crmRealLogin = crmRealLogin;
+
+// Logout real — sempre limpa o estado local, mesmo que o signOut
+// remoto falhe (uma falha de rede no logout nunca deve deixar dados
+// internos visíveis). doLogout() é reaproveitado só pela parte de
+// limpar CU/esconder a app/mostrar o login — já validado na Etapa 4
+// (inclui o incremento de _crmAuthGen).
+async function crmRealLogout(){
+  try{
+    await crmAuthLogout();
+  }catch(e){
+    console.warn('[crmRealLogout] falha ao terminar sessão no servidor (estado local limpo à mesma):', e && e.message);
+  }
+  if(typeof doLogout === 'function') doLogout();
+}
+window.crmRealLogout = crmRealLogout;
 
 // Sessão que termina a meio do uso (ex: refresh token revogado) —
 // devolve ao ecrã de login com mensagem clara. Só reage a sessões que
@@ -6248,10 +6342,12 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
     </div>
 
     <div style="font-size:22px;font-weight:700;color:var(--txt2);margin-bottom:4px">Bem-vindo de volta</div>
-    <div style="font-size:15px;color:var(--muted);margin-bottom:28px">Seleciona o teu perfil para aceder ao sistema.</div>
+    <div style="font-size:15px;color:var(--muted);margin-bottom:28px">Inicia sessão para aceder ao sistema.</div>
 
-    <!-- Dropdown Utilizador -->
-    <div style="margin-bottom:16px">
+    <!-- Fase 4, Etapa 5: dropdown do login antigo escondido (não eliminado —
+         renderLogin()/loginSelectFromDropdown() continuam a existir e a
+         popular isto, sem erro, para rollback via CRM_AUTH_GATE_ENABLED). -->
+    <div style="margin-bottom:16px;display:none" id="login-user-select-wrap">
       <div style="font-size:13px;font-weight:600;color:var(--muted);letter-spacing:.08em;text-transform:uppercase;margin-bottom:8px">Utilizador</div>
       <div style="position:relative">
         <select id="login-user-select" onchange="loginSelectFromDropdown(this.value)"
@@ -6262,17 +6358,27 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
       </div>
     </div>
 
+    <!-- Campo Email (Fase 4, Etapa 5 — autenticação real via Supabase Auth) -->
+    <div style="margin-bottom:16px">
+      <div style="font-size:13px;font-weight:600;color:var(--muted);letter-spacing:.08em;text-transform:uppercase;margin-bottom:8px">Email</div>
+      <input type="email" id="login-email" placeholder="nome@opportunitybox.pt" autocomplete="email"
+        style="width:100%;background:var(--bg3);border:1.5px solid var(--border);border-radius:12px;color:var(--txt2);padding:14px 16px;font-size:16px;font-family:Inter,sans-serif;box-sizing:border-box;outline:none;transition:border-color .2s"
+        onfocus="this.style.borderColor='var(--y)'" onblur="this.style.borderColor='var(--border)'"
+        onkeydown="if(event.key==='Enter') crmRealLogin()"/>
+    </div>
+
     <!-- Campo Senha -->
     <div style="margin-bottom:24px">
       <div style="font-size:13px;font-weight:600;color:var(--muted);letter-spacing:.08em;text-transform:uppercase;margin-bottom:8px">Senha</div>
-      <input type="password" id="login-senha" placeholder="••••••"
+      <input type="password" id="login-senha" placeholder="••••••" autocomplete="current-password"
         style="width:100%;background:var(--bg3);border:1.5px solid var(--border);border-radius:12px;color:var(--txt2);padding:14px 16px;font-size:16px;font-family:Inter,sans-serif;box-sizing:border-box;outline:none;transition:border-color .2s"
         onfocus="this.style.borderColor='var(--y)'" onblur="this.style.borderColor='var(--border)'"
-        onkeydown="if(event.key==='Enter') loginComSenha()"/>
+        onkeydown="if(event.key==='Enter') crmRealLogin()"/>
     </div>
 
-    <!-- Botão Entrar -->
-    <button id="login-btn" onclick="loginComSenha()" disabled
+    <!-- Botão Entrar — Fase 4, Etapa 5: liga a crmRealLogin(), não a loginComSenha().
+         Sem "disabled": a validação de campos vazios é feita dentro de crmRealLogin. -->
+    <button id="login-btn" onclick="crmRealLogin()"
       style="width:100%;background:var(--y);color:#000;border:none;border-radius:12px;padding:15px;font-size:16px;font-weight:700;cursor:pointer;transition:all .2s;letter-spacing:.01em;font-family:Inter,sans-serif">
       Entrar no Sistema
     </button>
@@ -6437,7 +6543,7 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
       <div class="sb-uname" id="sb-uname"></div>
       <div class="sb-urole" id="sb-urole"></div>
     </div>
-    <button class="logout-btn" data-action="doLogout">Sair</button>
+    <button class="logout-btn" data-action="crmRealLogout">Sair</button>
   </div>
 </div>
 
