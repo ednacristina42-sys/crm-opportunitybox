@@ -2511,11 +2511,19 @@ function crmHideAuthLoading(){
 
 // Mostra o ecrã de login antigo (inalterado), com uma mensagem opcional
 // — usado por todos os desfechos do gate que não levam à app.
+// Fase 4 (correção de recuperação de password): também esconde o ecrã de
+// recuperação e desliga _crmRecoveryMode — é o único ponto de saída que
+// qualquer desfecho do fluxo de recuperação usa para voltar ao login, por
+// isso é o sítio certo (único) para desligar o modo, sem duplicar isto em
+// cada função que decide voltar ao login.
 function crmShowLoginWithMessage(msg){
   crmHideAuthLoading();
+  _crmRecoveryMode = false;
   var loginEl = document.getElementById('login');
   var appEl = document.getElementById('app');
+  var recEl = document.getElementById('crm-recovery');
   if(appEl) appEl.style.display = 'none';
+  if(recEl) recEl.style.display = 'none';
   if(loginEl) loginEl.style.display = 'flex';
   if(typeof renderLogin === 'function') renderLogin();
   var erro = document.getElementById('login-erro');
@@ -2581,6 +2589,12 @@ function crmEnterAppWithProfile(profile){
 // silêncio, em vez de reabrir a app com dados já inválidos.
 var _crmAuthGen = 0;
 
+// Fase 4 (correção de recuperação de password): true assim que o evento
+// PASSWORD_RECOVERY é apanhado (crmWireAuthStateListener), até o fluxo
+// terminar (sucesso ou volta ao login). Enquanto for true, nada abre a
+// app — verificado no único sítio que a abre (crmValidateSessionAndEnter).
+var _crmRecoveryMode = false;
+
 // Núcleo partilhado: dado um `session` (do arranque OU de um login
 // feito agora), carrega ob_profiles, valida-o, e só então constrói o
 // CU e entra na app — ou mostra o login com a mensagem certa. Usado
@@ -2589,6 +2603,7 @@ var _crmAuthGen = 0;
 // outra. Falha de rede/erro do servidor nunca é tratada como
 // credenciais erradas nem confundida com "sem sessão".
 async function crmValidateSessionAndEnter(session, myGen){
+  if(_crmRecoveryMode) return false; // nunca abre a app com uma sessão de recuperação
   if(!session || !session.user || !session.user.id){
     crmShowLoginWithMessage(null);
     return false;
@@ -2643,15 +2658,41 @@ async function crmValidateSessionAndEnter(session, myGen){
   return true;
 }
 
+// Deteta um link de recuperação inválido/expirado — nestes casos o
+// Supabase nunca chega a criar sessão (o erro já vem na própria URL),
+// por isso o evento PASSWORD_RECOVERY nunca dispara. Só lê; quem chama
+// decide quando (e se) limpar a URL.
+function _crmDetectRecoveryLinkError(){
+  var raw = (location.hash && location.hash.length > 1 ? location.hash.slice(1) : '')
+    + (location.search && location.search.length > 1 ? '&' + location.search.slice(1) : '');
+  if(!raw) return null;
+  var params;
+  try{ params = new URLSearchParams(raw); }catch(e){ return null; }
+  return params.get('error_code') || params.get('error') || null;
+}
+
 // Ponto de entrada do gate — chamado no arranque em vez de renderLogin()
 // direto. Nunca deixa a app nem o ecrã de login aparecerem antes de
 // decidir.
 async function crmAuthBootGate(){
   var myGen = ++_crmAuthGen;
 
+  // Nunca reabre o overlay de validação por cima do ecrã de recuperação —
+  // crmValidateSessionAndEnter já bloqueia a app nesse caso, esta guarda
+  // extra evita só o "flash" cosmético do overlay.
+  if(_crmRecoveryMode) return;
+
   if(!CRM_AUTH_GATE_ENABLED){
     crmHideAuthLoading();
     renderLogin();
+    return;
+  }
+
+  // Link de recuperação inválido/expirado — tratado antes de qualquer
+  // outra coisa; nunca chega a tentar validar sessão normal.
+  if(_crmDetectRecoveryLinkError()){
+    crmShowLoginWithMessage('O link de recuperação é inválido ou expirou. Pede um novo.');
+    try{ history.replaceState(null, '', location.pathname); }catch(e){}
     return;
   }
 
@@ -2774,6 +2815,15 @@ window.crmRealLogout = crmRealLogout;
   var sb = crmSBClient();
   if(!sb || !sb.auth || typeof sb.auth.onAuthStateChange !== 'function') return;
   sb.auth.onAuthStateChange(function(event){
+    // Callback curto de propósito — sem lógica assíncrona aqui. Ativa o
+    // modo recuperação e delega o resto (DOM, limpeza da URL) a
+    // crmRecoveryShow(), fora deste callback.
+    if(event === 'PASSWORD_RECOVERY'){
+      _crmAuthGen++; // invalida qualquer crmAuthBootGate() já em curso
+      _crmRecoveryMode = true;
+      crmRecoveryShow();
+      return;
+    }
     if(event === 'SIGNED_OUT' && CU && CU._authGate){
       _crmAuthGen++; // invalida qualquer arranque ainda pendente
       CU = null; selectedUser = null; _adminUser = null;
@@ -2781,6 +2831,126 @@ window.crmRealLogout = crmRealLogout;
     }
   });
 })();
+
+// ── Fase 4 — ecrã de definir nova password (evento PASSWORD_RECOVERY) ──
+// Mostra só o #crm-recovery, esconde login/app/overlay, limpa os campos
+// e só agora — já com a sessão de recuperação processada pelo Supabase,
+// que é o que disparou este evento — limpa a URL.
+// O listener que chama esta função (crmWireAuthStateListener) é registado
+// ainda a meio do <head>, antes de #crm-recovery/#login/#app existirem no
+// DOM — se PASSWORD_RECOVERY disparar cedo de mais, adia-se para depois
+// de DOMContentLoaded, em vez de silenciosamente não encontrar os elementos.
+function crmRecoveryShow(){
+  if(document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', crmRecoveryShow, { once: true });
+    return;
+  }
+  crmHideAuthLoading();
+  var loginEl = document.getElementById('login');
+  var appEl = document.getElementById('app');
+  var recEl = document.getElementById('crm-recovery');
+  if(loginEl) loginEl.style.display = 'none';
+  if(appEl) appEl.style.display = 'none';
+  if(recEl) recEl.style.display = 'flex';
+  var erro = document.getElementById('recovery-erro');
+  if(erro) erro.style.display = 'none';
+  _crmRecoveryClearFields();
+  try{ history.replaceState(null, '', location.pathname); }catch(e){}
+}
+
+var _crmRecoveryInFlight = false;
+
+function crmRecoverySetBusy(busy){
+  var btn = document.getElementById('recovery-btn');
+  var p1 = document.getElementById('recovery-pass1');
+  var p2 = document.getElementById('recovery-pass2');
+  if(btn){ btn.disabled = busy; btn.textContent = busy ? 'A guardar…' : 'Definir password'; }
+  if(p1) p1.disabled = busy;
+  if(p2) p2.disabled = busy;
+}
+
+function crmRecoveryShowError(msg){
+  var erro = document.getElementById('recovery-erro');
+  if(erro){ erro.textContent = msg; erro.style.display = 'block'; }
+}
+
+// Limpa sempre os dois campos — chamada em todos os desfechos (sucesso,
+// erro de validação, erro do servidor, falha de rede) para nunca deixar
+// uma password no DOM mais tempo do que o necessário.
+function _crmRecoveryClearFields(){
+  var p1 = document.getElementById('recovery-pass1'); if(p1) p1.value = '';
+  var p2 = document.getElementById('recovery-pass2'); if(p2) p2.value = '';
+}
+
+function _crmIsPasswordForte(pwd){
+  return typeof pwd === 'string' && pwd.length >= 8 && /[A-Za-z]/.test(pwd) && /[0-9]/.test(pwd);
+}
+
+// Handler do botão "Definir password". Nunca usa service_role — corre
+// sempre com a própria sessão de recuperação do utilizador, a mesma que
+// o crmSBClient() já tem ativa depois do evento PASSWORD_RECOVERY.
+async function crmRecoverySubmit(){
+  if(_crmRecoveryInFlight) return;
+
+  var p1El = document.getElementById('recovery-pass1');
+  var p2El = document.getElementById('recovery-pass2');
+  var pass1 = (p1El && p1El.value) || '';
+  var pass2 = (p2El && p2El.value) || '';
+
+  var erroEl = document.getElementById('recovery-erro');
+  if(erroEl) erroEl.style.display = 'none';
+
+  if(!pass1 || !pass2){ _crmRecoveryClearFields(); crmRecoveryShowError('Preenche as duas passwords.'); return; }
+  if(pass1 !== pass2){ _crmRecoveryClearFields(); crmRecoveryShowError('As passwords não coincidem.'); return; }
+  if(!_crmIsPasswordForte(pass1)){
+    _crmRecoveryClearFields();
+    crmRecoveryShowError('A password tem de ter pelo menos 8 caracteres, com pelo menos uma letra e um número.');
+    return;
+  }
+
+  _crmRecoveryInFlight = true;
+  crmRecoverySetBusy(true);
+
+  var result;
+  try{
+    result = await crmSBClient().auth.updateUser({ password: pass1 });
+  }catch(e){
+    _crmRecoveryClearFields();
+    _crmRecoveryInFlight = false;
+    crmRecoverySetBusy(false);
+    console.warn('[crmRecoverySubmit] falha ao contactar o servidor:', e && e.message);
+    crmRecoveryShowError('Não foi possível ligar ao servidor. Tenta novamente dentro de momentos.');
+    return;
+  }
+  // Limpa sempre os campos logo a seguir à tentativa, sucesso ou falha.
+  _crmRecoveryClearFields();
+
+  if(!result || result.error){
+    _crmRecoveryInFlight = false;
+    crmRecoverySetBusy(false);
+    var msg = (result && result.error && result.error.message) || '';
+    if(/session|jwt|token/i.test(msg)){
+      // Sessão de recuperação já não é válida — pedir um novo link é a
+      // única saída, por isso volta ao login (não faz sentido continuar
+      // neste ecrã à espera de outra tentativa).
+      crmShowLoginWithMessage('A tua sessão de recuperação expirou. Pede um novo link.');
+    } else {
+      crmRecoveryShowError('Não foi possível atualizar a password. Tenta novamente.');
+    }
+    return;
+  }
+
+  // Sucesso: aguarda SEMPRE o fim do signOut() antes de mostrar o login —
+  // nunca deixa o fluxo manual e um eventual SIGNED_OUT a controlar o
+  // ecrã ao mesmo tempo. (CU nunca chegou a existir em modo recuperação,
+  // por isso o listener de SIGNED_OUT nem atuaria — mas não se depende
+  // dessa coincidência: espera-se explicitamente por este await.)
+  try{ await crmAuthLogout(); }catch(e){ console.warn('[crmRecoverySubmit] falha ao terminar sessão:', e && e.message); }
+  _crmRecoveryInFlight = false;
+  crmRecoverySetBusy(false);
+  crmShowLoginWithMessage('Password atualizada com sucesso. Inicia sessão com a nova password.');
+}
+window.crmRecoverySubmit = crmRecoverySubmit;
 
 var ecSupabase = null;
 var ecUser = null;
@@ -6325,6 +6495,27 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
 <div id="crm-auth-loading" style="position:fixed;inset:0;z-index:999999;background:var(--bg,#0f1115);display:flex;align-items:center;justify-content:center;flex-direction:column;gap:12px;color:var(--txt,#e8e8ea);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif">
   <div style="font-size:28px">⏳</div>
   <div id="crm-auth-loading-msg">A validar sessão…</div>
+</div>
+
+<!-- ═════════════════════════════════════════════════════
+     RECOVERY SCREEN — Fase 4, correção do fluxo de recuperação
+     de password. Ecrã próprio, sem nenhum campo/elemento partilhado
+     com o #login normal. Só é mostrado pelo evento PASSWORD_RECOVERY
+     do Supabase (crmWireAuthStateListener) — nunca por navegação
+     direta. z-index acima do #login, mesma lógica do #crm-auth-loading.
+═════════════════════════════════════════════════════ -->
+<div id="crm-recovery" style="display:none;position:fixed;inset:0;z-index:9999;background:var(--bg);flex-direction:column;align-items:center;justify-content:center;padding:24px;overflow-y:auto">
+  <div style="background:var(--bg2);border:1px solid var(--border);border-radius:20px;padding:40px 44px;width:100%;max-width:460px;box-shadow:0 24px 80px rgba(0,0,0,.4)">
+    <div style="font-size:18px;font-weight:600;margin-bottom:6px;text-align:center">Definir nova password</div>
+    <div style="font-size:13px;color:var(--muted);margin-bottom:24px;text-align:center">Mínimo 8 caracteres, com pelo menos uma letra e um número.</div>
+    <input type="password" id="recovery-pass1" placeholder="Nova password" autocomplete="new-password"
+      style="width:100%;box-sizing:border-box;padding:12px 14px;margin-bottom:12px;border-radius:10px;border:1px solid var(--border);background:var(--bg3);color:var(--txt)">
+    <input type="password" id="recovery-pass2" placeholder="Confirma a nova password" autocomplete="new-password"
+      style="width:100%;box-sizing:border-box;padding:12px 14px;margin-bottom:16px;border-radius:10px;border:1px solid var(--border);background:var(--bg3);color:var(--txt)">
+    <button id="recovery-btn" onclick="crmRecoverySubmit()"
+      style="width:100%;padding:12px;border:none;border-radius:10px;background:var(--y);color:#000;font-weight:600;cursor:pointer">Definir password</button>
+    <div id="recovery-erro" style="display:none;margin-top:12px;text-align:center;font-size:14px;color:var(--r);background:rgba(224,85,85,.08);border:1px solid rgba(224,85,85,.25);border-radius:8px;padding:8px"></div>
+  </div>
 </div>
 
 <!-- ═════════════════════════════════════════════════════
