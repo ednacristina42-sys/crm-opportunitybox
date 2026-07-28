@@ -2488,6 +2488,149 @@ window.crmAuthLogout = crmAuthLogout;
 window.crmAuthGetSession = crmAuthGetSession;
 window.crmAuthLoadProfile = crmAuthLoadProfile;
 
+// ── Fase 4, Etapa 3 — gate de sessão real (isolado, reversível) ──────
+// Para desativar/reverter esta etapa sem tocar em mais nada, basta
+// mudar esta constante para false: o arranque volta a ser exatamente
+// o de antes (renderLogin() direto, ecrã de carregamento escondido de
+// imediato). loginComSenha()/USERS/LOGIN_PASSWORDS não são alterados
+// por esta etapa — continuam a ser o único caminho de entrada real
+// até à Etapa 5.
+var CRM_AUTH_GATE_ENABLED = true;
+
+function crmShowAuthLoading(msg){
+  var el = document.getElementById('crm-auth-loading');
+  if(!el) return;
+  var msgEl = document.getElementById('crm-auth-loading-msg');
+  if(msgEl && msg) msgEl.textContent = msg;
+  el.style.display = 'flex';
+}
+function crmHideAuthLoading(){
+  var el = document.getElementById('crm-auth-loading');
+  if(el) el.style.display = 'none';
+}
+
+// Mostra o ecrã de login antigo (inalterado), com uma mensagem opcional
+// — usado por todos os desfechos do gate que não levam à app.
+function crmShowLoginWithMessage(msg){
+  crmHideAuthLoading();
+  var loginEl = document.getElementById('login');
+  var appEl = document.getElementById('app');
+  if(appEl) appEl.style.display = 'none';
+  if(loginEl) loginEl.style.display = 'flex';
+  if(typeof renderLogin === 'function') renderLogin();
+  var erro = document.getElementById('login-erro');
+  if(erro){
+    if(msg){ erro.textContent = msg; erro.style.display = 'block'; }
+    else { erro.style.display = 'none'; }
+  }
+}
+
+// Constrói o CU só a partir da linha de ob_profiles — nunca a partir
+// de localStorage ou de qualquer resto do login antigo.
+function crmBuildCUFromProfile(profile){
+  return {
+    id: profile.id,
+    name: profile.full_name,
+    email: profile.email,
+    role: profile.role,
+    admin: profile.role === 'admin',
+    dept: profile.department || '',
+    manager_id: profile.manager_id,
+    color: '#F5C400',
+    online: true,
+    _authGate: true // distingue de um CU vindo do login antigo
+  };
+}
+
+function crmEnterAppWithProfile(profile){
+  CU = crmBuildCUFromProfile(profile);
+  selectedUser = CU;
+  _adminUser = CU.admin === true ? CU : null;
+  crmHideAuthLoading();
+  var loginEl = document.getElementById('login');
+  var appEl = document.getElementById('app');
+  if(loginEl) loginEl.style.display = 'none';
+  if(appEl) appEl.style.display = 'flex';
+  if(typeof setupApp === 'function') setupApp();
+  setTimeout(function(){
+    try{ if(typeof renderAll === 'function') renderAll(); } catch(e){}
+    try{ if(typeof gsInitUI === 'function') gsInitUI(); } catch(e){}
+    try{ if(typeof goPage === 'function') goPage('home'); } catch(e){}
+    try{ if(typeof initNovosModulos === 'function') initNovosModulos(); } catch(e){}
+  }, 0);
+}
+
+// Ponto de entrada do gate — chamado no arranque em vez de renderLogin()
+// direto. Nunca deixa a app nem o ecrã de login aparecerem antes de
+// decidir; falha de rede nunca é tratada como sessão inválida.
+async function crmAuthBootGate(){
+  if(!CRM_AUTH_GATE_ENABLED){
+    crmHideAuthLoading();
+    renderLogin();
+    return;
+  }
+
+  crmShowAuthLoading('A validar sessão…');
+
+  var session;
+  try{
+    session = await crmAuthGetSession();
+  }catch(e){
+    console.warn('[crmAuthBootGate] falha de rede a validar sessão:', e && e.message);
+    crmShowLoginWithMessage('Sem ligação ao servidor. Verifica a internet e tenta novamente.');
+    return;
+  }
+
+  if(!session){
+    crmShowLoginWithMessage(null);
+    return;
+  }
+
+  var profile;
+  try{
+    profile = await crmAuthLoadProfile(session.user.id);
+  }catch(e){
+    console.warn('[crmAuthBootGate] falha de rede a carregar perfil:', e && e.message);
+    crmShowLoginWithMessage('Sem ligação ao servidor. Verifica a internet e tenta novamente.');
+    return;
+  }
+
+  if(!profile){
+    try{ await crmAuthLogout(); }catch(e){}
+    crmShowLoginWithMessage('Esta conta ainda não tem perfil associado no CRM. Contacta um administrador.');
+    return;
+  }
+  if(profile.active !== true){
+    try{ await crmAuthLogout(); }catch(e){}
+    crmShowLoginWithMessage('Esta conta está desativada. Contacta um administrador.');
+    return;
+  }
+  if(!profile.role || !profile.department){
+    try{ await crmAuthLogout(); }catch(e){}
+    crmShowLoginWithMessage('Perfil incompleto (falta função ou departamento). Contacta um administrador.');
+    return;
+  }
+
+  crmEnterAppWithProfile(profile);
+}
+window.crmAuthBootGate = crmAuthBootGate;
+
+// Sessão que termina a meio do uso (ex: refresh token revogado) —
+// devolve ao ecrã de login com mensagem clara. Só reage a sessões que
+// entraram pelo próprio gate (CU._authGate), para nunca interferir com
+// o fluxo do login antigo enquanto ele ainda for o caminho real.
+(function crmWireAuthStateListener(){
+  if(!CRM_AUTH_GATE_ENABLED) return;
+  var sb = crmSBClient();
+  if(!sb || !sb.auth || typeof sb.auth.onAuthStateChange !== 'function') return;
+  sb.auth.onAuthStateChange(function(event){
+    if(event === 'SIGNED_OUT' && CU && CU._authGate){
+      CU = null; selectedUser = null; _adminUser = null;
+      crmShowLoginWithMessage('A tua sessão expirou. Inicia sessão novamente.');
+    }
+  });
+})();
+
 var ecSupabase = null;
 var ecUser = null;
 var ecProfilesMap = {};
@@ -6020,6 +6163,18 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
 
 </head>
 <body>
+
+<!-- ═════════════════════════════════════════════════════
+     FASE 4 — GATE DE SESSÃO (Etapa 3)
+     Visível por omissão, sem depender de JS ter corrido — cobre tanto
+     o login como a app enquanto a sessão é validada. z-index acima do
+     #login (9999) para nunca deixar o login antigo aparecer por baixo
+     antes da decisão do gate.
+═════════════════════════════════════════════════════ -->
+<div id="crm-auth-loading" style="position:fixed;inset:0;z-index:999999;background:var(--bg,#0f1115);display:flex;align-items:center;justify-content:center;flex-direction:column;gap:12px;color:var(--txt,#e8e8ea);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif">
+  <div style="font-size:28px">⏳</div>
+  <div id="crm-auth-loading-msg">A validar sessão…</div>
+</div>
 
 <!-- ═════════════════════════════════════════════════════
      LOGIN SCREEN
@@ -17695,7 +17850,12 @@ window.doLogout=doLogout;
 window.renderLogin=renderLogin;
 
 // Init
-renderLogin();
+// Fase 4, Etapa 3: antes chamava renderLogin() diretamente (mostrava
+// sempre o login antigo). Agora passa pelo gate de sessão — que, sem
+// sessão real ou com CRM_AUTH_GATE_ENABLED=false, acaba por chamar
+// renderLogin() de qualquer forma, preservando o comportamento antigo.
+if(typeof crmAuthBootGate==='function') crmAuthBootGate();
+else renderLogin();
 // Init novos módulos (Stock, Financeiro)
 if(typeof initNovosModulos==='function') setTimeout(initNovosModulos, 200);
 </script>
