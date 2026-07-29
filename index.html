@@ -8476,24 +8476,6 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
           4. Acesso: <strong style="color:var(--txt2)">"Qualquer pessoa"</strong> → Implementar → Copia o URL aqui
         </div>
       </div>
-      <!-- ADD: card real de ligação ao ClickUp — substitui o card estático/fictício anterior -->
-      <div class="conn" style="flex-direction:column;align-items:stretch;gap:10px">
-        <div style="display:flex;align-items:center;gap:11px">
-          <div class="cico" id="ck2-ico" style="background:var(--bg3)">⚪</div>
-          <div style="flex:1">
-            <div class="cname">ClickUp — Workspace OB</div>
-            <div class="cst" id="ck2-status" style="color:var(--muted)">Não ligado — cola o token abaixo</div>
-          </div>
-          <div>
-            <button class="bsm bon" data-action="ckSincronizarAgora">🔄 Sincronizar agora</button>
-          </div>
-        </div>
-        <div style="display:flex;gap:8px;align-items:center">
-          <input class="form-input" id="ck2-token-input" placeholder="pk_XXXXXXXXXXXXXXXXXX" style="font-size:13px;flex:1"/>
-          <button class="bsm bon" id="ck2-save-btn" style="white-space:nowrap;cursor:pointer" data-action="ckSalvarToken">💾 Guardar e Ligar</button>
-        </div>
-        <div style="font-size:12px;color:var(--muted)">Última sincronização: <span id="ck2-last-sync">nunca</span> · Sync automático a cada 30 min · Espaços: Comercial, Design, Fábrica, Admin</div>
-      </div>
       <!-- ── CHAVES DE API — COPILOTO IA ── -->
       <div class="conn" style="flex-direction:column;align-items:stretch;gap:10px">
         <div style="display:flex;align-items:center;gap:11px">
@@ -8518,48 +8500,6 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
       </div>
       <div class="conn"><div class="cico" style="background:var(--bg3)">⚪</div><div><div class="cname">Google Calendar</div><div class="cst" style="color:var(--muted)">Sincronizar agenda</div></div><div style="margin-left:auto"><button class="bsm bon">Ligar</button></div></div>
 
-      <!-- ── NOVO BANCO API (estrutura placeholder — não ativar sem credenciais) -->
-      <div class="conn" style="flex-direction:column;align-items:stretch;gap:10px">
-        <div style="display:flex;align-items:center;gap:11px">
-          <div class="cico" id="nb-ico" style="background:rgba(77,148,219,.1)">🏦</div>
-          <div style="flex:1">
-            <div class="cname">Novo Banco — API</div>
-            <div class="cst" id="nb-status" style="color:var(--muted)">Não configurado — inserir credenciais abaixo</div>
-          </div>
-          <div>
-            <button class="bsm bon" onclick="nbTestarConexao()" id="nb-test-btn">🔌 Testar</button>
-            <label class="tog" style="margin-left:8px" title="Ativar apenas com credenciais válidas">
-              <input type="checkbox" id="nb-ativo" onchange="nbToggle(this.checked)"/>
-              <span class="tsl"></span>
-            </label>
-          </div>
-        </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-          <div>
-            <label class="form-label" style="font-size:11px">API Key / Client Secret</label>
-            <input class="form-input" id="nb-api-key" type="password" placeholder="/* INSERT_API_KEY */" style="font-size:13px" oninput="nbSaveConfig()"/>
-          </div>
-          <div>
-            <label class="form-label" style="font-size:11px">Nº de Conta / IBAN</label>
-            <input class="form-input" id="nb-conta" placeholder="PT50 0007 0000 00XX XXXX XXXX X" style="font-size:13px" oninput="nbSaveConfig()"/>
-          </div>
-        </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-          <div>
-            <label class="form-label" style="font-size:11px">Client ID (Open Banking)</label>
-            <input class="form-input" id="nb-client-id" placeholder="/* INSERT_CLIENT_ID */" style="font-size:13px" oninput="nbSaveConfig()"/>
-          </div>
-          <div>
-            <label class="form-label" style="font-size:11px">Alerta Saldo Mínimo (€)</label>
-            <input type="number" class="form-input" id="nb-saldo-min" value="5000" min="0" step="500" style="font-size:13px" oninput="nbSaveConfig()"/>
-          </div>
-        </div>
-        <div style="font-size:12px;color:var(--muted);background:var(--bg3);border-radius:6px;padding:8px 10px;line-height:1.6">
-          ⚠️ <strong style="color:var(--a)">Estrutura preparada</strong> — endpoints Novo Banco Open Banking não activados.<br>
-          Endpoint base: <code style="color:var(--y)">/* INSERT_NOVO_BANCO_BASE_URL */</code><br>
-          Documentação: <a href="https://developer.novobanco.pt" target="_blank" style="color:#4d94db">developer.novobanco.pt</a>
-        </div>
-      </div>
     </div>
     <div class="stitle">Configurações</div>
     <div class="sg">
