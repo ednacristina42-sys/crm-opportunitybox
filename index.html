@@ -23911,7 +23911,12 @@ function obVistaEhComercial(){
 }
 window.obVistaEhComercial=obVistaEhComercial;
 
-// Pendências visíveis: comercial vê as suas; direção/finanças vê todas + financeiro
+// Pendências visíveis no painel: apenas as comerciais (leads/acções).
+// Os Alertas Financeiros (contas a pagar/receber vencidas) foram RETIRADOS
+// do painel Home e "Todas as Tarefas" — apareciam para toda a equipa,
+// incluindo comerciais, o que não devia acontecer. As contas a pagar
+// continuam disponíveis na página Tesouraria/Financeiro (acesso restrito).
+// Pedido da Edna (2026-07-30).
 function obPendenciasDoUtilizador(){
   var isAdmin=!!(typeof CU!=='undefined'&&CU&&CU.admin);
   var nome=(typeof CU!=='undefined'&&CU)?CU.name:null;
@@ -23921,7 +23926,7 @@ function obPendenciasDoUtilizador(){
     parados:obLeadsParados().filter(function(x){ return minhas(x.lead); }),
     hoje:acoes.hoje.filter(function(x){ return minhas(x.lead); }),
     atraso:acoes.atraso.filter(function(x){ return minhas(x.lead); }),
-    fin:obPodeVerFinanceiro()?obFinPendencias():{pagar:[],aVencer:[],receber:[]}
+    fin:{pagar:[],aVencer:[],receber:[]}
   };
 }
 
