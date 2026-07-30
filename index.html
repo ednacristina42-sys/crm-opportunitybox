@@ -2525,8 +2525,18 @@ function crmShowLoginWithMessage(msg){
   }
 }
 
-// Constrói o CU só a partir da linha de ob_profiles — nunca a partir
-// de localStorage ou de qualquer resto do login antigo.
+// ── Fase 4, Etapa 4 — mapeamento ob_profiles → CU (identidade real) ──
+// Papéis válidos hoje (enum ob_user_role na base de dados) — repetido
+// aqui de propósito, como segunda barreira: um valor fora desta lista
+// bloqueia o acesso mesmo que, por algum motivo, tenha chegado até
+// aqui (ex.: enum alargado na BD sem o CRM ter sido atualizado).
+var CRM_VALID_ROLES = ['admin', 'manager', 'comercial', 'financeiro'];
+
+// Constrói o CU só a partir da linha (já validada) de ob_profiles —
+// nunca a partir de localStorage, USERS, ou qualquer resto do login
+// antigo. Único sítio onde id/role/dept/manager_id entram no CU depois
+// desta fase — o resto do ficheiro continua a ler CU.admin/CU.dept sem
+// saber (nem precisar de saber) de onde vieram.
 function crmBuildCUFromProfile(profile){
   return {
     id: profile.id,
@@ -2534,8 +2544,8 @@ function crmBuildCUFromProfile(profile){
     email: profile.email,
     role: profile.role,
     admin: profile.role === 'admin',
-    dept: profile.department || '',
-    manager_id: profile.manager_id,
+    dept: profile.department,
+    manager_id: profile.manager_id || null,
     color: '#F5C400',
     online: true,
     _authGate: true // distingue de um CU vindo do login antigo
@@ -2560,10 +2570,21 @@ function crmEnterAppWithProfile(profile){
   }, 0);
 }
 
+// Incrementado sempre que uma tentativa de arranque é abandonada ou
+// substituída (login mostrado, logout, sessão expirada). Protege
+// contra a corrida em que um logout (ou um novo arranque) acontece
+// enquanto uma consulta a ob_profiles anterior ainda está pendente —
+// ao resolver, essa tentativa antiga verifica a geração e desiste em
+// silêncio, em vez de reabrir a app com dados já inválidos.
+var _crmAuthGen = 0;
+
 // Ponto de entrada do gate — chamado no arranque em vez de renderLogin()
 // direto. Nunca deixa a app nem o ecrã de login aparecerem antes de
-// decidir; falha de rede nunca é tratada como sessão inválida.
+// decidir. Falha de rede/erro do servidor nunca é tratada como
+// credenciais erradas nem confundida com "sem sessão".
 async function crmAuthBootGate(){
+  var myGen = ++_crmAuthGen;
+
   if(!CRM_AUTH_GATE_ENABLED){
     crmHideAuthLoading();
     renderLogin();
@@ -2576,12 +2597,14 @@ async function crmAuthBootGate(){
   try{
     session = await crmAuthGetSession();
   }catch(e){
-    console.warn('[crmAuthBootGate] falha de rede a validar sessão:', e && e.message);
-    crmShowLoginWithMessage('Sem ligação ao servidor. Verifica a internet e tenta novamente.');
+    console.warn('[crmAuthBootGate] falha ao validar sessão:', e && e.message);
+    if(myGen !== _crmAuthGen) return;
+    crmShowLoginWithMessage('Não foi possível verificar a tua sessão. Tenta novamente dentro de momentos.');
     return;
   }
+  if(myGen !== _crmAuthGen) return; // outra tentativa/logout já decidiu entretanto
 
-  if(!session){
+  if(!session || !session.user || !session.user.id){
     crmShowLoginWithMessage(null);
     return;
   }
@@ -2590,14 +2613,23 @@ async function crmAuthBootGate(){
   try{
     profile = await crmAuthLoadProfile(session.user.id);
   }catch(e){
-    console.warn('[crmAuthBootGate] falha de rede a carregar perfil:', e && e.message);
-    crmShowLoginWithMessage('Sem ligação ao servidor. Verifica a internet e tenta novamente.');
+    console.warn('[crmAuthBootGate] falha ao carregar perfil:', e && e.message);
+    if(myGen !== _crmAuthGen) return;
+    crmShowLoginWithMessage('Não foi possível verificar a tua conta. Tenta novamente dentro de momentos.');
     return;
   }
+  if(myGen !== _crmAuthGen) return; // logout/novo arranque aconteceu enquanto o perfil carregava
 
-  if(!profile){
+  // Exige exatamente um perfil correspondente ao id da sessão. A coluna
+  // ob_profiles.id é chave primária (referencia auth.users) — duplicados
+  // são impossíveis na base de dados; esta verificação cobre o caso de
+  // a resposta, por qualquer motivo, não corresponder à sessão pedida.
+  if(!profile || typeof profile !== 'object' || profile.id !== session.user.id){
     try{ await crmAuthLogout(); }catch(e){}
-    crmShowLoginWithMessage('Esta conta ainda não tem perfil associado no CRM. Contacta um administrador.');
+    crmShowLoginWithMessage(
+      profile ? 'Os dados da conta são inválidos. Contacta um administrador.'
+              : 'Esta conta ainda não tem perfil associado no CRM. Contacta um administrador.'
+    );
     return;
   }
   if(profile.active !== true){
@@ -2605,9 +2637,20 @@ async function crmAuthBootGate(){
     crmShowLoginWithMessage('Esta conta está desativada. Contacta um administrador.');
     return;
   }
-  if(!profile.role || !profile.department){
+  if(CRM_VALID_ROLES.indexOf(profile.role) === -1){
     try{ await crmAuthLogout(); }catch(e){}
-    crmShowLoginWithMessage('Perfil incompleto (falta função ou departamento). Contacta um administrador.');
+    console.warn('[crmAuthBootGate] função desconhecida:', profile.role);
+    crmShowLoginWithMessage('A função associada a esta conta não é reconhecida. Contacta um administrador.');
+    return;
+  }
+  if(!profile.department || !String(profile.department).trim()){
+    try{ await crmAuthLogout(); }catch(e){}
+    crmShowLoginWithMessage('Perfil incompleto (falta departamento). Contacta um administrador.');
+    return;
+  }
+  if(!profile.full_name || !String(profile.full_name).trim()){
+    try{ await crmAuthLogout(); }catch(e){}
+    crmShowLoginWithMessage('Perfil incompleto (falta nome). Contacta um administrador.');
     return;
   }
 
@@ -2619,12 +2662,15 @@ window.crmAuthBootGate = crmAuthBootGate;
 // devolve ao ecrã de login com mensagem clara. Só reage a sessões que
 // entraram pelo próprio gate (CU._authGate), para nunca interferir com
 // o fluxo do login antigo enquanto ele ainda for o caminho real.
+// Idempotente: um segundo SIGNED_OUT consecutivo não faz nada, porque
+// CU já foi posto a null pelo primeiro.
 (function crmWireAuthStateListener(){
   if(!CRM_AUTH_GATE_ENABLED) return;
   var sb = crmSBClient();
   if(!sb || !sb.auth || typeof sb.auth.onAuthStateChange !== 'function') return;
   sb.auth.onAuthStateChange(function(event){
     if(event === 'SIGNED_OUT' && CU && CU._authGate){
+      _crmAuthGen++; // invalida qualquer arranque ainda pendente
       CU = null; selectedUser = null; _adminUser = null;
       crmShowLoginWithMessage('A tua sessão expirou. Inicia sessão novamente.');
     }
@@ -10304,6 +10350,11 @@ function doLogin(){
 window._activeChatRoom='geral';
 
 function doLogout(){
+  // Fase 4, Etapa 4: só esta linha foi acrescentada (o resto da função
+  // fica exatamente como estava). Invalida qualquer crmAuthBootGate()
+  // ainda a meio (ex.: a carregar ob_profiles) para não reabrir a app
+  // com um perfil que já deixou de ser válido depois de um logout.
+  if(typeof _crmAuthGen !== 'undefined') _crmAuthGen++;
   CU=null;selectedUser=null;_adminUser=null;
   localStorage.removeItem('ob-impersonate');
   document.getElementById('app').style.display='none';
