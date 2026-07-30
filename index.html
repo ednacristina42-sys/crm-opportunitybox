@@ -2440,9 +2440,53 @@ var CRM_SB_URL = "https://ddzlbmnmsdyodouqxbjx.supabase.co";
 var CRM_SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRkemxibW5tc2R5b2RvdXF4Ymp4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkyMDQ2NTUsImV4cCI6MjA5NDc4MDY1NX0.P8nyU1zL4bd6Vhs8MGsTqHcB_bSeQsbNHXtQgatVt-Y";
 var crmSB = null;
 function crmSBClient(){
-  if(!crmSB && window.supabase) crmSB = window.supabase.createClient(CRM_SB_URL, CRM_SB_KEY);
+  if(!crmSB && window.supabase) crmSB = window.supabase.createClient(CRM_SB_URL, CRM_SB_KEY, {
+    auth: { persistSession: true, autoRefreshToken: true, storage: window.localStorage, storageKey: 'ob-crm-auth' }
+  });
   return crmSB;
 }
+
+// ── Fase 4: autenticação real (Supabase Auth + ob_profiles) ──────────
+// Etapa 2 — só infraestrutura. Nada aqui está ligado ainda ao login
+// visível do CRM (loginComSenha/USERS/LOGIN_PASSWORDS continuam a
+// funcionar exatamente como antes). Testável isoladamente pela consola.
+async function crmAuthLogin(email, password){
+  var sb = crmSBClient();
+  if(!sb) return { data: null, error: { message: 'Supabase SDK não carregado' } };
+  return await sb.auth.signInWithPassword({ email: email, password: password });
+}
+
+async function crmAuthLogout(){
+  var sb = crmSBClient();
+  if(!sb) return { error: null };
+  return await sb.auth.signOut();
+}
+
+async function crmAuthGetSession(){
+  var sb = crmSBClient();
+  if(!sb) return null;
+  var res = await sb.auth.getSession();
+  return (res && res.data && res.data.session) ? res.data.session : null;
+}
+
+// Vai buscar o perfil (ob_profiles) do utilizador autenticado. O id
+// usado é sempre o da sessão validada pelo Supabase Auth — nunca um
+// valor vindo do browser/localStorage.
+async function crmAuthLoadProfile(userId){
+  var sb = crmSBClient();
+  if(!sb || !userId) return null;
+  var res = await sb.from('ob_profiles')
+    .select('id, full_name, email, role, department, manager_id, active')
+    .eq('id', userId)
+    .maybeSingle();
+  if(res.error){ console.warn('[crmAuth] falha ao carregar ob_profiles:', res.error.message); return null; }
+  return res.data;
+}
+
+window.crmAuthLogin = crmAuthLogin;
+window.crmAuthLogout = crmAuthLogout;
+window.crmAuthGetSession = crmAuthGetSession;
+window.crmAuthLoadProfile = crmAuthLoadProfile;
 
 var ecSupabase = null;
 var ecUser = null;
