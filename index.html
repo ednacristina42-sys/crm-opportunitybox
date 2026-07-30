@@ -6336,9 +6336,16 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
       <div class="pg-space-icon" style="background:var(--dc)">D</div>
       <div class="pg-title">Follow-up</div>
     </div>
+    <div class="view-tabs">
+      <button class="vt on" onclick="fuTab('ativo')">Follow-up ativo</button>
+      <button class="vt" onclick="fuTab('historico')">Histórico antigo</button>
+    </div>
   </div>
-  <div class="task-content">
+  <div id="fu-panel-ativo" class="task-content">
     <div class="tw"><table><thead><tr><th>Cliente</th><th>Comercial</th><th>Valor</th><th>Dias sem contacto</th><th>Prioridade</th><th>Próxima acção</th><th>Registar contacto</th></tr></thead><tbody id="fu-tbody"></tbody></table></div>
+  </div>
+  <div id="fu-panel-historico" class="task-content" style="display:none">
+    <div class="tw"><table><thead><tr><th>Cliente</th><th>Comercial</th><th>Valor</th><th>Data</th></tr></thead><tbody id="fu-tbody-historico"></tbody></table></div>
   </div>
 </div>
 
@@ -10230,7 +10237,7 @@ window.goPage=function goPage(id){
   if(id==='admin-analise-vendas'&&typeof afLoad==='function')afLoad();
   if(id==='comercial-orcamentos'&&typeof orcInitPage==='function')orcInitPage();
   if(id==='comercial-pipeline'&&typeof crmInit==='function')crmInit();
-  if(id==='comercial-followup'&&typeof fuRender==='function')fuRender();
+  if(id==='comercial-followup'&&typeof fuInitPage==='function')fuInitPage();
   if(id==='crm'){ try{ renderCRMKanban('crm-kanban-admin'); }catch(e){} }
   if(id==='equipa-campo'&&typeof loadEquipaCampoData==='function')loadEquipaCampoData();
   // ── Renders por página ────────────────────────────────────
@@ -24059,9 +24066,49 @@ function fuPrioridade(dias){
 var FU_ESTADOS_LEAD_TERMINAIS = ['Ganho ✓','Perdido ✗'];
 var FU_ESTADOS_ORC_TERMINAIS = ['Aprovado','Faturado','Cancelado'];
 
+// ══ Fase 1.6 — leitura de ob_orcamento_triagem (só SELECT; RLS já filtra
+// as linhas por ob_can_see, mesma policy aplicada em produção) e critério
+// aprovado para separar orçamentos Pendente entre "Follow-up ativo" e
+// "Histórico antigo": dt>=2026-07-01 OU reativado=true => ativo; caso
+// contrário => histórico. Passo 1 — só leitura, sem botões de acção
+// nem alteração de estados. orc.num é o mesmo valor gravado como
+// ob_orcamentos.id (ver _sbOrcUpsert: "id: orc.num||..."), por isso serve
+// directamente como chave de junção com orcamento_id. ══════════════════
+var FU_CUTOFF_ATIVO = new Date(2026,6,1); // 2026-07-01
+var _fuTriagemPorOrc = {}; // orcamento_id -> {reativado}
+
+async function fuCarregarTriagem(){
+  try{
+    var sb = (typeof crmSBClient==='function') ? crmSBClient() : null;
+    if(!sb) return;
+    var res = await sb.from('ob_orcamento_triagem').select('orcamento_id, reativado');
+    if(res.error){ console.warn('[FU] leitura de ob_orcamento_triagem falhou:', res.error); return; }
+    var map={};
+    (res.data||[]).forEach(function(row){ map[row.orcamento_id] = { reativado: !!row.reativado }; });
+    _fuTriagemPorOrc = map;
+  }catch(e){ console.warn('[FU] leitura de ob_orcamento_triagem falhou:', e); }
+}
+window.fuCarregarTriagem = fuCarregarTriagem;
+
+// dt já validado no servidor (577/577 confirmados válidos) — reutiliza o
+// mesmo parsing simples já usado em obOrcUltimaAtividade. Sem data legível
+// nunca esconde silenciosamente: fica em "ativo" por omissão.
+function fuClassificarOrc(o){
+  var triagem = _fuTriagemPorOrc[o.num];
+  if(triagem && triagem.reativado) return 'ativo';
+  var dStr = o.dt || o.data, dtOrc = null;
+  if(dStr){ var p=dStr.split('/'); if(p.length===3) dtOrc=new Date(p[2],p[1]-1,p[0]); }
+  if(dtOrc && dtOrc >= FU_CUTOFF_ATIVO) return 'ativo';
+  if(dtOrc) return 'historico';
+  return 'ativo';
+}
+window.fuClassificarOrc = fuClassificarOrc;
+
 // Lista unificada de leads + orçamentos activos a acompanhar. A "próxima
 // acção" reutiliza sempre lead.proximaAcao (do próprio lead, ou do lead
-// ligado ao orçamento) — não introduz um campo novo em orcData.
+// ligado ao orçamento) — não introduz um campo novo em orcData. Orçamentos
+// Pendente classificados como "histórico" (ver fuClassificarOrc) saem
+// desta lista e passam para a aba Histórico antigo, em vez de duplicados.
 function fuListaItens(){
   var itens=[];
   (crmLeads||[]).forEach(function(l){
@@ -24071,6 +24118,7 @@ function fuListaItens(){
   });
   (orcData||[]).forEach(function(o){
     if(FU_ESTADOS_ORC_TERMINAIS.indexOf(o.st)!==-1) return;
+    if(o.st==='Pendente' && fuClassificarOrc(o)==='historico') return;
     var leadLigado = o.leadId ? (crmLeads||[]).find(function(l){return l.id===o.leadId;}) : null;
     itens.push({tipo:'orc', obj:o, id:o.num, leadId:o.leadId||null, orcId:o.num,
       cliente:o.cli||'—', comercial:o.vendedor||'—',
@@ -24081,6 +24129,63 @@ function fuListaItens(){
   itens.sort(function(a,b){ return (b.dias===null?-1:b.dias)-(a.dias===null?-1:a.dias); });
   return itens;
 }
+
+// Lista de orçamentos Pendente no "Histórico antigo" (fora da janela
+// operacional e não reativados). Só orçamentos — leads não entram na
+// Fase 1.6. Só leitura, sem acções.
+function fuListaItensHistorico(){
+  var itens=[];
+  (orcData||[]).forEach(function(o){
+    if(o.st!=='Pendente') return;
+    if(fuClassificarOrc(o)!=='historico') return;
+    itens.push({cliente:o.cli||'—', comercial:o.vendedor||'—',
+      valor:(typeof orcGetValorTotal==='function')?orcGetValorTotal(o):(o.val||0),
+      data:o.dt||o.data||'—'});
+  });
+  return itens;
+}
+
+function fuRenderHistorico(){
+  var tbody=document.getElementById('fu-tbody-historico');
+  if(!tbody) return;
+  var itens=fuListaItensHistorico();
+  if(!itens.length){
+    tbody.innerHTML='<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:22px">Sem orçamentos no histórico antigo.</td></tr>';
+    return;
+  }
+  tbody.innerHTML=itens.map(function(it){
+    return '<tr>'
+      +'<td>'+it.cliente+'</td>'
+      +'<td>'+it.comercial+'</td>'
+      +'<td>€'+(it.valor||0).toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2})+'</td>'
+      +'<td>'+it.data+'</td>'
+      +'</tr>';
+  }).join('');
+}
+window.fuRenderHistorico = fuRenderHistorico;
+
+// Alterna entre as abas "Follow-up ativo" e "Histórico antigo" (mesmo
+// padrão já usado em docsTab/rhTab).
+function fuTab(tab){
+  var elAtivo=document.getElementById('fu-panel-ativo'), elHist=document.getElementById('fu-panel-historico');
+  if(elAtivo) elAtivo.style.display = tab==='ativo' ? '' : 'none';
+  if(elHist) elHist.style.display = tab==='historico' ? '' : 'none';
+  document.querySelectorAll('#page-comercial-followup .vt').forEach(function(b,i){
+    b.classList.toggle('on', (i===0&&tab==='ativo')||(i===1&&tab==='historico'));
+  });
+  if(tab==='historico') fuRenderHistorico();
+}
+window.fuTab = fuTab;
+
+// Carrega a triagem e renderiza as duas abas — chamado pela navegação
+// (goPage) em vez de fuRender directamente, para garantir que
+// _fuTriagemPorOrc está preenchido antes da classificação.
+async function fuInitPage(){
+  await fuCarregarTriagem();
+  if(typeof fuRender==='function') fuRender();
+  fuRenderHistorico();
+}
+window.fuInitPage = fuInitPage;
 
 // Renderiza a vista "Follow-up" (tabela). Reutiliza fuListaItens (que por
 // sua vez reutiliza obLeadUltimaAtividade/obDiasEntre/proximaAcao).
