@@ -4863,6 +4863,28 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--txt);min-he
 }
 .add-task-row:hover{background:var(--bg3);color:var(--txt2)}
 
+/* Edição inline nos cartões do Quadro (Kanban) — estilo ClickUp/Notion, dark */
+.k-card .k-inline{
+  display:block;width:100%;box-sizing:border-box;margin-top:6px;
+  background:transparent;border:1px solid transparent;border-radius:6px;
+  color:var(--txt);font:inherit;font-size:12px;padding:4px 6px;
+  outline:none;cursor:pointer;transition:all .12s;
+}
+.k-card .k-title-inp{margin-top:0;cursor:text;font-weight:600;color:var(--txt2);font-size:13px;}
+.k-card .k-inline:hover{border-color:var(--border2);background:var(--bg2);}
+.k-card .k-inline:focus{border-color:var(--b);background:var(--bg2);}
+.k-card select.k-inline{appearance:none;-webkit-appearance:none;font-weight:600;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'><path d='M2 3l3 3 3-3' stroke='%23888' stroke-width='1.5' fill='none'/></svg>");
+  background-repeat:no-repeat;background-position:right 6px center;padding-right:18px;}
+.k-card select.k-inline option{background:var(--bg3);color:var(--txt2);}
+.k-card input.k-date{color:var(--txt2);color-scheme:dark;background:var(--bg2);}
+.k-card input.k-date:hover,.k-card input.k-date:focus{background:var(--bg3);}
+.k-card input.k-date::-webkit-calendar-picker-indicator{cursor:pointer;}
+.k-add-input{
+  width:100%;box-sizing:border-box;background:var(--bg2);border:1px solid var(--b);
+  border-radius:6px;color:var(--txt2);font:inherit;font-size:13px;padding:6px 8px;outline:none;
+}
+
 /* ═══════════════════════════════════════════════════════
    KANBAN BOARD
 ═══════════════════════════════════════════════════════ */
@@ -9354,7 +9376,7 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
     <div class="form-row">
       <div class="form-group">
         <label class="form-label">Departamento</label>
-        <select class="form-select" id="ht-dept">
+        <select class="form-select" id="ht-dept" onchange="homeFillAssignee(document.getElementById('ht-assignee'), this.value)">
           <option>Dep. Comercial</option>
           <option>Dep. Design</option>
           <option>Chão da Fábrica</option>
@@ -10671,6 +10693,142 @@ function homeListaArquivar(nome){
 }
 
 // ── RENDER TASKS LIST ─────────────────────────────────────
+// ── MAPAS PARTILHADOS (usados pelo modal e pela edição inline) ──
+var HOME_PRIO_LABELS={urgent:'Urgente',high:'Alta',normal:'Normal',low:'Baixa'};
+var HOME_PRIO_VALUES={'Urgente':'urgent','Alta':'high','Normal':'normal','Baixa':'low'};
+var HOME_PRIO_COLORS={urgent:'#e74c3c',high:'#e67e22',normal:'#6b6b72',low:'#94a3b8'};
+var HOME_DEPT_COLORS={'Dep. Comercial':'#e74c3c','Dep. Design':'#e67e22','Chão da Fábrica':'#3b82f6','Gestão Administrativa':'#8b5cf6'};
+var HOME_STATUS_OPTS=['A fazer','Em progresso','Em revisão','Concluído'];
+
+function homeInitials(n){
+  if(!n) return '';
+  return n.split(' ').filter(Boolean).map(function(w){return w[0];}).join('').substring(0,2).toUpperCase();
+}
+function homeDueFromIso(iso){
+  if(!iso) return {due:'Sem prazo', dueType:''};
+  var dp=new Date(iso+'T00:00:00');
+  var today=new Date(); today.setHours(0,0,0,0);
+  var tomorrow=new Date(today); tomorrow.setDate(tomorrow.getDate()+1);
+  var due;
+  if(dp.getTime()===today.getTime()) due='Hoje';
+  else if(dp.getTime()===tomorrow.getTime()) due='Amanhã';
+  else due=dp.getDate()+'/'+(dp.getMonth()+1)+'/'+dp.getFullYear();
+  return {due:due, dueType:(dp.getTime()<today.getTime()?'late':'soon')};
+}
+function homeStyleStatusSel(el,color){ if(!el||!el.style)return; el.style.color=color; el.style.background=color+'22'; el.style.borderColor=color+'44'; }
+function homeStylePrioSel(el,color){ if(!el||!el.style)return; el.style.color=color; }
+
+// Autosave de uma célula editada na linha — reutiliza os mesmos campos/mapas
+// que o modal (homeSaveTask), mantém o Kanban em sincronia e não re-ordena a
+// linha para a edição continuar fluida.
+function homeInlineSet(id, field, el){
+  var t=homeTasksData.find(function(x){return x.id===id;});
+  if(!t) return;
+  var val = (el && typeof el==='object' && 'value' in el) ? el.value : el;
+  if(field==='title'){
+    val=(''+val).trim();
+    if(!val){ if(el) el.value=t.title; return; }
+    t.title=val;
+  } else if(field==='status'){
+    t.status=val; t.statusC=HOME_ST_COLORS[val]||'#6b6b72'; homeStyleStatusSel(el,t.statusC);
+  } else if(field==='prio'){
+    t.prio=HOME_PRIO_LABELS[val]||'Normal'; t.prioBg=HOME_PRIO_COLORS[val]||'#6b6b72'; homeStylePrioSel(el,t.prioBg);
+  } else if(field==='ass'){
+    t.assNome=val; t.ass=homeInitials(val); t.assC=HOME_DEPT_COLORS[t.dept||t.group]||'#4d94db';
+  } else if(field==='date'){
+    var d=homeDueFromIso(val); t.dateIso=val||null; t.due=d.due; t.dueType=d.dueType;
+  }
+  saveHomeTasksData();
+  if(typeof renderTasksBoard==='function'){ try{ renderTasksBoard(); }catch(e){} }
+}
+
+// Criação rápida de tarefa (usada pelo quick-add inline do Quadro)
+function homeInlineAddCreate(group, title, status, assignee){
+  status=status||'A fazer';
+  var respList=homeRespNomes(group);
+  var ass=(assignee!==undefined&&assignee!==null)?assignee:(respList[0]||'');
+  var newTask={
+    id:Date.now(), title:title, group:group, dept:group,
+    status:status, statusC:HOME_ST_COLORS[status]||'#6b6b72',
+    prio:'Normal', prioBg:HOME_PRIO_COLORS.normal,
+    ass:homeInitials(ass), assC:HOME_DEPT_COLORS[group]||'#4d94db', assNome:ass,
+    due:'Sem prazo', dueType:'', dateIso:null, dateEndIso:null, subtarefas:[]
+  };
+  if(typeof homeDistribuirSubtarefas==='function'){ try{ homeDistribuirSubtarefas(newTask); }catch(e){} }
+  homeTasksData.unshift(newTask);
+  saveHomeTasksData();
+  if(typeof renderTasksBoard==='function'){ try{ renderTasksBoard(); }catch(e){} }
+  if(typeof renderTasksList==='function'){ try{ renderTasksList(); }catch(e){} }
+}
+
+// ── QUADRO (KANBAN) — EDIÇÃO INLINE ──────────────────────
+// Desativa/reativa o drag do cartão enquanto se usa um controlo (evita que
+// o browser inicie o arrasto ao clicar num input/select dentro do cartão).
+function homeCardNoDrag(elChild){ var c=elChild.closest('.k-card'); if(c) c.setAttribute('draggable','false'); }
+function homeCardDrag(elChild){ var c=elChild.closest('.k-card'); if(c) c.setAttribute('draggable','true'); }
+
+// Construtor de um cartão Kanban com título/responsável/prioridade/prazo
+// editáveis diretamente no cartão. subColor/subText = subtítulo (dep. ou estado).
+function homeKanbanCard(t, subColor, subText){
+  var prioVal=HOME_PRIO_VALUES[t.prio]||'normal';
+  var prioHtml=[['urgent','🔴 Urgente'],['high','🟠 Alta'],['normal','🟡 Normal'],['low','⚪ Baixa']]
+    .map(function(p){return '<option value="'+p[0]+'"'+(p[0]===prioVal?' selected':'')+'>'+p[1]+'</option>';}).join('');
+  var respNomes=homeRespNomes(t.group||t.dept);
+  if(t.assNome && respNomes.indexOf(t.assNome)===-1) respNomes=[t.assNome].concat(respNomes);
+  respNomes=['— Sem responsável —'].concat(respNomes);
+  var respHtml=respNomes.map(function(n){var v=(n==='— Sem responsável —')?'':n; return '<option value="'+homeEscAttr(v)+'"'+(v===(t.assNome||'')?' selected':'')+'>'+n+'</option>';}).join('');
+  var appBadge=(t.origem==='app')?'<span style="font-size:10px;background:rgba(77,148,219,.15);color:#4d94db;border:1px solid rgba(77,148,219,.3);border-radius:4px;padding:1px 4px;white-space:nowrap;flex-shrink:0">📱 App</span>':'';
+  var subs=(t.subtarefas&&t.subtarefas.length)?('<div style="margin-top:6px;display:flex;gap:4px" onclick="event.stopPropagation();subchkOpenModal(\'home\','+t.id+')"><span style="font-size:11px;background:rgba(77,148,219,.12);color:#4d94db;border:1px solid rgba(77,148,219,.25);border-radius:10px;padding:1px 6px;cursor:pointer">📋 '+t.subtarefas.filter(function(s){return s.concluida;}).length+'/'+t.subtarefas.length+'</span></div>'):'';
+  if(t.checklists&&t.checklists.length&&t.checklists.some(function(c){return c.itens&&c.itens.length;})){
+    var cd=t.checklists.reduce(function(a,c){return a+(c.itens||[]).filter(function(i){return i.concluido;}).length;},0);
+    var ct=t.checklists.reduce(function(a,c){return a+(c.itens||[]).length;},0);
+    subs+='<div style="margin-top:4px;display:flex;gap:4px" onclick="event.stopPropagation();subchkOpenModal(\'home\','+t.id+')"><span style="font-size:11px;background:rgba(63,207,142,.1);color:var(--g);border:1px solid rgba(63,207,142,.2);border-radius:10px;padding:1px 6px;cursor:pointer">☑ '+cd+'/'+ct+'</span></div>';
+  }
+  var nd='onclick="event.stopPropagation()" onmousedown="homeCardNoDrag(this)" onblur="homeCardDrag(this)"';
+  var ttlEnter='onkeydown="if(event.key===\'Enter\'){this.blur();}"';
+  return '<div class="k-card" id="htask-'+t.id+'" draggable="true" onclick="homeOpenFullEdit('+t.id+')"'
+    +" ondragstart=\"homeDragId="+t.id+";event.dataTransfer.effectAllowed='move';setTimeout(function(){var e=document.getElementById('htask-"+t.id+"');if(e)e.classList.add('dragging');},0)\""
+    +" ondragend=\"document.querySelectorAll('.k-card.dragging,.k-col.drag-over').forEach(function(e){e.classList.remove('dragging');e.classList.remove('drag-over');})\">"
+      +'<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:4px">'
+        +'<input class="k-inline k-title-inp" value="'+homeEscAttr(t.title||'')+'" '+nd+' '+ttlEnter+' onchange="homeInlineSet('+t.id+",'title',this)\" />"
+        +appBadge
+        +'<span class="home-menu-wrap" onclick="event.stopPropagation()"><button class="home-task-menu-btn" onclick="homeToggleMenu(event,\'home-task-menu-'+t.id+'\')" title="Mais opções">⋮</button>'
+          +'<div class="home-dropdown-menu" id="home-task-menu-'+t.id+'"><button onclick="homeOpenFullEdit('+t.id+')">🔍 Abrir detalhes</button><div class="home-dropdown-sep"></div><button class="danger" onclick="homeConfirmDeleteTask('+t.id+')">🗑 Eliminar tarefa</button></div>'
+        +'</span>'
+      +'</div>'
+      +'<div class="k-card-sub" style="color:'+subColor+'">'+subText+'</div>'
+      +'<select class="k-inline k-ass" '+nd+' onchange="homeInlineSet('+t.id+",'ass',this)\">"+respHtml+'</select>'
+      +'<select class="k-inline k-prio" style="color:'+(t.prioBg||'#6b6b72')+'" '+nd+' onchange="homeInlineSet('+t.id+",'prio',this)\">"+prioHtml+'</select>'
+      +'<input type="date" class="k-inline k-date" value="'+(t.dateIso||'')+'" '+nd+' onchange="homeInlineSet('+t.id+",'date',this)\" />"
+      +subs
+    +'</div>';
+}
+
+// Quick-add inline numa coluna do Quadro
+function homeKanbanAddStart(el, status, group, assignee){
+  if(!el || el.querySelector('input')) return;
+  el.innerHTML='<input class="k-add-input" placeholder="Nova tarefa — Enter" />';
+  var inp=el.querySelector('input'); if(!inp) return; inp.focus();
+  var done=false;
+  function commit(){ if(done)return; done=true; var title=inp.value.trim(); if(title) homeInlineAddCreate(group,title,status,assignee); else renderTasksBoard(); }
+  inp.addEventListener('keydown', function(e){
+    if(e.key==='Enter'){ e.preventDefault(); commit(); }
+    else if(e.key==='Escape'){ done=true; renderTasksBoard(); }
+  });
+  inp.addEventListener('blur', commit);
+}
+
+// Drop de um cartão numa coluna de PESSOA (vista por responsável) → reatribui
+function homeDropPerson(e, person){
+  e.preventDefault();
+  document.querySelectorAll('.k-col.drag-over').forEach(function(c){c.classList.remove('drag-over');});
+  var t=homeTasksData.find(function(x){return x.id===homeDragId;});
+  if(t && (t.assNome||'')!==person){
+    t.assNome=person; t.ass=homeInitials(person); t.assC=HOME_DEPT_COLORS[t.dept||t.group]||'#4d94db';
+    saveHomeTasksData(); renderTasksBoard();
+  }
+}
+
 function renderTasksList(){
   homePopularFiltroResponsavel();
   const tasks=homeGetFilteredTasks();
@@ -10748,35 +10906,27 @@ function renderTasksBoard(){
   // ADD: ao ver um departamento completo (sem pessoa escolhida), agrupar colunas por vendedor/pessoa
   if(homeDeptFilter && !homePersonFilter){
     const people=[...new Set(tasks.map(t=>t.assNome||t.ass||'Sem responsável'))].sort();
+    const dc=HOME_DEPTS[homeDeptFilter]||'#888';
     el.innerHTML=people.map(person=>{
       const ptasks=homeSortTasks(tasks.filter(t=>(t.assNome||t.ass||'Sem responsável')===person));
-      const dc=HOME_DEPTS[homeDeptFilter]||'#888';
-      return `<div class="k-col" style="min-width:220px">
+      const personVal=(person==='Sem responsável')?'':person;
+      // Colunas por pessoa são alvo de drop → arrastar um cartão reatribui o responsável
+      return `<div class="k-col" style="min-width:230px"
+        ondragover="event.preventDefault();event.currentTarget.classList.add('drag-over')"
+        ondragleave="event.currentTarget.classList.remove('drag-over')"
+        ondrop="homeDropPerson(event,'${homeEscJs(personVal)}')">
         <div class="k-col-hdr" style="background:${dc}18;border:1px solid ${dc}40">
           <div class="k-col-name" style="color:${dc}">👤 ${person}</div>
           <div class="k-col-count" style="background:${dc}25;color:${dc}">${ptasks.length}</div>
         </div>
-        ${ptasks.map(t=>`<div class="k-card" id="htask-${t.id}" onclick="homeOpenFullEdit(${t.id})">
-          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:4px">
-            <div class="k-card-title" style="flex:1">${t.title}</div>
-            <span class="home-menu-wrap" onclick="event.stopPropagation()">
-              <button class="home-task-menu-btn" onclick="homeToggleMenu(event,'home-task-menu-${t.id}')" title="Mais opções">⋮</button>
-              <div class="home-dropdown-menu" id="home-task-menu-${t.id}">
-                <button class="danger" onclick="homeConfirmDeleteTask(${t.id})">🗑 Eliminar tarefa</button>
-              </div>
-            </span>
-          </div>
-          <div class="k-card-sub" style="color:${dc}">${t.status}</div>
-          <div class="k-card-meta">
-            <div class="prio"><div class="prio-dot" style="background:${t.prioBg}"></div>${t.prio}</div>
-            <span class="due ${t.dueType}" style="font-size:12px">${t.due}</span>
-          </div>
-        </div>`).join('')}
+        ${ptasks.map(t=>homeKanbanCard(t, dc, t.status)).join('')}
+        <div class="k-add" onclick="homeKanbanAddStart(this,'A fazer','${homeEscJs(homeDeptFilter)}','${homeEscJs(personVal)}')">+ Adicionar tarefa</div>
       </div>`;
     }).join('');
     return;
   }
   const statuses=['A fazer','Em progresso','Em revisão','Concluído'];
+  const addGroup=(homeDeptFilter)||((typeof CU!=='undefined'&&CU&&!CU.admin&&CU.dept)?CU.dept:'Dep. Comercial');
   el.innerHTML=statuses.map(st=>{
     // ADD: agrupar visualmente por departamento dentro da coluna, depois por prioridade/data
     const stasks=tasks.filter(t=>t.status===st).sort(function(a,b){
@@ -10787,7 +10937,7 @@ function renderTasksBoard(){
       return (b.dueTs||0)-(a.dueTs||0);
     });
     const c=HOME_ST_COLORS[st]||'#888';
-    return `<div class="k-col" style="min-width:220px"
+    return `<div class="k-col" style="min-width:230px"
       ondragover="event.preventDefault();event.currentTarget.classList.add('drag-over')"
       ondragleave="event.currentTarget.classList.remove('drag-over')"
       ondrop="homeDrop(event,'${st}')">
@@ -10795,26 +10945,8 @@ function renderTasksBoard(){
         <div class="k-col-name" style="color:${c}">${st}</div>
         <div class="k-col-count" style="background:${c}25;color:${c}">${stasks.length}</div>
       </div>
-      ${stasks.map(t=>{
-        const dc=HOME_DEPTS[t.group]||'#888';
-        return `<div class="k-card" id="htask-${t.id}" draggable="true"
-          onclick="homeOpenFullEdit(${t.id})"
-          ondragstart="homeDragId=${t.id};event.dataTransfer.effectAllowed='move';setTimeout(()=>{const e=document.getElementById('htask-${t.id}');if(e)e.classList.add('dragging');},0)"
-          ondragend="document.querySelectorAll('.k-card.dragging,.k-col.drag-over').forEach(e=>{e.classList.remove('dragging');e.classList.remove('drag-over');})">
-          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:4px"><div class="k-card-title" style="flex:1">${t.title}</div>${t.origem==='app'?'<span style="font-size:10px;background:rgba(77,148,219,.15);color:#4d94db;border:1px solid rgba(77,148,219,.3);border-radius:4px;padding:1px 4px;white-space:nowrap;flex-shrink:0">📱 App</span>':''}<span class="home-menu-wrap" onclick="event.stopPropagation()"><button class="home-task-menu-btn" onclick="homeToggleMenu(event,'home-task-menu-${t.id}')" title="Mais opções">⋮</button><div class="home-dropdown-menu" id="home-task-menu-${t.id}"><button class="danger" onclick="homeConfirmDeleteTask(${t.id})">🗑 Eliminar tarefa</button></div></span></div>
-          <div class="k-card-sub" style="color:${dc}">${t.group}</div>
-          <div class="k-card-meta">
-            <div class="prio"><div class="prio-dot" style="background:${t.prioBg}"></div>${t.prio}</div>
-            <div style="display:flex;align-items:center;gap:5px">
-              <div class="ass" style="background:${t.assC}">${t.ass}</div>
-              <span class="due ${t.dueType}" style="font-size:12px">${t.due}</span>
-            </div>
-          </div>
-          ${(t.subtarefas&&t.subtarefas.length)?`<div style="margin-top:4px;display:flex;gap:4px" onclick="event.stopPropagation();subchkOpenModal('home',t.id)"><span style="font-size:11px;background:rgba(77,148,219,.12);color:#4d94db;border:1px solid rgba(77,148,219,.25);border-radius:10px;padding:1px 6px;cursor:pointer">📋 ${t.subtarefas.filter(s=>s.concluida).length}/${t.subtarefas.length}</span></div>`:''}
-          ${(t.checklists&&t.checklists.length&&t.checklists.some(c=>c.itens&&c.itens.length))?`<div style="margin-top:2px;display:flex;gap:4px" onclick="event.stopPropagation();subchkOpenModal('home',t.id)"><span style="font-size:11px;background:rgba(63,207,142,.1);color:var(--g);border:1px solid rgba(63,207,142,.2);border-radius:10px;padding:1px 6px;cursor:pointer">☑ ${t.checklists.reduce((a,c)=>a+(c.itens||[]).filter(i=>i.concluido).length,0)}/${t.checklists.reduce((a,c)=>a+(c.itens||[]).length,0)}</span></div>`:''}
-        </div>`;
-      }).join('')}
-      <div class="k-add" onclick="homeOpenNewTask('${st}')">+ Adicionar tarefa</div>
+      ${stasks.map(t=>homeKanbanCard(t, HOME_DEPTS[t.group]||'#888', t.group||'')).join('')}
+      <div class="k-add" onclick="homeKanbanAddStart(this,'${st}','${homeEscJs(addGroup)}')">+ Adicionar tarefa</div>
     </div>`;
   }).join('');
 }
@@ -10829,6 +10961,32 @@ function homeDrop(e,st){
   }
 }
 
+// ── RESPONSÁVEIS ATIVOS POR DEPARTAMENTO ─────────────────
+// Fonte única para os dropdowns de "Responsável" (modal + edição inline).
+// Lê SEMPRE a equipa real de cada departamento, sem nomes fixos no código,
+// pelo que se atualiza sozinho quando se adiciona/remove pessoas na Equipa.
+function homeRespNomes(group){
+  var nomes=[];
+  if(group==='Dep. Design' && typeof designComerciais!=='undefined' && designComerciais){
+    nomes=designComerciais.filter(function(c){return c.ativo!==false;}).map(function(c){return c.nome;});
+  } else if(group==='Chão da Fábrica' && typeof INST_EQUIPA!=='undefined' && INST_EQUIPA){
+    nomes=INST_EQUIPA.slice();
+  } else { // Dep. Comercial (e por omissão)
+    nomes=(typeof crmComerciais!=='undefined'&&crmComerciais?crmComerciais:[])
+      .filter(function(c){return c.ativo!==false;}).map(function(c){return c.nome;});
+  }
+  return [...new Set(nomes)];
+}
+// Preenche um <select> de responsável para o departamento dado.
+// Mantém o valor atual mesmo que a pessoa já não esteja ativa (não perde dados).
+function homeFillAssignee(sel, group, current){
+  if(!sel) return;
+  var nomes=homeRespNomes(group);
+  if(current && nomes.indexOf(current)===-1) nomes=[current].concat(nomes);
+  sel.innerHTML=nomes.map(function(n){return '<option value="'+homeEscAttr(n)+'">'+n+'</option>';}).join('');
+  if(current) sel.value=current;
+}
+
 function homeOpenNewTask(defaultStatus){
   if(!defaultStatus) defaultStatus='A fazer';
   // Usar o modal home-task
@@ -10838,9 +10996,7 @@ function homeOpenNewTask(defaultStatus){
   document.getElementById('ht-title').value='';
   document.getElementById('ht-dept').value='Dep. Comercial';
   document.getElementById('ht-prio').value='normal';
-  const aSel=document.getElementById('ht-assignee');
-  const allTeam=[...(crmComerciais||[]).map(c=>c.nome),'Sara Antunes','Tomás Figueiredo','Ricardo Faria','Pedro Silva'];
-  aSel.innerHTML=[...new Set(allTeam)].map(n=>`<option value="${n}">${n}</option>`).join('');
+  homeFillAssignee(document.getElementById('ht-assignee'), 'Dep. Comercial');
   m.classList.add('open');
 }
 
@@ -10854,10 +11010,7 @@ function homeEditTask(id){
   document.getElementById('ht-dept').value=t.dept||t.group||'Dep. Comercial';
   document.getElementById('ht-status').value=t.status||'A fazer';
   document.getElementById('ht-prio').value=PRIO_BY_LABEL[t.prio]||'normal';
-  const aSel=document.getElementById('ht-assignee');
-  const allTeam=[...(crmComerciais||[]).map(c=>c.nome),'Sara Antunes','Tomás Figueiredo','Ricardo Faria','Pedro Silva'];
-  aSel.innerHTML=[...new Set(allTeam)].map(n=>`<option value="${n}">${n}</option>`).join('');
-  if(t.assNome) aSel.value=t.assNome;
+  homeFillAssignee(document.getElementById('ht-assignee'), t.dept||t.group||'Dep. Comercial', t.assNome);
   const htDateEl=document.getElementById('ht-date');
   if(htDateEl) htDateEl.value=t.dateIso||'';
   const htDateEndEl=document.getElementById('ht-date-end');
@@ -11149,10 +11302,8 @@ function homeSaveTask(){
   const status=document.getElementById('ht-status').value;
   const prio=document.getElementById('ht-prio').value;
   const assignee=document.getElementById('ht-assignee').value;
-  const PRIO_LABELS={urgent:'Urgente',high:'Alta',normal:'Normal',low:'Baixa'};
-  const PRIO_COLORS={urgent:'#e74c3c',high:'#e67e22',normal:'#6b6b72',low:'#94a3b8'};
-  const DEPT_COLORS={'Dep. Comercial':'#e74c3c','Dep. Design':'#e67e22','Chão da Fábrica':'#3b82f6','Gestão Administrativa':'#8b5cf6'};
-  const assInitials=assignee.split(' ').map(w=>w[0]).join('').substring(0,2).toUpperCase();
+  const PRIO_LABELS=HOME_PRIO_LABELS, PRIO_COLORS=HOME_PRIO_COLORS, DEPT_COLORS=HOME_DEPT_COLORS;
+  const assInitials=homeInitials(assignee);
   const htDateEl=document.getElementById('ht-date');
   const htDateVal=htDateEl ? htDateEl.value : '';
   const htDateEndEl=document.getElementById('ht-date-end');
