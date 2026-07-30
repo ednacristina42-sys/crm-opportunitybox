@@ -24542,7 +24542,8 @@ var _fuTriagemPorOrc = {}; // orcamento_id -> {reativado}
 async function fuCarregarTriagem(){
   try{
     var sb = (typeof crmSBClient==='function') ? crmSBClient() : null;
-    if(!sb) return;
+    var cu = (typeof CU!=='undefined') ? CU : null;
+    if(!sb || !cu || !cu.id) return; // sem sessão real (Fase 4) — mesma guarda de _sbOrcLoadAll
     var res = await sb.from('ob_orcamento_triagem').select('orcamento_id, reativado');
     if(res.error){ console.warn('[FU] leitura de ob_orcamento_triagem falhou:', res.error); return; }
     var map={};
