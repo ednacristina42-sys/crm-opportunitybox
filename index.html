@@ -23876,7 +23876,24 @@ function obFinPendencias(){
   return out;
 }
 
-// Pendências visíveis: comercial vê as suas; admin vê todas + financeiro
+// Quem pode ver os Alertas Financeiros (contas a pagar/receber vencidas).
+// Regra: direção/finanças/admin SIM; comerciais NUNCA — mesmo que a conta
+// esteja marcada como admin. Pedido da Edna (2026-07-30): esconder os
+// alertas financeiros das páginas dos comerciais.
+function obPodeVerFinanceiro(){
+  var u=(typeof CU!=='undefined')?CU:null;
+  if(!u) return false;
+  var role=(''+(u.role||'')).toLowerCase();
+  var dept=(''+(u.dept||u.department||'')).toLowerCase();
+  // Comerciais NUNCA veem o financeiro — mesmo que a conta esteja marcada
+  // como admin (Rui Mota, Humberto Estrelinha, André Nolasco...).
+  if(role.indexOf('comercial')>=0 || dept.indexOf('comercial')>=0) return false;
+  // Restantes: mantém o comportamento anterior — só direção/admin vê.
+  return u.admin===true;
+}
+window.obPodeVerFinanceiro=obPodeVerFinanceiro;
+
+// Pendências visíveis: comercial vê as suas; direção/finanças vê todas + financeiro
 function obPendenciasDoUtilizador(){
   var isAdmin=!!(typeof CU!=='undefined'&&CU&&CU.admin);
   var nome=(typeof CU!=='undefined'&&CU)?CU.name:null;
@@ -23886,7 +23903,7 @@ function obPendenciasDoUtilizador(){
     parados:obLeadsParados().filter(function(x){ return minhas(x.lead); }),
     hoje:acoes.hoje.filter(function(x){ return minhas(x.lead); }),
     atraso:acoes.atraso.filter(function(x){ return minhas(x.lead); }),
-    fin:isAdmin?obFinPendencias():{pagar:[],aVencer:[],receber:[]}
+    fin:obPodeVerFinanceiro()?obFinPendencias():{pagar:[],aVencer:[],receber:[]}
   };
 }
 
@@ -23960,7 +23977,7 @@ function renderDashPendencias(p){
     +sec('📅 Acções para hoje','var(--g)',p.hoje.slice(0,8).map(function(x){return rowAcao(x,'var(--g)');}))
     +'</div></div>';
 
-  var htmlFin=finTotal===0?'':'<div style="margin:12px 24px 0;background:var(--bg2);border:1px solid rgba(224,85,85,.35);border-radius:10px;padding:13px 15px">'
+  var htmlFin=(finTotal===0||!obPodeVerFinanceiro())?'':'<div style="margin:12px 24px 0;background:var(--bg2);border:1px solid rgba(224,85,85,.35);border-radius:10px;padding:13px 15px">'
     +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">'
     +'<span style="font-size:15px">💰</span>'
     +'<span style="font-size:14px;font-weight:700;color:var(--r)">Alertas Financeiros</span>'
