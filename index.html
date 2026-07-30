@@ -23893,6 +23893,24 @@ function obPodeVerFinanceiro(){
 }
 window.obPodeVerFinanceiro=obPodeVerFinanceiro;
 
+// A vista atual do painel Home está filtrada para a área comercial?
+// (Ex.: o admin clica em "Dep. Comercial" ou num comercial na barra lateral.)
+// Nesse contexto escondemos os Alertas Financeiros — pedido da Edna: os
+// alertas de tesouraria não devem aparecer na vista dos comerciais.
+function obVistaEhComercial(){
+  try{
+    var d=(typeof homeDeptFilter!=='undefined'&&homeDeptFilter)?(''+homeDeptFilter).toLowerCase():'';
+    if(d.indexOf('comercial')>=0) return true;
+    var p=(typeof homePersonFilter!=='undefined'&&homePersonFilter)?(''+homePersonFilter).toLowerCase().trim():'';
+    if(p){
+      var COMS=['rui mota','humberto estrelinha','andré nolasco','andre nolasco','filipa santos','andreia','victor horta'];
+      if(COMS.indexOf(p)>=0) return true;
+    }
+  }catch(e){}
+  return false;
+}
+window.obVistaEhComercial=obVistaEhComercial;
+
 // Pendências visíveis: comercial vê as suas; direção/finanças vê todas + financeiro
 function obPendenciasDoUtilizador(){
   var isAdmin=!!(typeof CU!=='undefined'&&CU&&CU.admin);
@@ -23977,7 +23995,7 @@ function renderDashPendencias(p){
     +sec('📅 Acções para hoje','var(--g)',p.hoje.slice(0,8).map(function(x){return rowAcao(x,'var(--g)');}))
     +'</div></div>';
 
-  var htmlFin=(finTotal===0||!obPodeVerFinanceiro())?'':'<div style="margin:12px 24px 0;background:var(--bg2);border:1px solid rgba(224,85,85,.35);border-radius:10px;padding:13px 15px">'
+  var htmlFin=(finTotal===0||!obPodeVerFinanceiro()||obVistaEhComercial())?'':'<div style="margin:12px 24px 0;background:var(--bg2);border:1px solid rgba(224,85,85,.35);border-radius:10px;padding:13px 15px">'
     +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">'
     +'<span style="font-size:15px">💰</span>'
     +'<span style="font-size:14px;font-weight:700;color:var(--r)">Alertas Financeiros</span>'
