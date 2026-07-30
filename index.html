@@ -24269,7 +24269,12 @@ function fuListaItens(){
       proximaAcao:leadLigado?leadLigado.proximaAcao||null:null});
   });
   itens.forEach(function(it){ it.dias=fuDiasSemContacto(it); it.prioridade=fuPrioridade(it.dias); });
-  itens.sort(function(a,b){ return (b.dias===null?-1:b.dias)-(a.dias===null?-1:a.dias); });
+  // Prioridade: 1) mais dias sem contacto  2) maior valor
+  itens.sort(function(a,b){
+    var da=(a.dias===null?-1:a.dias), db=(b.dias===null?-1:b.dias);
+    if(db!==da) return db-da;
+    return (b.valor||0)-(a.valor||0);
+  });
   return itens;
 }
 
@@ -24282,20 +24287,28 @@ function fuComerciais(){
     : ['Paulo Faria','Rui Mota','Humberto Estrelinha','André Nolasco'];
   return [...new Set(base)];
 }
+function fuUltimoContacto(d){
+  if(d===null||d===undefined) return 'sem registo';
+  if(d===0) return 'hoje';
+  if(d===1) return 'há 1 dia';
+  return 'há '+d+' dias';
+}
 function fuCardHTML(it){
   var pa=it.proximaAcao;
-  var paTxt = (pa&&pa.data) ? (pa.tipo||'Acção')+' — '+pa.data.split('-').reverse().join('/') : '';
-  var diasTxt = it.dias===null ? 'Sem registo' : (it.dias===0?'Hoje':it.dias+' dias');
+  var paTxt = (pa&&pa.data) ? (pa.tipo||'Acção')+' — '+pa.data.split('-').reverse().join('/') : '—';
   var cor=it.prioridade.cor;
+  var diasTxt = it.dias===null ? 'sem registo' : (it.dias===0?'hoje':it.dias+(it.dias===1?' dia':' dias'));
+  var valTxt = '€'+(it.valor||0).toLocaleString('pt-PT',{minimumFractionDigits:0,maximumFractionDigits:0});
   var idAttr = String(it.id).replace(/'/g,"\\'");
   function btn(tc,ic){ return '<button class="tbtn" title="'+tc+'" style="font-size:13px;padding:3px 7px;margin-right:2px" onclick="fuRegistarContacto(\''+it.tipo+'\',\''+idAttr+'\',\''+tc+'\')">'+ic+'</button>'; }
   return '<div class="k-card" style="border-left:3px solid '+cor+'">'
-    +'<div class="k-card-title" style="margin-bottom:2px">'+it.cliente+'</div>'
-    +'<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin-bottom:6px">'
-      +'<span style="color:'+cor+';font-weight:700;font-size:12px">'+diasTxt+'</span>'
-      +'<span style="color:var(--muted);font-size:12px">€'+(it.valor||0).toLocaleString('pt-PT',{minimumFractionDigits:0,maximumFractionDigits:0})+'</span>'
+    +'<div style="display:flex;justify-content:space-between;align-items:baseline;gap:6px;margin-bottom:6px">'
+      +'<span class="k-card-title">'+it.cliente+'</span>'
+      +'<span style="color:var(--txt2);font-weight:700;font-size:12px;white-space:nowrap">'+valTxt+'</span>'
     +'</div>'
-    +(paTxt?'<div style="color:var(--muted);font-size:11px;margin-bottom:6px">➡ '+paTxt+'</div>':'')
+    +'<div style="margin-bottom:4px"><span style="color:'+cor+';font-weight:700;font-size:12px">🕐 '+diasTxt+' sem contacto</span></div>'
+    +'<div style="color:var(--muted);font-size:11px;margin-bottom:3px">➡ Próxima: '+paTxt+'</div>'
+    +'<div style="color:var(--muted);font-size:11px;margin-bottom:7px">📅 Último contacto: '+fuUltimoContacto(it.dias)+'</div>'
     +'<div style="white-space:nowrap">'+btn('Chamada','📞')+btn('WhatsApp','💬')+btn('Email','✉')+btn('Nota','📝')+'</div>'
   +'</div>';
 }
