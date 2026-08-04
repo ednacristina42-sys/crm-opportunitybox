@@ -10440,14 +10440,14 @@ var USERS=[
 // Dept → which spaces are visible
 var DEPT_ACCESS={
   'Direcção':['todas','comercial','design','fabrica','admin-dept'],
-  'Dep. Comercial':['comercial'],
+  'Comercial':['comercial'], // corrigido de 'Dep. Comercial' — ob_profiles.department real é 'Comercial'
   'Dep. Design':['design'],
   'Chão da Fábrica':['fabrica'],
   'Gestão Administrativa':['admin-dept'],
 };
 // Pages accessible per role
 var DEPT_PAGES={
-  'Dep. Comercial':['home','todas','comercial-pipeline','comercial-followup','comercial-clientes','comercial-orcamentos','wa','equipa-campo','alerts','chat'],
+  'Comercial':['home','todas','comercial-pipeline','comercial-followup','comercial-clientes','comercial-orcamentos','wa','equipa-campo','alerts','chat'], // corrigido de 'Dep. Comercial'
   'Dep. Design':['home','todas','design-tarefas','design-ficheiros','alerts','chat'],
   'Chão da Fábrica':['home','todas','fabrica-producao','fabrica-instalacoes','alerts','chat'],
   'Gestão Administrativa':['home','todas','admin-agenda','admin-docs','admin-despesas','admin-analise-vendas','admin-rh','stock','alerts','chat','comercial-orcamentos'],
@@ -16486,7 +16486,7 @@ function globalSearch(q){
 
 function chatGetAllowedRooms(){
   if(!CU||CU.admin) return chatRooms;
-  const deptRoomMap={'Dep. Comercial':['geral','comercial'],'Dep. Design':['geral','design'],'Chão da Fábrica':['geral','fabrica'],'Gestão Administrativa':['geral','admin']};
+  const deptRoomMap={'Comercial':['geral','comercial'],'Dep. Design':['geral','design'],'Chão da Fábrica':['geral','fabrica'],'Gestão Administrativa':['geral','admin']}; // 'Comercial' corrigido de 'Dep. Comercial'
   const allowed=deptRoomMap[CU.dept]||['geral'];
   return chatRooms.filter(r=>allowed.includes(r.id));
 }
