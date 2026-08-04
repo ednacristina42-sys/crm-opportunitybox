@@ -22,7 +22,7 @@ create policy ob_crm_dados_select_comercial on public.ob_crm_dados
   for select to authenticated
   using (
     chave in ('ob-leads','ob-crm-atividades','ob-crm-historico','ob-clients')
-    and (public.ob_is_admin() or public.ob_current_role() in ('comercial','manager'))
+    and (public.ob_is_admin() or public.ob_current_role() = 'comercial')
   );
 
 create policy ob_crm_dados_select_financeiro on public.ob_crm_dados
@@ -38,7 +38,7 @@ create policy ob_crm_dados_select_faturas on public.ob_crm_dados
   for select to authenticated
   using (
     chave = 'ob-faturas'
-    and (public.ob_is_admin() or public.ob_current_role() in ('comercial','financeiro','manager'))
+    and (public.ob_is_admin() or public.ob_current_role() in ('comercial','financeiro'))
   );
 
 -- RH: não existe papel 'rh' em ob_user_role. Por agora, só admin —
@@ -67,7 +67,7 @@ create policy ob_crm_dados_insert_comercial on public.ob_crm_dados
   for insert to authenticated
   with check (
     chave in ('ob-leads','ob-crm-atividades','ob-crm-historico','ob-clients')
-    and (public.ob_is_admin() or public.ob_current_role() in ('comercial','manager'))
+    and (public.ob_is_admin() or public.ob_current_role() = 'comercial')
   );
 
 create policy ob_crm_dados_insert_financeiro on public.ob_crm_dados
@@ -81,7 +81,7 @@ create policy ob_crm_dados_insert_faturas on public.ob_crm_dados
   for insert to authenticated
   with check (
     chave = 'ob-faturas'
-    and (public.ob_is_admin() or public.ob_current_role() in ('comercial','financeiro','manager'))
+    and (public.ob_is_admin() or public.ob_current_role() in ('comercial','financeiro'))
   );
 
 create policy ob_crm_dados_insert_rh on public.ob_crm_dados
@@ -101,11 +101,11 @@ create policy ob_crm_dados_update_comercial on public.ob_crm_dados
   for update to authenticated
   using (
     chave in ('ob-leads','ob-crm-atividades','ob-crm-historico','ob-clients')
-    and (public.ob_is_admin() or public.ob_current_role() in ('comercial','manager'))
+    and (public.ob_is_admin() or public.ob_current_role() = 'comercial')
   )
   with check (
     chave in ('ob-leads','ob-crm-atividades','ob-crm-historico','ob-clients')
-    and (public.ob_is_admin() or public.ob_current_role() in ('comercial','manager'))
+    and (public.ob_is_admin() or public.ob_current_role() = 'comercial')
   );
 
 create policy ob_crm_dados_update_financeiro on public.ob_crm_dados
@@ -123,11 +123,11 @@ create policy ob_crm_dados_update_faturas on public.ob_crm_dados
   for update to authenticated
   using (
     chave = 'ob-faturas'
-    and (public.ob_is_admin() or public.ob_current_role() in ('comercial','financeiro','manager'))
+    and (public.ob_is_admin() or public.ob_current_role() in ('comercial','financeiro'))
   )
   with check (
     chave = 'ob-faturas'
-    and (public.ob_is_admin() or public.ob_current_role() in ('comercial','financeiro','manager'))
+    and (public.ob_is_admin() or public.ob_current_role() in ('comercial','financeiro'))
   );
 
 create policy ob_crm_dados_update_rh on public.ob_crm_dados
@@ -186,30 +186,32 @@ grant select, insert, update on public.ob_crm_dados to authenticated;
 --    antes de considerar concluído — nenhum destes testes foi
 --    corrido ainda, é o que falta fazer quando for aprovado)
 -- ------------------------------------------------------------
--- Legenda: A=Admin  M=Manager  C=Comercial  F=Financeiro  N=anon (sem sessão)
+-- Legenda: A=Admin  C=Comercial  F=Financeiro  N=anon (sem sessão)
+-- 'Manager' fica de fora desta matriz — nenhum utilizador real com
+-- esse papel existe hoje; decisão pendente, ver secção 8.
 --
 -- Categoria "comercial" (ob-leads/ob-crm-atividades/ob-crm-historico/ob-clients)
---   SELECT: A permite | M permite | C permite | F NEGA | N NEGA (sem grant)
---   INSERT: A permite | M permite | C permite | F NEGA | N NEGA
---   UPDATE: A permite | M permite | C permite | F NEGA | N NEGA
+--   SELECT: A permite | C permite | F NEGA | N NEGA (sem grant)
+--   INSERT: A permite | C permite | F NEGA | N NEGA
+--   UPDATE: A permite | C permite | F NEGA | N NEGA
 --
 -- Categoria "financeiro" (ob-fin-despesas/ob-iva-dados/ob-tes-*)
---   SELECT: A permite | M NEGA | C NEGA | F permite | N NEGA
---   INSERT: A permite | M NEGA | C NEGA | F permite | N NEGA
---   UPDATE: A permite | M NEGA | C NEGA | F permite | N NEGA
+--   SELECT: A permite | C NEGA | F permite | N NEGA
+--   INSERT: A permite | C NEGA | F permite | N NEGA
+--   UPDATE: A permite | C NEGA | F permite | N NEGA
 --
 -- Categoria "faturas" (ob-faturas)
---   SELECT: A permite | M permite | C permite | F permite | N NEGA
---   INSERT: A permite | M permite | C permite | F permite | N NEGA
---   UPDATE: A permite | M permite | C permite | F permite | N NEGA
+--   SELECT: A permite | C permite | F permite | N NEGA
+--   INSERT: A permite | C permite | F permite | N NEGA
+--   UPDATE: A permite | C permite | F permite | N NEGA
 --
 -- Categoria "rh" (ob-rh-*/ob-fo-ausencias)
---   SELECT: A permite | M NEGA | C NEGA | F NEGA | N NEGA
---   INSERT: A permite | M NEGA | C NEGA | F NEGA | N NEGA
---   UPDATE: A permite | M NEGA | C NEGA | F NEGA | N NEGA
+--   SELECT: A permite | C NEGA | F NEGA | N NEGA
+--   INSERT: A permite | C NEGA | F NEGA | N NEGA
+--   UPDATE: A permite | C NEGA | F NEGA | N NEGA
 --
 -- Categoria "legado" (ob-uni-items)
---   SELECT: A permite | M NEGA | C NEGA | F NEGA | N NEGA
+--   SELECT: A permite | C NEGA | F NEGA | N NEGA
 --   INSERT: NEGA para todos (sem policy)
 --   UPDATE: NEGA para todos (sem policy)
 --
@@ -229,10 +231,13 @@ grant select, insert, update on public.ob_crm_dados to authenticated;
 -- 8) PRESSUPOSTOS DE DESENHO A CONFIRMAR (não são factos, são
 --    decisões que tomei por defeito e que pode querer corrigir)
 -- ------------------------------------------------------------
--- - 'manager' incluído em "comercial" e "faturas" (supervisão),
---   excluído de "financeiro" e "rh" — não há evidência no código
---   que confirme isto, é uma extrapolação razoável do padrão já
---   usado por ob_can_see (que também estende a managers).
+-- - 'manager': DECISÃO PENDENTE, por instrução explícita. Não existe
+--   hoje nenhum utilizador com role='manager' em ob_profiles (confirmado
+--   por leitura direta: só 2 admin + 3 comercial). Por isso 'manager'
+--   NÃO está incluído em nenhuma policy desta proposta — nem em
+--   "comercial" nem em "faturas". Quando existir um utilizador manager
+--   real, decide-se então quais categorias/páginas ele deve usar, com
+--   evidência, não por extrapolação.
 -- - RH restrito só a admin, por não existir papel 'rh' no enum
 --   ob_user_role — alternativa seria usar department='Gestão
 --   Administrativa', mas isso reintroduz o mesmo risco de string
