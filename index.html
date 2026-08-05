@@ -5461,6 +5461,8 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--txt);min-he
 .fu-card-valor{font-family:'DM Mono',monospace;color:var(--y);font-size:12px;margin-bottom:6px}
 .fu-card-linha{font-size:11px;color:var(--muted);display:flex;justify-content:space-between;gap:6px}
 .fu-card-linha span{color:var(--muted)}
+.fu-card-acoes{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px;padding-top:8px;border-top:1px solid var(--border)}
+.fu-card-acoes select,.fu-card-acoes .tbtn{font-size:11px;padding:4px 6px;background:var(--bg2);color:var(--txt2);border:1px solid var(--border);border-radius:6px;font-family:'Inter',sans-serif;cursor:pointer}
 .fu-cards-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px}
 
 /* Tables */
@@ -24763,7 +24765,7 @@ function fuListaItensHistorico(){
   (orcData||[]).forEach(function(o){
     if(o.st!=='Pendente') return;
     if(fuClassificarOrc(o)!=='historico') return;
-    itens.push({cliente:o.cli||'—', comercial:o.vendedor||'—',
+    itens.push({orcId:o.num, cliente:o.cli||'—', comercial:o.vendedor||'—',
       valor:(typeof orcGetValorTotal==='function')?orcGetValorTotal(o):(o.val||0),
       data:o.dt||o.data||'—'});
   });
@@ -24779,11 +24781,13 @@ function fuRenderHistorico(){
     return;
   }
   wrap.innerHTML=itens.map(function(it){
+    var idAttr=String(it.orcId).replace(/'/g,"\\'");
     return '<div class="fu-card">'
       +'<div class="fu-card-cliente">'+it.cliente+'</div>'
       +'<div class="fu-card-valor">€'+(it.valor||0).toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2})+'</div>'
       +'<div class="fu-card-linha"><span>Comercial:</span> '+it.comercial+'</div>'
       +'<div class="fu-card-linha"><span>Data:</span> '+it.data+'</div>'
+      +'<div class="fu-card-acoes"><button class="tbtn" onclick="fuAcaoReativar(\''+idAttr+'\')">↺ Reativar</button></div>'
       +'</div>';
   }).join('');
 }
@@ -24800,8 +24804,10 @@ window.fuRenderHistorico = fuRenderHistorico;
 // linhas no servidor: um comercial só recebe os seus próprios
 // orçamentos, um admin recebe todos — o agrupamento por comercial
 // abaixo reflecte exactamente o que a sessão já devolveu, sem
-// filtragem adicional no cliente. Só leitura — sem botões de acção
-// nem ligação às RPCs nesta etapa.
+// filtragem adicional no cliente. Os botões de cada card chamam
+// sempre uma das 5 RPCs (fu_reativar_simples/fu_classificar/
+// fu_classificar_e_reativar/fu_desativar_followup/fu_confirmar_estado)
+// via crmSBClient().rpc(...) — nunca update/insert direto nas tabelas.
 var FU_COLUNAS = [
   {key:'a_contactar',        label:'A contactar'},
   {key:'contactado',         label:'Contactado'},
@@ -24852,6 +24858,7 @@ function fuAgruparKanban(){
     var triagem=_fuTriagemPorOrc[o.num];
     var leadLigado=o.leadId?(crmLeads||[]).find(function(l){return l.id===o.leadId;}):null;
     grupos[com][col].push({
+      orcId:o.num,
       cliente:o.cli||'—',
       valor:(typeof orcGetValorTotal==='function')?orcGetValorTotal(o):(o.val||0),
       dias:obDiasEntre(obOrcUltimaAtividade(o)),
@@ -24863,19 +24870,108 @@ function fuAgruparKanban(){
 }
 window.fuAgruparKanban=fuAgruparKanban;
 
+// Classificações disponíveis no dropdown "Classificar" de cada card.
+// 'ainda_em_negociacao'/'contactar_novamente' passam por
+// fu_classificar_e_reativar (auto-reativam); as restantes por
+// fu_classificar (não tocam em reativado/reativado_em). 'aprovado'/
+// 'faturado'/'cancelado' fazem parte do domínio de classificacao na
+// base de dados, mas ficam de fora deste menu de propósito — para não
+// confundir com a mudança real de estado (dropdown "Confirmar
+// estado", que é a única via que altera ob_orcamentos.st).
+var FU_CLASSIFICACOES_MENU = [
+  {value:'ainda_em_negociacao', label:'Em negociação',      reativa:true},
+  {value:'contactar_novamente', label:'Contactar novamente', reativa:true},
+  {value:'sem_resposta',        label:'Sem resposta',        reativa:false},
+  {value:'nao_adjudicado',      label:'Não adjudicado',      reativa:false},
+  {value:'duplicado',           label:'Duplicado',           reativa:false}
+];
+
 function fuCardHTML(it){
   var pa=it.proximaAcao;
   var paTxt=(pa&&pa.data)?(pa.tipo||'Acção')+' — '+pa.data.split('-').reverse().join('/'):'—';
   var diasTxt=it.dias===null?'—':it.dias+'d';
   var classifTxt=it.classificacao?(FU_CLASSIFICACAO_LABEL[it.classificacao]||it.classificacao):'—';
+  var idAttr=String(it.orcId).replace(/'/g,"\\'");
+  var classificarOpts=FU_CLASSIFICACOES_MENU.map(function(c){
+    return '<option value="'+c.value+'">'+c.label+'</option>';
+  }).join('');
   return '<div class="fu-card">'
     +'<div class="fu-card-cliente">'+it.cliente+'</div>'
     +'<div class="fu-card-valor">€'+(it.valor||0).toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2})+'</div>'
     +'<div class="fu-card-linha"><span>Dias sem contacto:</span> '+diasTxt+'</div>'
     +'<div class="fu-card-linha"><span>Próxima acção:</span> '+paTxt+'</div>'
     +'<div class="fu-card-linha"><span>Classificação:</span> '+classifTxt+'</div>'
+    +'<div class="fu-card-acoes">'
+      +'<select onchange="fuAcaoClassificar(\''+idAttr+'\', this.value); this.value=\'\';">'
+        +'<option value="">Classificar...</option>'+classificarOpts
+      +'</select>'
+      +'<button class="tbtn" onclick="fuAcaoDesativar(\''+idAttr+'\')">Retirar</button>'
+      +'<select onchange="fuAcaoConfirmarEstado(\''+idAttr+'\', this.value); this.value=\'\';">'
+        +'<option value="">Confirmar estado...</option>'
+        +'<option value="Aprovado">Aprovado</option>'
+        +'<option value="Faturado">Faturado</option>'
+        +'<option value="Cancelado">Cancelado</option>'
+      +'</select>'
+    +'</div>'
     +'</div>';
 }
+
+// ── Acções do Kanban — ligadas às 5 RPCs já criadas na Fase 1.6, todas
+// via crmSBClient().rpc(...) autenticado. Nunca update/insert directo
+// nas tabelas (a RLS/GRANTs de produção já nem permitem isso a
+// authenticated — só as RPCs SECURITY DEFINER escrevem). Após cada
+// chamada com sucesso, fuInitPage() volta a ler tudo do Supabase
+// (nunca do localStorage) e o Kanban é re-renderizado. ═══════════
+
+async function fuAcaoReativar(orcId){
+  var sb=(typeof crmSBClient==='function')?crmSBClient():null;
+  if(!sb){ if(typeof showToast==='function') showToast('⚠ Sem ligação ao Supabase.'); return; }
+  var res=await sb.rpc('fu_reativar_simples', {p_orcamento_id:orcId});
+  if(res.error){ if(typeof showToast==='function') showToast('⚠ Erro ao reativar: '+res.error.message); return; }
+  if(typeof showToast==='function') showToast('✓ Orçamento reativado.');
+  await fuInitPage();
+}
+window.fuAcaoReativar=fuAcaoReativar;
+
+async function fuAcaoClassificar(orcId, classificacao){
+  if(!classificacao) return;
+  var def=FU_CLASSIFICACOES_MENU.find(function(c){return c.value===classificacao;});
+  var sb=(typeof crmSBClient==='function')?crmSBClient():null;
+  if(!sb){ if(typeof showToast==='function') showToast('⚠ Sem ligação ao Supabase.'); return; }
+  var nota=prompt('Nota (opcional):','');
+  if(nota===null) return; // cancelado pelo utilizador
+  var rpcName=(def&&def.reativa)?'fu_classificar_e_reativar':'fu_classificar';
+  var res=await sb.rpc(rpcName, {p_orcamento_id:orcId, p_classificacao:classificacao, p_nota:nota||null});
+  if(res.error){ if(typeof showToast==='function') showToast('⚠ Erro ao classificar: '+res.error.message); return; }
+  if(typeof showToast==='function') showToast('✓ Classificação guardada'+((def&&def.reativa)?' e orçamento reativado.':'.'));
+  await fuInitPage();
+}
+window.fuAcaoClassificar=fuAcaoClassificar;
+
+async function fuAcaoDesativar(orcId){
+  if(!confirm('Retirar este orçamento do Follow-up? Passa a aparecer no Histórico antigo.')) return;
+  var sb=(typeof crmSBClient==='function')?crmSBClient():null;
+  if(!sb){ if(typeof showToast==='function') showToast('⚠ Sem ligação ao Supabase.'); return; }
+  var res=await sb.rpc('fu_desativar_followup', {p_orcamento_id:orcId});
+  if(res.error){ if(typeof showToast==='function') showToast('⚠ Erro ao retirar: '+res.error.message); return; }
+  if(typeof showToast==='function') showToast('✓ Retirado do Follow-up.');
+  await fuInitPage();
+}
+window.fuAcaoDesativar=fuAcaoDesativar;
+
+// Único caminho que altera ob_orcamentos.st — exige confirmação
+// explícita antes de chamar a RPC, conforme pedido.
+async function fuAcaoConfirmarEstado(orcId, stNovo){
+  if(!stNovo) return;
+  if(!confirm('Confirmar mudança de estado para "'+stNovo+'"? Esta ação atualiza o estado real do orçamento e fica registada no histórico.')) return;
+  var sb=(typeof crmSBClient==='function')?crmSBClient():null;
+  if(!sb){ if(typeof showToast==='function') showToast('⚠ Sem ligação ao Supabase.'); return; }
+  var res=await sb.rpc('fu_confirmar_estado', {p_orcamento_id:orcId, p_st_novo:stNovo});
+  if(res.error){ if(typeof showToast==='function') showToast('⚠ Erro ao confirmar estado: '+res.error.message); return; }
+  if(typeof showToast==='function') showToast('✓ Estado atualizado para '+stNovo+'.');
+  await fuInitPage();
+}
+window.fuAcaoConfirmarEstado=fuAcaoConfirmarEstado;
 
 function fuRenderKanbanAtivo(){
   var wrap=document.getElementById('fu-kanban-ativo');
