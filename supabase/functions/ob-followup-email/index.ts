@@ -11,6 +11,11 @@
 // recentemente" (jaTratadoRecentemente) só considera estado='enviado'.
 // A restrição de 1-por-dia na tabela é só para não duplicar a MESMA
 // avaliação no MESMO dia, não para impedir ações em dias diferentes.
+//
+// Elegibilidade histórica: um Pendente só entra na simulação se
+// dt >= CUTOFF_HISTORICO OU se já foi reativado (ob_orcamento_triagem
+// .reativado = true). Pendentes antigos e nunca reativados são
+// excluídos como histórico, antes de qualquer outra verificação.
 // ============================================================
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
@@ -19,18 +24,38 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const ESTADO_ELEGIVEL = 'Pendente';
 const VALOR_ALTO_LIMIAR = 10000;
 const JANELA_DEDUP_DIAS = 7;
+const CUTOFF_HISTORICO = '2026-07-01';
 
 type Orcamento = {
   id: string; num: string; cli: string; vendedor: string; st: string;
-  val: number | null; email: string | null; cliemail: string | null;
+  val: number | null; email: string | null; cliemail: string | null; dt: string | null;
 };
-type Triagem = { orcamento_id: string; classificacao: string | null };
+type Triagem = { orcamento_id: string; classificacao: string | null; reativado: boolean | null };
 type RegistoExistente = { estado: string; data_referencia: string };
 
 function emailValido(email: string | null | undefined): boolean {
   if (!email) return false;
   const e = email.trim();
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
+}
+
+// `dt` vem como texto 'DD/MM/YYYY' (confirmado por leitura direta do
+// schema — não é um date nativo). Só converte se o formato bater
+// certo; um dt em formato inesperado nunca é tratado como elegível
+// por omissão — fica de fora até haver evidência real do formato.
+function dtParaISO(dt: string | null | undefined): string | null {
+  if (!dt) return null;
+  const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(dt.trim());
+  if (!m) return null;
+  const [, d, mo, y] = m;
+  return `${y}-${mo}-${d}`;
+}
+
+function elegivelPorHistorico(o: Orcamento, triagem: Triagem | undefined): boolean {
+  if (triagem?.reativado === true) return true;
+  const iso = dtParaISO(o.dt);
+  if (!iso) return false;
+  return iso >= CUTOFF_HISTORICO;
 }
 
 // Sem coluna de consentimento na base de dados hoje (confirmado por
@@ -80,22 +105,32 @@ Deno.serve(async () => {
   const hoje = new Date().toISOString().slice(0, 10);
   const desde = dataMenosNDias(hoje, JANELA_DEDUP_DIAS);
 
-  const orcamentos: Orcamento[] = await sbFetch(
-    `ob_orcamentos?st=eq.${ESTADO_ELEGIVEL}&select=id,num,cli,vendedor,st,val,email,cliemail`
+  const orcamentosTodos: Orcamento[] = await sbFetch(
+    `ob_orcamentos?st=eq.${ESTADO_ELEGIVEL}&select=id,num,cli,vendedor,st,val,email,cliemail,dt`
   );
   const triagens: Triagem[] = await sbFetch(
-    `ob_orcamento_triagem?select=orcamento_id,classificacao`
+    `ob_orcamento_triagem?select=orcamento_id,classificacao,reativado`
   );
   const triagemPorOrc = new Map(triagens.map((t) => [t.orcamento_id, t]));
+
+  const orcamentos = orcamentosTodos.filter((o) => elegivelPorHistorico(o, triagemPorOrc.get(o.id)));
+  const excluidosHistorico = orcamentosTodos.length - orcamentos.length;
 
   const resultado = {
     executado_em: new Date().toISOString(),
     modo: 'simulacao',
     data_referencia: hoje,
+    cutoff_historico: CUTOFF_HISTORICO,
+    total_pendentes: orcamentosTodos.length,
+    excluidos_historico: excluidosHistorico,
     total_avaliados: orcamentos.length,
     simulados: 0,
     ignorados: 0,
     motivos_ignorado: {} as Record<string, number>,
+    distribuicao_modelos: {
+      primeiro_lembrete: 0, lembrete_intermedio: 0,
+      valor_alto_personalizado: 0, reativacao: 0,
+    } as Record<string, number>,
     avisos: [] as string[],
     detalhe: [] as Record<string, unknown>[],
   };
@@ -163,6 +198,7 @@ Deno.serve(async () => {
         }),
       });
       resultado.simulados++;
+      resultado.distribuicao_modelos[modelo] = (resultado.distribuicao_modelos[modelo] || 0) + 1;
       resultado.detalhe.push({ orcamento_id: o.id, estado: 'simulado', modelo, destinatario: email });
     } catch (e) {
       resultado.avisos.push(`Falha ao registar simulação de ${o.id}: ${(e as Error).message}`);
