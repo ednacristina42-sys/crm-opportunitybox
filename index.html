@@ -6978,6 +6978,17 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
       </div>
     </div>
 
+    <div class="sh"><h2>Financeiro</h2></div>
+    <div class="g3">
+      <div class="kpi mp-action mp-placeholder" id="mp-cobrar-card">
+        <div class="klbl">💳 Por cobrar</div>
+        <div class="kval" id="mp-kpi-cobrar">—</div>
+        <div class="ksub" id="mp-kpi-cobrar-sub">clientes com valores em aberto</div>
+        <div class="mp-breakdown" id="mp-cobrar-breakdown"></div>
+        <button class="mp-action-btn" id="mp-cobrar-btn" data-action="goPage" data-page="tesouraria" style="display:none">Abrir Cobranças</button>
+      </div>
+    </div>
+
     <div class="sh"><h2>Em breve</h2></div>
     <div class="g3">
       <div class="kpi mp-placeholder"><div class="klbl">Meta do mês</div><div class="kval">—</div><div class="ksub">Em breve</div></div>
@@ -6985,7 +6996,6 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
       <div class="kpi mp-placeholder"><div class="klbl">Valor por faturar</div><div class="kval">—</div><div class="ksub">Em breve</div></div>
     </div>
     <div class="g3">
-      <div class="kpi mp-placeholder"><div class="klbl">Valor por cobrar</div><div class="kval">—</div><div class="ksub">Em breve</div></div>
       <div class="kpi mp-placeholder"><div class="klbl">Agenda</div><div class="kval">—</div><div class="ksub">Em breve</div></div>
       <div class="kpi mp-placeholder"><div class="klbl">IA recomenda</div><div class="kval">—</div><div class="ksub">Em breve</div></div>
     </div>
@@ -24739,6 +24749,45 @@ function renderMeuPainel(){
   var valorPendentes=pendentes.reduce(function(s,o){ return s+valorOrc(o); },0);
   set('mp-kpi-pendentes', pendentes.length);
   set('mp-kpi-pendentes-sub', (pendentes.length===1?'proposta pendente':pendentes.length+' propostas pendentes')+' · '+fmtEuro(valorPendentes));
+
+  // Card "Por cobrar" — dados reais de TES_RECEBER (Tesouraria), mesmo
+  // critério já usado em tesRenderReceber()/dash CFO: estado!=='Recebido'
+  // = em aberto; vencimento<hoje = vencido. TES_RECEBER não tem dono por
+  // comercial (só cliente) — por isso este card respeita a MESMA regra
+  // já existente no resto do CRM (obPodeVerFinanceiro): um comercial
+  // nunca vê dados financeiros, mesmo agregados, aqui incluído.
+  var cobrarCard=document.getElementById('mp-cobrar-card');
+  if(cobrarCard){
+    var podeVerFin=(typeof obPodeVerFinanceiro==='function') ? obPodeVerFinanceiro() : false;
+    if(podeVerFin){
+      try{ if(typeof tocoMergeFaturasCacheReceber==='function') tocoMergeFaturasCacheReceber(); }catch(e){}
+      var hojeVenc=new Date();
+      var receberAberto=(typeof TES_RECEBER!=='undefined'&&TES_RECEBER) ? TES_RECEBER.filter(function(r){ return r.estado!=='Recebido'; }) : [];
+      var clientesUnicos={};
+      receberAberto.forEach(function(r){ if(r.cliente) clientesUnicos[r.cliente]=true; });
+      var valorAberto=receberAberto.reduce(function(s,r){ return s+parseFloat(r.total||0); },0);
+      var receberVencido=receberAberto.filter(function(r){
+        var vd=(typeof parseVencTes==='function') ? parseVencTes(r.vencimento) : new Date(NaN);
+        return !isNaN(vd) && vd<hojeVenc;
+      });
+      var valorVencido=receberVencido.reduce(function(s,r){ return s+parseFloat(r.total||0); },0);
+
+      set('mp-kpi-cobrar', Object.keys(clientesUnicos).length);
+      set('mp-kpi-cobrar-sub', Object.keys(clientesUnicos).length===1?'cliente com valores em aberto':'clientes com valores em aberto');
+      var cobrarBreakdown=document.getElementById('mp-cobrar-breakdown');
+      if(cobrarBreakdown){
+        cobrarBreakdown.innerHTML=
+          '<div class="mp-breakdown-row"><span>Valor em aberto</span><b>'+fmtEuro(valorAberto)+'</b></div>'
+         +'<div class="mp-breakdown-row"><span>Valor vencido</span><b>'+fmtEuro(valorVencido)+'</b></div>';
+      }
+      cobrarCard.classList.remove('mp-placeholder');
+      var cobrarBtn=document.getElementById('mp-cobrar-btn');
+      if(cobrarBtn) cobrarBtn.style.display='';
+    } else {
+      set('mp-kpi-cobrar', '—');
+      set('mp-kpi-cobrar-sub', 'sem acesso a dados financeiros');
+    }
+  }
 
   // Últimas actividades (crmAtividades já vem ordenado do mais recente
   // para o mais antigo — crmAddAtividade usa unshift())
