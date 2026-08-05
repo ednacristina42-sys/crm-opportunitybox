@@ -5432,6 +5432,11 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--txt);min-he
 .up{color:var(--g)}.dn{color:var(--r)}
 .ksub{font-size:12px;color:var(--muted);margin-top:3px}
 
+/* ADD: Meu Painel — cards placeholder (funcionalidade "em breve", sem
+   dados fictícios). Reaproveita .kpi/.klbl/.kval/.ksub, só esbate visualmente. */
+.mp-placeholder{opacity:.5;filter:grayscale(.4);cursor:default;pointer-events:none}
+.mp-placeholder .kval{color:var(--muted)}
+
 /* Grid layouts */
 .g2{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
 .g3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:12px}
@@ -6700,6 +6705,7 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
     <span class="space-chevron">›</span>
   </button>
   <div class="space-lists" id="sl-comercial">
+    <button class="sl-item" data-action="goPage" data-page="meu-painel"><div class="sl-dot" style="background:#a855f7"></div>👤 Meu Painel</button>
     <button class="sl-item" data-action="goPage" data-page="comercial-pipeline"><div class="sl-dot" style="background:var(--y)"></div>Pipeline de Leads<span id="ob-badge-pendencias" style="display:none;background:var(--r);color:#fff;font-size:10.5px;font-weight:700;font-family:'DM Mono',monospace;padding:1px 6px;border-radius:8px;margin-left:auto;flex-shrink:0" title="Pendências: leads parados e acções em atraso">0</span></button>
     <button class="sl-item" data-action="goPage" data-page="comercial-followup"><div class="sl-dot" style="background:#f5c400"></div>Follow-up</button>
     <button class="sl-item" data-action="goPage" data-page="comercial-clientes"><div class="sl-dot" style="background:#4d94db"></div>Clientes</button>
@@ -6902,6 +6908,79 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
   </div>
   <div id="crm-funnel-bar" class="crm-funnel-bar"></div>
   <div class="crm-kanban" id="crm-kanban"></div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════
+     ADD: MEU PAINEL — dashboard pessoal do comercial (Fase inicial).
+     Populado por renderMeuPainel(). Cards activos usam dados reais de
+     orcData/crmAtividades já carregados; cards placeholder (Meta do mês,
+     Valor vendido, Valor por faturar, Valor por cobrar, Agenda, IA
+     recomenda) ficam visualmente esbatidos (.mp-placeholder) sem valores
+     inventados, à espera de fontes de dados próprias.
+═══════════════════════════════════════════════════════ -->
+<div id="page-meu-painel" class="app-page">
+  <div class="pg-hdr">
+    <div class="pg-hdr-top">
+      <div class="pg-space-icon" style="background:var(--dc)">D</div>
+      <div class="pg-title">Meu Painel</div>
+    </div>
+  </div>
+  <div class="admin-page">
+
+    <div class="sh"><h2>Resumo comercial</h2></div>
+    <div class="g3">
+      <div class="kpi kY">
+        <div class="klbl">Valor em negociação</div>
+        <div class="kval" id="mp-kpi-negociacao">—</div>
+        <div class="ksub" id="mp-kpi-negociacao-sub">—</div>
+      </div>
+      <div class="kpi kB">
+        <div class="klbl">Ticket médio</div>
+        <div class="kval" id="mp-kpi-ticket">—</div>
+        <div class="ksub" id="mp-kpi-ticket-sub">—</div>
+      </div>
+      <div class="kpi kG">
+        <div class="klbl">Taxa de conversão</div>
+        <div class="kval" id="mp-kpi-conversao">—</div>
+        <div class="ksub">Mesmo valor do Pipeline de Leads</div>
+      </div>
+    </div>
+    <div class="g3">
+      <div class="kpi kA">
+        <div class="klbl">Clientes para Follow-up</div>
+        <div class="kval" id="mp-kpi-followup">—</div>
+        <div class="ksub" id="mp-kpi-followup-sub">Orçamentos com follow-up activo</div>
+      </div>
+      <div class="kpi kR">
+        <div class="klbl">Clientes em risco</div>
+        <div class="kval" id="mp-kpi-risco">—</div>
+        <div class="ksub">Prioridade alta / crítica / perdido sugerido</div>
+      </div>
+      <div class="kpi">
+        <div class="klbl">Orçamentos pendentes</div>
+        <div class="kval" id="mp-kpi-pendentes">—</div>
+        <div class="ksub">Estado "Pendente"</div>
+      </div>
+    </div>
+
+    <div class="sh"><h2>Em breve</h2></div>
+    <div class="g3">
+      <div class="kpi mp-placeholder"><div class="klbl">Meta do mês</div><div class="kval">—</div><div class="ksub">Em breve</div></div>
+      <div class="kpi mp-placeholder"><div class="klbl">Valor vendido</div><div class="kval">—</div><div class="ksub">Em breve</div></div>
+      <div class="kpi mp-placeholder"><div class="klbl">Valor por faturar</div><div class="kval">—</div><div class="ksub">Em breve</div></div>
+    </div>
+    <div class="g3">
+      <div class="kpi mp-placeholder"><div class="klbl">Valor por cobrar</div><div class="kval">—</div><div class="ksub">Em breve</div></div>
+      <div class="kpi mp-placeholder"><div class="klbl">Agenda</div><div class="kval">—</div><div class="ksub">Em breve</div></div>
+      <div class="kpi mp-placeholder"><div class="klbl">IA recomenda</div><div class="kval">—</div><div class="ksub">Em breve</div></div>
+    </div>
+
+    <div class="sh"><h2>Últimas actividades</h2></div>
+    <div class="tw" id="mp-atividades-wrap">
+      <div id="mp-atividades-list" style="padding:4px 6px"></div>
+    </div>
+
+  </div>
 </div>
 
 <!-- ─── COMERCIAL FOLLOW-UP -->
@@ -10469,7 +10548,7 @@ var DEPT_ACCESS={
 };
 // Pages accessible per role
 var DEPT_PAGES={
-  'Comercial':['home','todas','comercial-pipeline','comercial-followup','comercial-clientes','comercial-orcamentos','wa','equipa-campo','alerts','chat'], // corrigido de 'Dep. Comercial'
+  'Comercial':['home','todas','meu-painel','comercial-pipeline','comercial-followup','comercial-clientes','comercial-orcamentos','wa','equipa-campo','alerts','chat'], // corrigido de 'Dep. Comercial'
   'Dep. Design':['home','todas','design-tarefas','design-ficheiros','alerts','chat'],
   'Chão da Fábrica':['home','todas','fabrica-producao','fabrica-instalacoes','alerts','chat'],
   'Gestão Administrativa':['home','todas','admin-agenda','admin-docs','admin-despesas','admin-analise-vendas','admin-rh','stock','alerts','chat','comercial-orcamentos'],
@@ -10757,6 +10836,7 @@ window.goPage=function goPage(id){
   if(id==='admin-analise-vendas'&&typeof afLoad==='function')afLoad();
   if(id==='comercial-orcamentos'&&typeof orcInitPage==='function')orcInitPage();
   if(id==='comercial-pipeline'&&typeof crmInit==='function')crmInit();
+  if(id==='meu-painel'&&typeof renderMeuPainel==='function')renderMeuPainel();
   if(id==='comercial-followup'&&typeof fuInitPage==='function')fuInitPage();
   if(id==='crm'){ try{ renderCRMKanban('crm-kanban-admin'); }catch(e){} }
   if(id==='equipa-campo'&&typeof loadEquipaCampoData==='function')loadEquipaCampoData();
@@ -17814,6 +17894,7 @@ function renderAll(){
   safe(renderEquipa,'equipa');
   safe(renderDashLeads,'dash-leads');
   safe(renderDashboardCFO,'dashboard-cfo');
+  safe(renderMeuPainel,'meu-painel');
   safe(renderFinanceiro,'financeiro');
   safe(renderRelatorios,'relatorios');
   safe(()=>uniInitAll(),'uni');
@@ -24551,6 +24632,103 @@ function obPendenciasDoUtilizador(){
     fin:{pagar:[],aVencer:[],receber:[]}
   };
 }
+
+// ══════════════════════════════════════════════════════════════════
+// ADD: MEU PAINEL — dashboard pessoal do comercial (Fase inicial)
+// ══════════════════════════════════════════════════════════════════
+// Popula os cards de #page-meu-painel a partir dos dados já carregados
+// em memória (orcData / crmAtividades) — não faz novas queries. Segue o
+// mesmo padrão de "os meus vs todos" de obPendenciasDoUtilizador(): um
+// comercial (!CU.admin) só vê os seus próprios orçamentos/actividades
+// (o.vendedor / a.autor === CU.name); um admin vê tudo.
+//
+// Critério de "orçamento em aberto / follow-up activo" reaproveitado de
+// fuOrcamentosAtivos() (motor de Follow-up, mais acima neste ficheiro):
+// exclui os estados terminais FU_ESTADOS_ORC_TERMINAIS (Aprovado /
+// Faturado / Cancelado) e os Pendente já classificados como "histórico"
+// por fuClassificarOrc(). Não inventa um critério novo.
+//
+// "Clientes em risco" reaproveita fuPrioridade()/obOrcUltimaAtividade()
+// já existentes (chaves 'alta'/'critica'/'perdido_sugerido').
+//
+// "Taxa de conversão" NÃO é recalculada aqui — lê o mesmo valor já
+// mostrado em #crm-conv, calculado por crmUpdateStats() (Pipeline de
+// Leads), garantindo que os dois ecrãs nunca divergem.
+function renderMeuPainel(){
+  var set=function(id,v){ var e=document.getElementById(id); if(e) e.textContent=v; };
+  var fmtEuro=function(v){ return (typeof fmt==='function') ? fmt(Math.round(v||0)) : ('€'+Math.round(v||0)); };
+
+  var isAdmin=!!(typeof CU!=='undefined'&&CU&&CU.admin);
+  var nome=(typeof CU!=='undefined'&&CU)?CU.name:null;
+  var minhas=function(v){ return isAdmin||!nome||v===nome; };
+
+  var orcAll=(typeof orcData!=='undefined'&&orcData)?orcData:[];
+  var minhasOrc=orcAll.filter(function(o){ return minhas(o.vendedor); });
+  var valorOrc=function(o){ return (typeof orcGetValorTotal==='function')?orcGetValorTotal(o):(o.val||0); };
+
+  // Orçamentos "em aberto"/follow-up activo do comercial — mesmo critério
+  // já usado no motor de Follow-up (fuOrcamentosAtivos), filtrado por dono.
+  var ativosTodos=(typeof fuOrcamentosAtivos==='function')?fuOrcamentosAtivos():[];
+  var ativosMeus=ativosTodos.filter(function(o){ return minhas(o.vendedor); });
+
+  // Valor em negociação
+  var valorNegociacao=ativosMeus.reduce(function(s,o){ return s+valorOrc(o); },0);
+  set('mp-kpi-negociacao', fmtEuro(valorNegociacao));
+  set('mp-kpi-negociacao-sub', ativosMeus.length+' orçamento'+(ativosMeus.length===1?'':'s')+' em aberto');
+
+  // Ticket médio — valor médio dos orçamentos do comercial (com valor >0)
+  var comValor=minhasOrc.filter(function(o){ return valorOrc(o)>0; });
+  var ticketMedio=comValor.length ? (comValor.reduce(function(s,o){ return s+valorOrc(o); },0)/comValor.length) : 0;
+  set('mp-kpi-ticket', fmtEuro(ticketMedio));
+  set('mp-kpi-ticket-sub', comValor.length+' orçamento'+(comValor.length===1?'':'s')+' com valor');
+
+  // Taxa de conversão — reaproveita o valor já calculado em crmUpdateStats()/#crm-conv
+  if(typeof crmUpdateStats==='function'){ try{ crmUpdateStats(); }catch(e){} }
+  var convEl=document.getElementById('crm-conv');
+  set('mp-kpi-conversao', convEl?convEl.textContent:'—');
+
+  // Clientes para Follow-up — contagem de orçamentos com follow-up activo
+  set('mp-kpi-followup', ativosMeus.length);
+
+  // Clientes em risco — prioridade alta/crítica/perdido sugerido (fuPrioridade)
+  var risco=0;
+  ativosMeus.forEach(function(o){
+    var dias=(typeof obOrcUltimaAtividade==='function'&&typeof obDiasEntre==='function') ? obDiasEntre(obOrcUltimaAtividade(o)) : null;
+    var prio=(typeof fuPrioridade==='function') ? fuPrioridade(dias) : {key:'sem_dados'};
+    if(['alta','critica','perdido_sugerido'].indexOf(prio.key)!==-1) risco++;
+  });
+  set('mp-kpi-risco', risco);
+
+  // Orçamentos pendentes
+  var pendentes=minhasOrc.filter(function(o){ return o.st==='Pendente'; });
+  set('mp-kpi-pendentes', pendentes.length);
+
+  // Últimas actividades (crmAtividades já vem ordenado do mais recente
+  // para o mais antigo — crmAddAtividade usa unshift())
+  var ativEl=document.getElementById('mp-atividades-list');
+  if(ativEl){
+    var todasAtiv=(typeof crmAtividades!=='undefined'&&crmAtividades)?crmAtividades:[];
+    var minhasAtiv= (isAdmin||!nome) ? todasAtiv : todasAtiv.filter(function(a){ return a.autor===nome; });
+    var ultimas=minhasAtiv.slice(0,5);
+    if(!ultimas.length){
+      ativEl.innerHTML='<div style="color:var(--muted);font-size:13px;padding:8px 4px;font-style:italic">Sem actividades registadas.</div>';
+    } else {
+      var icones={'Nota':'📝','Chamada':'📞','Email':'✉','Visita':'🚗','WhatsApp':'💬'};
+      ativEl.innerHTML=ultimas.map(function(a){
+        var d=new Date(a.ts);
+        var dStr=isNaN(d) ? '—' : (d.toLocaleDateString('pt-PT',{day:'2-digit',month:'2-digit',year:'2-digit'})+' '+d.toLocaleTimeString('pt-PT',{hour:'2-digit',minute:'2-digit'}));
+        return '<div style="display:flex;gap:10px;align-items:flex-start;padding:8px 6px;border-bottom:1px solid var(--border)">'
+          +'<span style="font-size:15px">'+(icones[a.tipo]||'📝')+'</span>'
+          +'<div style="flex:1;min-width:0">'
+            +'<div style="font-size:13px;color:var(--txt2)">'+(a.texto||'—')+'</div>'
+            +'<div style="font-size:11px;color:var(--muted);margin-top:2px">'+(a.autor||'—')+' · '+dStr+'</div>'
+          +'</div>'
+        +'</div>';
+      }).join('');
+    }
+  }
+}
+window.renderMeuPainel=renderMeuPainel;
 
 function obAbrirLead(id){
   try{ goPage('comercial-pipeline'); }catch(e){}
