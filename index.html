@@ -5437,6 +5437,15 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--txt);min-he
 .mp-placeholder{opacity:.5;filter:grayscale(.4);cursor:default;pointer-events:none}
 .mp-placeholder .kval{color:var(--muted)}
 
+/* ADD: Meu Painel — action-cards (Centro de Comando): breakdown + botão
+   de ação, em vez de um número isolado. Continua a reaproveitar .kpi. */
+.mp-action{display:flex;flex-direction:column}
+.mp-breakdown{margin-top:8px;display:flex;flex-direction:column;gap:3px}
+.mp-breakdown-row{display:flex;justify-content:space-between;font-size:12px;color:var(--muted)}
+.mp-breakdown-row b{color:var(--txt2);font-weight:600}
+.mp-action-btn{margin-top:10px;padding:7px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--txt2);font-size:12.5px;font-weight:600;cursor:pointer;text-align:center;font-family:inherit}
+.mp-action-btn:hover{filter:brightness(1.2)}
+
 /* Grid layouts */
 .g2{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
 .g3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:12px}
@@ -6945,21 +6954,27 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
         <div class="ksub">Mesmo valor do Pipeline de Leads</div>
       </div>
     </div>
+    <div class="sh"><h2>Prioridades de hoje</h2></div>
     <div class="g3">
-      <div class="kpi kA">
-        <div class="klbl">Clientes para Follow-up</div>
+      <div class="kpi kA mp-action">
+        <div class="klbl">📞 Follow-up</div>
         <div class="kval" id="mp-kpi-followup">—</div>
-        <div class="ksub" id="mp-kpi-followup-sub">Orçamentos com follow-up activo</div>
+        <div class="ksub">clientes com follow-up activo</div>
+        <div class="mp-breakdown" id="mp-followup-breakdown"></div>
+        <button class="mp-action-btn" data-action="goPage" data-page="comercial-followup">Abrir Follow-up</button>
       </div>
-      <div class="kpi kR">
-        <div class="klbl">Clientes em risco</div>
+      <div class="kpi kR mp-action">
+        <div class="klbl">🚨 Clientes em risco</div>
         <div class="kval" id="mp-kpi-risco">—</div>
-        <div class="ksub">Prioridade alta / crítica / perdido sugerido</div>
+        <div class="ksub">prioridade alta / crítica / perdido sugerido</div>
+        <div class="mp-breakdown" id="mp-risco-breakdown"></div>
+        <button class="mp-action-btn" data-action="goPage" data-page="comercial-followup">Abrir Follow-up</button>
       </div>
-      <div class="kpi">
-        <div class="klbl">Orçamentos pendentes</div>
+      <div class="kpi mp-action">
+        <div class="klbl">💰 Negócios em aberto</div>
         <div class="kval" id="mp-kpi-pendentes">—</div>
-        <div class="ksub">Estado "Pendente"</div>
+        <div class="ksub" id="mp-kpi-pendentes-sub">propostas em estado "Pendente"</div>
+        <button class="mp-action-btn" data-action="goPage" data-page="comercial-orcamentos">Abrir Orçamentos</button>
       </div>
     </div>
 
@@ -24687,21 +24702,43 @@ function renderMeuPainel(){
   var convEl=document.getElementById('crm-conv');
   set('mp-kpi-conversao', convEl?convEl.textContent:'—');
 
-  // Clientes para Follow-up — contagem de orçamentos com follow-up activo
-  set('mp-kpi-followup', ativosMeus.length);
-
-  // Clientes em risco — prioridade alta/crítica/perdido sugerido (fuPrioridade)
-  var risco=0;
+  // Follow-up + Clientes em risco — uma só passagem por ativosMeus,
+  // classificando cada orçamento por prioridade (fuPrioridade), reaproveitada
+  // pelos 2 cards de ação (evita calcular a mesma coisa duas vezes).
+  var porPrioridade={em_dia:0,lembrete:0,normal:0,alta:0,critica:0,perdido_sugerido:0,sem_dados:0};
   ativosMeus.forEach(function(o){
     var dias=(typeof obOrcUltimaAtividade==='function'&&typeof obDiasEntre==='function') ? obDiasEntre(obOrcUltimaAtividade(o)) : null;
     var prio=(typeof fuPrioridade==='function') ? fuPrioridade(dias) : {key:'sem_dados'};
-    if(['alta','critica','perdido_sugerido'].indexOf(prio.key)!==-1) risco++;
+    var key=porPrioridade.hasOwnProperty(prio.key) ? prio.key : 'sem_dados';
+    porPrioridade[key]++;
   });
-  set('mp-kpi-risco', risco);
+  var normalCount=porPrioridade.em_dia+porPrioridade.lembrete+porPrioridade.normal+porPrioridade.sem_dados;
+  var prioritarioCount=porPrioridade.alta+porPrioridade.critica+porPrioridade.perdido_sugerido;
 
-  // Orçamentos pendentes
+  // Card "Follow-up" — total + repartição normais vs prioritários
+  set('mp-kpi-followup', ativosMeus.length);
+  var fuBreakdown=document.getElementById('mp-followup-breakdown');
+  if(fuBreakdown){
+    fuBreakdown.innerHTML=
+      '<div class="mp-breakdown-row"><span>Normais</span><b>'+normalCount+'</b></div>'
+     +'<div class="mp-breakdown-row"><span>Prioritários</span><b>'+prioritarioCount+'</b></div>';
+  }
+
+  // Card "Clientes em risco" — prioridade alta/crítica/perdido sugerido (fuPrioridade)
+  set('mp-kpi-risco', prioritarioCount);
+  var riscoBreakdown=document.getElementById('mp-risco-breakdown');
+  if(riscoBreakdown){
+    riscoBreakdown.innerHTML=
+      '<div class="mp-breakdown-row"><span>Crítica</span><b>'+porPrioridade.critica+'</b></div>'
+     +'<div class="mp-breakdown-row"><span>Alta</span><b>'+porPrioridade.alta+'</b></div>'
+     +'<div class="mp-breakdown-row"><span>Perdido sugerido</span><b>'+porPrioridade.perdido_sugerido+'</b></div>';
+  }
+
+  // Card "Negócios em aberto" — orçamentos em estado "Pendente" + valor total
   var pendentes=minhasOrc.filter(function(o){ return o.st==='Pendente'; });
+  var valorPendentes=pendentes.reduce(function(s,o){ return s+valorOrc(o); },0);
   set('mp-kpi-pendentes', pendentes.length);
+  set('mp-kpi-pendentes-sub', (pendentes.length===1?'proposta pendente':pendentes.length+' propostas pendentes')+' · '+fmtEuro(valorPendentes));
 
   // Últimas actividades (crmAtividades já vem ordenado do mais recente
   // para o mais antigo — crmAddAtividade usa unshift())
