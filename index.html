@@ -5447,6 +5447,22 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--txt);min-he
 .sh h2{font-size:14px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--txt2)}
 .sh a,.sh button.lnk{font-size:13px;color:var(--y);cursor:pointer;font-weight:600;background:none;border:none;font-family:'Inter',sans-serif}
 
+/* Follow-up — Kanban por comercial */
+.fu-swimlane{margin-bottom:22px}
+.fu-swimlane-titulo{font-size:13px;font-weight:700;color:var(--txt2);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+.fu-kanban-colunas{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.fu-coluna{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:10px;min-width:0}
+.fu-coluna-titulo{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between}
+.fu-coluna-count{background:var(--bg3);border-radius:10px;padding:1px 7px;font-size:10px;color:var(--txt2)}
+.fu-coluna-cards{display:flex;flex-direction:column;gap:8px}
+.fu-coluna-vazia{font-size:12px;color:var(--muted);text-align:center;padding:10px 0}
+.fu-card{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px;font-size:13px}
+.fu-card-cliente{font-weight:700;color:var(--txt2);margin-bottom:4px}
+.fu-card-valor{font-family:'DM Mono',monospace;color:var(--y);font-size:12px;margin-bottom:6px}
+.fu-card-linha{font-size:11px;color:var(--muted);display:flex;justify-content:space-between;gap:6px}
+.fu-card-linha span{color:var(--muted)}
+.fu-cards-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px}
+
 /* Tables */
 .tw{background:var(--bg2);border:1px solid var(--border);border-radius:8px;overflow:hidden}
 table{width:100%;border-collapse:collapse}
@@ -5865,6 +5881,10 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
   /* Tables */
   .tw{overflow-x:auto}
   .tw table{min-width:560px}
+
+  /* Follow-up — Kanban empilha 1 coluna por linha em ecrã pequeno */
+  .fu-kanban-colunas{grid-template-columns:1fr}
+  .fu-cards-grid{grid-template-columns:1fr}
 
   /* Equipa em Campo */
   .ec-wrap{padding:10px 12px 30px}
@@ -6895,10 +6915,10 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
     </div>
   </div>
   <div id="fu-panel-ativo" class="task-content">
-    <div class="tw"><table><thead><tr><th>Cliente</th><th>Comercial</th><th>Valor</th><th>Dias sem contacto</th><th>Prioridade</th><th>Próxima acção</th><th>Registar contacto</th></tr></thead><tbody id="fu-tbody"></tbody></table></div>
+    <div id="fu-kanban-ativo"></div>
   </div>
   <div id="fu-panel-historico" class="task-content" style="display:none">
-    <div class="tw"><table><thead><tr><th>Cliente</th><th>Comercial</th><th>Valor</th><th>Data</th></tr></thead><tbody id="fu-tbody-historico"></tbody></table></div>
+    <div id="fu-cards-historico" class="fu-cards-grid"></div>
   </div>
 </div>
 
@@ -24686,10 +24706,10 @@ async function fuCarregarTriagem(){
     var sb = (typeof crmSBClient==='function') ? crmSBClient() : null;
     var cu = (typeof CU!=='undefined') ? CU : null;
     if(!sb || !cu || !cu.id) return; // sem sessão real (Fase 4) — mesma guarda de _sbOrcLoadAll
-    var res = await sb.from('ob_orcamento_triagem').select('orcamento_id, reativado');
+    var res = await sb.from('ob_orcamento_triagem').select('orcamento_id, reativado, classificacao');
     if(res.error){ console.warn('[FU] leitura de ob_orcamento_triagem falhou:', res.error); return; }
     var map={};
-    (res.data||[]).forEach(function(row){ map[row.orcamento_id] = { reativado: !!row.reativado }; });
+    (res.data||[]).forEach(function(row){ map[row.orcamento_id] = { reativado: !!row.reativado, classificacao: row.classificacao||null }; });
     _fuTriagemPorOrc = map;
   }catch(e){ console.warn('[FU] leitura de ob_orcamento_triagem falhou:', e); }
 }
@@ -24751,23 +24771,137 @@ function fuListaItensHistorico(){
 }
 
 function fuRenderHistorico(){
-  var tbody=document.getElementById('fu-tbody-historico');
-  if(!tbody) return;
+  var wrap=document.getElementById('fu-cards-historico');
+  if(!wrap) return;
   var itens=fuListaItensHistorico();
   if(!itens.length){
-    tbody.innerHTML='<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:22px">Sem orçamentos no histórico antigo.</td></tr>';
+    wrap.innerHTML='<div style="text-align:center;color:var(--muted);padding:22px;grid-column:1/-1">Sem orçamentos no histórico antigo.</div>';
     return;
   }
-  tbody.innerHTML=itens.map(function(it){
-    return '<tr>'
-      +'<td>'+it.cliente+'</td>'
-      +'<td>'+it.comercial+'</td>'
-      +'<td>€'+(it.valor||0).toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2})+'</td>'
-      +'<td>'+it.data+'</td>'
-      +'</tr>';
+  wrap.innerHTML=itens.map(function(it){
+    return '<div class="fu-card">'
+      +'<div class="fu-card-cliente">'+it.cliente+'</div>'
+      +'<div class="fu-card-valor">€'+(it.valor||0).toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2})+'</div>'
+      +'<div class="fu-card-linha"><span>Comercial:</span> '+it.comercial+'</div>'
+      +'<div class="fu-card-linha"><span>Data:</span> '+it.data+'</div>'
+      +'</div>';
   }).join('');
 }
 window.fuRenderHistorico = fuRenderHistorico;
+
+// ══ Kanban "Follow-up ativo" — cards agrupados por comercial, com 4
+// colunas de estado (A contactar / Contactado / Em negociação /
+// Contactar novamente). Só orçamentos (leads não entram na Fase 1.6 —
+// não têm conceito de classificação/triagem). Dados vêm de orcData,
+// que é sempre populado via crmSBClient() autenticado (_sbOrcLoadAll,
+// Fase 4 Etapa 6) — nunca do localStorage como fonte; o localStorage é
+// só um espelho de leitura offline, escrito depois do Supabase
+// responder, nunca lido como origem para este ecrã. RLS filtra as
+// linhas no servidor: um comercial só recebe os seus próprios
+// orçamentos, um admin recebe todos — o agrupamento por comercial
+// abaixo reflecte exactamente o que a sessão já devolveu, sem
+// filtragem adicional no cliente. Só leitura — sem botões de acção
+// nem ligação às RPCs nesta etapa.
+var FU_COLUNAS = [
+  {key:'a_contactar',        label:'A contactar'},
+  {key:'contactado',         label:'Contactado'},
+  {key:'em_negociacao',      label:'Em negociação'},
+  {key:'contactar_novamente',label:'Contactar novamente'}
+];
+var FU_CLASSIFICACAO_LABEL = {
+  ainda_em_negociacao:'Em negociação', contactar_novamente:'Contactar novamente',
+  sem_resposta:'Sem resposta', nao_adjudicado:'Não adjudicado', duplicado:'Duplicado',
+  cancelado:'Cancelado', aprovado:'Aprovado', faturado:'Faturado'
+};
+
+// Coluna do orçamento: classificação real (quando existe) manda;
+// sem classificação, usa a existência de actividade registada para
+// distinguir "nunca contactado" de "já houve contacto".
+function fuColunaDoOrc(o){
+  var triagem=_fuTriagemPorOrc[o.num];
+  var classificacao=triagem&&triagem.classificacao;
+  if(classificacao==='contactar_novamente') return 'contactar_novamente';
+  if(classificacao==='ainda_em_negociacao') return 'em_negociacao';
+  var temAtividade=(crmAtividades||[]).some(function(x){ return x.orcId===o.num || (o.leadId&&x.leadId===o.leadId); });
+  if(classificacao||temAtividade) return 'contactado';
+  return 'a_contactar';
+}
+window.fuColunaDoOrc=fuColunaDoOrc;
+
+// Orçamentos activos (mesmo critério de fuListaItens, só a parte de
+// orçamentos, sem misturar leads).
+function fuOrcamentosAtivos(){
+  var itens=[];
+  (orcData||[]).forEach(function(o){
+    if(FU_ESTADOS_ORC_TERMINAIS.indexOf(o.st)!==-1) return;
+    if(o.st==='Pendente' && fuClassificarOrc(o)==='historico') return;
+    itens.push(o);
+  });
+  return itens;
+}
+
+// Agrupa por comercial (o.vendedor) -> coluna -> lista de cards. Como
+// orcData já vem filtrado pela RLS da sessão actual, isto não decide
+// visibilidade nenhuma — só organiza o que a sessão já recebeu.
+function fuAgruparKanban(){
+  var grupos={};
+  fuOrcamentosAtivos().forEach(function(o){
+    var com=o.vendedor||'—';
+    if(!grupos[com]) grupos[com]={a_contactar:[],contactado:[],em_negociacao:[],contactar_novamente:[]};
+    var col=fuColunaDoOrc(o);
+    var triagem=_fuTriagemPorOrc[o.num];
+    var leadLigado=o.leadId?(crmLeads||[]).find(function(l){return l.id===o.leadId;}):null;
+    grupos[com][col].push({
+      cliente:o.cli||'—',
+      valor:(typeof orcGetValorTotal==='function')?orcGetValorTotal(o):(o.val||0),
+      dias:obDiasEntre(obOrcUltimaAtividade(o)),
+      proximaAcao:leadLigado?leadLigado.proximaAcao||null:null,
+      classificacao:(triagem&&triagem.classificacao)||null
+    });
+  });
+  return grupos;
+}
+window.fuAgruparKanban=fuAgruparKanban;
+
+function fuCardHTML(it){
+  var pa=it.proximaAcao;
+  var paTxt=(pa&&pa.data)?(pa.tipo||'Acção')+' — '+pa.data.split('-').reverse().join('/'):'—';
+  var diasTxt=it.dias===null?'—':it.dias+'d';
+  var classifTxt=it.classificacao?(FU_CLASSIFICACAO_LABEL[it.classificacao]||it.classificacao):'—';
+  return '<div class="fu-card">'
+    +'<div class="fu-card-cliente">'+it.cliente+'</div>'
+    +'<div class="fu-card-valor">€'+(it.valor||0).toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2})+'</div>'
+    +'<div class="fu-card-linha"><span>Dias sem contacto:</span> '+diasTxt+'</div>'
+    +'<div class="fu-card-linha"><span>Próxima acção:</span> '+paTxt+'</div>'
+    +'<div class="fu-card-linha"><span>Classificação:</span> '+classifTxt+'</div>'
+    +'</div>';
+}
+
+function fuRenderKanbanAtivo(){
+  var wrap=document.getElementById('fu-kanban-ativo');
+  if(!wrap) return;
+  var grupos=fuAgruparKanban();
+  var comerciais=Object.keys(grupos).sort();
+  if(!comerciais.length){
+    wrap.innerHTML='<div style="text-align:center;color:var(--muted);padding:22px">Sem orçamentos activos a acompanhar.</div>';
+    return;
+  }
+  wrap.innerHTML=comerciais.map(function(com){
+    var colunas=grupos[com];
+    return '<div class="fu-swimlane">'
+      +'<div class="fu-swimlane-titulo">'+com+'</div>'
+      +'<div class="fu-kanban-colunas">'
+      +FU_COLUNAS.map(function(c){
+        var itens=colunas[c.key];
+        return '<div class="fu-coluna">'
+          +'<div class="fu-coluna-titulo">'+c.label+'<span class="fu-coluna-count">'+itens.length+'</span></div>'
+          +'<div class="fu-coluna-cards">'+(itens.length?itens.map(fuCardHTML).join(''):'<div class="fu-coluna-vazia">Sem orçamentos</div>')+'</div>'
+          +'</div>';
+      }).join('')
+      +'</div></div>';
+  }).join('');
+}
+window.fuRenderKanbanAtivo=fuRenderKanbanAtivo;
 
 // Alterna entre as abas "Follow-up ativo" e "Histórico antigo" (mesmo
 // padrão já usado em docsTab/rhTab).
@@ -24786,8 +24920,13 @@ window.fuTab = fuTab;
 // (goPage) em vez de fuRender directamente, para garantir que
 // _fuTriagemPorOrc está preenchido antes da classificação.
 async function fuInitPage(){
+  // Recarrega orçamentos directamente do Supabase via crmSBClient()
+  // autenticado (não confia no espelho de localStorage) antes de
+  // montar o Kanban — garante que a página reflecte sempre a sessão
+  // real e a RLS no momento em que é aberta, não uma cópia antiga.
+  if(typeof window._orcInitFromSB==='function'){ try{ await window._orcInitFromSB(); }catch(e){} }
   await fuCarregarTriagem();
-  if(typeof fuRender==='function') fuRender();
+  fuRenderKanbanAtivo();
   fuRenderHistorico();
 }
 window.fuInitPage = fuInitPage;
