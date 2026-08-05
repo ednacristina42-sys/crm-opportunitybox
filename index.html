@@ -2440,9 +2440,517 @@ var CRM_SB_URL = "https://ddzlbmnmsdyodouqxbjx.supabase.co";
 var CRM_SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRkemxibW5tc2R5b2RvdXF4Ymp4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkyMDQ2NTUsImV4cCI6MjA5NDc4MDY1NX0.P8nyU1zL4bd6Vhs8MGsTqHcB_bSeQsbNHXtQgatVt-Y";
 var crmSB = null;
 function crmSBClient(){
-  if(!crmSB && window.supabase) crmSB = window.supabase.createClient(CRM_SB_URL, CRM_SB_KEY);
+  if(!crmSB && window.supabase) crmSB = window.supabase.createClient(CRM_SB_URL, CRM_SB_KEY, {
+    auth: { persistSession: true, autoRefreshToken: true, storage: window.localStorage, storageKey: 'ob-crm-auth' }
+  });
   return crmSB;
 }
+
+// ── Fase 4: autenticação real (Supabase Auth + ob_profiles) ──────────
+// Etapa 2 — só infraestrutura. Nada aqui está ligado ainda ao login
+// visível do CRM (loginComSenha/USERS/LOGIN_PASSWORDS continuam a
+// funcionar exatamente como antes). Testável isoladamente pela consola.
+async function crmAuthLogin(email, password){
+  var sb = crmSBClient();
+  if(!sb) return { data: null, error: { message: 'Supabase SDK não carregado' } };
+  return await sb.auth.signInWithPassword({ email: email, password: password });
+}
+
+async function crmAuthLogout(){
+  var sb = crmSBClient();
+  if(!sb) return { error: null };
+  return await sb.auth.signOut();
+}
+
+async function crmAuthGetSession(){
+  var sb = crmSBClient();
+  if(!sb) return null;
+  var res = await sb.auth.getSession();
+  return (res && res.data && res.data.session) ? res.data.session : null;
+}
+
+// Vai buscar o perfil (ob_profiles) do utilizador autenticado. O id
+// usado é sempre o da sessão validada pelo Supabase Auth — nunca um
+// valor vindo do browser/localStorage.
+async function crmAuthLoadProfile(userId){
+  var sb = crmSBClient();
+  if(!sb || !userId) return null;
+  var res = await sb.from('ob_profiles')
+    .select('id, full_name, email, role, department, manager_id, active')
+    .eq('id', userId)
+    .maybeSingle();
+  if(res.error){ console.warn('[crmAuth] falha ao carregar ob_profiles:', res.error.message); return null; }
+  return res.data;
+}
+
+window.crmAuthLogin = crmAuthLogin;
+window.crmAuthLogout = crmAuthLogout;
+window.crmAuthGetSession = crmAuthGetSession;
+window.crmAuthLoadProfile = crmAuthLoadProfile;
+
+// ── Fase 4, Etapa 3 — gate de sessão real (isolado, reversível) ──────
+// Para desativar/reverter esta etapa sem tocar em mais nada, basta
+// mudar esta constante para false: o arranque volta a ser exatamente
+// o de antes (renderLogin() direto, ecrã de carregamento escondido de
+// imediato). loginComSenha()/USERS/LOGIN_PASSWORDS não são alterados
+// por esta etapa — continuam a ser o único caminho de entrada real
+// até à Etapa 5.
+var CRM_AUTH_GATE_ENABLED = true;
+
+function crmShowAuthLoading(msg){
+  var el = document.getElementById('crm-auth-loading');
+  if(!el) return;
+  var msgEl = document.getElementById('crm-auth-loading-msg');
+  if(msgEl && msg) msgEl.textContent = msg;
+  el.style.display = 'flex';
+}
+function crmHideAuthLoading(){
+  var el = document.getElementById('crm-auth-loading');
+  if(el) el.style.display = 'none';
+}
+
+// Mostra o ecrã de login antigo (inalterado), com uma mensagem opcional
+// — usado por todos os desfechos do gate que não levam à app.
+// Fase 4 (correção de recuperação de password): também esconde o ecrã de
+// recuperação e desliga _crmRecoveryMode — é o único ponto de saída que
+// qualquer desfecho do fluxo de recuperação usa para voltar ao login, por
+// isso é o sítio certo (único) para desligar o modo, sem duplicar isto em
+// cada função que decide voltar ao login.
+function crmShowLoginWithMessage(msg){
+  crmHideAuthLoading();
+  _crmRecoveryMode = false;
+  var loginEl = document.getElementById('login');
+  var appEl = document.getElementById('app');
+  var recEl = document.getElementById('crm-recovery');
+  if(appEl) appEl.style.display = 'none';
+  if(recEl) recEl.style.display = 'none';
+  if(loginEl) loginEl.style.display = 'flex';
+  if(typeof renderLogin === 'function') renderLogin();
+  var erro = document.getElementById('login-erro');
+  if(erro){
+    if(msg){ erro.textContent = msg; erro.style.display = 'block'; }
+    else { erro.style.display = 'none'; }
+  }
+}
+
+// ── Fase 4, Etapa 4 — mapeamento ob_profiles → CU (identidade real) ──
+// Papéis válidos hoje (enum ob_user_role na base de dados) — repetido
+// aqui de propósito, como segunda barreira: um valor fora desta lista
+// bloqueia o acesso mesmo que, por algum motivo, tenha chegado até
+// aqui (ex.: enum alargado na BD sem o CRM ter sido atualizado).
+var CRM_VALID_ROLES = ['admin', 'manager', 'comercial', 'financeiro'];
+
+// Constrói o CU só a partir da linha (já validada) de ob_profiles —
+// nunca a partir de localStorage, USERS, ou qualquer resto do login
+// antigo. Único sítio onde id/role/dept/manager_id entram no CU depois
+// desta fase — o resto do ficheiro continua a ler CU.admin/CU.dept sem
+// saber (nem precisar de saber) de onde vieram.
+function crmBuildCUFromProfile(profile){
+  return {
+    id: profile.id,
+    name: profile.full_name,
+    email: profile.email,
+    role: profile.role,
+    admin: profile.role === 'admin',
+    dept: profile.department,
+    manager_id: profile.manager_id || null,
+    color: '#F5C400',
+    online: true,
+    _authGate: true // distingue de um CU vindo do login antigo
+  };
+}
+
+function crmEnterAppWithProfile(profile){
+  CU = crmBuildCUFromProfile(profile);
+  selectedUser = CU;
+  _adminUser = CU.admin === true ? CU : null;
+  crmHideAuthLoading();
+  var loginEl = document.getElementById('login');
+  var appEl = document.getElementById('app');
+  if(loginEl) loginEl.style.display = 'none';
+  if(appEl) appEl.style.display = 'flex';
+  if(typeof setupApp === 'function') setupApp();
+  setTimeout(function(){
+    try{ if(typeof renderAll === 'function') renderAll(); } catch(e){}
+    try{ if(typeof gsInitUI === 'function') gsInitUI(); } catch(e){}
+    try{ if(typeof goPage === 'function') goPage('home'); } catch(e){}
+    try{ if(typeof initNovosModulos === 'function') initNovosModulos(); } catch(e){}
+    // Fase 4, Etapa 6: só agora (sessão + perfil já validados) é que os
+    // orçamentos são pedidos ao Supabase — nunca antes de existir CU.
+    try{ if(typeof _orcInitFromSB === 'function') _orcInitFromSB(); } catch(e){}
+  }, 0);
+}
+
+// Incrementado sempre que uma tentativa de arranque/login é abandonada
+// ou substituída (login mostrado, logout, sessão expirada). Protege
+// contra a corrida em que um logout (ou uma nova tentativa) acontece
+// enquanto uma consulta a ob_profiles anterior ainda está pendente —
+// ao resolver, essa tentativa antiga verifica a geração e desiste em
+// silêncio, em vez de reabrir a app com dados já inválidos.
+var _crmAuthGen = 0;
+
+// Fase 4 (correção de recuperação de password): true assim que o evento
+// PASSWORD_RECOVERY é apanhado (crmWireAuthStateListener), até o fluxo
+// terminar (sucesso ou volta ao login). Enquanto for true, nada abre a
+// app — verificado no único sítio que a abre (crmValidateSessionAndEnter).
+var _crmRecoveryMode = false;
+
+// Núcleo partilhado: dado um `session` (do arranque OU de um login
+// feito agora), carrega ob_profiles, valida-o, e só então constrói o
+// CU e entra na app — ou mostra o login com a mensagem certa. Usado
+// tanto por crmAuthBootGate() como por crmRealLogin(), para nunca
+// haver duas implementações da mesma validação a divergirem uma da
+// outra. Falha de rede/erro do servidor nunca é tratada como
+// credenciais erradas nem confundida com "sem sessão".
+async function crmValidateSessionAndEnter(session, myGen){
+  if(_crmRecoveryMode) return false; // nunca abre a app com uma sessão de recuperação
+  if(!session || !session.user || !session.user.id){
+    crmShowLoginWithMessage(null);
+    return false;
+  }
+
+  var profile;
+  try{
+    profile = await crmAuthLoadProfile(session.user.id);
+  }catch(e){
+    console.warn('[crmValidateSessionAndEnter] falha ao carregar perfil:', e && e.message);
+    if(myGen !== _crmAuthGen) return false;
+    crmShowLoginWithMessage('Não foi possível verificar a tua conta. Tenta novamente dentro de momentos.');
+    return false;
+  }
+  if(myGen !== _crmAuthGen) return false; // logout/nova tentativa aconteceu enquanto o perfil carregava
+
+  // Exige exatamente um perfil correspondente ao id da sessão. A coluna
+  // ob_profiles.id é chave primária (referencia auth.users) — duplicados
+  // são impossíveis na base de dados; esta verificação cobre o caso de
+  // a resposta, por qualquer motivo, não corresponder à sessão pedida.
+  if(!profile || typeof profile !== 'object' || profile.id !== session.user.id){
+    try{ await crmAuthLogout(); }catch(e){}
+    crmShowLoginWithMessage(
+      profile ? 'Os dados da conta são inválidos. Contacta um administrador.'
+              : 'Esta conta ainda não tem perfil associado no CRM. Contacta um administrador.'
+    );
+    return false;
+  }
+  if(profile.active !== true){
+    try{ await crmAuthLogout(); }catch(e){}
+    crmShowLoginWithMessage('Esta conta está desativada. Contacta um administrador.');
+    return false;
+  }
+  if(CRM_VALID_ROLES.indexOf(profile.role) === -1){
+    try{ await crmAuthLogout(); }catch(e){}
+    console.warn('[crmValidateSessionAndEnter] função desconhecida:', profile.role);
+    crmShowLoginWithMessage('A função associada a esta conta não é reconhecida. Contacta um administrador.');
+    return false;
+  }
+  if(!profile.department || !String(profile.department).trim()){
+    try{ await crmAuthLogout(); }catch(e){}
+    crmShowLoginWithMessage('Perfil incompleto (falta departamento). Contacta um administrador.');
+    return false;
+  }
+  if(!profile.full_name || !String(profile.full_name).trim()){
+    try{ await crmAuthLogout(); }catch(e){}
+    crmShowLoginWithMessage('Perfil incompleto (falta nome). Contacta um administrador.');
+    return false;
+  }
+
+  crmEnterAppWithProfile(profile);
+  return true;
+}
+
+// Deteta um link de recuperação inválido/expirado — nestes casos o
+// Supabase nunca chega a criar sessão (o erro já vem na própria URL),
+// por isso o evento PASSWORD_RECOVERY nunca dispara. Só lê; quem chama
+// decide quando (e se) limpar a URL.
+function _crmDetectRecoveryLinkError(){
+  var raw = (location.hash && location.hash.length > 1 ? location.hash.slice(1) : '')
+    + (location.search && location.search.length > 1 ? '&' + location.search.slice(1) : '');
+  if(!raw) return null;
+  var params;
+  try{ params = new URLSearchParams(raw); }catch(e){ return null; }
+  return params.get('error_code') || params.get('error') || null;
+}
+
+// Ponto de entrada do gate — chamado no arranque em vez de renderLogin()
+// direto. Nunca deixa a app nem o ecrã de login aparecerem antes de
+// decidir.
+async function crmAuthBootGate(){
+  var myGen = ++_crmAuthGen;
+
+  // Nunca reabre o overlay de validação por cima do ecrã de recuperação —
+  // crmValidateSessionAndEnter já bloqueia a app nesse caso, esta guarda
+  // extra evita só o "flash" cosmético do overlay.
+  if(_crmRecoveryMode) return;
+
+  if(!CRM_AUTH_GATE_ENABLED){
+    crmHideAuthLoading();
+    renderLogin();
+    return;
+  }
+
+  // Link de recuperação inválido/expirado — tratado antes de qualquer
+  // outra coisa; nunca chega a tentar validar sessão normal.
+  if(_crmDetectRecoveryLinkError()){
+    crmShowLoginWithMessage('O link de recuperação é inválido ou expirou. Pede um novo.');
+    try{ history.replaceState(null, '', location.pathname); }catch(e){}
+    return;
+  }
+
+  crmShowAuthLoading('A validar sessão…');
+
+  var session;
+  try{
+    session = await crmAuthGetSession();
+  }catch(e){
+    console.warn('[crmAuthBootGate] falha ao validar sessão:', e && e.message);
+    if(myGen !== _crmAuthGen) return;
+    crmShowLoginWithMessage('Não foi possível verificar a tua sessão. Tenta novamente dentro de momentos.');
+    return;
+  }
+  if(myGen !== _crmAuthGen) return; // outra tentativa/logout já decidiu entretanto
+
+  await crmValidateSessionAndEnter(session, myGen);
+}
+window.crmAuthBootGate = crmAuthBootGate;
+
+// ── Fase 4, Etapa 5 — login e logout reais ────────────────────────────
+// Impede duplo clique / pedidos simultâneos de login.
+var _crmLoginInFlight = false;
+
+function crmSetLoginFormBusy(busy){
+  var btn = document.getElementById('login-btn');
+  var emailInp = document.getElementById('login-email');
+  var passInp = document.getElementById('login-senha');
+  if(btn){ btn.disabled = busy; btn.textContent = busy ? 'A entrar…' : 'Entrar no Sistema'; }
+  if(emailInp) emailInp.disabled = busy;
+  if(passInp) passInp.disabled = busy;
+}
+
+// Handler real do formulário de login — liga-se ao botão/Enter do HTML.
+// Email e password só são enviados ao crmAuthLogin() (Supabase Auth);
+// nunca são comparados a LOGIN_PASSWORDS nem usados para procurar em
+// USERS. A password nunca fica guardada em nenhuma variável para além
+// do tempo mínimo necessário para a enviar — é lida do campo, usada, e
+// o campo é limpo logo a seguir, sucesso ou falha.
+async function crmRealLogin(){
+  if(_crmLoginInFlight) return;
+
+  var emailInp = document.getElementById('login-email');
+  var passInp = document.getElementById('login-senha');
+  var email = (emailInp && emailInp.value || '').trim();
+  var password = (passInp && passInp.value) || '';
+  if(!email || !password) return;
+
+  _crmLoginInFlight = true;
+  crmSetLoginFormBusy(true);
+  var erro = document.getElementById('login-erro');
+  if(erro) erro.style.display = 'none';
+
+  var myGen = ++_crmAuthGen;
+  var result;
+  try{
+    result = await crmAuthLogin(email, password);
+  }catch(e){
+    if(passInp) passInp.value = '';
+    _crmLoginInFlight = false;
+    crmSetLoginFormBusy(false);
+    if(myGen !== _crmAuthGen) return;
+    console.warn('[crmRealLogin] falha ao contactar o servidor:', e && e.message);
+    crmShowLoginWithMessage('Não foi possível ligar ao servidor. Tenta novamente dentro de momentos.');
+    return;
+  }
+  // Limpa a password do formulário imediatamente após a tentativa,
+  // sucesso ou falha — nunca fica retida em mais lado nenhum.
+  if(passInp) passInp.value = '';
+
+  if(!result || result.error || !result.data || !result.data.session){
+    _crmLoginInFlight = false;
+    crmSetLoginFormBusy(false);
+    if(myGen !== _crmAuthGen) return;
+    // Mensagem genérica de propósito — nunca revela se o email existe
+    // ou não; o próprio Supabase Auth já devolve o mesmo erro genérico
+    // para "password errada" e para "email inexistente".
+    crmShowLoginWithMessage('Email ou password incorretos.');
+    return;
+  }
+
+  crmShowAuthLoading('A verificar conta…');
+  await crmValidateSessionAndEnter(result.data.session, myGen);
+  _crmLoginInFlight = false;
+  crmSetLoginFormBusy(false);
+}
+window.crmRealLogin = crmRealLogin;
+
+// Logout real — sempre limpa o estado local, mesmo que o signOut
+// remoto falhe (uma falha de rede no logout nunca deve deixar dados
+// internos visíveis). doLogout() é reaproveitado só pela parte de
+// limpar CU/esconder a app/mostrar o login — já validado na Etapa 4
+// (inclui o incremento de _crmAuthGen).
+async function crmRealLogout(){
+  try{
+    await crmAuthLogout();
+  }catch(e){
+    console.warn('[crmRealLogout] falha ao terminar sessão no servidor (estado local limpo à mesma):', e && e.message);
+  }
+  if(typeof doLogout === 'function') doLogout();
+  // Fase 4, Etapa 6: limpa a cópia local de orçamentos ao sair — sem isto,
+  // um próximo login (noutra conta, no mesmo browser) podia mostrar por
+  // instantes a cache de orçamentos da conta anterior antes da próxima
+  // sincronização terminar. Só ob_orcamentos — nenhum outro módulo é tocado.
+  try{
+    if(typeof orcData !== 'undefined'){ orcData = []; localStorage.removeItem('ob-orcamentos'); }
+    if(typeof orcRenderList === 'function') orcRenderList();
+  }catch(e){}
+}
+window.crmRealLogout = crmRealLogout;
+
+// Sessão que termina a meio do uso (ex: refresh token revogado) —
+// devolve ao ecrã de login com mensagem clara. Só reage a sessões que
+// entraram pelo próprio gate (CU._authGate), para nunca interferir com
+// o fluxo do login antigo enquanto ele ainda for o caminho real.
+// Idempotente: um segundo SIGNED_OUT consecutivo não faz nada, porque
+// CU já foi posto a null pelo primeiro.
+(function crmWireAuthStateListener(){
+  if(!CRM_AUTH_GATE_ENABLED) return;
+  var sb = crmSBClient();
+  if(!sb || !sb.auth || typeof sb.auth.onAuthStateChange !== 'function') return;
+  sb.auth.onAuthStateChange(function(event){
+    // Callback curto de propósito — sem lógica assíncrona aqui. Ativa o
+    // modo recuperação e delega o resto (DOM, limpeza da URL) a
+    // crmRecoveryShow(), fora deste callback.
+    if(event === 'PASSWORD_RECOVERY'){
+      _crmAuthGen++; // invalida qualquer crmAuthBootGate() já em curso
+      _crmRecoveryMode = true;
+      crmRecoveryShow();
+      return;
+    }
+    if(event === 'SIGNED_OUT' && CU && CU._authGate){
+      _crmAuthGen++; // invalida qualquer arranque ainda pendente
+      CU = null; selectedUser = null; _adminUser = null;
+      crmShowLoginWithMessage('A tua sessão expirou. Inicia sessão novamente.');
+    }
+  });
+})();
+
+// ── Fase 4 — ecrã de definir nova password (evento PASSWORD_RECOVERY) ──
+// Mostra só o #crm-recovery, esconde login/app/overlay, limpa os campos
+// e só agora — já com a sessão de recuperação processada pelo Supabase,
+// que é o que disparou este evento — limpa a URL.
+// O listener que chama esta função (crmWireAuthStateListener) é registado
+// ainda a meio do <head>, antes de #crm-recovery/#login/#app existirem no
+// DOM — se PASSWORD_RECOVERY disparar cedo de mais, adia-se para depois
+// de DOMContentLoaded, em vez de silenciosamente não encontrar os elementos.
+function crmRecoveryShow(){
+  if(document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', crmRecoveryShow, { once: true });
+    return;
+  }
+  crmHideAuthLoading();
+  var loginEl = document.getElementById('login');
+  var appEl = document.getElementById('app');
+  var recEl = document.getElementById('crm-recovery');
+  if(loginEl) loginEl.style.display = 'none';
+  if(appEl) appEl.style.display = 'none';
+  if(recEl) recEl.style.display = 'flex';
+  var erro = document.getElementById('recovery-erro');
+  if(erro) erro.style.display = 'none';
+  _crmRecoveryClearFields();
+  try{ history.replaceState(null, '', location.pathname); }catch(e){}
+}
+
+var _crmRecoveryInFlight = false;
+
+function crmRecoverySetBusy(busy){
+  var btn = document.getElementById('recovery-btn');
+  var p1 = document.getElementById('recovery-pass1');
+  var p2 = document.getElementById('recovery-pass2');
+  if(btn){ btn.disabled = busy; btn.textContent = busy ? 'A guardar…' : 'Definir password'; }
+  if(p1) p1.disabled = busy;
+  if(p2) p2.disabled = busy;
+}
+
+function crmRecoveryShowError(msg){
+  var erro = document.getElementById('recovery-erro');
+  if(erro){ erro.textContent = msg; erro.style.display = 'block'; }
+}
+
+// Limpa sempre os dois campos — chamada em todos os desfechos (sucesso,
+// erro de validação, erro do servidor, falha de rede) para nunca deixar
+// uma password no DOM mais tempo do que o necessário.
+function _crmRecoveryClearFields(){
+  var p1 = document.getElementById('recovery-pass1'); if(p1) p1.value = '';
+  var p2 = document.getElementById('recovery-pass2'); if(p2) p2.value = '';
+}
+
+function _crmIsPasswordForte(pwd){
+  return typeof pwd === 'string' && pwd.length >= 8 && /[A-Za-z]/.test(pwd) && /[0-9]/.test(pwd);
+}
+
+// Handler do botão "Definir password". Nunca usa service_role — corre
+// sempre com a própria sessão de recuperação do utilizador, a mesma que
+// o crmSBClient() já tem ativa depois do evento PASSWORD_RECOVERY.
+async function crmRecoverySubmit(){
+  if(_crmRecoveryInFlight) return;
+
+  var p1El = document.getElementById('recovery-pass1');
+  var p2El = document.getElementById('recovery-pass2');
+  var pass1 = (p1El && p1El.value) || '';
+  var pass2 = (p2El && p2El.value) || '';
+
+  var erroEl = document.getElementById('recovery-erro');
+  if(erroEl) erroEl.style.display = 'none';
+
+  if(!pass1 || !pass2){ _crmRecoveryClearFields(); crmRecoveryShowError('Preenche as duas passwords.'); return; }
+  if(pass1 !== pass2){ _crmRecoveryClearFields(); crmRecoveryShowError('As passwords não coincidem.'); return; }
+  if(!_crmIsPasswordForte(pass1)){
+    _crmRecoveryClearFields();
+    crmRecoveryShowError('A password tem de ter pelo menos 8 caracteres, com pelo menos uma letra e um número.');
+    return;
+  }
+
+  _crmRecoveryInFlight = true;
+  crmRecoverySetBusy(true);
+
+  var result;
+  try{
+    result = await crmSBClient().auth.updateUser({ password: pass1 });
+  }catch(e){
+    _crmRecoveryClearFields();
+    _crmRecoveryInFlight = false;
+    crmRecoverySetBusy(false);
+    console.warn('[crmRecoverySubmit] falha ao contactar o servidor:', e && e.message);
+    crmRecoveryShowError('Não foi possível ligar ao servidor. Tenta novamente dentro de momentos.');
+    return;
+  }
+  // Limpa sempre os campos logo a seguir à tentativa, sucesso ou falha.
+  _crmRecoveryClearFields();
+
+  if(!result || result.error){
+    _crmRecoveryInFlight = false;
+    crmRecoverySetBusy(false);
+    var msg = (result && result.error && result.error.message) || '';
+    if(/session|jwt|token/i.test(msg)){
+      // Sessão de recuperação já não é válida — pedir um novo link é a
+      // única saída, por isso volta ao login (não faz sentido continuar
+      // neste ecrã à espera de outra tentativa).
+      crmShowLoginWithMessage('A tua sessão de recuperação expirou. Pede um novo link.');
+    } else {
+      crmRecoveryShowError('Não foi possível atualizar a password. Tenta novamente.');
+    }
+    return;
+  }
+
+  // Sucesso: aguarda SEMPRE o fim do signOut() antes de mostrar o login —
+  // nunca deixa o fluxo manual e um eventual SIGNED_OUT a controlar o
+  // ecrã ao mesmo tempo. (CU nunca chegou a existir em modo recuperação,
+  // por isso o listener de SIGNED_OUT nem atuaria — mas não se depende
+  // dessa coincidência: espera-se explicitamente por este await.)
+  try{ await crmAuthLogout(); }catch(e){ console.warn('[crmRecoverySubmit] falha ao terminar sessão:', e && e.message); }
+  _crmRecoveryInFlight = false;
+  crmRecoverySetBusy(false);
+  crmShowLoginWithMessage('Password atualizada com sucesso. Inicia sessão com a nova password.');
+}
+window.crmRecoverySubmit = crmRecoverySubmit;
 
 var ecSupabase = null;
 var ecUser = null;
@@ -4939,6 +5447,24 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--txt);min-he
 .sh h2{font-size:14px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--txt2)}
 .sh a,.sh button.lnk{font-size:13px;color:var(--y);cursor:pointer;font-weight:600;background:none;border:none;font-family:'Inter',sans-serif}
 
+/* Follow-up — Kanban por comercial */
+.fu-swimlane{margin-bottom:22px}
+.fu-swimlane-titulo{font-size:13px;font-weight:700;color:var(--txt2);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+.fu-kanban-colunas{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.fu-coluna{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:10px;min-width:0}
+.fu-coluna-titulo{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between}
+.fu-coluna-count{background:var(--bg3);border-radius:10px;padding:1px 7px;font-size:10px;color:var(--txt2)}
+.fu-coluna-cards{display:flex;flex-direction:column;gap:8px}
+.fu-coluna-vazia{font-size:12px;color:var(--muted);text-align:center;padding:10px 0}
+.fu-card{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px;font-size:13px}
+.fu-card-cliente{font-weight:700;color:var(--txt2);margin-bottom:4px}
+.fu-card-valor{font-family:'DM Mono',monospace;color:var(--y);font-size:12px;margin-bottom:6px}
+.fu-card-linha{font-size:11px;color:var(--muted);display:flex;justify-content:space-between;gap:6px}
+.fu-card-linha span{color:var(--muted)}
+.fu-card-acoes{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px;padding-top:8px;border-top:1px solid var(--border)}
+.fu-card-acoes select,.fu-card-acoes .tbtn{font-size:11px;padding:4px 6px;background:var(--bg2);color:var(--txt2);border:1px solid var(--border);border-radius:6px;font-family:'Inter',sans-serif;cursor:pointer}
+.fu-cards-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px}
+
 /* Tables */
 .tw{background:var(--bg2);border:1px solid var(--border);border-radius:8px;overflow:hidden}
 table{width:100%;border-collapse:collapse}
@@ -5357,6 +5883,10 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
   /* Tables */
   .tw{overflow-x:auto}
   .tw table{min-width:560px}
+
+  /* Follow-up — Kanban empilha 1 coluna por linha em ecrã pequeno */
+  .fu-kanban-colunas{grid-template-columns:1fr}
+  .fu-cards-grid{grid-template-columns:1fr}
 
   /* Equipa em Campo */
   .ec-wrap{padding:10px 12px 30px}
@@ -5978,6 +6508,39 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
 <body>
 
 <!-- ═════════════════════════════════════════════════════
+     FASE 4 — GATE DE SESSÃO (Etapa 3)
+     Visível por omissão, sem depender de JS ter corrido — cobre tanto
+     o login como a app enquanto a sessão é validada. z-index acima do
+     #login (9999) para nunca deixar o login antigo aparecer por baixo
+     antes da decisão do gate.
+═════════════════════════════════════════════════════ -->
+<div id="crm-auth-loading" style="position:fixed;inset:0;z-index:999999;background:var(--bg,#0f1115);display:flex;align-items:center;justify-content:center;flex-direction:column;gap:12px;color:var(--txt,#e8e8ea);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif">
+  <div style="font-size:28px">⏳</div>
+  <div id="crm-auth-loading-msg">A validar sessão…</div>
+</div>
+
+<!-- ═════════════════════════════════════════════════════
+     RECOVERY SCREEN — Fase 4, correção do fluxo de recuperação
+     de password. Ecrã próprio, sem nenhum campo/elemento partilhado
+     com o #login normal. Só é mostrado pelo evento PASSWORD_RECOVERY
+     do Supabase (crmWireAuthStateListener) — nunca por navegação
+     direta. z-index acima do #login, mesma lógica do #crm-auth-loading.
+═════════════════════════════════════════════════════ -->
+<div id="crm-recovery" style="display:none;position:fixed;inset:0;z-index:9999;background:var(--bg);flex-direction:column;align-items:center;justify-content:center;padding:24px;overflow-y:auto">
+  <div style="background:var(--bg2);border:1px solid var(--border);border-radius:20px;padding:40px 44px;width:100%;max-width:460px;box-shadow:0 24px 80px rgba(0,0,0,.4)">
+    <div style="font-size:18px;font-weight:600;margin-bottom:6px;text-align:center">Definir nova password</div>
+    <div style="font-size:13px;color:var(--muted);margin-bottom:24px;text-align:center">Mínimo 8 caracteres, com pelo menos uma letra e um número.</div>
+    <input type="password" id="recovery-pass1" placeholder="Nova password" autocomplete="new-password"
+      style="width:100%;box-sizing:border-box;padding:12px 14px;margin-bottom:12px;border-radius:10px;border:1px solid var(--border);background:var(--bg3);color:var(--txt)">
+    <input type="password" id="recovery-pass2" placeholder="Confirma a nova password" autocomplete="new-password"
+      style="width:100%;box-sizing:border-box;padding:12px 14px;margin-bottom:16px;border-radius:10px;border:1px solid var(--border);background:var(--bg3);color:var(--txt)">
+    <button id="recovery-btn" onclick="crmRecoverySubmit()"
+      style="width:100%;padding:12px;border:none;border-radius:10px;background:var(--y);color:#000;font-weight:600;cursor:pointer">Definir password</button>
+    <div id="recovery-erro" style="display:none;margin-top:12px;text-align:center;font-size:14px;color:var(--r);background:rgba(224,85,85,.08);border:1px solid rgba(224,85,85,.25);border-radius:8px;padding:8px"></div>
+  </div>
+</div>
+
+<!-- ═════════════════════════════════════════════════════
      LOGIN SCREEN
 ═════════════════════════════════════════════════════ -->
 <div id="login" style="position:fixed;inset:0;z-index:9999;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;overflow-y:auto">
@@ -6003,10 +6566,12 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
     </div>
 
     <div style="font-size:22px;font-weight:700;color:var(--txt2);margin-bottom:4px">Bem-vindo de volta</div>
-    <div style="font-size:15px;color:var(--muted);margin-bottom:28px">Seleciona o teu perfil para aceder ao sistema.</div>
+    <div style="font-size:15px;color:var(--muted);margin-bottom:28px">Inicia sessão para aceder ao sistema.</div>
 
-    <!-- Dropdown Utilizador -->
-    <div style="margin-bottom:16px">
+    <!-- Fase 4, Etapa 5: dropdown do login antigo escondido (não eliminado —
+         renderLogin()/loginSelectFromDropdown() continuam a existir e a
+         popular isto, sem erro, para rollback via CRM_AUTH_GATE_ENABLED). -->
+    <div style="margin-bottom:16px;display:none" id="login-user-select-wrap">
       <div style="font-size:13px;font-weight:600;color:var(--muted);letter-spacing:.08em;text-transform:uppercase;margin-bottom:8px">Utilizador</div>
       <div style="position:relative">
         <select id="login-user-select" onchange="loginSelectFromDropdown(this.value)"
@@ -6017,17 +6582,27 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
       </div>
     </div>
 
+    <!-- Campo Email (Fase 4, Etapa 5 — autenticação real via Supabase Auth) -->
+    <div style="margin-bottom:16px">
+      <div style="font-size:13px;font-weight:600;color:var(--muted);letter-spacing:.08em;text-transform:uppercase;margin-bottom:8px">Email</div>
+      <input type="email" id="login-email" placeholder="nome@opportunitybox.pt" autocomplete="email"
+        style="width:100%;background:var(--bg3);border:1.5px solid var(--border);border-radius:12px;color:var(--txt2);padding:14px 16px;font-size:16px;font-family:Inter,sans-serif;box-sizing:border-box;outline:none;transition:border-color .2s"
+        onfocus="this.style.borderColor='var(--y)'" onblur="this.style.borderColor='var(--border)'"
+        onkeydown="if(event.key==='Enter') crmRealLogin()"/>
+    </div>
+
     <!-- Campo Senha -->
     <div style="margin-bottom:24px">
       <div style="font-size:13px;font-weight:600;color:var(--muted);letter-spacing:.08em;text-transform:uppercase;margin-bottom:8px">Senha</div>
-      <input type="password" id="login-senha" placeholder="••••••"
+      <input type="password" id="login-senha" placeholder="••••••" autocomplete="current-password"
         style="width:100%;background:var(--bg3);border:1.5px solid var(--border);border-radius:12px;color:var(--txt2);padding:14px 16px;font-size:16px;font-family:Inter,sans-serif;box-sizing:border-box;outline:none;transition:border-color .2s"
         onfocus="this.style.borderColor='var(--y)'" onblur="this.style.borderColor='var(--border)'"
-        onkeydown="if(event.key==='Enter') loginComSenha()"/>
+        onkeydown="if(event.key==='Enter') crmRealLogin()"/>
     </div>
 
-    <!-- Botão Entrar -->
-    <button id="login-btn" onclick="loginComSenha()" disabled
+    <!-- Botão Entrar — Fase 4, Etapa 5: liga a crmRealLogin(), não a loginComSenha().
+         Sem "disabled": a validação de campos vazios é feita dentro de crmRealLogin. -->
+    <button id="login-btn" onclick="crmRealLogin()"
       style="width:100%;background:var(--y);color:#000;border:none;border-radius:12px;padding:15px;font-size:16px;font-weight:700;cursor:pointer;transition:all .2s;letter-spacing:.01em;font-family:Inter,sans-serif">
       Entrar no Sistema
     </button>
@@ -6192,7 +6767,7 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
       <div class="sb-uname" id="sb-uname"></div>
       <div class="sb-urole" id="sb-urole"></div>
     </div>
-    <button class="logout-btn" data-action="doLogout">Sair</button>
+    <button class="logout-btn" data-action="crmRealLogout">Sair</button>
   </div>
 </div>
 
@@ -6336,9 +6911,16 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
       <div class="pg-space-icon" style="background:var(--dc)">D</div>
       <div class="pg-title">Follow-up</div>
     </div>
+    <div class="view-tabs">
+      <button class="vt on" onclick="fuTab('ativo')">Follow-up ativo</button>
+      <button class="vt" onclick="fuTab('historico')">Histórico antigo</button>
+    </div>
   </div>
-  <div class="task-content">
-    <div class="tw"><table><thead><tr><th>Cliente</th><th>Comercial</th><th>Valor</th><th>Dias sem contacto</th><th>Prioridade</th><th>Próxima acção</th><th>Registar contacto</th></tr></thead><tbody id="fu-tbody"></tbody></table></div>
+  <div id="fu-panel-ativo" class="task-content">
+    <div id="fu-kanban-ativo"></div>
+  </div>
+  <div id="fu-panel-historico" class="task-content" style="display:none">
+    <div id="fu-cards-historico" class="fu-cards-grid"></div>
   </div>
 </div>
 
@@ -7916,24 +8498,6 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
           4. Acesso: <strong style="color:var(--txt2)">"Qualquer pessoa"</strong> → Implementar → Copia o URL aqui
         </div>
       </div>
-      <!-- ADD: card real de ligação ao ClickUp — substitui o card estático/fictício anterior -->
-      <div class="conn" style="flex-direction:column;align-items:stretch;gap:10px">
-        <div style="display:flex;align-items:center;gap:11px">
-          <div class="cico" id="ck2-ico" style="background:var(--bg3)">⚪</div>
-          <div style="flex:1">
-            <div class="cname">ClickUp — Workspace OB</div>
-            <div class="cst" id="ck2-status" style="color:var(--muted)">Não ligado — cola o token abaixo</div>
-          </div>
-          <div>
-            <button class="bsm bon" data-action="ckSincronizarAgora">🔄 Sincronizar agora</button>
-          </div>
-        </div>
-        <div style="display:flex;gap:8px;align-items:center">
-          <input class="form-input" id="ck2-token-input" placeholder="pk_XXXXXXXXXXXXXXXXXX" style="font-size:13px;flex:1"/>
-          <button class="bsm bon" id="ck2-save-btn" style="white-space:nowrap;cursor:pointer" data-action="ckSalvarToken">💾 Guardar e Ligar</button>
-        </div>
-        <div style="font-size:12px;color:var(--muted)">Última sincronização: <span id="ck2-last-sync">nunca</span> · Sync automático a cada 30 min · Espaços: Comercial, Design, Fábrica, Admin</div>
-      </div>
       <!-- ── CHAVES DE API — COPILOTO IA ── -->
       <div class="conn" style="flex-direction:column;align-items:stretch;gap:10px">
         <div style="display:flex;align-items:center;gap:11px">
@@ -7958,48 +8522,6 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
       </div>
       <div class="conn"><div class="cico" style="background:var(--bg3)">⚪</div><div><div class="cname">Google Calendar</div><div class="cst" style="color:var(--muted)">Sincronizar agenda</div></div><div style="margin-left:auto"><button class="bsm bon">Ligar</button></div></div>
 
-      <!-- ── NOVO BANCO API (estrutura placeholder — não ativar sem credenciais) -->
-      <div class="conn" style="flex-direction:column;align-items:stretch;gap:10px">
-        <div style="display:flex;align-items:center;gap:11px">
-          <div class="cico" id="nb-ico" style="background:rgba(77,148,219,.1)">🏦</div>
-          <div style="flex:1">
-            <div class="cname">Novo Banco — API</div>
-            <div class="cst" id="nb-status" style="color:var(--muted)">Não configurado — inserir credenciais abaixo</div>
-          </div>
-          <div>
-            <button class="bsm bon" onclick="nbTestarConexao()" id="nb-test-btn">🔌 Testar</button>
-            <label class="tog" style="margin-left:8px" title="Ativar apenas com credenciais válidas">
-              <input type="checkbox" id="nb-ativo" onchange="nbToggle(this.checked)"/>
-              <span class="tsl"></span>
-            </label>
-          </div>
-        </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-          <div>
-            <label class="form-label" style="font-size:11px">API Key / Client Secret</label>
-            <input class="form-input" id="nb-api-key" type="password" placeholder="/* INSERT_API_KEY */" style="font-size:13px" oninput="nbSaveConfig()"/>
-          </div>
-          <div>
-            <label class="form-label" style="font-size:11px">Nº de Conta / IBAN</label>
-            <input class="form-input" id="nb-conta" placeholder="PT50 0007 0000 00XX XXXX XXXX X" style="font-size:13px" oninput="nbSaveConfig()"/>
-          </div>
-        </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-          <div>
-            <label class="form-label" style="font-size:11px">Client ID (Open Banking)</label>
-            <input class="form-input" id="nb-client-id" placeholder="/* INSERT_CLIENT_ID */" style="font-size:13px" oninput="nbSaveConfig()"/>
-          </div>
-          <div>
-            <label class="form-label" style="font-size:11px">Alerta Saldo Mínimo (€)</label>
-            <input type="number" class="form-input" id="nb-saldo-min" value="5000" min="0" step="500" style="font-size:13px" oninput="nbSaveConfig()"/>
-          </div>
-        </div>
-        <div style="font-size:12px;color:var(--muted);background:var(--bg3);border-radius:6px;padding:8px 10px;line-height:1.6">
-          ⚠️ <strong style="color:var(--a)">Estrutura preparada</strong> — endpoints Novo Banco Open Banking não activados.<br>
-          Endpoint base: <code style="color:var(--y)">/* INSERT_NOVO_BANCO_BASE_URL */</code><br>
-          Documentação: <a href="https://developer.novobanco.pt" target="_blank" style="color:#4d94db">developer.novobanco.pt</a>
-        </div>
-      </div>
     </div>
     <div class="stitle">Configurações</div>
     <div class="sg">
@@ -9940,14 +10462,14 @@ var USERS=[
 // Dept → which spaces are visible
 var DEPT_ACCESS={
   'Direcção':['todas','comercial','design','fabrica','admin-dept'],
-  'Dep. Comercial':['comercial'],
+  'Comercial':['comercial'], // corrigido de 'Dep. Comercial' — ob_profiles.department real é 'Comercial'
   'Dep. Design':['design'],
   'Chão da Fábrica':['fabrica'],
   'Gestão Administrativa':['admin-dept'],
 };
 // Pages accessible per role
 var DEPT_PAGES={
-  'Dep. Comercial':['home','todas','comercial-pipeline','comercial-followup','comercial-clientes','comercial-orcamentos','wa','equipa-campo','alerts','chat'],
+  'Comercial':['home','todas','comercial-pipeline','comercial-followup','comercial-clientes','comercial-orcamentos','wa','equipa-campo','alerts','chat'], // corrigido de 'Dep. Comercial'
   'Dep. Design':['home','todas','design-tarefas','design-ficheiros','alerts','chat'],
   'Chão da Fábrica':['home','todas','fabrica-producao','fabrica-instalacoes','alerts','chat'],
   'Gestão Administrativa':['home','todas','admin-agenda','admin-docs','admin-despesas','admin-analise-vendas','admin-rh','stock','alerts','chat','comercial-orcamentos'],
@@ -10098,6 +10620,11 @@ function doLogin(){
 window._activeChatRoom='geral';
 
 function doLogout(){
+  // Fase 4, Etapa 4: só esta linha foi acrescentada (o resto da função
+  // fica exatamente como estava). Invalida qualquer crmAuthBootGate()
+  // ainda a meio (ex.: a carregar ob_profiles) para não reabrir a app
+  // com um perfil que já deixou de ser válido depois de um logout.
+  if(typeof _crmAuthGen !== 'undefined') _crmAuthGen++;
   CU=null;selectedUser=null;_adminUser=null;
   localStorage.removeItem('ob-impersonate');
   document.getElementById('app').style.display='none';
@@ -10230,7 +10757,7 @@ window.goPage=function goPage(id){
   if(id==='admin-analise-vendas'&&typeof afLoad==='function')afLoad();
   if(id==='comercial-orcamentos'&&typeof orcInitPage==='function')orcInitPage();
   if(id==='comercial-pipeline'&&typeof crmInit==='function')crmInit();
-  if(id==='comercial-followup'&&typeof fuRender==='function')fuRender();
+  if(id==='comercial-followup'&&typeof fuInitPage==='function')fuInitPage();
   if(id==='crm'){ try{ renderCRMKanban('crm-kanban-admin'); }catch(e){} }
   if(id==='equipa-campo'&&typeof loadEquipaCampoData==='function')loadEquipaCampoData();
   // ── Renders por página ────────────────────────────────────
@@ -14607,7 +15134,50 @@ function _sbOrcHeaders() {
   return { 'Content-Type': 'application/json', 'apikey': _ORC_SB_KEY, 'Authorization': 'Bearer ' + _ORC_SB_KEY, 'Prefer': 'return=representation' };
 }
 
-async function _sbOrcUpsert(orc) {
+// ── Fase 4, Etapa 6 — leitura/escrita de ob_orcamentos passa a depender
+// sempre da sessão Supabase autenticada (crmSBClient()), nunca da chave
+// anon fixa. _sbOrcHeaders()/fetch direto acima NÃO são tocados aqui —
+// continuam a servir só ob_uni_items (fora do âmbito desta etapa).
+// A partir de agora, quem decide o que cada utilizador vê/altera é
+// sempre a política RLS da tabela — o frontend nunca é a barreira real.
+
+// Classifica o erro devolvido pelo cliente Supabase para dar uma
+// mensagem própria a cada categoria — nunca esconder um erro em
+// silêncio nem confundir categorias diferentes entre si.
+function _sbOrcClassificarErro(error, status) {
+  if (!error && !status) return 'unknown';
+  var code = (error && error.code) || '';
+  var msg = (error && error.message) || '';
+  if (status === 401) return 'session-expired';
+  if (status === 403 || code === '42501' || /row-level security/i.test(msg)) return 'rls-denied';
+  if (/^(22|23)/.test(code)) return 'invalid-data';
+  return 'unknown';
+}
+function _sbOrcErroLegivel(error, status) {
+  switch (_sbOrcClassificarErro(error, status)) {
+    case 'session-expired': return 'A tua sessão expirou. Inicia sessão novamente.';
+    case 'rls-denied': return 'Não tens permissão para esta operação neste orçamento.';
+    case 'invalid-data': return 'Dados do orçamento inválidos — verifica os campos e tenta novamente.';
+    default: return 'Não foi possível comunicar com o servidor. Tenta novamente dentro de momentos.';
+  }
+}
+
+// Cria/atualiza um orçamento no Supabase, sempre através da sessão
+// autenticada. owner_id NUNCA vem livre do formulário: para quem não é
+// admin, o dono é sempre a própria sessão (CU.id); um admin só reatribui
+// o dono se passar opts.reassignOwnerId explicitamente — e mesmo assim
+// é a política RLS de INSERT/UPDATE que decide se é permitido, não esta
+// função. opts.isCreate marca uma criação verdadeira (define created_by);
+// nas atualizações (ex.: mudança de estado) created_by não é enviado, para
+// nunca reescrever o valor já gravado na primeira criação.
+async function _sbOrcUpsert(orc, opts) {
+  opts = opts || {};
+  var sb = crmSBClient();
+  var cu = (typeof CU !== 'undefined') ? CU : null;
+  if (!sb || !cu || !cu.id) {
+    console.warn('[SB-ORC] upsert bloqueado: sem sessão autenticada.');
+    return { ok: false, reason: 'no-session', message: 'Sem sessão iniciada — o orçamento não foi sincronizado.' };
+  }
   try {
     var row = {
       id: orc.num || orc.id || ('ORC-' + Date.now()),
@@ -14627,25 +15197,44 @@ async function _sbOrcUpsert(orc) {
         dtProducao: orc.dtProducao, aprovado_em: orc.aprovado_em, aprovado_por: orc.aprovado_por,
         _importadoPlanilha: orc._importadoPlanilha,
         leadId: (orc.leadId === undefined || orc.leadId === null) ? null : orc.leadId
-      }
+      },
+      owner_id: (cu.admin === true && opts.reassignOwnerId) ? opts.reassignOwnerId : cu.id,
+      updated_by: cu.id
     };
-    var r = await fetch(_ORC_SB_URL + '/rest/v1/ob_orcamentos?on_conflict=id', {
-      method: 'POST', headers: _sbOrcHeaders(), body: JSON.stringify(row)
-    });
-    if (!r.ok && row.extra.leadId !== null) {
-      console.warn('[SB-ORC] upsert do orçamento ' + row.num + ' falhou (HTTP ' + r.status + ') — ligação a leadId pode não ter sido persistida.');
+    if (opts.isCreate) row.created_by = cu.id;
+
+    var res = await sb.from('ob_orcamentos').upsert(row, { onConflict: 'id' });
+    if (res.error) {
+      var msg = _sbOrcErroLegivel(res.error, res.status);
+      console.warn('[SB-ORC] upsert do orçamento ' + row.num + ' falhou: ' + msg, res.error);
+      return { ok: false, reason: _sbOrcClassificarErro(res.error, res.status), error: res.error, message: msg };
     }
-  } catch(e) { console.warn('[SB-ORC] upsert falhou:', e); }
+    return { ok: true };
+  } catch(e) {
+    console.warn('[SB-ORC] upsert falhou (rede?):', e);
+    return { ok: false, reason: 'network', error: e, message: 'Não foi possível ligar ao servidor. O orçamento ficou guardado só neste dispositivo.' };
+  }
 }
 
+// Lê todos os orçamentos visíveis para a sessão autenticada atual — a
+// política RLS de SELECT (ob_can_see) é quem decide as linhas devolvidas:
+// admin/manager vê tudo o que gere, comercial só vê os seus. Sem sessão,
+// nem tenta ir à rede.
 async function _sbOrcLoadAll() {
+  var sb = crmSBClient();
+  var cu = (typeof CU !== 'undefined') ? CU : null;
+  if (!sb || !cu || !cu.id) {
+    console.warn('[SB-ORC] load bloqueado: sem sessão autenticada.');
+    return { ok: false, reason: 'no-session', rows: null };
+  }
   try {
-    var r = await fetch(_ORC_SB_URL + '/rest/v1/ob_orcamentos?order=created_at.desc&limit=2000', {
-      headers: { 'apikey': _ORC_SB_KEY, 'Authorization': 'Bearer ' + _ORC_SB_KEY }
-    });
-    if (!r.ok) return null;
-    var rows = await r.json();
-    return rows.map(function(row) {
+    var res = await sb.from('ob_orcamentos').select('*').order('created_at', { ascending: false }).limit(2000);
+    if (res.error) {
+      var msg = _sbOrcErroLegivel(res.error, res.status);
+      console.warn('[SB-ORC] load falhou: ' + msg, res.error);
+      return { ok: false, reason: _sbOrcClassificarErro(res.error, res.status), error: res.error, message: msg, rows: null };
+    }
+    var rows = (res.data || []).map(function(row) {
       var extra = row.extra || {};
       if (row.extra && typeof row.extra !== 'object') {
         console.warn('[SB-ORC] orçamento ' + row.num + ': campo extra em formato inesperado — leadId não recuperado.');
@@ -14663,25 +15252,37 @@ async function _sbOrcLoadAll() {
         pagamento50: row.pagamento50, sinal: row.sinal, saldo: row.saldo,
         dtProducao: extra.dtProducao, aprovado_em: extra.aprovado_em, aprovado_por: extra.aprovado_por,
         _importadoPlanilha: extra._importadoPlanilha,
-        leadId: (extra.leadId === undefined || extra.leadId === null) ? null : extra.leadId
+        leadId: (extra.leadId === undefined || extra.leadId === null) ? null : extra.leadId,
+        owner_id: row.owner_id || null
       };
     });
-  } catch(e) { console.warn('[SB-ORC] load falhou:', e); return null; }
+    return { ok: true, rows: rows };
+  } catch(e) {
+    console.warn('[SB-ORC] load falhou (rede?):', e);
+    return { ok: false, reason: 'network', error: e, rows: null, message: 'Não foi possível ligar ao servidor. A mostrar a última cópia local conhecida.' };
+  }
 }
 
-// Carregar orçamentos do Supabase ao iniciar (substitui localStorage se houver dados)
-(async function _orcInitFromSB() {
-  var sbData = await _sbOrcLoadAll();
-  if (sbData && sbData.length > 0) {
-    orcData = sbData;
-    localStorage.setItem('ob-orcamentos', JSON.stringify(orcData.slice(0, 5000)));
+// Carrega os orçamentos do Supabase — já NÃO corre sozinho ao carregar a
+// página (isso corria antes de qualquer login existir). Passa a ser
+// chamado explicitamente por crmEnterAppWithProfile(), só depois de uma
+// sessão válida e um perfil aprovado existirem. Substitui sempre pela
+// resposta da BD (mesmo vazia) — nunca mistura com o que ficou em cache
+// de uma sessão anterior; uma lista vazia devolvida sem erro é uma
+// resposta legítima (RLS a filtrar corretamente), não uma falha.
+async function _orcInitFromSB() {
+  var res = await _sbOrcLoadAll();
+  if (!res.ok) {
+    console.warn('[SB-ORC] não foi possível carregar orçamentos do Supabase (' + res.reason + ') — mantém-se a última cópia local conhecida.');
+    if (typeof showToast === 'function' && res.reason !== 'no-session') showToast('⚠ ' + (res.message || 'Falha ao sincronizar orçamentos.'));
     if (typeof orcRenderList === 'function') orcRenderList();
-  } else if (orcData.length > 0) {
-    // Migrar dados locais para Supabase
-    for (var i = 0; i < orcData.length; i++) { await _sbOrcUpsert(orcData[i]); }
-    console.log('[SB-ORC] ' + orcData.length + ' orçamentos migrados para Supabase.');
+    return;
   }
-})();
+  orcData = res.rows;
+  localStorage.setItem('ob-orcamentos', JSON.stringify(orcData.slice(0, 5000)));
+  if (typeof orcRenderList === 'function') orcRenderList();
+}
+window._orcInitFromSB = _orcInitFromSB;
 
 // ══════════════════════════════════════════════════════════════════
 // SUPABASE — Pipeline de Produção (uniItems) + Actividades por departamento.
@@ -14984,7 +15585,7 @@ function orcImagemObraUpload(input){
 }
 window.orcImagemObraUpload = orcImagemObraUpload;
 
-function orcGuardar(){
+async function orcGuardar(){
   const d = orcGetData();
   if(!d.cli.trim()){ alert('Por favor preenche o nome do cliente.'); return; }
   if(!d.linhas.length){ alert('Adiciona pelo menos uma linha de produto.'); return; }
@@ -14992,7 +15593,10 @@ function orcGuardar(){
   d._geradoPorIA = !!(window._orcGeradoPorIA);
   orcData.unshift(d);
   localStorage.setItem('ob-orcamentos', JSON.stringify(orcData.slice(0,5000)));
-  _sbOrcUpsert(d);
+  // Fase 4, Etapa 6: guarda sempre localmente primeiro (não perde o
+  // trabalho do utilizador), depois tenta sincronizar com o Supabase — se
+  // falhar, o utilizador é avisado de forma clara, nunca em silêncio.
+  const _syncRes = await _sbOrcUpsert(d, { isCreate: true });
   if(d.leadId && typeof crmAddAtividade==='function'){
     crmAddAtividade(d.leadId, 'orcamento', 'Orçamento '+d.num+' criado — €'+(d.totais&&d.totais.total?d.totais.total.toFixed(2):'0,00'), d.vendedor);
   }
@@ -15003,7 +15607,14 @@ function orcGuardar(){
   if(badge) badge.textContent = orcNextNum();
   // Feedback
   const msg = document.getElementById('orc-save-msg');
-  if(msg){ msg.textContent = '✓ Orçamento '+d.num+' guardado com sucesso'; msg.style.display='block'; setTimeout(()=>msg.style.display='none',3000); }
+  if(msg){
+    if(_syncRes && _syncRes.ok){
+      msg.textContent = '✓ Orçamento '+d.num+' guardado com sucesso';
+    } else {
+      msg.textContent = '⚠ Orçamento '+d.num+' guardado só neste dispositivo — ' + (_syncRes && _syncRes.message ? _syncRes.message : 'falha ao sincronizar.');
+    }
+    msg.style.display='block'; setTimeout(()=>msg.style.display='none',3000);
+  }
 }
 
 function orcNew(){
@@ -15897,7 +16508,7 @@ function globalSearch(q){
 
 function chatGetAllowedRooms(){
   if(!CU||CU.admin) return chatRooms;
-  const deptRoomMap={'Dep. Comercial':['geral','comercial'],'Dep. Design':['geral','design'],'Chão da Fábrica':['geral','fabrica'],'Gestão Administrativa':['geral','admin']};
+  const deptRoomMap={'Comercial':['geral','comercial'],'Dep. Design':['geral','design'],'Chão da Fábrica':['geral','fabrica'],'Gestão Administrativa':['geral','admin']}; // 'Comercial' corrigido de 'Dep. Comercial'
   const allowed=deptRoomMap[CU.dept]||['geral'];
   return chatRooms.filter(r=>allowed.includes(r.id));
 }
@@ -17651,7 +18262,12 @@ window.doLogout=doLogout;
 window.renderLogin=renderLogin;
 
 // Init
-renderLogin();
+// Fase 4, Etapa 3: antes chamava renderLogin() diretamente (mostrava
+// sempre o login antigo). Agora passa pelo gate de sessão — que, sem
+// sessão real ou com CRM_AUTH_GATE_ENABLED=false, acaba por chamar
+// renderLogin() de qualquer forma, preservando o comportamento antigo.
+if(typeof crmAuthBootGate==='function') crmAuthBootGate();
+else renderLogin();
 // Init novos módulos (Stock, Financeiro)
 if(typeof initNovosModulos==='function') setTimeout(initNovosModulos, 200);
 </script>
@@ -18687,7 +19303,7 @@ function finExportDespesas() {
 // ════════════════════════════════════════════════════════════════════════
 // HOOK: Baixa de Stock ao alterar estado de orçamento para Aprovado/Em Produção
 // ════════════════════════════════════════════════════════════════════════
-function orcChangeStatus(orcId, novoEstado) {
+async function orcChangeStatus(orcId, novoEstado) {
   var orc = orcData.find(function(o){return o.num===orcId;});
   if (!orc) return;
   var estadoAnterior = orc.st;
@@ -18698,7 +19314,13 @@ function orcChangeStatus(orcId, novoEstado) {
     orc.dtProducao = new Date().toLocaleDateString('pt-PT');
   }
   localStorage.setItem('ob-orcamentos', JSON.stringify(orcData.slice(0,5000)));
-  _sbOrcUpsert(orc);
+  // Fase 4, Etapa 6: aguarda o resultado real da sincronização — uma
+  // negação de RLS (ex.: comercial a tentar alterar um orçamento que já
+  // não é dele) ou falha de rede é avisada, nunca escondida em silêncio.
+  var _syncRes = await _sbOrcUpsert(orc);
+  if(!_syncRes.ok && typeof showToast === 'function'){
+    showToast('⚠ Estado alterado só neste dispositivo — ' + (_syncRes.message || 'falha ao sincronizar.'));
+  }
   orcRenderList();
   // ADD: Item 2 — enviar para ClickUp via Make.com quando aprovado (só uma vez)
   if (novoEstado === 'Aprovado' && estadoAnterior !== 'Aprovado') {
@@ -24097,11 +24719,52 @@ function fuPrioridade(dias){
 // Estados terminais fora do âmbito do follow-up — nenhum estado novo,
 // só reutiliza os já existentes no pipeline (crmLeads.st / orcData.st).
 var FU_ESTADOS_LEAD_TERMINAIS = ['Ganho ✓','Perdido ✗'];
-var FU_ESTADOS_ORC_TERMINAIS = ['Faturado','Cancelado'];
+var FU_ESTADOS_ORC_TERMINAIS = ['Aprovado','Faturado','Cancelado'];
+
+// ══ Fase 1.6 — leitura de ob_orcamento_triagem (só SELECT; RLS já filtra
+// as linhas por ob_can_see, mesma policy aplicada em produção) e critério
+// aprovado para separar orçamentos Pendente entre "Follow-up ativo" e
+// "Histórico antigo": dt>=2026-07-01 OU reativado=true => ativo; caso
+// contrário => histórico. Passo 1 — só leitura, sem botões de acção
+// nem alteração de estados. orc.num é o mesmo valor gravado como
+// ob_orcamentos.id (ver _sbOrcUpsert: "id: orc.num||..."), por isso serve
+// directamente como chave de junção com orcamento_id. ══════════════════
+var FU_CUTOFF_ATIVO = new Date(2026,6,1); // 2026-07-01
+var _fuTriagemPorOrc = {}; // orcamento_id -> {reativado}
+
+async function fuCarregarTriagem(){
+  try{
+    var sb = (typeof crmSBClient==='function') ? crmSBClient() : null;
+    var cu = (typeof CU!=='undefined') ? CU : null;
+    if(!sb || !cu || !cu.id) return; // sem sessão real (Fase 4) — mesma guarda de _sbOrcLoadAll
+    var res = await sb.from('ob_orcamento_triagem').select('orcamento_id, reativado, classificacao');
+    if(res.error){ console.warn('[FU] leitura de ob_orcamento_triagem falhou:', res.error); return; }
+    var map={};
+    (res.data||[]).forEach(function(row){ map[row.orcamento_id] = { reativado: !!row.reativado, classificacao: row.classificacao||null }; });
+    _fuTriagemPorOrc = map;
+  }catch(e){ console.warn('[FU] leitura de ob_orcamento_triagem falhou:', e); }
+}
+window.fuCarregarTriagem = fuCarregarTriagem;
+
+// dt já validado no servidor (577/577 confirmados válidos) — reutiliza o
+// mesmo parsing simples já usado em obOrcUltimaAtividade. Sem data legível
+// nunca esconde silenciosamente: fica em "ativo" por omissão.
+function fuClassificarOrc(o){
+  var triagem = _fuTriagemPorOrc[o.num];
+  if(triagem && triagem.reativado) return 'ativo';
+  var dStr = o.dt || o.data, dtOrc = null;
+  if(dStr){ var p=dStr.split('/'); if(p.length===3) dtOrc=new Date(p[2],p[1]-1,p[0]); }
+  if(dtOrc && dtOrc >= FU_CUTOFF_ATIVO) return 'ativo';
+  if(dtOrc) return 'historico';
+  return 'ativo';
+}
+window.fuClassificarOrc = fuClassificarOrc;
 
 // Lista unificada de leads + orçamentos activos a acompanhar. A "próxima
 // acção" reutiliza sempre lead.proximaAcao (do próprio lead, ou do lead
-// ligado ao orçamento) — não introduz um campo novo em orcData.
+// ligado ao orçamento) — não introduz um campo novo em orcData. Orçamentos
+// Pendente classificados como "histórico" (ver fuClassificarOrc) saem
+// desta lista e passam para a aba Histórico antigo, em vez de duplicados.
 function fuListaItens(){
   var itens=[];
   (crmLeads||[]).forEach(function(l){
@@ -24111,6 +24774,7 @@ function fuListaItens(){
   });
   (orcData||[]).forEach(function(o){
     if(FU_ESTADOS_ORC_TERMINAIS.indexOf(o.st)!==-1) return;
+    if(o.st==='Pendente' && fuClassificarOrc(o)==='historico') return;
     var leadLigado = o.leadId ? (crmLeads||[]).find(function(l){return l.id===o.leadId;}) : null;
     itens.push({tipo:'orc', obj:o, id:o.num, leadId:o.leadId||null, orcId:o.num,
       cliente:o.cli||'—', comercial:o.vendedor||'—',
@@ -24121,6 +24785,276 @@ function fuListaItens(){
   itens.sort(function(a,b){ return (b.dias===null?-1:b.dias)-(a.dias===null?-1:a.dias); });
   return itens;
 }
+
+// Lista de orçamentos Pendente no "Histórico antigo" (fora da janela
+// operacional e não reativados). Só orçamentos — leads não entram na
+// Fase 1.6. Só leitura, sem acções.
+function fuListaItensHistorico(){
+  var itens=[];
+  (orcData||[]).forEach(function(o){
+    if(o.st!=='Pendente') return;
+    if(fuClassificarOrc(o)!=='historico') return;
+    itens.push({orcId:o.num, cliente:o.cli||'—', comercial:o.vendedor||'—',
+      valor:(typeof orcGetValorTotal==='function')?orcGetValorTotal(o):(o.val||0),
+      data:o.dt||o.data||'—'});
+  });
+  return itens;
+}
+
+function fuRenderHistorico(){
+  var wrap=document.getElementById('fu-cards-historico');
+  if(!wrap) return;
+  var itens=fuListaItensHistorico();
+  if(!itens.length){
+    wrap.innerHTML='<div style="text-align:center;color:var(--muted);padding:22px;grid-column:1/-1">Sem orçamentos no histórico antigo.</div>';
+    return;
+  }
+  wrap.innerHTML=itens.map(function(it){
+    var idAttr=String(it.orcId).replace(/'/g,"\\'");
+    return '<div class="fu-card">'
+      +'<div class="fu-card-cliente">'+it.cliente+'</div>'
+      +'<div class="fu-card-valor">€'+(it.valor||0).toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2})+'</div>'
+      +'<div class="fu-card-linha"><span>Comercial:</span> '+it.comercial+'</div>'
+      +'<div class="fu-card-linha"><span>Data:</span> '+it.data+'</div>'
+      +'<div class="fu-card-acoes"><button class="tbtn" onclick="fuAcaoReativar(\''+idAttr+'\')">↺ Reativar</button></div>'
+      +'</div>';
+  }).join('');
+}
+window.fuRenderHistorico = fuRenderHistorico;
+
+// ══ Kanban "Follow-up ativo" — cards agrupados por comercial, com 4
+// colunas de estado (A contactar / Contactado / Em negociação /
+// Contactar novamente). Só orçamentos (leads não entram na Fase 1.6 —
+// não têm conceito de classificação/triagem). Dados vêm de orcData,
+// que é sempre populado via crmSBClient() autenticado (_sbOrcLoadAll,
+// Fase 4 Etapa 6) — nunca do localStorage como fonte; o localStorage é
+// só um espelho de leitura offline, escrito depois do Supabase
+// responder, nunca lido como origem para este ecrã. RLS filtra as
+// linhas no servidor: um comercial só recebe os seus próprios
+// orçamentos, um admin recebe todos — o agrupamento por comercial
+// abaixo reflecte exactamente o que a sessão já devolveu, sem
+// filtragem adicional no cliente. Os botões de cada card chamam
+// sempre uma das 5 RPCs (fu_reativar_simples/fu_classificar/
+// fu_classificar_e_reativar/fu_desativar_followup/fu_confirmar_estado)
+// via crmSBClient().rpc(...) — nunca update/insert direto nas tabelas.
+var FU_COLUNAS = [
+  {key:'a_contactar',        label:'A contactar'},
+  {key:'contactado',         label:'Contactado'},
+  {key:'em_negociacao',      label:'Em negociação'},
+  {key:'contactar_novamente',label:'Contactar novamente'}
+];
+var FU_CLASSIFICACAO_LABEL = {
+  ainda_em_negociacao:'Em negociação', contactar_novamente:'Contactar novamente',
+  sem_resposta:'Sem resposta', nao_adjudicado:'Não adjudicado', duplicado:'Duplicado',
+  cancelado:'Cancelado', aprovado:'Aprovado', faturado:'Faturado'
+};
+
+// Coluna do orçamento: classificação real (quando existe) manda;
+// sem classificação, usa a existência de actividade registada para
+// distinguir "nunca contactado" de "já houve contacto".
+function fuColunaDoOrc(o){
+  var triagem=_fuTriagemPorOrc[o.num];
+  var classificacao=triagem&&triagem.classificacao;
+  if(classificacao==='contactar_novamente') return 'contactar_novamente';
+  if(classificacao==='ainda_em_negociacao') return 'em_negociacao';
+  var temAtividade=(crmAtividades||[]).some(function(x){ return x.orcId===o.num || (o.leadId&&x.leadId===o.leadId); });
+  if(classificacao||temAtividade) return 'contactado';
+  return 'a_contactar';
+}
+window.fuColunaDoOrc=fuColunaDoOrc;
+
+// Orçamentos activos (mesmo critério de fuListaItens, só a parte de
+// orçamentos, sem misturar leads).
+function fuOrcamentosAtivos(){
+  var itens=[];
+  (orcData||[]).forEach(function(o){
+    if(FU_ESTADOS_ORC_TERMINAIS.indexOf(o.st)!==-1) return;
+    if(o.st==='Pendente' && fuClassificarOrc(o)==='historico') return;
+    itens.push(o);
+  });
+  return itens;
+}
+
+// Agrupa por comercial (o.vendedor) -> coluna -> lista de cards. Como
+// orcData já vem filtrado pela RLS da sessão actual, isto não decide
+// visibilidade nenhuma — só organiza o que a sessão já recebeu.
+function fuAgruparKanban(){
+  var grupos={};
+  fuOrcamentosAtivos().forEach(function(o){
+    var com=o.vendedor||'—';
+    if(!grupos[com]) grupos[com]={a_contactar:[],contactado:[],em_negociacao:[],contactar_novamente:[]};
+    var col=fuColunaDoOrc(o);
+    var triagem=_fuTriagemPorOrc[o.num];
+    var leadLigado=o.leadId?(crmLeads||[]).find(function(l){return l.id===o.leadId;}):null;
+    grupos[com][col].push({
+      orcId:o.num,
+      cliente:o.cli||'—',
+      valor:(typeof orcGetValorTotal==='function')?orcGetValorTotal(o):(o.val||0),
+      dias:obDiasEntre(obOrcUltimaAtividade(o)),
+      proximaAcao:leadLigado?leadLigado.proximaAcao||null:null,
+      classificacao:(triagem&&triagem.classificacao)||null
+    });
+  });
+  return grupos;
+}
+window.fuAgruparKanban=fuAgruparKanban;
+
+// Classificações disponíveis no dropdown "Classificar" de cada card.
+// 'ainda_em_negociacao'/'contactar_novamente' passam por
+// fu_classificar_e_reativar (auto-reativam); as restantes por
+// fu_classificar (não tocam em reativado/reativado_em). 'aprovado'/
+// 'faturado'/'cancelado' fazem parte do domínio de classificacao na
+// base de dados, mas ficam de fora deste menu de propósito — para não
+// confundir com a mudança real de estado (dropdown "Confirmar
+// estado", que é a única via que altera ob_orcamentos.st).
+var FU_CLASSIFICACOES_MENU = [
+  {value:'ainda_em_negociacao', label:'Em negociação',      reativa:true},
+  {value:'contactar_novamente', label:'Contactar novamente', reativa:true},
+  {value:'sem_resposta',        label:'Sem resposta',        reativa:false},
+  {value:'nao_adjudicado',      label:'Não adjudicado',      reativa:false},
+  {value:'duplicado',           label:'Duplicado',           reativa:false}
+];
+
+function fuCardHTML(it){
+  var pa=it.proximaAcao;
+  var paTxt=(pa&&pa.data)?(pa.tipo||'Acção')+' — '+pa.data.split('-').reverse().join('/'):'—';
+  var diasTxt=it.dias===null?'—':it.dias+'d';
+  var classifTxt=it.classificacao?(FU_CLASSIFICACAO_LABEL[it.classificacao]||it.classificacao):'—';
+  var idAttr=String(it.orcId).replace(/'/g,"\\'");
+  var classificarOpts=FU_CLASSIFICACOES_MENU.map(function(c){
+    return '<option value="'+c.value+'">'+c.label+'</option>';
+  }).join('');
+  return '<div class="fu-card">'
+    +'<div class="fu-card-cliente">'+it.cliente+'</div>'
+    +'<div class="fu-card-valor">€'+(it.valor||0).toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2})+'</div>'
+    +'<div class="fu-card-linha"><span>Dias sem contacto:</span> '+diasTxt+'</div>'
+    +'<div class="fu-card-linha"><span>Próxima acção:</span> '+paTxt+'</div>'
+    +'<div class="fu-card-linha"><span>Classificação:</span> '+classifTxt+'</div>'
+    +'<div class="fu-card-acoes">'
+      +'<select onchange="fuAcaoClassificar(\''+idAttr+'\', this.value); this.value=\'\';">'
+        +'<option value="">Classificar...</option>'+classificarOpts
+      +'</select>'
+      +'<button class="tbtn" onclick="fuAcaoDesativar(\''+idAttr+'\')">Retirar</button>'
+      +'<select onchange="fuAcaoConfirmarEstado(\''+idAttr+'\', this.value); this.value=\'\';">'
+        +'<option value="">Confirmar estado...</option>'
+        +'<option value="Aprovado">Aprovado</option>'
+        +'<option value="Faturado">Faturado</option>'
+        +'<option value="Cancelado">Cancelado</option>'
+      +'</select>'
+    +'</div>'
+    +'</div>';
+}
+
+// ── Acções do Kanban — ligadas às 5 RPCs já criadas na Fase 1.6, todas
+// via crmSBClient().rpc(...) autenticado. Nunca update/insert directo
+// nas tabelas (a RLS/GRANTs de produção já nem permitem isso a
+// authenticated — só as RPCs SECURITY DEFINER escrevem). Após cada
+// chamada com sucesso, fuInitPage() volta a ler tudo do Supabase
+// (nunca do localStorage) e o Kanban é re-renderizado. ═══════════
+
+async function fuAcaoReativar(orcId){
+  var sb=(typeof crmSBClient==='function')?crmSBClient():null;
+  if(!sb){ if(typeof showToast==='function') showToast('⚠ Sem ligação ao Supabase.'); return; }
+  var res=await sb.rpc('fu_reativar_simples', {p_orcamento_id:orcId});
+  if(res.error){ if(typeof showToast==='function') showToast('⚠ Erro ao reativar: '+res.error.message); return; }
+  if(typeof showToast==='function') showToast('✓ Orçamento reativado.');
+  await fuInitPage();
+}
+window.fuAcaoReativar=fuAcaoReativar;
+
+async function fuAcaoClassificar(orcId, classificacao){
+  if(!classificacao) return;
+  var def=FU_CLASSIFICACOES_MENU.find(function(c){return c.value===classificacao;});
+  var sb=(typeof crmSBClient==='function')?crmSBClient():null;
+  if(!sb){ if(typeof showToast==='function') showToast('⚠ Sem ligação ao Supabase.'); return; }
+  var nota=prompt('Nota (opcional):','');
+  if(nota===null) return; // cancelado pelo utilizador
+  var rpcName=(def&&def.reativa)?'fu_classificar_e_reativar':'fu_classificar';
+  var res=await sb.rpc(rpcName, {p_orcamento_id:orcId, p_classificacao:classificacao, p_nota:nota||null});
+  if(res.error){ if(typeof showToast==='function') showToast('⚠ Erro ao classificar: '+res.error.message); return; }
+  if(typeof showToast==='function') showToast('✓ Classificação guardada'+((def&&def.reativa)?' e orçamento reativado.':'.'));
+  await fuInitPage();
+}
+window.fuAcaoClassificar=fuAcaoClassificar;
+
+async function fuAcaoDesativar(orcId){
+  if(!confirm('Retirar este orçamento do Follow-up? Passa a aparecer no Histórico antigo.')) return;
+  var sb=(typeof crmSBClient==='function')?crmSBClient():null;
+  if(!sb){ if(typeof showToast==='function') showToast('⚠ Sem ligação ao Supabase.'); return; }
+  var res=await sb.rpc('fu_desativar_followup', {p_orcamento_id:orcId});
+  if(res.error){ if(typeof showToast==='function') showToast('⚠ Erro ao retirar: '+res.error.message); return; }
+  if(typeof showToast==='function') showToast('✓ Retirado do Follow-up.');
+  await fuInitPage();
+}
+window.fuAcaoDesativar=fuAcaoDesativar;
+
+// Único caminho que altera ob_orcamentos.st — exige confirmação
+// explícita antes de chamar a RPC, conforme pedido.
+async function fuAcaoConfirmarEstado(orcId, stNovo){
+  if(!stNovo) return;
+  if(!confirm('Confirmar mudança de estado para "'+stNovo+'"? Esta ação atualiza o estado real do orçamento e fica registada no histórico.')) return;
+  var sb=(typeof crmSBClient==='function')?crmSBClient():null;
+  if(!sb){ if(typeof showToast==='function') showToast('⚠ Sem ligação ao Supabase.'); return; }
+  var res=await sb.rpc('fu_confirmar_estado', {p_orcamento_id:orcId, p_st_novo:stNovo});
+  if(res.error){ if(typeof showToast==='function') showToast('⚠ Erro ao confirmar estado: '+res.error.message); return; }
+  if(typeof showToast==='function') showToast('✓ Estado atualizado para '+stNovo+'.');
+  await fuInitPage();
+}
+window.fuAcaoConfirmarEstado=fuAcaoConfirmarEstado;
+
+function fuRenderKanbanAtivo(){
+  var wrap=document.getElementById('fu-kanban-ativo');
+  if(!wrap) return;
+  var grupos=fuAgruparKanban();
+  var comerciais=Object.keys(grupos).sort();
+  if(!comerciais.length){
+    wrap.innerHTML='<div style="text-align:center;color:var(--muted);padding:22px">Sem orçamentos activos a acompanhar.</div>';
+    return;
+  }
+  wrap.innerHTML=comerciais.map(function(com){
+    var colunas=grupos[com];
+    return '<div class="fu-swimlane">'
+      +'<div class="fu-swimlane-titulo">'+com+'</div>'
+      +'<div class="fu-kanban-colunas">'
+      +FU_COLUNAS.map(function(c){
+        var itens=colunas[c.key];
+        return '<div class="fu-coluna">'
+          +'<div class="fu-coluna-titulo">'+c.label+'<span class="fu-coluna-count">'+itens.length+'</span></div>'
+          +'<div class="fu-coluna-cards">'+(itens.length?itens.map(fuCardHTML).join(''):'<div class="fu-coluna-vazia">Sem orçamentos</div>')+'</div>'
+          +'</div>';
+      }).join('')
+      +'</div></div>';
+  }).join('');
+}
+window.fuRenderKanbanAtivo=fuRenderKanbanAtivo;
+
+// Alterna entre as abas "Follow-up ativo" e "Histórico antigo" (mesmo
+// padrão já usado em docsTab/rhTab).
+function fuTab(tab){
+  var elAtivo=document.getElementById('fu-panel-ativo'), elHist=document.getElementById('fu-panel-historico');
+  if(elAtivo) elAtivo.style.display = tab==='ativo' ? '' : 'none';
+  if(elHist) elHist.style.display = tab==='historico' ? '' : 'none';
+  document.querySelectorAll('#page-comercial-followup .vt').forEach(function(b,i){
+    b.classList.toggle('on', (i===0&&tab==='ativo')||(i===1&&tab==='historico'));
+  });
+  if(tab==='historico') fuRenderHistorico();
+}
+window.fuTab = fuTab;
+
+// Carrega a triagem e renderiza as duas abas — chamado pela navegação
+// (goPage) em vez de fuRender directamente, para garantir que
+// _fuTriagemPorOrc está preenchido antes da classificação.
+async function fuInitPage(){
+  // Recarrega orçamentos directamente do Supabase via crmSBClient()
+  // autenticado (não confia no espelho de localStorage) antes de
+  // montar o Kanban — garante que a página reflecte sempre a sessão
+  // real e a RLS no momento em que é aberta, não uma cópia antiga.
+  if(typeof window._orcInitFromSB==='function'){ try{ await window._orcInitFromSB(); }catch(e){} }
+  await fuCarregarTriagem();
+  fuRenderKanbanAtivo();
+  fuRenderHistorico();
+}
+window.fuInitPage = fuInitPage;
 
 // Renderiza a vista "Follow-up" (tabela). Reutiliza fuListaItens (que por
 // sua vez reutiliza obLeadUltimaAtividade/obDiasEntre/proximaAcao).
