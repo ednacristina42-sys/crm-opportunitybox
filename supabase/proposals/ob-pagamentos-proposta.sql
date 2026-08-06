@@ -80,13 +80,14 @@ create or replace view public.ob_orcamento_saldos with (security_invoker = true)
 
 -- ---------------------------------------------------------------------
 -- 4) GATE DE PERMISSÃO — quem pode registar/estornar (Fase 1: admin/financeiro)
---    NB: confirmar que ob_profiles.role usa estes valores ('financeiro','direcao').
+--    Confirmado na BD: enum ob_user_role = {admin, comercial, financeiro, manager}.
+--    NAO existe 'direcao'. Gate = admin/financeiro apenas.
 -- ---------------------------------------------------------------------
 create or replace function public.ob_pode_registar_pagamento()
 returns boolean
 language sql stable security definer set search_path = public as $$
   select coalesce(
-    (select role in ('admin','financeiro','direcao')
+    (select role in ('admin','financeiro')
        from public.ob_profiles where id = auth.uid()),
     false);
 $$;
@@ -213,6 +214,34 @@ language sql stable security invoker set search_path = public as $$
   order by valor_restante desc;
 $$;
 
+-- 6.4 Leitura TOTAL: apenas admin/financeiro. SECURITY DEFINER com verificacao
+--     EXPLICITA da role. NAO usa ob_can_see() nem altera a RLS de ob_orcamentos:
+--     calcula diretamente a partir das tabelas base e devolve todas as cobrancas
+--     em aberto (valor_restante > 0). O comercial NAO pode usar esta funcao.
+create or replace function public.ob_cobrancas_todas()
+returns table(orcamento_id text, owner_id uuid, cliente text, nif text,
+              valor_total numeric, valor_recebido numeric, valor_restante numeric, estado_orc text)
+language plpgsql stable security definer set search_path = public as $$
+begin
+  -- verificacao explicita da role (nao confiar no frontend):
+  if not exists (select 1 from public.ob_profiles
+                 where id = auth.uid() and role in ('admin','financeiro')) then
+    raise exception 'sem_permissao: apenas admin/financeiro veem todas as cobrancas';
+  end if;
+  return query
+    select o.id, o.owner_id, o.cli, o.nif, o.val,
+           coalesce(p.recebido,0),
+           (o.val - coalesce(p.recebido,0)),
+           o.st
+    from public.ob_orcamentos o
+    left join (select orcamento_id, sum(valor) as recebido
+               from public.ob_pagamentos group by orcamento_id) p on p.orcamento_id = o.id
+    where o.deleted_at is null
+      and (o.val - coalesce(p.recebido,0)) > 0
+    order by (o.val - coalesce(p.recebido,0)) desc;
+end;
+$$;
+
 
 -- ---------------------------------------------------------------------
 -- 7) GRANTS / REVOKES
@@ -228,10 +257,12 @@ grant  select on public.ob_orcamento_saldos to authenticated;
 grant execute on function public.ob_pagamento_registar(text,numeric,text,text,date,text) to authenticated;
 grant execute on function public.ob_pagamento_estornar(uuid,text)                          to authenticated;
 grant execute on function public.ob_minhas_cobrancas()                                     to authenticated;
+grant execute on function public.ob_cobrancas_todas()                                      to authenticated;
 grant execute on function public.ob_pode_registar_pagamento()                              to authenticated;
 
 revoke execute on function public.ob_pagamento_registar(text,numeric,text,text,date,text) from anon;
 revoke execute on function public.ob_pagamento_estornar(uuid,text)                          from anon;
+revoke execute on function public.ob_cobrancas_todas()                                      from anon;
 
 -- NOTA de aplicação: as funções SECURITY DEFINER devem ser OWNED por um papel
 -- que ignore RLS (tipicamente 'postgres'), para o INSERT interno passar apesar
@@ -262,12 +293,17 @@ revoke execute on function public.ob_pagamento_estornar(uuid,text)              
 --     select ob_pagamento_registar('<ID>', 50, 'parcial');    -- deve falhar: sem_permissao
 --     select * from ob_pagamentos;                             -- só linhas visíveis a A
 --     select * from ob_orcamento_saldos;                       -- só orçamentos de A
+-- (g2) Leitura por perfil:
+--     [comercial A] select * from ob_minhas_cobrancas();   -- só orçamentos de A, restante>0
+--     [comercial A] select * from ob_cobrancas_todas();     -- deve falhar: sem_permissao
+--     [financeiro/admin] select * from ob_cobrancas_todas();-- TODAS as cobranças em aberto
 -- (h) Anti-spoof: os RPC não recebem owner_id; impossível forjar dono.
 
 
 -- ---------------------------------------------------------------------
 -- 9) ROLLBACK (aditivo — ob_orcamentos e dados existentes ficam INTACTOS)
 -- ---------------------------------------------------------------------
+-- drop function if exists public.ob_cobrancas_todas();
 -- drop function if exists public.ob_minhas_cobrancas();
 -- drop function if exists public.ob_pagamento_estornar(uuid,text);
 -- drop function if exists public.ob_pagamento_registar(text,numeric,text,text,date,text);
