@@ -5184,6 +5184,11 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--txt);min-he
 /* Space children (lists) */
 .space-lists{display:none;padding-left:28px}
 .space-item.open+.space-lists{display:block}
+/* ADD: sidebar reorganizada por função — Meu Painel destacado + ícones */
+.sb-mp{display:flex;align-items:center;gap:9px;width:calc(100% - 16px);margin:8px 8px 4px;padding:9px 12px;border-radius:8px;background:rgba(245,196,0,.10);border:1px solid rgba(245,196,0,.24);color:var(--txt2);font-family:'Inter',sans-serif;font-size:14px;font-weight:600;cursor:pointer;text-align:left}
+.sb-mp:hover{background:rgba(245,196,0,.16)}
+.sb-mp .si{font-size:15px}
+.mk-ic{display:inline-flex;width:18px;justify-content:center;margin-right:9px;font-size:13px;flex-shrink:0}
 .sl-item{
   display:flex;align-items:center;gap:6px;
   padding:4px 10px 4px 4px;font-size:13.5px;
@@ -6701,7 +6706,10 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
     <button class="sni" id="ni-chat" data-action="goPage" data-page="chat"><span class="si">💬</span>Chat Equipa<span class="sbadge y">3</span></button>
   </div>
 
-  <!-- SPACES — mirrors ClickUp screenshot -->
+  <!-- ⭐ PAINEL — sempre visível e destacado -->
+  <button class="sb-mp" id="ni-meu-painel" data-action="goPage" data-page="meu-painel"><span class="si">👤</span>Meu Painel</button>
+
+  <!-- SPACES -->
   <div class="spaces-hdr">
     <span>Espaços</span>
     <button class="spaces-add" id="add-space-btn" title="Novo Espaço">+</button>
@@ -6714,72 +6722,90 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
     <span class="space-chevron">›</span>
   </button>
 
-  <!-- Dep. Comercial -->
+  <!-- 🎯 Comercial -->
   <button class="space-item" id="si-comercial" data-action="toggleSpace" data-space="comercial">
-    <div class="space-icon" style="background:var(--dc)">D</div>
-    <span class="space-name">Dep. Comercial</span>
+    <div class="space-icon" style="background:var(--dc)">🎯</div>
+    <span class="space-name">Comercial</span>
     <span id="ob-badge-pendencias-hdr" style="display:none;background:var(--r);color:#fff;font-size:10.5px;font-weight:700;font-family:'DM Mono',monospace;padding:1px 6px;border-radius:8px;margin-left:auto;flex-shrink:0" title="Pendências: leads parados e acções em atraso">0</span>
     <span class="space-chevron">›</span>
   </button>
   <div class="space-lists" id="sl-comercial">
-    <button class="sl-item" data-action="goPage" data-page="meu-painel"><div class="sl-dot" style="background:#a855f7"></div>👤 Meu Painel</button>
-    <button class="sl-item" data-action="goPage" data-page="comercial-pipeline"><div class="sl-dot" style="background:var(--y)"></div>Pipeline de Leads<span id="ob-badge-pendencias" style="display:none;background:var(--r);color:#fff;font-size:10.5px;font-weight:700;font-family:'DM Mono',monospace;padding:1px 6px;border-radius:8px;margin-left:auto;flex-shrink:0" title="Pendências: leads parados e acções em atraso">0</span></button>
-    <button class="sl-item" data-action="goPage" data-page="comercial-followup"><div class="sl-dot" style="background:#f5c400"></div>Follow-up</button>
-    <button class="sl-item" data-action="goPage" data-page="comercial-clientes"><div class="sl-dot" style="background:#4d94db"></div>Clientes</button>
-    <button class="sl-item" data-action="goPage" data-page="comercial-orcamentos"><div class="sl-dot" style="background:#3fcf8e"></div>Orçamentos<span id="toco-vencidas-badge">!</span></button>
-    <button class="sl-item" data-action="goPage" data-page="equipa-campo"><div class="sl-dot" style="background:#4d94db"></div>🗺️ Equipa em Campo</button>
-    <button class="sl-item" onclick="homeFilterTasks('Dep. Comercial','Rui Mota')"><div class="sl-dot" style="background:#e74c3c"></div>👤 Rui Mota</button>
-    <button class="sl-item" onclick="homeFilterTasks('Dep. Comercial','Paulo Faria')"><div class="sl-dot" style="background:#e74c3c"></div>👤 Paulo Faria</button>
-    <button class="sl-item" onclick="homeFilterTasks('Dep. Comercial','Humberto Estrelinha')"><div class="sl-dot" style="background:#e74c3c"></div>👤 Humberto Estrelinha</button>
+    <button class="sl-item" data-action="goPage" data-page="comercial-pipeline"><span class="mk-ic">📈</span>Pipeline de Leads<span id="ob-badge-pendencias" style="display:none;background:var(--r);color:#fff;font-size:10.5px;font-weight:700;font-family:'DM Mono',monospace;padding:1px 6px;border-radius:8px;margin-left:auto;flex-shrink:0" title="Pendências: leads parados e acções em atraso">0</span></button>
+    <button class="sl-item" data-action="goPage" data-page="comercial-followup"><span class="mk-ic">📞</span>Follow-up</button>
+    <button class="sl-item" data-action="goPage" data-page="comercial-clientes"><span class="mk-ic">👤</span>Clientes</button>
+    <button class="sl-item" data-action="goPage" data-page="comercial-orcamentos"><span class="mk-ic">📄</span>Orçamentos<span id="toco-vencidas-badge">!</span></button>
+    <button class="sl-item" data-action="goPage" data-page="equipa-campo"><span class="mk-ic">🗺️</span>Equipa em Campo</button>
   </div>
 
-  <!-- Dep. Design -->
+  <!-- 👥 Equipa -->
+  <button class="space-item" id="si-equipa" data-action="toggleSpace" data-space="equipa">
+    <div class="space-icon" style="background:#4d94db">👥</div>
+    <span class="space-name">Equipa</span>
+    <span class="space-chevron">›</span>
+  </button>
+  <div class="space-lists" id="sl-equipa">
+    <button class="sl-item" onclick="homeFilterTasks('Dep. Comercial','Rui Mota')"><span class="mk-ic">🧑</span>Rui Mota</button>
+    <button class="sl-item" onclick="homeFilterTasks('Dep. Comercial','Paulo Faria')"><span class="mk-ic">🧑</span>Paulo Faria</button>
+    <button class="sl-item" onclick="homeFilterTasks('Dep. Comercial','Humberto Estrelinha')"><span class="mk-ic">🧑</span>Humberto Estrelinha</button>
+  </div>
+
+  <!-- 🎨 Design -->
   <button class="space-item" id="si-design" data-action="toggleSpace" data-space="design">
-    <div class="space-icon" style="background:var(--dd)">D</div>
-    <span class="space-name">Dep. Design</span>
+    <div class="space-icon" style="background:var(--dd)">🎨</div>
+    <span class="space-name">Design</span>
     <span class="space-chevron">›</span>
   </button>
   <div class="space-lists" id="sl-design">
-    <button class="sl-item" data-action="goPage" data-page="design-tarefas"><div class="sl-dot" style="background:var(--y)"></div>Tarefas Design</button>
-    <button class="sl-item" data-action="goPage" data-page="design-ficheiros"><div class="sl-dot" style="background:#4d94db"></div>Ficheiros e Artes</button>
+    <button class="sl-item" data-action="goPage" data-page="design-tarefas"><span class="mk-ic">🗂️</span>Tarefas Design</button>
+    <button class="sl-item" data-action="goPage" data-page="design-ficheiros"><span class="mk-ic">🖼️</span>Ficheiros e Artes</button>
   </div>
 
-  <!-- Chão da Fábrica -->
+  <!-- 🏭 Produção (Chão da Fábrica) -->
   <button class="space-item" id="si-fabrica" data-action="toggleSpace" data-space="fabrica">
-    <div class="space-icon" style="background:var(--cf)">C</div>
-    <span class="space-name">Chão da Fábrica</span>
+    <div class="space-icon" style="background:var(--cf)">🏭</div>
+    <span class="space-name">Produção</span>
     <span class="space-chevron">›</span>
   </button>
   <div class="space-lists" id="sl-fabrica">
-    <button class="sl-item" data-action="goPage" data-page="fabrica-producao"><div class="sl-dot" style="background:var(--y)"></div>Pipeline Produção</button>
-    <button class="sl-item" data-action="goPage" data-page="fabrica-instalacoes"><div class="sl-dot" style="background:#3fcf8e"></div>Instalações</button>
+    <button class="sl-item" data-action="goPage" data-page="fabrica-producao"><span class="mk-ic">📈</span>Pipeline Produção</button>
+    <button class="sl-item" data-action="goPage" data-page="fabrica-instalacoes"><span class="mk-ic">🔧</span>Instalações</button>
   </div>
 
   <!-- ADMIN ONLY section -->
   <div class="sb-admin" id="admin-nav" style="display:none">
     <div class="sb-admin-lbl">Gestão — Admin</div>
-    <button class="sni" id="ni-dashboard" data-action="goPage" data-page="dashboard"><span class="si">◈</span>Dashboard CFO</button>
-    <button class="sni" id="ni-crm" data-action="goPage" data-page="crm"><span class="si">◫</span>CRM Completo</button>
-    <!-- Gestão Administrativa -->
-    <button class="space-item" id="si-admin-dept" data-action="toggleSpace" data-space="admin-dept">
-      <div class="space-icon" style="background:var(--da)">D</div>
-      <span class="space-name">Gestão Administrativa</span>
+
+    <!-- 💰 Financeiro -->
+    <button class="space-item" id="si-financeiro" data-action="toggleSpace" data-space="financeiro">
+      <div class="space-icon" style="background:var(--g)">💰</div>
+      <span class="space-name">Financeiro</span>
       <span class="space-chevron">›</span>
     </button>
-    <div class="space-lists" id="sl-admin-dept">
-      <button class="sl-item" data-action="goPage" data-page="admin-agenda"><div class="sl-dot" style="background:var(--y)"></div>Agenda</button>
-      <button class="sl-item" data-action="goPage" data-page="admin-docs"><div class="sl-dot" style="background:#4d94db"></div>Documentos</button>
-      <button class="sl-item" data-action="goPage" data-page="admin-despesas"><div class="sl-dot" style="background:#d9822b"></div>Despesas</button>
-      <button class="sl-item" onclick="goFaturasAdmin()"><div class="sl-dot" style="background:#3fcf8e"></div>🧾 Faturas</button>
-      <button class="sl-item" data-action="goPage" data-page="admin-rh"><div class="sl-dot" style="background:#ec4899"></div>👥 Recursos Humanos</button>
+    <div class="space-lists" id="sl-financeiro">
+      <button class="sl-item" id="ni-dashboard" data-action="goPage" data-page="dashboard"><span class="mk-ic">◈</span>Dashboard CFO</button>
+      <button class="sl-item" id="ni-financeiro" data-action="goPage" data-page="financeiro"><span class="mk-ic">💶</span>Financeiro</button>
+      <button class="sl-item" id="ni-tesouraria" data-action="goPage" data-page="tesouraria"><span class="mk-ic">🏦</span>Tesouraria</button>
+      <button class="sl-item" data-action="goPage" data-page="admin-analise-vendas"><span class="mk-ic">📊</span>Análise de Vendas</button>
+      <button class="sl-item" id="ni-relatorios" data-action="goPage" data-page="relatorios"><span class="mk-ic">📑</span>Relatórios</button>
+      <button class="sl-item" onclick="goFaturasAdmin()"><span class="mk-ic">🧾</span>Faturas</button>
     </div>
-    <button class="sni" id="ni-financeiro" data-action="goPage" data-page="financeiro"><span class="si">💰</span>Financeiro</button>
-    <button class="sni" id="ni-tesouraria" data-action="goPage" data-page="tesouraria"><span class="si">🏦</span>Tesouraria</button>
-    <button class="sni" id="ni-stock" data-action="goPage" data-page="stock"><span class="si">📦</span>Stock</button>
-    <button class="sni" id="ni-relatorios" data-action="goPage" data-page="relatorios"><span class="si">📊</span>Relatórios</button>
-    <button class="sni" data-action="goPage" data-page="admin-analise-vendas"><span class="si">📈</span>Análise de Vendas</button>
-    <button class="sni" id="ni-equipa" data-action="goPage" data-page="equipa"><span class="si">👥</span>Equipa (22)</button>
-    <button class="sni" id="ni-integracoes" data-action="goPage" data-page="integracoes"><span class="si">⚙</span>Integrações</button>
+
+    <!-- 🗂️ Administração -->
+    <button class="space-item" id="si-admin" data-action="toggleSpace" data-space="admin">
+      <div class="space-icon" style="background:var(--da)">🗂️</div>
+      <span class="space-name">Administração</span>
+      <span class="space-chevron">›</span>
+    </button>
+    <div class="space-lists" id="sl-admin">
+      <button class="sl-item" id="ni-crm" data-action="goPage" data-page="crm"><span class="mk-ic">◫</span>CRM Completo</button>
+      <button class="sl-item" data-action="goPage" data-page="admin-agenda"><span class="mk-ic">📅</span>Agenda</button>
+      <button class="sl-item" data-action="goPage" data-page="admin-docs"><span class="mk-ic">📁</span>Documentos</button>
+      <button class="sl-item" data-action="goPage" data-page="admin-despesas"><span class="mk-ic">💳</span>Despesas</button>
+      <button class="sl-item" data-action="goPage" data-page="admin-rh"><span class="mk-ic">👥</span>Recursos Humanos</button>
+      <button class="sl-item" id="ni-stock" data-action="goPage" data-page="stock"><span class="mk-ic">📦</span>Stock</button>
+      <button class="sl-item" id="ni-equipa" data-action="goPage" data-page="equipa"><span class="mk-ic">🧑‍🤝‍🧑</span>Equipa (22)</button>
+      <button class="sl-item" id="ni-integracoes" data-action="goPage" data-page="integracoes"><span class="mk-ic">⚙️</span>Integrações</button>
+    </div>
   </div>
 
   <div style="padding:8px"></div>
@@ -6794,9 +6820,6 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
   </div>
 </div>
 
-<!-- ═════════════════════════════════════════════════════
-     PAGES
-═════════════════════════════════════════════════════ -->
 <div class="main" id="main-content">
 
 <!-- HOME / TAREFAS (ClickUp style - role filtered) -->
@@ -10793,6 +10816,17 @@ function setupApp(){
     const sl=document.getElementById('sl-'+s);
     if(sl)sl.style.display='none';
   });
+  // Reorg: Meu Painel (topo) e grupo Equipa visíveis para acesso comercial ou admin
+  var _verCom = CU.admin || (DEPT_ACCESS[CU.dept]||[]).includes('comercial');
+  var _mp=document.getElementById('ni-meu-painel'); if(_mp)_mp.style.display=_verCom?'flex':'none';
+  var _siEq=document.getElementById('si-equipa'); if(_siEq)_siEq.style.display=_verCom?'flex':'none';
+  var _slEq=document.getElementById('sl-equipa'); if(_slEq)_slEq.style.display='none';
+  var _slFin=document.getElementById('sl-financeiro'); if(_slFin)_slFin.style.display='none';
+  var _slAdm=document.getElementById('sl-admin'); if(_slAdm)_slAdm.style.display='none';
+  // Reorg: abrir por padrão apenas o grupo principal do perfil
+  var _grpIni = CU.admin ? 'comercial' : ({'Comercial':'comercial','Dep. Design':'design','Chão da Fábrica':'fabrica','Gestão Administrativa':'admin'}[CU.dept]||'comercial');
+  var _bIni=document.getElementById('si-'+_grpIni), _lIni=document.getElementById('sl-'+_grpIni);
+  if(_bIni&&_lIni){ _bIni.classList.add('open'); _lIni.style.display='block'; }
 
   // home title
   document.getElementById('home-title').textContent=
