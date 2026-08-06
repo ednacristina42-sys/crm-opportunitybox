@@ -2560,6 +2560,13 @@ function crmBuildCUFromProfile(profile){
   };
 }
 
+// Página inicial por perfil: Comercial entra no Meu Painel; admin/restantes em 'home'.
+function crmPaginaInicial(){
+  try{ return (typeof CU!=='undefined' && CU && !CU.admin && CU.dept==='Comercial') ? 'meu-painel' : 'home'; }
+  catch(e){ return 'home'; }
+}
+window.crmPaginaInicial = crmPaginaInicial;
+
 function crmEnterAppWithProfile(profile){
   CU = crmBuildCUFromProfile(profile);
   selectedUser = CU;
@@ -2573,7 +2580,7 @@ function crmEnterAppWithProfile(profile){
   setTimeout(function(){
     try{ if(typeof renderAll === 'function') renderAll(); } catch(e){}
     try{ if(typeof gsInitUI === 'function') gsInitUI(); } catch(e){}
-    try{ if(typeof goPage === 'function') goPage('home'); } catch(e){}
+    try{ if(typeof goPage === 'function') goPage(crmPaginaInicial()); } catch(e){}
     try{ if(typeof initNovosModulos === 'function') initNovosModulos(); } catch(e){}
     // Fase 4, Etapa 6: só agora (sessão + perfil já validados) é que os
     // orçamentos são pedidos ao Supabase — nunca antes de existir CU.
@@ -10712,7 +10719,7 @@ function loginComSenha() {
   setTimeout(function(){
     try{ if(typeof renderAll === 'function') renderAll(); } catch(e){}
     try{ if(typeof gsInitUI === 'function') gsInitUI(); } catch(e){}
-    try{ if(typeof goPage === 'function') goPage('home'); } catch(e){}
+    try{ if(typeof goPage === 'function') goPage(crmPaginaInicial()); } catch(e){}
     try{ if(typeof initNovosModulos === 'function') initNovosModulos(); } catch(e){}
   }, 0);
 }
@@ -10767,7 +10774,7 @@ function doLogin(){
     setTimeout(function(){
       try{if(typeof renderAll==='function') renderAll();}catch(e){}
       try{if(typeof gsInitUI==='function') gsInitUI();}catch(e){}
-      try{if(typeof goPage==='function') goPage('home');}catch(e){}
+      try{if(typeof goPage==='function') goPage(crmPaginaInicial());}catch(e){}
     },0);
     if(typeof GS_URL!=='undefined'&&GS_URL&&typeof gsIniciarAutoSync==='function') gsIniciarAutoSync();
   }
@@ -10833,8 +10840,8 @@ function setupApp(){
     CU.admin?'Todas as tarefas — OpportunityBox':
     `Minhas tarefas — ${CU.dept}`;
 
-  // Go to home
-  goPage('home');
+  // Go to página inicial do perfil (Comercial → Meu Painel; restantes → home)
+  goPage(crmPaginaInicial());
 
   // Seletor de utilizadores (modo "ver como") — só visível para o admin original
   renderUserSwitcher();
@@ -16305,7 +16312,7 @@ window.doLogin=function(){
   setTimeout(function(){
     try{if(typeof renderAll==='function') renderAll();}catch(e){console.warn('renderAll:',e);}
     try{if(typeof gsInitUI==='function') gsInitUI();}catch(e){}
-    try{if(typeof goPage==='function') goPage('home');}catch(e){}
+    try{if(typeof goPage==='function') goPage(crmPaginaInicial());}catch(e){}
   },0);
   try{if(typeof GS_URL!=='undefined'&&GS_URL&&typeof gsIniciarAutoSync==='function') gsIniciarAutoSync();}catch(e){}
 };
