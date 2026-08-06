@@ -234,8 +234,8 @@ begin
            (o.val - coalesce(p.recebido,0)),
            o.st
     from public.ob_orcamentos o
-    left join (select orcamento_id, sum(valor) as recebido
-               from public.ob_pagamentos group by orcamento_id) p on p.orcamento_id = o.id
+    left join (select pg.orcamento_id as oid, sum(pg.valor) as recebido
+               from public.ob_pagamentos pg group by pg.orcamento_id) p on p.oid = o.id
     where o.deleted_at is null
       and (o.val - coalesce(p.recebido,0)) > 0
     order by (o.val - coalesce(p.recebido,0)) desc;
@@ -308,8 +308,8 @@ revoke execute on function public.ob_cobrancas_todas()                          
 -- drop function if exists public.ob_pagamento_estornar(uuid,text);
 -- drop function if exists public.ob_pagamento_registar(text,numeric,text,text,date,text);
 -- drop view     if exists public.ob_orcamento_saldos;
--- drop function if exists public.ob_pode_registar_pagamento();
 -- drop table    if exists public.ob_pagamentos;
+-- drop function if exists public.ob_pode_registar_pagamento();
 -- -- ob_orcamentos NÃO é alterada por esta proposta (nenhuma coluna nova).
 
 
