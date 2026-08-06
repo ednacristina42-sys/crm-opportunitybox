@@ -5447,6 +5447,12 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--txt);min-he
 .mp-action-btn:hover{filter:brightness(1.2)}
 /* ADD: Meu Painel — secção Financeiro em largura total (local, sem tocar em vars globais) */
 .mp-fin-grid{display:grid;grid-template-columns:1fr;gap:12px;margin-bottom:12px}
+/* ADD: Meu Painel — cabeçalho vivo (avatar + saudação + resumo do dia). Local. */
+.mp-avatar{flex-shrink:0;line-height:0}
+.mp-avatar .av-ini,.mp-avatar .av-img{border-color:var(--border2)}
+.mp-daysummary{font-size:13px;color:var(--muted);margin-top:3px;font-family:'Inter',sans-serif;line-height:1.5}
+.mp-daysummary b{color:var(--txt2);font-weight:600}
+.mp-daysummary .mp-sep{opacity:.45;margin:0 7px}
 
 /* Grid layouts */
 .g2{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
@@ -6931,9 +6937,12 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
 ═══════════════════════════════════════════════════════ -->
 <div id="page-meu-painel" class="app-page">
   <div class="pg-hdr">
-    <div class="pg-hdr-top">
-      <div class="pg-space-icon" style="background:var(--dc)">D</div>
-      <div class="pg-title">Meu Painel</div>
+    <div class="pg-hdr-top" style="align-items:center">
+      <div id="mp-avatar" class="mp-avatar"></div>
+      <div style="flex:1;min-width:0">
+        <div class="pg-title" id="mp-greeting">Meu Painel</div>
+        <div class="mp-daysummary" id="mp-daysummary"></div>
+      </div>
     </div>
   </div>
   <div class="admin-page">
@@ -24751,6 +24760,31 @@ function renderMeuPainel(){
   var valorPendentes=pendentes.reduce(function(s,o){ return s+valorOrc(o); },0);
   set('mp-kpi-pendentes', pendentes.length);
   set('mp-kpi-pendentes-sub', (pendentes.length===1?'proposta pendente':pendentes.length+' propostas pendentes')+' · '+fmtEuro(valorPendentes));
+
+  // A1 — Cabeçalho vivo: avatar + saudação por hora + resumo do dia.
+  // Usa apenas valores já calculados acima (reais): follow-ups activos
+  // (ativosMeus), propostas pendentes (pendentes) e valor em negociação.
+  (function(){
+    var h=new Date().getHours();
+    var saud = h<12 ? 'Bom dia' : (h<20 ? 'Boa tarde' : 'Boa noite');
+    var primeiro = nome ? String(nome).trim().split(/\s+/)[0] : '';
+    var gEl=document.getElementById('mp-greeting');
+    if(gEl) gEl.textContent = primeiro ? (saud+', '+primeiro+' \uD83D\uDC4B') : (saud+' \uD83D\uDC4B');
+    var avEl=document.getElementById('mp-avatar');
+    if(avEl && typeof avHtml==='function') avEl.innerHTML = avHtml(nome||'?', null, 40);
+    var dsEl=document.getElementById('mp-daysummary');
+    if(dsEl){
+      var nf=ativosMeus.length, np=pendentes.length;
+      if(nf===0 && np===0 && valorNegociacao===0){
+        dsEl.textContent='Sem pendências para hoje. Bom trabalho!';
+      } else {
+        dsEl.innerHTML='Hoje tens: '
+          +'<b>'+nf+'</b> follow-up'+(nf===1?'':'s')
+          +'<span class="mp-sep">·</span><b>'+np+'</b> proposta'+(np===1?'':'s')+' pendente'+(np===1?'':'s')
+          +'<span class="mp-sep">·</span><b>'+fmtEuro(valorNegociacao)+'</b> em negociação';
+      }
+    }
+  })();
 
   // Card "Por cobrar" — dados reais de TES_RECEBER (Tesouraria), mesmo
   // critério já usado em tesRenderReceber()/dash CFO: estado!=='Recebido'
