@@ -10582,6 +10582,17 @@ var DEPT_ACCESS={
   'Chão da Fábrica':['fabrica'],
   'Gestão Administrativa':['admin-dept'],
 };
+// ── FEATURE FLAGS ─────────────────────────────────────────────
+// Ocultar módulos da interface SEM remover código. Reativar um
+// módulo = pôr a respetiva flag a true (não é preciso reconstruir nada).
+var FEATURES = { equipaEmCampo: false };
+window.FEATURES = FEATURES;
+// Esconde do menu lateral os itens de módulos desativados (sem apagar o HTML):
+document.addEventListener('DOMContentLoaded', function(){
+  if(!FEATURES.equipaEmCampo){
+    document.querySelectorAll('.sl-item[data-page="equipa-campo"]').forEach(function(b){ b.style.display='none'; });
+  }
+});
 // Pages accessible per role
 var DEPT_PAGES={
   'Comercial':['home','todas','meu-painel','comercial-pipeline','comercial-followup','comercial-clientes','comercial-orcamentos','wa','equipa-campo','alerts','chat'], // corrigido de 'Dep. Comercial'
@@ -10589,6 +10600,12 @@ var DEPT_PAGES={
   'Chão da Fábrica':['home','todas','fabrica-producao','fabrica-instalacoes','alerts','chat'],
   'Gestão Administrativa':['home','todas','admin-agenda','admin-docs','admin-despesas','admin-analise-vendas','admin-rh','stock','alerts','chat','comercial-orcamentos'],
 };
+// Aplica as feature flags às páginas por perfil (arrays literais acima ficam intactos):
+if(!FEATURES.equipaEmCampo){
+  Object.keys(DEPT_PAGES).forEach(function(d){
+    DEPT_PAGES[d]=DEPT_PAGES[d].filter(function(pg){ return pg!=='equipa-campo'; });
+  });
+}
 
 var CU=null; // current user
 var selectedUser=null;
@@ -10850,6 +10867,8 @@ window.toggleAdminSensitiveFields = toggleAdminSensitiveFields;
 
 // ── NAV ──────────────────────────────────────────────────
 window.goPage=function goPage(id){
+  // Feature flag: módulos ocultos não abrem por navegação (inclui admin)
+  if(id==='equipa-campo' && !(window.FEATURES&&window.FEATURES.equipaEmCampo)){ return; }
   // Access check for non-admins
   if(!CU)return;
   if(!CU.admin){
