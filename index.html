@@ -12571,7 +12571,8 @@ function crmAddAtividade(leadId, tipo, texto, autor, opts){
     orcId: opts.orcId || null, resultado: opts.resultado || null,
     clienteId: opts.clienteId || null, due: opts.due || null,
     canal: opts.canal || null, prioridade: opts.prioridade || null,
-    tags: Array.isArray(opts.tags) ? opts.tags : [], data: opts.data || null
+    tags: Array.isArray(opts.tags) ? opts.tags : [], data: opts.data || null,
+    origem: opts.origem || null, acao: opts.acao || null
   });
   saveCrmAtividades();
 }
@@ -14941,60 +14942,62 @@ function _cliDynModal(titulo, corpoHTML, onOK, okLabel){
 }
 function cliRegistarContacto(){
   var c=_cliAtual(); if(!c){ return; }
-  _cliDynModal('\uD83D\uDCC7 Registar contacto',
+  _cliDynModal('📇 Registar contacto',
     '<div class="form-row"><div class="form-group"><label class="form-label">Tipo</label><select class="form-select" id="cli-ct-tipo"><option>Nota</option><option>Chamada</option><option>Email</option><option>Visita</option><option>WhatsApp</option></select></div>'
-   +'<div class="form-group"><label class="form-label">Resultado</label><select class="form-select" id="cli-ct-res"><option value="">\u2014</option><option>Interessado</option><option>Sem interesse</option><option>Ligar novamente</option><option>Sem resposta</option><option>Cliente ocupado</option><option>Proposta enviada</option><option>Aguardando decis\u00e3o</option></select></div></div>'
-   +'<div class="form-group"><label class="form-label">Nota</label><textarea class="form-input" id="cli-ct-nota" rows="3" placeholder="O que aconteceu neste contacto\u2026"></textarea></div>',
+   +'<div class="form-group"><label class="form-label">Resultado</label><select class="form-select" id="cli-ct-res"><option value="">Selecione…</option><option>Interessado</option><option>Muito interessado</option><option>Proposta enviada</option><option>Aguardando decisão</option><option>Cliente ocupado</option><option>Ligar novamente</option><option>Sem resposta</option><option>Sem interesse</option></select></div></div>'
+   +'<div class="form-group"><label class="form-label">Nota</label><textarea class="form-input" id="cli-ct-nota" rows="3" placeholder="O que aconteceu neste contacto…"></textarea></div>',
     function(ov){
       var tipo=(ov.querySelector('#cli-ct-tipo')||{}).value||'Nota';
-      var res=(ov.querySelector('#cli-ct-res')||{}).value||null;
+      var res=(ov.querySelector('#cli-ct-res')||{}).value||'';
       var nota=((ov.querySelector('#cli-ct-nota')||{}).value||'').trim();
+      if(!res){ alert('Escolhe um resultado do contacto.'); return false; }
       if(!nota){ alert('Escreve uma nota do contacto.'); return false; }
-      var canalMap={Chamada:'telefone',Email:'email',Visita:'presencial',WhatsApp:'whatsapp',Nota:'nota'};
-      crmAddAtividade(c.leadId||null, tipo, nota+' \u2014 '+(c.n||'cliente'), (typeof CU!=='undefined'&&CU&&CU.name)?CU.name:'Sistema',
-        {clienteId:c.id, resultado:res, canal:canalMap[tipo]||'nota'});
-      if(typeof showToast==='function') showToast('\u2713 Contacto registado');
+      crmAddAtividade(c.leadId||null, tipo, nota+' — '+(c.n||'cliente'), (typeof CU!=='undefined'&&CU&&CU.name)?CU.name:'Sistema',
+        {clienteId:c.id, resultado:res, canal:'Contacto', origem:'CRM'});
+      if(typeof showToast==='function') showToast('✓ Contacto registado');
       return true;
     }, 'Registar');
 }
 function cliCriarLembrete(){
   var c=_cliAtual(); if(!c){ return; }
   var aberto=(crmAtividades||[]).some(function(a){ return a && a.tipo==='Lembrete' && a.clienteId===c.id && !a.resultado; });
-  if(aberto){ alert('J\u00e1 existe um lembrete aberto para este cliente. Fecha-o antes de criar outro.'); return; }
-  _cliDynModal('\uD83D\uDCCC Criar Lembrete Comercial',
-    '<div style="font-size:12px;color:var(--muted);margin-bottom:10px;line-height:1.5">Lembrete comercial associado a <b style="color:var(--txt2)">'+(c.n||'este cliente')+'</b>. N\u00e3o cria or\u00e7amento nem entra no Kanban de Follow-up de or\u00e7amentos.</div>'
+  if(aberto){ alert('Já existe um lembrete aberto para este cliente. Fecha-o antes de criar outro.'); return; }
+  _cliDynModal('📌 Criar Lembrete Comercial',
+    '<div style="font-size:12px;color:var(--muted);margin-bottom:10px;line-height:1.5">Lembrete comercial associado a <b style="color:var(--txt2)">'+(c.n||'este cliente')+'</b>. Não cria orçamento nem entra no Kanban de Follow-up de orçamentos.</div>'
    +'<div class="form-row"><div class="form-group"><label class="form-label">Data</label><input class="form-input" type="date" id="cli-lb-data"></div>'
    +'<div class="form-group"><label class="form-label">Hora</label><input class="form-input" type="time" id="cli-lb-hora" value="09:00"></div></div>'
-   +'<div class="form-group"><label class="form-label">Prioridade</label><select class="form-select" id="cli-lb-prio"><option>M\u00e9dia</option><option>Alta</option><option>Baixa</option></select></div>'
+   +'<div class="form-row"><div class="form-group"><label class="form-label">Prioridade</label><select class="form-select" id="cli-lb-prio"><option>Média</option><option>Alta</option><option>Baixa</option></select></div>'
+   +'<div class="form-group"><label class="form-label">Tipo</label><select class="form-select" id="cli-lb-tipo"><option>📞 Ligar</option><option>💬 WhatsApp</option><option>✉️ Email</option><option>🤝 Visita</option><option>📄 Enviar proposta</option><option>💰 Cobrança</option><option>📌 Outro</option></select></div></div>'
    +'<div class="form-group"><label class="form-label">Nota (opcional)</label><textarea class="form-input" id="cli-lb-nota" rows="2" placeholder="Ex.: confirmar interesse na proposta"></textarea></div>',
     function(ov){
       var d=(ov.querySelector('#cli-lb-data')||{}).value||'';
       if(!d){ alert('Escolhe uma data para o lembrete.'); return false; }
       var hora=(ov.querySelector('#cli-lb-hora')||{}).value||'09:00';
-      var prio=(ov.querySelector('#cli-lb-prio')||{}).value||'M\u00e9dia';
+      var prio=(ov.querySelector('#cli-lb-prio')||{}).value||'Média';
+      var acao=(ov.querySelector('#cli-lb-tipo')||{}).value||'📌 Outro';
       var nota=((ov.querySelector('#cli-lb-nota')||{}).value||'').trim();
       var quando=d+'T'+hora;
-      crmAddAtividade(c.leadId||null, 'Lembrete', 'Lembrete '+d+' '+hora+(nota?': '+nota:'')+' \u2014 '+(c.n||'cliente'), (typeof CU!=='undefined'&&CU&&CU.name)?CU.name:'Sistema',
-        {clienteId:c.id, due:quando, data:quando, prioridade:prio, canal:'lembrete', tags:['lembrete']});
-      if(typeof showToast==='function') showToast('\u2713 Lembrete criado p/ '+d+' '+hora);
+      crmAddAtividade(c.leadId||null, 'Lembrete', acao+' '+d+' '+hora+(nota?': '+nota:'')+' — '+(c.n||'cliente'), (typeof CU!=='undefined'&&CU&&CU.name)?CU.name:'Sistema',
+        {clienteId:c.id, due:quando, data:quando, prioridade:prio, acao:acao, canal:'lembrete', origem:'CRM', tags:['lembrete']});
+      if(typeof showToast==='function') showToast('✓ Lembrete criado p/ '+d+' '+hora);
       return true;
     }, 'Criar Lembrete');
 }
 function cliEnviarWhatsApp(){
   var c=_cliAtual(); if(!c){ return; }
   var telRaw=c.tel||c.finTel||'';
-  if(!telRaw || !(''+telRaw).replace(/\D/g,'')){ alert('Este cliente n\u00e3o tem telefone \u2014 n\u00e3o \u00e9 poss\u00edvel abrir o WhatsApp.'); return; }
+  if(!telRaw || !(''+telRaw).replace(/\D/g,'')){ alert('Este cliente não tem telefone — não é possível abrir o WhatsApp.'); return; }
   var num=_cliNormTel(telRaw);
-  var sugestao='Ol\u00e1 '+(c.cont||c.n||'')+', tudo bem? Aqui \u00e9 a OpportunityBox.';
-  var ov=_cliDynModal('\uD83D\uDCAC Enviar WhatsApp',
-    '<div style="font-size:12px;color:var(--muted);margin-bottom:8px;line-height:1.5">N\u00famero: <b style="color:var(--txt2)">+'+num+'</b> \u00b7 a mensagem \u00e9 <b>sugerida e edit\u00e1vel</b>. Nada \u00e9 enviado automaticamente \u2014 abre o WhatsApp para confirmares o envio.</div>'
+  var sugestao='Olá '+(c.cont||c.n||'')+', tudo bem? Aqui é a OpportunityBox.';
+  var ov=_cliDynModal('💬 Enviar WhatsApp',
+    '<div style="font-size:12px;color:var(--muted);margin-bottom:8px;line-height:1.5">Número: <b style="color:var(--txt2)">+'+num+'</b> · a mensagem é <b>sugerida e editável</b>. Nada é enviado automaticamente — abre o WhatsApp para confirmares o envio.</div>'
    +'<div class="form-group"><label class="form-label">Mensagem sugerida</label><textarea class="form-input" id="cli-wa-msg" rows="3"></textarea></div>',
     function(ov){
       var msg=(ov.querySelector('#cli-wa-msg')||{}).value||'';
       window.open('https://wa.me/'+num+'?text='+encodeURIComponent(msg),'_blank');
-      crmAddAtividade(c.leadId||null, 'WhatsApp', 'WhatsApp iniciado \u2014 '+(c.n||'cliente')+' | Msg: '+msg, (typeof CU!=='undefined'&&CU&&CU.name)?CU.name:'Sistema',
-        {clienteId:c.id, canal:'whatsapp', tags:['whatsapp']});
-      if(typeof showToast==='function') showToast('\u2713 WhatsApp aberto (registado)');
+      crmAddAtividade(c.leadId||null, 'WhatsApp', 'WhatsApp iniciado — '+(c.n||'cliente')+' | Msg: '+msg, (typeof CU!=='undefined'&&CU&&CU.name)?CU.name:'Sistema',
+        {clienteId:c.id, canal:'whatsapp', origem:'CRM', tags:['whatsapp']});
+      if(typeof showToast==='function') showToast('✓ WhatsApp aberto (registado)');
       return true;
     }, 'Abrir WhatsApp');
   var ta=ov.querySelector('#cli-wa-msg'); if(ta) ta.value=sugestao;
