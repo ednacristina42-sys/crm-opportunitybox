@@ -5445,6 +5445,8 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--txt);min-he
 .mp-breakdown-row b{color:var(--txt2);font-weight:600}
 .mp-action-btn{margin-top:10px;padding:7px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--txt2);font-size:12.5px;font-weight:600;cursor:pointer;text-align:center;font-family:inherit}
 .mp-action-btn:hover{filter:brightness(1.2)}
+/* ADD: Meu Painel — secção Financeiro em largura total (local, sem tocar em vars globais) */
+.mp-fin-grid{display:grid;grid-template-columns:1fr;gap:12px;margin-bottom:12px}
 
 /* Grid layouts */
 .g2{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
@@ -6936,6 +6938,30 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
   </div>
   <div class="admin-page">
 
+    <div class="sh"><h2>Prioridades de hoje</h2></div>
+    <div class="g3">
+      <div class="kpi kA mp-action">
+        <div class="klbl">📞 Follow-up</div>
+        <div class="kval" id="mp-kpi-followup">—</div>
+        <div class="ksub">clientes com follow-up activo</div>
+        <div class="mp-breakdown" id="mp-followup-breakdown"></div>
+        <button class="mp-action-btn" data-action="goPage" data-page="comercial-followup">Abrir Follow-up</button>
+      </div>
+      <div class="kpi kR mp-action">
+        <div class="klbl">🚨 Clientes em risco</div>
+        <div class="kval" id="mp-kpi-risco">—</div>
+        <div class="ksub">prioridade alta / crítica / perdido sugerido</div>
+        <div class="mp-breakdown" id="mp-risco-breakdown"></div>
+        <button class="mp-action-btn" data-action="goPage" data-page="comercial-followup">Ver prioritários</button>
+      </div>
+      <div class="kpi mp-action">
+        <div class="klbl">💰 Negócios em aberto</div>
+        <div class="kval" id="mp-kpi-pendentes">—</div>
+        <div class="ksub" id="mp-kpi-pendentes-sub">propostas em estado "Pendente"</div>
+        <button class="mp-action-btn" data-action="goPage" data-page="comercial-orcamentos">Abrir Orçamentos</button>
+      </div>
+    </div>
+
     <div class="sh"><h2>Resumo comercial</h2></div>
     <div class="g3">
       <div class="kpi kY">
@@ -6951,35 +6977,11 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
       <div class="kpi kG">
         <div class="klbl">Taxa de conversão</div>
         <div class="kval" id="mp-kpi-conversao">—</div>
-        <div class="ksub">Mesmo valor do Pipeline de Leads</div>
+        <div class="ksub">do Pipeline de Leads</div>
       </div>
     </div>
-    <div class="sh"><h2>Prioridades de hoje</h2></div>
-    <div class="g3">
-      <div class="kpi kA mp-action">
-        <div class="klbl">📞 Follow-up</div>
-        <div class="kval" id="mp-kpi-followup">—</div>
-        <div class="ksub">clientes com follow-up activo</div>
-        <div class="mp-breakdown" id="mp-followup-breakdown"></div>
-        <button class="mp-action-btn" data-action="goPage" data-page="comercial-followup">Abrir Follow-up</button>
-      </div>
-      <div class="kpi kR mp-action">
-        <div class="klbl">🚨 Clientes em risco</div>
-        <div class="kval" id="mp-kpi-risco">—</div>
-        <div class="ksub">prioridade alta / crítica / perdido sugerido</div>
-        <div class="mp-breakdown" id="mp-risco-breakdown"></div>
-        <button class="mp-action-btn" data-action="goPage" data-page="comercial-followup">Abrir Follow-up</button>
-      </div>
-      <div class="kpi mp-action">
-        <div class="klbl">💰 Negócios em aberto</div>
-        <div class="kval" id="mp-kpi-pendentes">—</div>
-        <div class="ksub" id="mp-kpi-pendentes-sub">propostas em estado "Pendente"</div>
-        <button class="mp-action-btn" data-action="goPage" data-page="comercial-orcamentos">Abrir Orçamentos</button>
-      </div>
-    </div>
-
     <div class="sh"><h2>Financeiro</h2></div>
-    <div class="g3">
+    <div class="mp-fin-grid">
       <div class="kpi mp-action mp-placeholder" id="mp-cobrar-card">
         <div class="klbl">💳 Por cobrar</div>
         <div class="kval" id="mp-kpi-cobrar">—</div>
@@ -6989,6 +6991,10 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
       </div>
     </div>
 
+    <div class="sh"><h2>Últimas actividades</h2></div>
+    <div class="tw" id="mp-atividades-wrap">
+      <div id="mp-atividades-list" style="padding:4px 6px"></div>
+    </div>
     <div class="sh"><h2>Em breve</h2></div>
     <div class="g3">
       <div class="kpi mp-placeholder"><div class="klbl">Meta do mês</div><div class="kval">—</div><div class="ksub">Em breve</div></div>
@@ -7000,10 +7006,6 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
       <div class="kpi mp-placeholder"><div class="klbl">IA recomenda</div><div class="kval">—</div><div class="ksub">Em breve</div></div>
     </div>
 
-    <div class="sh"><h2>Últimas actividades</h2></div>
-    <div class="tw" id="mp-atividades-wrap">
-      <div id="mp-atividades-list" style="padding:4px 6px"></div>
-    </div>
 
   </div>
 </div>
