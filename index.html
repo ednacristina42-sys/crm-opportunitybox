@@ -10352,6 +10352,11 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
         </div>
       </div>
 
+      <div id="cli-acoes-comerciais" style="display:none;gap:8px;flex-wrap:wrap;margin-top:6px;border-top:1px solid var(--border);padding-top:12px">
+        <button class="tbtn" onclick="cliRegistarContacto()">📇 Registar contacto</button>
+        <button class="tbtn" onclick="cliAgendarFollowup()">📌 Agendar follow-up</button>
+        <button class="tbtn" onclick="cliEnviarWhatsApp()">💬 Enviar WhatsApp</button>
+      </div>
       <div class="crm-modal-btns">
         <button class="tbtn" id="cli-del-btn" data-action="cliDelete" style="color:var(--r);border-color:var(--r);margin-right:auto;display:none">🗑️ Eliminar</button>
         <button class="tbtn" data-action="closeCliModal">Cancelar</button>
@@ -12563,7 +12568,8 @@ function crmAddAtividade(leadId, tipo, texto, autor, opts){
   opts = opts || {};
   crmAtividades.unshift({
     leadId, ts: new Date().toISOString(), tipo, texto: texto.trim(), autor,
-    orcId: opts.orcId || null, resultado: opts.resultado || null
+    orcId: opts.orcId || null, resultado: opts.resultado || null,
+    clienteId: opts.clienteId || null, due: opts.due || null
   });
   saveCrmAtividades();
 }
@@ -14882,6 +14888,7 @@ function cliOpenNew(){
   if(!cm) return;
   document.getElementById('cli-modal-title').textContent='+ Novo Cliente';
   document.getElementById('cli-del-btn').style.display='none';
+  { var _ac=document.getElementById('cli-acoes-comerciais'); if(_ac) _ac.style.display='none'; }
   cm.classList.add('open');
 }
 
@@ -14907,10 +14914,81 @@ function cliOpenEdit(id){
   cliToggleIvaIsento();
   document.getElementById('cli-modal-title').textContent='✏️ Editar Cliente';
   document.getElementById('cli-del-btn').style.display='block';
+  { var _ac=document.getElementById('cli-acoes-comerciais'); if(_ac) _ac.style.display='flex'; }
   document.getElementById('cli-modal').classList.add('open');
   // Painel de recebimentos
   cliRenderRecebimentos(c);
 }
+
+// ── P1 Clientes: ações comerciais (Registar contacto / Agendar follow-up /
+//    Enviar WhatsApp). Reutilizam crmAddAtividade() e o padrão wa.me existentes.
+//    Só index.html; não tocam em ob_orcamentos, RLS, autenticação nem owner_id.
+function _cliAtual(){ try{ return (cliData||[]).find(function(x){return x.id===cliEditId;}); }catch(e){ return null; } }
+function _cliNormTel(tel){ var d=(''+(tel||'')).replace(/\D/g,''); if(d.length===9) d='351'+d; return d; }
+function _cliDynModal(titulo, corpoHTML, onOK, okLabel){
+  var ov=document.createElement('div'); ov.className='crm-modal-overlay open';
+  ov.innerHTML='<div class="crm-modal" style="max-width:460px"><h2 style="margin-bottom:16px">'+titulo+'</h2>'
+    +corpoHTML+'<div class="crm-modal-btns"><button class="tbtn" id="_cdm-cancel">Cancelar</button>'
+    +'<button class="tbtn y" id="_cdm-ok">'+(okLabel||'OK')+'</button></div></div>';
+  document.body.appendChild(ov);
+  function close(){ if(ov&&ov.parentNode) ov.parentNode.removeChild(ov); }
+  ov.addEventListener('click', function(e){ if(e.target===ov) close(); });
+  ov.querySelector('#_cdm-cancel').onclick=close;
+  ov.querySelector('#_cdm-ok').onclick=function(){ var r=true; try{ r=onOK(ov); }catch(e){ console.warn('[cli-acao]',e); } if(r!==false) close(); };
+  return ov;
+}
+function cliRegistarContacto(){
+  var c=_cliAtual(); if(!c){ return; }
+  _cliDynModal('📇 Registar contacto',
+    '<div class="form-group"><label class="form-label">Tipo</label><select class="form-select" id="cli-ct-tipo"><option>Nota</option><option>Chamada</option><option>Email</option><option>Visita</option></select></div>'
+   +'<div class="form-group"><label class="form-label">Nota</label><textarea class="form-input" id="cli-ct-nota" rows="3" placeholder="O que aconteceu neste contacto…"></textarea></div>',
+    function(ov){
+      var tipo=(ov.querySelector('#cli-ct-tipo')||{}).value||'Nota';
+      var nota=((ov.querySelector('#cli-ct-nota')||{}).value||'').trim();
+      if(!nota){ alert('Escreve uma nota do contacto.'); return false; }
+      crmAddAtividade(c.leadId||null, tipo, nota+' — '+(c.n||'cliente'), (typeof CU!=='undefined'&&CU&&CU.name)?CU.name:'Sistema', {clienteId:c.id});
+      if(typeof showToast==='function') showToast('✓ Contacto registado');
+      return true;
+    }, 'Registar');
+}
+function cliAgendarFollowup(){
+  var c=_cliAtual(); if(!c){ return; }
+  var aberto=(crmAtividades||[]).some(function(a){ return a && a.tipo==='Follow-up' && a.clienteId===c.id && !a.resultado; });
+  if(aberto){ alert('Já existe um follow-up aberto para este cliente. Fecha-o antes de agendar outro.'); return; }
+  _cliDynModal('📌 Agendar follow-up',
+    '<div style="font-size:12px;color:var(--muted);margin-bottom:10px;line-height:1.5">Lembrete comercial associado a <b style="color:var(--txt2)">'+(c.n||'este cliente')+'</b>. Não cria orçamento nem entra no Kanban de Follow-up de orçamentos.</div>'
+   +'<div class="form-group"><label class="form-label">Data do follow-up</label><input class="form-input" type="date" id="cli-fu-data"></div>'
+   +'<div class="form-group"><label class="form-label">Nota (opcional)</label><textarea class="form-input" id="cli-fu-nota" rows="2" placeholder="Ex.: confirmar interesse na proposta"></textarea></div>',
+    function(ov){
+      var d=(ov.querySelector('#cli-fu-data')||{}).value||'';
+      if(!d){ alert('Escolhe uma data para o follow-up.'); return false; }
+      var nota=((ov.querySelector('#cli-fu-nota')||{}).value||'').trim();
+      crmAddAtividade(c.leadId||null, 'Follow-up', 'Follow-up agendado p/ '+d+(nota?': '+nota:'')+' — '+(c.n||'cliente'), (typeof CU!=='undefined'&&CU&&CU.name)?CU.name:'Sistema', {clienteId:c.id, due:d});
+      if(typeof showToast==='function') showToast('✓ Follow-up agendado p/ '+d);
+      return true;
+    }, 'Agendar');
+}
+function cliEnviarWhatsApp(){
+  var c=_cliAtual(); if(!c){ return; }
+  var telRaw=c.tel||c.finTel||'';
+  if(!telRaw || !(''+telRaw).replace(/\D/g,'')){ alert('Este cliente não tem telefone — não é possível abrir o WhatsApp.'); return; }
+  var num=_cliNormTel(telRaw);
+  var sugestao='Olá '+(c.cont||c.n||'')+', tudo bem? Aqui é a OpportunityBox.';
+  var ov=_cliDynModal('💬 Enviar WhatsApp',
+    '<div style="font-size:12px;color:var(--muted);margin-bottom:8px;line-height:1.5">Número: <b style="color:var(--txt2)">+'+num+'</b> · a mensagem é <b>sugerida e editável</b>. Nada é enviado automaticamente — abre o WhatsApp para confirmares o envio.</div>'
+   +'<div class="form-group"><label class="form-label">Mensagem sugerida</label><textarea class="form-input" id="cli-wa-msg" rows="3"></textarea></div>',
+    function(ov){
+      var msg=(ov.querySelector('#cli-wa-msg')||{}).value||'';
+      window.open('https://wa.me/'+num+'?text='+encodeURIComponent(msg),'_blank');
+      crmAddAtividade(c.leadId||null, 'WhatsApp', 'WhatsApp iniciado — '+(c.n||'cliente'), (typeof CU!=='undefined'&&CU&&CU.name)?CU.name:'Sistema', {clienteId:c.id});
+      if(typeof showToast==='function') showToast('✓ WhatsApp aberto (registado)');
+      return true;
+    }, 'Abrir WhatsApp');
+  var ta=ov.querySelector('#cli-wa-msg'); if(ta) ta.value=sugestao;
+}
+window.cliRegistarContacto=cliRegistarContacto;
+window.cliAgendarFollowup=cliAgendarFollowup;
+window.cliEnviarWhatsApp=cliEnviarWhatsApp;
 
 function cliToggleIvaIsento(){
   const checked=document.getElementById('cli-iva-isento')?.checked;
