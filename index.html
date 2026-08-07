@@ -6741,24 +6741,15 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
     <span class="space-chevron">›</span>
   </button>
   <div class="space-lists" id="sl-comercial">
-    <button class="sl-item" data-action="goPage" data-page="comercial-pipeline"><span class="mk-ic">📈</span>Pipeline de Leads<span id="ob-badge-pendencias" style="display:none;background:var(--r);color:#fff;font-size:10.5px;font-weight:700;font-family:'DM Mono',monospace;padding:1px 6px;border-radius:8px;margin-left:auto;flex-shrink:0" title="Pendências: leads parados e acções em atraso">0</span></button>
+    <button class="sl-item" data-action="goPage" data-page="comercial-pipeline"><span class="mk-ic">📈</span>Pipeline<span id="ob-badge-pendencias" style="display:none;background:var(--r);color:#fff;font-size:10.5px;font-weight:700;font-family:'DM Mono',monospace;padding:1px 6px;border-radius:8px;margin-left:auto;flex-shrink:0" title="Pendências: leads parados e acções em atraso">0</span></button>
     <button class="sl-item" data-action="goPage" data-page="comercial-followup"><span class="mk-ic">📞</span>Follow-up</button>
     <button class="sl-item" data-action="goPage" data-page="comercial-clientes"><span class="mk-ic">👤</span>Clientes</button>
     <button class="sl-item" data-action="goPage" data-page="comercial-orcamentos"><span class="mk-ic">📄</span>Orçamentos<span id="toco-vencidas-badge">!</span></button>
     <button class="sl-item" data-action="goPage" data-page="equipa-campo"><span class="mk-ic">🗺️</span>Equipa em Campo</button>
   </div>
 
-  <!-- 👥 Equipa -->
-  <button class="space-item" id="si-equipa" data-action="toggleSpace" data-space="equipa">
-    <div class="space-icon" style="background:#4d94db">👥</div>
-    <span class="space-name">Equipa</span>
-    <span class="space-chevron">›</span>
-  </button>
-  <div class="space-lists" id="sl-equipa">
-    <button class="sl-item" onclick="homeFilterTasks('Dep. Comercial','Rui Mota')"><span class="mk-ic">🧑</span>Rui Mota</button>
-    <button class="sl-item" onclick="homeFilterTasks('Dep. Comercial','Paulo Faria')"><span class="mk-ic">🧑</span>Paulo Faria</button>
-    <button class="sl-item" onclick="homeFilterTasks('Dep. Comercial','Humberto Estrelinha')"><span class="mk-ic">🧑</span>Humberto Estrelinha</button>
-  </div>
+  <!-- Espaço "Equipa" (atalhos de pessoas Rui/Paulo/Humberto) removido — limpeza de sidebar.
+       Não apaga utilizadores/filtros/dados; a filtragem por pessoa continua nas páginas. -->
 
   <!-- 🎨 Design -->
   <button class="space-item" id="si-design" data-action="toggleSpace" data-space="design">
@@ -6767,7 +6758,7 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
     <span class="space-chevron">›</span>
   </button>
   <div class="space-lists" id="sl-design">
-    <button class="sl-item" data-action="goPage" data-page="design-tarefas"><span class="mk-ic">🗂️</span>Tarefas Design</button>
+    <button class="sl-item" data-action="goPage" data-page="design-tarefas"><span class="mk-ic">🗂️</span>Tarefas de Design</button>
     <button class="sl-item" data-action="goPage" data-page="design-ficheiros"><span class="mk-ic">🖼️</span>Ficheiros e Artes</button>
   </div>
 
@@ -6778,7 +6769,7 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
     <span class="space-chevron">›</span>
   </button>
   <div class="space-lists" id="sl-fabrica">
-    <button class="sl-item" data-action="goPage" data-page="fabrica-producao"><span class="mk-ic">📈</span>Pipeline Produção</button>
+    <button class="sl-item" data-action="goPage" data-page="fabrica-producao"><span class="mk-ic">📈</span>Obras</button>
     <button class="sl-item" data-action="goPage" data-page="fabrica-instalacoes"><span class="mk-ic">🔧</span>Instalações</button>
   </div>
 
@@ -6814,7 +6805,7 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
       <button class="sl-item" data-action="goPage" data-page="admin-despesas"><span class="mk-ic">💳</span>Despesas</button>
       <button class="sl-item" data-action="goPage" data-page="admin-rh"><span class="mk-ic">👥</span>Recursos Humanos</button>
       <button class="sl-item" id="ni-stock" data-action="goPage" data-page="stock"><span class="mk-ic">📦</span>Stock</button>
-      <button class="sl-item" id="ni-equipa" data-action="goPage" data-page="equipa"><span class="mk-ic">🧑‍🤝‍🧑</span>Equipa (22)</button>
+      <button class="sl-item" id="ni-equipa" data-action="goPage" data-page="equipa"><span class="mk-ic">🧑‍🤝‍🧑</span>Equipa</button>
       <button class="sl-item" id="ni-integracoes" data-action="goPage" data-page="integracoes"><span class="mk-ic">⚙️</span>Integrações</button>
     </div>
   </div>
@@ -7004,6 +6995,17 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
         <div class="ksub" id="mp-kpi-pendentes-sub">propostas em estado "Pendente"</div>
         <button class="mp-action-btn" data-action="goPage" data-page="comercial-orcamentos">Abrir Orçamentos</button>
       </div>
+    </div>
+
+    <!-- ADD: card funcional "Lembretes de Hoje" — lê crmAtividades (tipo Lembrete,
+         due de hoje) e cliData. Só leitura; populado por mpRenderLembretesHoje()
+         chamado de dentro de renderMeuPainel(). Reutiliza .sh/.tw/table existentes. -->
+    <div class="sh"><h2>📌 Lembretes de Hoje</h2></div>
+    <div class="tw" id="mp-lembretes-hoje-wrap">
+      <table>
+        <thead><tr><th>Hora</th><th>Cliente</th><th>Tipo</th><th>Prioridade</th><th>Estado</th><th>Abrir</th></tr></thead>
+        <tbody id="mp-lembretes-hoje"></tbody>
+      </table>
     </div>
 
     <div class="sh"><h2>Resumo comercial</h2></div>
@@ -10614,6 +10616,42 @@ var USERS=[
   {id:'edna',name:'Edna Faria',role:'CEO · Direcção',dept:'Direcção',color:'#F5C400',admin:true,online:true},
 ];
 
+// ── PERFIS DE PRÉ-VISUALIZAÇÃO ("Ver como comercial") ─────────────
+// A lista é DINÂMICA: vem dos Colaboradores reais (ob_colaboradores, dep.
+// Comercial) que a admin gere em RH → Colaboradores. Editar a lista =
+// adicionar/desativar colaboradores nessa página (sem chat, sem codigo).
+// NÃO sao logins: nao aparecem no ecra de login, nao existem em auth.users
+// nem ob_profiles, e nao alteram RLS. Servem so para o admin pre-visualizar
+// a experiencia (menus + Meu Painel) de um comercial; a seguranca real
+// continua a ser feita pelas permissoes quando cada pessoa entra com login.
+function obVerComoComerciais(){
+  var src = (window.rhColabs||[]);
+  return src.filter(function(c){
+    if(!c || c.deleted_at || c.ativo===false) return false;
+    return /comercial/i.test(String(c.dept||c.departamento||''));
+  }).map(function(c){
+    return { id:'vc-'+c.id, name:(c.nome||c.name||'(sem nome)'), role:'Comercial',
+             dept:'Comercial', color:(c.color||c.cor||'#3B82F6'), admin:false,
+             preview:true, colabId:c.id };
+  });
+}
+window.obVerComoComerciais = obVerComoComerciais;
+// Sempre que os colaboradores (re)carregam do Supabase, actualiza o seletor
+// "ver como" — assim a lista reflete em tempo real quem foi adicionado/desativado.
+document.addEventListener('DOMContentLoaded', function(){
+  setTimeout(function(){
+    if(typeof window.rhLoadColabsFromSB==='function' && !window.rhLoadColabsFromSB._vcWrapped){
+      var _o=window.rhLoadColabsFromSB;
+      window.rhLoadColabsFromSB=function(){
+        var r=_o.apply(this,arguments);
+        try{ Promise.resolve(r).then(function(){ if(typeof renderUserSwitcher==='function') renderUserSwitcher(); }); }catch(e){}
+        return r;
+      };
+      window.rhLoadColabsFromSB._vcWrapped=true;
+    }
+  }, 0);
+});
+
 // Dept → which spaces are visible
 var DEPT_ACCESS={
   'Direcção':['todas','comercial','design','fabrica','admin-dept'],
@@ -10719,7 +10757,7 @@ function loginComSenha() {
   try{
     var _imp = JSON.parse(localStorage.getItem('ob-impersonate') || 'null');
     if(_imp && _adminUser && _imp.adminId === _adminUser.id && _imp.userId !== _adminUser.id){
-      var _impUser = USERS.find(function(u){ return u.id === _imp.userId; });
+      var _impUser = USERS.concat(typeof obVerComoComerciais==='function'?obVerComoComerciais():[]).find(function(u){ return u.id === _imp.userId; });
       if(_impUser) CU = _impUser;
     }
   }catch(e){}
@@ -10855,6 +10893,11 @@ function setupApp(){
 
   // Seletor de utilizadores (modo "ver como") — só visível para o admin original
   renderUserSwitcher();
+  // Carrega os colaboradores (fonte do "Ver como comercial") e reactualiza o
+  // seletor quando chegam do Supabase. Só para o admin original.
+  if(_adminUser && typeof window.rhLoadColabsFromSB==='function' && (!window.rhColabs || !window.rhColabs.length)){
+    try{ Promise.resolve(window.rhLoadColabsFromSB()).then(function(){ try{ renderUserSwitcher(); }catch(e){} }); }catch(e){}
+  }
 }
 
 // ── TROCA TEMPORÁRIA DE UTILIZADOR (modo "ver como") — apenas admins ──
@@ -10869,9 +10912,17 @@ function renderUserSwitcher(){
     return;
   }
   sel.style.display='inline-block';
-  sel.innerHTML = USERS.map(function(u){
+  var _optsAdmin = USERS.map(function(u){
     return '<option value="'+u.id+'" '+(u.id===CU.id?'selected':'')+'>'+u.name+(u.id===_adminUser.id?' (eu)':'')+'</option>';
   }).join('');
+  var _com = (typeof obVerComoComerciais==='function'?obVerComoComerciais():[]);
+  var _optsComercial = _com.map(function(u){
+    return '<option value="'+u.id+'" '+(u.id===CU.id?'selected':'')+'>'+u.name+'</option>';
+  }).join('');
+  sel.innerHTML = '<optgroup label="Admin">'+_optsAdmin+'</optgroup>'+
+    (_optsComercial
+      ? '<optgroup label="Ver como (comercial)">'+_optsComercial+'</optgroup>'
+      : '<optgroup label="Ver como (comercial)"><option value="" disabled>— adiciona comerciais em RH → Colaboradores —</option></optgroup>');
   if(CU.id !== _adminUser.id){
     badge.style.display='flex';
     badgeLabel.textContent = '🔁 Modo: ' + CU.name;
@@ -10883,7 +10934,7 @@ window.renderUserSwitcher = renderUserSwitcher;
 
 function switchUser(newUserId){
   if(!_adminUser) return;
-  var novo = USERS.find(function(u){ return u.id === newUserId; });
+  var novo = USERS.concat(typeof obVerComoComerciais==='function'?obVerComoComerciais():[]).find(function(u){ return u.id === newUserId; });
   if(!novo) return;
   if(newUserId === _adminUser.id){
     switchUserRestore();
@@ -25008,8 +25059,74 @@ function renderMeuPainel(){
       }).join('');
     }
   }
+  // ADD: card "Lembretes de Hoje" — só leitura de crmAtividades + cliData.
+  try{ mpRenderLembretesHoje(); }catch(e){}
 }
 window.renderMeuPainel=renderMeuPainel;
+
+// ADD: popula o corpo da tabela "Lembretes de Hoje" no Meu Painel.
+// Fonte: crmAtividades (tipo 'Lembrete', due de hoje) + cliData (nome do cliente).
+// Não escreve nada; não altera crmAddAtividade nem a criação de lembretes.
+function mpRenderLembretesHoje(){
+  var tb=document.getElementById('mp-lembretes-hoje');
+  if(!tb) return;
+  var isAdmin=!!(typeof CU!=='undefined'&&CU&&CU.admin);
+  var nome=(typeof CU!=='undefined'&&CU)?CU.name:null;
+  var minhas=function(autor){ return isAdmin||!nome||autor===nome; };
+  var todas=(typeof crmAtividades!=='undefined'&&crmAtividades)?crmAtividades:[];
+  var cli=(typeof cliData!=='undefined'&&cliData)?cliData:[];
+  var pad=function(n){ return (n<10?'0':'')+n; };
+  var hj=new Date();
+  var hojeStr=hj.getFullYear()+'-'+pad(hj.getMonth()+1)+'-'+pad(hj.getDate());
+  var esc=function(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(ch){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]; }); };
+  // Aceita 'AAAA-MM-DDTHH:MM', 'AAAA-MM-DD HH:MM' ou só 'AAAA-MM-DD'. due inválido -> null.
+  var parseDue=function(d){
+    if(!d) return null;
+    var m=String(d).match(/^(\d{4}-\d{2}-\d{2})(?:[T ](\d{2}:\d{2}))?/);
+    return m ? {data:m[1], hora:m[2]||''} : null;
+  };
+  var lista=todas.filter(function(a){
+    if(!a||a.tipo!=='Lembrete') return false;
+    if(!minhas(a.autor)) return false;
+    var p=parseDue(a.due||a.data);
+    return !!(p && p.data===hojeStr);
+  });
+  // Ordenar por hora ascendente (sem hora vai para o fim).
+  lista.sort(function(a,b){
+    var ha=((parseDue(a.due||a.data)||{}).hora)||'99:99';
+    var hb=((parseDue(b.due||b.data)||{}).hora)||'99:99';
+    return ha<hb?-1:(ha>hb?1:0);
+  });
+  if(!lista.length){
+    tb.innerHTML='<tr><td colspan="6" style="text-align:center;color:var(--muted);font-style:italic;padding:14px">Sem lembretes para hoje.</td></tr>';
+    return;
+  }
+  tb.innerHTML=lista.map(function(a){
+    var p=parseDue(a.due||a.data)||{};
+    var hora=p.hora||'—';
+    var c=(a.clienteId!=null)?cli.find(function(x){ return x && x.id===a.clienteId; }):null;
+    var nomeCli=c?(c.n||'—'):((a.clienteId!=null)?'(cliente removido)':'—');
+    var tipo=a.acao||a.canal||'—';
+    var prio=a.prioridade||'—';
+    var estado=a.resultado?'Concluído':'Pendente';
+    var abrir;
+    if(a.clienteId!=null && c){
+      var idLit=esc(JSON.stringify(a.clienteId)); // preserva número/string; seguro em atributo
+      abrir='<button class="mp-action-btn" style="margin:0;padding:4px 10px;font-size:12px" onclick="cliOpenEdit('+idLit+')">Abrir</button>';
+    } else {
+      abrir='<span style="color:var(--muted);font-size:12px">—</span>';
+    }
+    return '<tr>'
+      +'<td>'+esc(hora)+'</td>'
+      +'<td>'+esc(nomeCli)+'</td>'
+      +'<td>'+esc(tipo)+'</td>'
+      +'<td>'+esc(prio)+'</td>'
+      +'<td>'+esc(estado)+'</td>'
+      +'<td>'+abrir+'</td>'
+    +'</tr>';
+  }).join('');
+}
+window.mpRenderLembretesHoje=mpRenderLembretesHoje;
 
 function obAbrirLead(id){
   try{ goPage('comercial-pipeline'); }catch(e){}
@@ -26238,6 +26355,228 @@ if(typeof window.goPage==='function'){
   };
 });
 
+})();
+</script>
+
+<script>/* SIDEBAR — persistência do estado recolhível + abertura por defeito por perfil.
+   Aditivo: envolve toggleSpace()/setupApp() existentes. NÃO altera permissões,
+   navegação, IDs nem data-page. Sem tocar em Orçamentos. */
+(function(){
+  var KEY='ob-sidebar-spaces';
+  var SPACES=['comercial','design','fabrica','financeiro','admin'];
+  function saveOpen(){
+    try{ var open=[]; SPACES.forEach(function(id){ var b=document.getElementById('si-'+id); if(b&&b.classList.contains('open')) open.push(id); });
+      localStorage.setItem(KEY, JSON.stringify(open)); }catch(e){}
+  }
+  function setSpace(id,on){ var b=document.getElementById('si-'+id), l=document.getElementById('sl-'+id); if(!b||!l) return;
+    if(on){ b.classList.add('open'); l.style.display='block'; } else { b.classList.remove('open'); l.style.display='none'; } }
+  // Persistir sempre que o utilizador abre/fecha um espaço (envolve o toggleSpace existente)
+  var _toggle=window.toggleSpace;
+  window.toggleSpace=function(id){ if(typeof _toggle==='function') _toggle.apply(this,arguments); saveOpen(); };
+  // Restaura o estado guardado; se não houver, abre por defeito o espaço do perfil
+  function applyState(){
+    var saved=null; try{ saved=JSON.parse(localStorage.getItem(KEY)||'null'); }catch(e){}
+    if(saved && saved.length!==undefined){ SPACES.forEach(function(id){ setSpace(id, saved.indexOf(id)>=0); }); return; }
+    var dept=(window.CU&&(window.CU.dept||window.CU.department))||'';
+    var map={'Comercial':'comercial','Dep. Design':'design','Chão da Fábrica':'fabrica'};
+    var alvo=map[dept]||'comercial'; // admin/Direcção → Comercial por defeito
+    setSpace('comercial', alvo==='comercial');
+    setSpace('design',    alvo==='design');
+    setSpace('fabrica',   alvo==='fabrica');
+    // Espaços administrativos (financeiro/admin) mantêm-se disponíveis (colapsados).
+  }
+  // Corre a seguir a setupApp() (entrada na app), de forma aditiva
+  var _setup=window.setupApp;
+  if(typeof _setup==='function'){ window.setupApp=function(){ var r=_setup.apply(this,arguments); try{ applyState(); }catch(e){} return r; }; }
+  // Fallback: se já houver sessão activa ao carregar
+  document.addEventListener('DOMContentLoaded', function(){ setTimeout(function(){ try{ if(window.CU) applyState(); }catch(e){} }, 300); });
+})();
+</script>
+
+<script>/* ============================================================================
+   RH · COLABORADORES — persistência real em Supabase (tabela ob_colaboradores).
+   Aditivo e isolado. A fonte oficial passa a ser a tabela relacional; localStorage
+   fica só como cache. Ciclo de vida completo (criar/editar/desativar/restaurar/
+   apagar definitivo) com confirmação do backend. NÃO toca em Orçamentos, ob_leads,
+   ob_profiles, autenticação, sidebar nem no resto do CRM.
+   ============================================================================ */
+(function(){
+  var TABLE='ob_colaboradores';
+  function sb(){ try{ return (typeof crmSBClient==='function')?crmSBClient():null; }catch(e){ return null; } }
+  window._rhInativosMap = window._rhInativosMap || {};
+
+  // Regra 5: a tabela ob_colaboradores é a única fonte e só é escrita pelo CRUD
+  // autenticado abaixo. O blob 'ob-rh-colabs' (ob_crm_dados) é armazenamento
+  // SEPARADO e nunca escreve na tabela. Por limpeza, deixamos de o empurrar.
+  try{ var _obPush=window.obSbPush; if(typeof _obPush==='function'){ window.obSbPush=function(ch){ if(ch==='ob-rh-colabs') return; return _obPush.apply(this, arguments); }; } }catch(e){}
+
+  function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+  function rowToColab(r){
+    return { id:r.id, legacy_id:r.legacy_id, nome:r.nome||'', nif:r.nif||'', niss:r.niss||'',
+      admissao:r.admissao||'', cargo:r.funcao||'', dept:r.departamento||'', salario:(r.salario==null?'':r.salario),
+      contrato:r.contrato||'', tel:r.telefone||'', email:r.email||'', iban:r.iban||'', morada:r.morada||'',
+      foto:r.foto||'', color:r.cor||'#ec4899', ativo:r.ativo, deleted_at:r.deleted_at||null };
+  }
+  function formToPayload(){
+    var g=function(id){ var el=document.getElementById(id); return el?String(el.value||'').trim():''; };
+    var val=function(id){ var el=document.getElementById(id); return el?el.value:null; };
+    var sal=g('rh-c-salario'); var salN = sal===''?null:Number(String(sal).replace(',','.')); if(isNaN(salN)) salN=null;
+    var adm=g('rh-c-admissao')||null;
+    var fotoEl=document.getElementById('rh-c-foto');
+    return {
+      nome:g('rh-c-nome'), nif:g('rh-c-nif')||null, niss:g('rh-c-niss')||null, admissao:adm,
+      funcao:g('rh-c-cargo')||null, departamento:val('rh-c-dept')||null, salario:salN, contrato:val('rh-c-contrato')||null,
+      telefone:g('rh-c-tel')||null, email:g('rh-c-email')||null, iban:g('rh-c-iban')||null, morada:g('rh-c-morada')||null,
+      foto:(fotoEl&&fotoEl.dataset?fotoEl.dataset.foto:'')||null, cor:'#ec4899'
+    };
+  }
+  async function uid(){ try{ var r=await sb().auth.getUser(); return (r&&r.data&&r.data.user)?r.data.user.id:null; }catch(e){ return null; } }
+  function closeModal(){ var m=document.getElementById('rh-colab-modal'); if(m) m.classList.remove('open'); }
+
+  // ---- Toolbar de gestão (Atualizar / Ver inativos) injetada no painel colabs ----
+  function ensureToolbar(){
+    var cards=document.getElementById('rh-colab-cards'); if(!cards) return;
+    if(document.getElementById('rh-colab-toolbar')) return;
+    var bar=document.createElement('div'); bar.id='rh-colab-toolbar';
+    bar.style.cssText='display:flex;gap:8px;align-items:center;margin:0 0 10px 0;flex-wrap:wrap';
+    bar.innerHTML='<button id="rh-btn-refresh" class="btn-sec" style="cursor:pointer;background:var(--bg2);border:1px solid var(--border);color:var(--txt2);border-radius:8px;padding:6px 12px">🔄 Atualizar</button>'
+      +'<button id="rh-btn-inativos" class="btn-sec" style="cursor:pointer;background:var(--bg2);border:1px solid var(--border);color:var(--txt2);border-radius:8px;padding:6px 12px">👁️ Ver inativos</button>'
+      +'<span id="rh-colab-status" style="font-size:12px;color:var(--muted)"></span>';
+    cards.parentNode.insertBefore(bar, cards);
+    var inat=document.createElement('div'); inat.id='rh-inativos-box'; inat.style.cssText='display:none;margin-top:12px';
+    cards.parentNode.insertBefore(inat, cards.nextSibling);
+    document.getElementById('rh-btn-refresh').onclick=function(){ rhLoadColabsFromSB(); };
+    document.getElementById('rh-btn-inativos').onclick=function(){
+      window._rhShowInativos=!window._rhShowInativos;
+      this.textContent = window._rhShowInativos?'👁️ Ocultar inativos':'👁️ Ver inativos';
+      rhRenderInativos();
+    };
+  }
+  function setStatus(t){ var s=document.getElementById('rh-colab-status'); if(s) s.textContent=t||''; }
+
+  async function rhRenderInativos(){
+    var box=document.getElementById('rh-inativos-box'); if(!box) return;
+    if(!window._rhShowInativos){ box.style.display='none'; box.innerHTML=''; return; }
+    box.style.display='block'; box.innerHTML='<div style="color:var(--muted);font-size:12px;padding:8px">A carregar inativos…</div>';
+    var c=sb(); if(!c){ box.innerHTML=''; return; }
+    var res=await c.from(TABLE).select('*').not('deleted_at','is',null).order('nome',{ascending:true});
+    if(res.error){ box.innerHTML='<div style="color:var(--r);font-size:12px;padding:8px">Erro ao carregar inativos.</div>'; return; }
+    window._rhInativosMap={};
+    var rows=res.data||[];
+    if(!rows.length){ box.innerHTML='<div style="color:var(--muted);font-size:12px;padding:8px;border-top:1px solid var(--border)">Sem colaboradores inativos.</div>'; return; }
+    var html='<div style="font-size:12px;color:var(--muted);border-top:1px solid var(--border);padding:8px 0 4px">Colaboradores inativos ('+rows.length+')</div>';
+    rows.forEach(function(r){ window._rhInativosMap[r.id]=r.nome;
+      html+='<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;margin-bottom:6px">'
+        +'<span style="flex:1;color:var(--txt2)">'+esc(r.nome)+' <span style="color:var(--muted);font-size:11px">· '+esc(r.funcao||'')+'</span></span>'
+        +'<button onclick="rhRestoreColab(\''+r.id+'\')" style="cursor:pointer;background:transparent;border:1px solid #3fcf8e;color:#3fcf8e;border-radius:6px;padding:4px 10px">♻️ Restaurar</button>'
+        +'<button onclick="rhHardDeleteColab(\''+r.id+'\')" style="cursor:pointer;background:transparent;border:1px solid var(--r);color:var(--r);border-radius:6px;padding:4px 10px">🗑️ Apagar definitivo</button>'
+        +'</div>';
+    });
+    box.innerHTML=html;
+  }
+
+  // ---- Carregar (fonte oficial) ----
+  window.rhLoadColabsFromSB = async function(){
+    var c=sb(); if(!c){ setStatus('sem ligação'); return false; }
+    setStatus('a carregar…');
+    try{
+      var res=await c.from(TABLE).select('*').is('deleted_at',null).order('nome',{ascending:true});
+      if(res.error){ console.error('[colab] load', res.error); setStatus('erro ao carregar'); return false; }
+      window.rhColabs=(res.data||[]).map(rowToColab);
+      try{ localStorage.setItem('ob-rh-colabs', JSON.stringify(rhColabs)); }catch(e){}
+      if(typeof rhRenderColabs==='function') rhRenderColabs();
+      ensureToolbar(); setStatus(rhColabs.length+' ativo(s)');
+      if(window._rhShowInativos) rhRenderInativos();
+      return true;
+    }catch(e){ console.error('[colab] load ex', e); setStatus('erro'); return false; }
+  };
+
+  // Entrada no RH: sincroniza app de pontos e carrega colaboradores do Supabase
+  window.rhRender=function(){
+    try{ if(typeof ecSyncFuncionarios==='function'){ ecSyncFuncionarios().then(function(){ rhLoadColabsFromSB(); }); } else { rhLoadColabsFromSB(); } }
+    catch(e){ rhLoadColabsFromSB(); }
+  };
+
+  // ---- Criar / Editar (gravação confirmada pelo backend) ----
+  window.rhSaveColab=async function(){
+    var nomeEl=document.getElementById('rh-c-nome'); var nome=nomeEl?nomeEl.value.trim():'';
+    if(!nome){ alert('Preenche o nome.'); return; }
+    var c=sb(); if(!c){ alert('Sem ligação ao Supabase. O colaborador NÃO foi guardado.'); return; }
+    var me=await uid();
+    if(!me){ alert('Sessão não autenticada — faz login novamente. O colaborador NÃO foi guardado.'); return; }
+    var payload=formToPayload();
+    try{
+      var res;
+      if(window.rhEditColabId){
+        payload.updated_by=me;
+        res=await c.from(TABLE).update(payload).eq('id', rhEditColabId).is('deleted_at',null).select();
+      } else {
+        payload.created_by=me;
+        res=await c.from(TABLE).insert(payload).select();
+      }
+      if(res.error){ console.error('[colab] save', res.error); alert('ERRO ao guardar no Supabase:\n'+(res.error.message||res.error)+'\n\nO colaborador NÃO foi guardado.'); return; }
+      if(!res.data || !res.data.length){ alert('Não foi possível confirmar a gravação (sem permissão de admin?).\nO colaborador NÃO foi guardado.'); return; }
+      closeModal();
+      await rhLoadColabsFromSB();
+    }catch(e){ console.error('[colab] save ex', e); alert('ERRO ao guardar:\n'+e+'\n\nO colaborador NÃO foi guardado.'); }
+  };
+
+  // ---- Desativar (soft-delete: recuperável) ----
+  window.rhDeleteColab=async function(){
+    if(!window.rhEditColabId) return;
+    var nome=(document.getElementById('rh-c-nome')||{}).value||'este colaborador';
+    if(!confirm('Desativar '+nome+'?\n\nFica inativo (deixa de aparecer na lista), mas pode ser restaurado depois.')) return;
+    var c=sb(); if(!c){ alert('Sem ligação ao Supabase.'); return; }
+    var me=await uid(); if(!me){ alert('Sessão não autenticada.'); return; }
+    try{
+      var res=await c.from(TABLE).update({ativo:false, deleted_at:new Date().toISOString(), deleted_by:me, updated_by:me}).eq('id', rhEditColabId).select();
+      if(res.error){ alert('ERRO ao desativar:\n'+(res.error.message||res.error)); return; }
+      closeModal(); await rhLoadColabsFromSB();
+    }catch(e){ alert('ERRO ao desativar:\n'+e); }
+  };
+
+  // ---- Restaurar ----
+  window.rhRestoreColab=async function(id){
+    var c=sb(); if(!c){ alert('Sem ligação ao Supabase.'); return; }
+    var me=await uid(); if(!me){ alert('Sessão não autenticada.'); return; }
+    try{
+      var res=await c.from(TABLE).update({ativo:true, deleted_at:null, deleted_by:null, updated_by:me}).eq('id', id).select();
+      if(res.error){ alert('ERRO ao restaurar:\n'+(res.error.message||res.error)); return; }
+      await rhLoadColabsFromSB(); rhRenderInativos();
+    }catch(e){ alert('ERRO ao restaurar:\n'+e); }
+  };
+
+  // ---- Apagar definitivo (irreversível; só admin) ----
+  window.rhHardDeleteColab=async function(id){
+    var nome=(window._rhInativosMap&&window._rhInativosMap[id])|| (document.getElementById('rh-c-nome')||{}).value ||'este registo';
+    if(!confirm('APAGAR DEFINITIVAMENTE "'+nome+'"?\n\nEsta ação é IRREVERSÍVEL — o registo é removido para sempre da base de dados.\nUsa isto apenas para registos de teste.')) return;
+    if(!confirm('Confirma mesmo apagar "'+nome+'" para sempre?')) return;
+    var c=sb(); if(!c){ alert('Sem ligação ao Supabase.'); return; }
+    try{
+      var res=await c.from(TABLE).delete().eq('id', id).select();
+      if(res.error){ alert('ERRO ao apagar:\n'+(res.error.message||res.error)); return; }
+      closeModal(); await rhLoadColabsFromSB(); rhRenderInativos();
+    }catch(e){ alert('ERRO ao apagar:\n'+e); }
+  };
+
+  // Injeta botão "Apagar definitivo" no modal de edição, ao lado de Desativar
+  var _origEdit=window.rhEditColab;
+  window.rhEditColab=function(id){
+    try{ if(typeof _origEdit==='function') _origEdit.apply(this, arguments); }catch(e){}
+    try{
+      var del=document.getElementById('rh-c-del'); if(del){ del.textContent='Desativar';
+        if(!document.getElementById('rh-c-harddel')){
+          var b=document.createElement('button'); b.id='rh-c-harddel'; b.type='button'; b.textContent='Apagar definitivo';
+          b.style.cssText='cursor:pointer;background:transparent;border:1px solid var(--r);color:var(--r);border-radius:6px;padding:6px 12px;margin-left:8px';
+          b.onclick=function(){ if(window.rhEditColabId) rhHardDeleteColab(window.rhEditColabId); };
+          del.parentNode.insertBefore(b, del.nextSibling);
+        } else { document.getElementById('rh-c-harddel').style.display=''; }
+      }
+    }catch(e){}
+  };
+  var _origOpen=window.rhOpenColab;
+  window.rhOpenColab=function(){ try{ if(typeof _origOpen==='function') _origOpen.apply(this, arguments); }catch(e){}
+    try{ var hd=document.getElementById('rh-c-harddel'); if(hd) hd.style.display='none'; }catch(e){} };
 })();
 </script>
 
