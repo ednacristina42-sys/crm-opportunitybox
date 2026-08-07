@@ -6507,6 +6507,49 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
 
 /* CRM page — admin-page should not force full height */
 #page-crm .admin-page, #page-comercial-pipeline .admin-page { flex: 0 0 auto; }
+
+/* ═══════════════════════════════════════════════════════
+   VISUAL SEGURO (inspirado no Emergent) — SÓ aparência.
+   Overrides aditivos: cores, fundos, radius, bordas, sombras
+   estáticas e tipografia. SEM backdrop-filter, transform,
+   animações, pseudo-elementos novos, position/z-index/
+   pointer-events — nada que afete interação. Base intacta.
+═══════════════════════════════════════════════════════ */
+
+/* ── CAMADA 1 — Cores / variáveis ── */
+:root{
+  --y:#FFCB2D;--ys:rgba(255,203,45,.12);--yb:rgba(255,203,45,.34);
+  --bg:#0E0F14;--bg1:#0A0B0F;--bg2:#15171E;--bg3:#1C1F28;--bg4:#262A35;--bg5:#333845;
+  --txt:#B9BEC9;--txt2:#F3F5F9;--muted:#6E7484;--muted2:#2A2E39;
+  --border:rgba(255,255,255,.07);--border2:rgba(255,255,255,.13);
+  --g:#34D399;--g2:rgba(52,211,153,.12);
+  --r:#F26D6D;--r2:rgba(242,109,109,.12);
+  --a:#F0A03C;--a2:rgba(240,160,60,.12);
+  --b:#5B9CF0;--b2:rgba(91,156,240,.12);
+  --p:#A78BFA;--p2:rgba(167,139,250,.12);
+  --dc:#F05252;--dd:#F0872E;--cf:#4C8DF6;--da:#9B7CF6;
+}
+
+/* ── CAMADA 2 — Cards / KPIs ── */
+.card,.cc,.mn,.kpi{border-radius:12px;box-shadow:0 6px 22px rgba(0,0,0,.30)}
+
+/* ── CAMADA 3 — Botões / inputs ── */
+.tbtn.y{background:linear-gradient(135deg,#FFD860,#FFB800)}
+.tbtn{border-radius:8px}
+.form-input,.form-select{border-radius:8px}
+.form-input:focus,.form-select:focus{border-color:var(--yb)}
+
+/* ── CAMADA 4 — Sidebar / topbar ── */
+.sidebar{background:linear-gradient(180deg,var(--bg2),var(--bg))}
+.sni,.space-item,.sl-item{border-radius:8px}
+.sni.on{background:linear-gradient(90deg,rgba(255,203,45,.15),rgba(255,203,45,.04))}
+.topbar{background:var(--bg2);box-shadow:0 1px 0 rgba(255,255,255,.02)}
+
+/* ── CAMADA 5 — Tabelas / modais (sem backdrop-filter) ── */
+thead th{background:linear-gradient(180deg,var(--bg3),var(--bg2))}
+tbody tr:hover{background:rgba(255,203,45,.05)}
+.tw{box-shadow:0 6px 22px rgba(0,0,0,.30)}
+.crm-modal{box-shadow:0 18px 50px rgba(0,0,0,.55);border-color:var(--border2)}
 </style>
 
 
