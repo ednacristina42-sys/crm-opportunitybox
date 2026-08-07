@@ -6746,6 +6746,8 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
     <button class="sl-item" data-action="goPage" data-page="comercial-clientes"><span class="mk-ic">👤</span>Clientes</button>
     <button class="sl-item" data-action="goPage" data-page="comercial-orcamentos"><span class="mk-ic">📄</span>Orçamentos<span id="toco-vencidas-badge">!</span></button>
     <button class="sl-item" data-action="goPage" data-page="equipa-campo"><span class="mk-ic">🗺️</span>Equipa em Campo</button>
+    <!-- Comerciais (dinâmico, vindo de ob_colaboradores · dep. Comercial · ativos). Geridos em RH → Colaboradores. -->
+    <div id="sl-comercial-colabs"></div>
   </div>
 
   <!-- Espaço "Equipa" (atalhos de pessoas Rui/Paulo/Humberto) removido — limpeza de sidebar.
@@ -6760,6 +6762,8 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
   <div class="space-lists" id="sl-design">
     <button class="sl-item" data-action="goPage" data-page="design-tarefas"><span class="mk-ic">🗂️</span>Tarefas de Design</button>
     <button class="sl-item" data-action="goPage" data-page="design-ficheiros"><span class="mk-ic">🖼️</span>Ficheiros e Artes</button>
+    <!-- Colaboradores de Design (dinâmico, ob_colaboradores · ativos) -->
+    <div id="sl-design-colabs"></div>
   </div>
 
   <!-- 🏭 Produção (Chão da Fábrica) -->
@@ -6771,6 +6775,8 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
   <div class="space-lists" id="sl-fabrica">
     <button class="sl-item" data-action="goPage" data-page="fabrica-producao"><span class="mk-ic">📈</span>Obras</button>
     <button class="sl-item" data-action="goPage" data-page="fabrica-instalacoes"><span class="mk-ic">🔧</span>Instalações</button>
+    <!-- Colaboradores de Produção (dinâmico, ob_colaboradores · ativos) -->
+    <div id="sl-fabrica-colabs"></div>
   </div>
 
   <!-- ADMIN ONLY section -->
@@ -6807,6 +6813,8 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
       <button class="sl-item" id="ni-stock" data-action="goPage" data-page="stock"><span class="mk-ic">📦</span>Stock</button>
       <button class="sl-item" id="ni-equipa" data-action="goPage" data-page="equipa"><span class="mk-ic">🧑‍🤝‍🧑</span>Equipa</button>
       <button class="sl-item" id="ni-integracoes" data-action="goPage" data-page="integracoes"><span class="mk-ic">⚙️</span>Integrações</button>
+      <!-- Colaboradores de Gestão Administrativa (dinâmico, ob_colaboradores · ativos) -->
+      <div id="sl-admin-colabs"></div>
     </div>
   </div>
 
@@ -10636,6 +10644,55 @@ function obVerComoComerciais(){
   });
 }
 window.obVerComoComerciais = obVerComoComerciais;
+// Sidebar (Dep. Comercial): mostra os comerciais ativos vindos de ob_colaboradores,
+// no mesmo local dos antigos atalhos. Editar = adicionar/desativar em RH → Colaboradores.
+function obRenderComerciaisSidebar(){
+  // Monta os colaboradores ATIVOS por departamento nos respetivos espaços do
+  // sidebar (Comercial, Design, Produção, Gestão Administrativa). Fonte única:
+  // ob_colaboradores (via window.rhColabs). Sem nomes fixos. Agrupa pelo campo
+  // departamento; não duplica; oculta inativos/eliminados automaticamente.
+  var MAP = [
+    { re:/comercial/i,                        box:'sl-comercial-colabs', verComo:true },
+    { re:/design/i,                            box:'sl-design-colabs' },
+    { re:/f[áa]brica|produ|obras|instala/i,    box:'sl-fabrica-colabs' },
+    { re:/administrativ|gest[ãa]o\s*admin/i,   box:'sl-admin-colabs' }
+  ];
+  var isAdmin = !!(window.CU && window.CU.admin === true);
+  var colabs = (window.rhColabs||[]).filter(function(c){ return c && !c.deleted_at && c.ativo!==false; });
+  MAP.forEach(function(m){ var b=document.getElementById(m.box); if(b) b.innerHTML=''; });
+  MAP.forEach(function(m){
+    var box = document.getElementById(m.box); if(!box) return;
+    var items = colabs.filter(function(c){ return m.re.test(String(c.dept||c.departamento||'')); });
+    if(!items.length) return;
+    var sep = document.createElement('div');
+    sep.style.cssText = 'height:1px;margin:5px 12px 4px;background:var(--border,rgba(255,255,255,.08))';
+    box.appendChild(sep);
+    var seen = {};
+    items.forEach(function(c){
+      var nome = String(c.nome||c.name||'').trim(); if(!nome) return;
+      var key = nome.toLowerCase(); if(seen[key]) return; seen[key] = 1;
+      var b = document.createElement('button');
+      b.className = 'sl-item';
+      b.style.opacity = '0.92';
+      b.innerHTML = '<span class="mk-ic">🧑</span>';
+      b.appendChild(document.createTextNode(nome));
+      if(m.verComo){
+        b.title = 'Ver como ' + nome;
+        b.addEventListener('click', function(){
+          try{
+            if(isAdmin && typeof window.switchUser==='function'){ window.switchUser('vc-'+c.id); }
+            else if(typeof homeFilterTasks==='function'){ homeFilterTasks('Dep. Comercial', nome); }
+          }catch(e){}
+        });
+      } else {
+        b.title = 'Filtrar tarefas de ' + nome;
+        b.addEventListener('click', function(){ try{ if(typeof homeFilterTasks==='function') homeFilterTasks(String(c.dept||c.departamento||''), nome); }catch(e){} });
+      }
+      box.appendChild(b);
+    });
+  });
+}
+window.obRenderComerciaisSidebar = obRenderComerciaisSidebar;
 // Sempre que os colaboradores (re)carregam do Supabase, actualiza o seletor
 // "ver como" — assim a lista reflete em tempo real quem foi adicionado/desativado.
 document.addEventListener('DOMContentLoaded', function(){
@@ -10644,7 +10701,7 @@ document.addEventListener('DOMContentLoaded', function(){
       var _o=window.rhLoadColabsFromSB;
       window.rhLoadColabsFromSB=function(){
         var r=_o.apply(this,arguments);
-        try{ Promise.resolve(r).then(function(){ if(typeof renderUserSwitcher==='function') renderUserSwitcher(); }); }catch(e){}
+        try{ Promise.resolve(r).then(function(){ if(typeof renderUserSwitcher==='function') renderUserSwitcher(); if(typeof obRenderComerciaisSidebar==='function') obRenderComerciaisSidebar(); }); }catch(e){}
         return r;
       };
       window.rhLoadColabsFromSB._vcWrapped=true;
@@ -10893,10 +10950,12 @@ function setupApp(){
 
   // Seletor de utilizadores (modo "ver como") — só visível para o admin original
   renderUserSwitcher();
-  // Carrega os colaboradores (fonte do "Ver como comercial") e reactualiza o
-  // seletor quando chegam do Supabase. Só para o admin original.
-  if(_adminUser && typeof window.rhLoadColabsFromSB==='function' && (!window.rhColabs || !window.rhColabs.length)){
-    try{ Promise.resolve(window.rhLoadColabsFromSB()).then(function(){ try{ renderUserSwitcher(); }catch(e){} }); }catch(e){}
+  // Render imediato dos comerciais no sidebar (se já há colaboradores em memória)
+  if(typeof obRenderComerciaisSidebar==='function') obRenderComerciaisSidebar();
+  // Carrega os colaboradores (fonte do "Ver como" e dos atalhos do sidebar) e
+  // reactualiza quando chegam do Supabase. Para qualquer perfil que veja o Comercial.
+  if(typeof window.rhLoadColabsFromSB==='function' && (!window.rhColabs || !window.rhColabs.length)){
+    try{ Promise.resolve(window.rhLoadColabsFromSB()).then(function(){ try{ renderUserSwitcher(); }catch(e){} try{ if(typeof obRenderComerciaisSidebar==='function') obRenderComerciaisSidebar(); }catch(e){} }); }catch(e){}
   }
 }
 
