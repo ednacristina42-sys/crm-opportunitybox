@@ -5452,6 +5452,109 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--txt);min-he
 .mp-placeholder{opacity:.5;filter:grayscale(.4);cursor:default;pointer-events:none}
 .mp-placeholder .kval{color:var(--muted)}
 
+/* ADD: Mapa de Vendas — paleta e componentes isolados (não tocam :root nem outras páginas) */
+#page-mapa-vendas{--mv-y:#facc15;--mv-y-fg:#422006;--mv-g:#22c55e;--mv-r:#ef4444;--mv-b:#3b82f6;--mv-p:#a855f7;--mv-gray:#64748b;--mv-card:#141416;--mv-bg2:#1e1e21;--mv-border:#28282d;--mv-muted:#94a3b8;--mv-txt:#f8fafc}
+#page-mapa-vendas .mv-card{background:var(--mv-card);border:1px solid var(--mv-border);border-radius:12px;padding:18px}
+#page-mapa-vendas .mv-card-title{font-size:14px;font-weight:600;color:var(--mv-txt);margin-bottom:2px}
+#page-mapa-vendas .mv-card-sub{font-size:11.5px;color:var(--mv-muted);margin-bottom:12px}
+#page-mapa-vendas .mv-actions{display:flex;gap:8px;margin-left:auto}
+#page-mapa-vendas .mv-btn{display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 12px;border-radius:8px;background:var(--mv-bg2);border:1px solid var(--mv-border);color:var(--mv-txt);font-size:12.5px;cursor:pointer}
+#page-mapa-vendas .mv-btn:disabled{opacity:.45;cursor:not-allowed}
+#page-mapa-vendas .mv-kpi-row{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;margin-bottom:16px}
+@media(min-width:900px){#page-mapa-vendas .mv-kpi-row{grid-template-columns:repeat(3,1fr)}}
+@media(min-width:1300px){#page-mapa-vendas .mv-kpi-row{grid-template-columns:repeat(6,1fr)}}
+#page-mapa-vendas .mv-kpi{background:var(--mv-card);border:1px solid var(--mv-border);border-radius:12px;padding:16px}
+#page-mapa-vendas .mv-kpi-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+#page-mapa-vendas .mv-kpi-ic{width:34px;height:34px;border-radius:8px;background:var(--mv-bg2);display:flex;align-items:center;justify-content:center;font-size:16px}
+#page-mapa-vendas .mv-kpi-lbl{font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--mv-muted);margin-bottom:6px}
+#page-mapa-vendas .mv-kpi-val{font-size:22px;font-weight:700;color:var(--mv-txt)}
+#page-mapa-vendas .mv-filters{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin-bottom:16px}
+#page-mapa-vendas .mv-filter-field{display:flex;flex-direction:column;gap:4px}
+#page-mapa-vendas .mv-filter-field label{font-size:9.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--mv-muted)}
+#page-mapa-vendas .mv-filters select,#page-mapa-vendas .mv-filters input[type=text]{background:var(--mv-bg2);border:1px solid var(--mv-border);color:var(--mv-txt);border-radius:8px;padding:7px 10px;font-size:12.5px;min-width:130px}
+#page-mapa-vendas .mv-filter-search{flex:1;min-width:220px}
+#page-mapa-vendas .mv-clear-btn{color:#f87171;border-color:rgba(239,68,68,.25);background:rgba(239,68,68,.08)}
+#page-mapa-vendas .mv-grid2{display:grid;grid-template-columns:1fr;gap:14px;margin-bottom:16px}
+@media(min-width:1100px){#page-mapa-vendas .mv-grid2{grid-template-columns:2fr 1fr}}
+#page-mapa-vendas .mv-progress-track{height:12px;border-radius:999px;background:var(--mv-bg2);overflow:hidden}
+#page-mapa-vendas .mv-progress-fill{height:100%;border-radius:999px;background:linear-gradient(90deg,rgba(250,204,21,.7),var(--mv-y));transition:width .6s ease}
+#page-mapa-vendas .mv-progress-fill.mv-done{background:linear-gradient(90deg,rgba(34,197,94,.7),var(--mv-g))}
+#page-mapa-vendas .mv-mini-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-top:14px}
+@media(min-width:700px){#page-mapa-vendas .mv-mini-grid.mv-mini4{grid-template-columns:repeat(4,1fr)}}
+@media(min-width:600px){#page-mapa-vendas .mv-mini-grid.mv-mini3{grid-template-columns:repeat(3,1fr)}}
+#page-mapa-vendas .mv-mini{background:rgba(255,255,255,.02);border:1px solid var(--mv-border);border-radius:8px;padding:10px 12px}
+#page-mapa-vendas .mv-mini-lbl{font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--mv-muted);margin-bottom:4px}
+#page-mapa-vendas .mv-mini-val{font-size:15px;font-weight:700}
+#page-mapa-vendas .mv-charts-grid{display:grid;grid-template-columns:1fr;gap:14px;margin-bottom:16px}
+@media(min-width:1100px){#page-mapa-vendas .mv-charts-grid{grid-template-columns:repeat(3,1fr)}}
+#page-mapa-vendas .mv-chart-span2{grid-column:span 1}
+@media(min-width:1100px){#page-mapa-vendas .mv-chart-span2{grid-column:span 2}}
+@media(min-width:1100px){#page-mapa-vendas .mv-chart-span3{grid-column:span 3}}
+#page-mapa-vendas .mv-chart-box{position:relative;height:230px}
+#page-mapa-vendas .mv-rank-row{display:flex;align-items:center;gap:12px;padding:10px;border:1px solid rgba(255,255,255,.06);background:rgba(255,255,255,.02);border-radius:8px;margin-bottom:8px}
+#page-mapa-vendas .mv-rank-pos{width:30px;height:30px;border-radius:50%;background:var(--mv-bg2);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;flex-shrink:0}
+#page-mapa-vendas .mv-rank-body{flex:1;min-width:0}
+#page-mapa-vendas .mv-rank-top{display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px}
+#page-mapa-vendas .mv-rank-sub{font-size:11px;color:var(--mv-muted);margin-top:4px}
+#page-mapa-vendas .mv-badge{display:inline-flex;align-items:center;gap:5px;padding:2px 9px;border-radius:999px;font-size:10.5px;font-weight:700;border:1px solid transparent;white-space:nowrap}
+#page-mapa-vendas .mv-badge .dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+#page-mapa-vendas .mv-badge-proposta{background:rgba(59,130,246,.12);color:#60a5fa;border-color:rgba(59,130,246,.25)}
+#page-mapa-vendas .mv-badge-adjudicada{background:rgba(250,204,21,.12);color:#fde047;border-color:rgba(250,204,21,.25)}
+#page-mapa-vendas .mv-badge-faturada{background:rgba(34,197,94,.12);color:#4ade80;border-color:rgba(34,197,94,.25)}
+#page-mapa-vendas .mv-badge-perdida{background:rgba(239,68,68,.12);color:#f87171;border-color:rgba(239,68,68,.25)}
+#page-mapa-vendas .mv-table-wrap{overflow-x:auto}
+#page-mapa-vendas .mv-table{width:100%;border-collapse:collapse;font-size:12.5px;min-width:1450px}
+#page-mapa-vendas .mv-table th{text-align:left;font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:var(--mv-muted);padding:9px 10px;border-bottom:1px solid var(--mv-border);cursor:pointer;white-space:nowrap;user-select:none}
+#page-mapa-vendas .mv-table th:hover{color:var(--mv-txt)}
+#page-mapa-vendas .mv-table td{padding:9px 10px;border-bottom:1px solid rgba(255,255,255,.04);color:#d4d4d8;white-space:nowrap;max-width:220px;overflow:hidden;text-overflow:ellipsis}
+#page-mapa-vendas .mv-table tbody tr{cursor:pointer}
+#page-mapa-vendas .mv-table tbody tr:hover{background:rgba(255,255,255,.03)}
+#page-mapa-vendas .mv-table td.mv-num{font-family:'DM Mono',monospace;color:var(--mv-y);font-size:11.5px}
+#page-mapa-vendas .mv-table td.mv-val{text-align:right;font-weight:700;color:var(--mv-txt)}
+#page-mapa-vendas .mv-table td.mv-center{text-align:center}
+#page-mapa-vendas .mv-pag{display:flex;align-items:center;justify-content:space-between;padding:12px 2px 2px;font-size:12px;color:var(--mv-muted)}
+#page-mapa-vendas .mv-pag-btns{display:flex;gap:6px}
+#page-mapa-vendas .mv-pag button{width:28px;height:28px;border-radius:7px;background:var(--mv-bg2);border:1px solid var(--mv-border);color:var(--mv-txt);cursor:pointer}
+#page-mapa-vendas .mv-pag button:disabled{opacity:.4;cursor:default}
+#page-mapa-vendas .mv-empty{text-align:center;padding:40px 20px;color:var(--mv-muted);font-size:13px}
+.mv-drawer-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9994;display:none}
+.mv-drawer-overlay.mv-open{display:block}
+.mv-drawer{position:fixed;top:0;right:0;bottom:0;width:440px;max-width:92vw;background:#0c0c0e;border-left:1px solid #28282d;z-index:9995;transform:translateX(100%);transition:transform .25s ease;overflow-y:auto;color:#f8fafc}
+.mv-drawer.mv-open{transform:translateX(0)}
+.mv-drawer-hdr{position:sticky;top:0;background:rgba(12,12,14,.95);border-bottom:1px solid #28282d;padding:18px 20px;z-index:2}
+.mv-drawer-close{position:absolute;top:16px;right:16px;width:30px;height:30px;border-radius:8px;background:#1e1e21;border:1px solid #28282d;color:#f8fafc;cursor:pointer;font-size:14px}
+.mv-drawer-body{padding:20px}
+.mv-field{display:flex;align-items:flex-start;gap:10px;margin-bottom:14px}
+.mv-field-ic{width:30px;height:30px;border-radius:8px;background:#1e1e21;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0}
+.mv-field-lbl{font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;margin-bottom:2px}
+.mv-field-val{font-size:13.5px;color:#f8fafc;word-break:break-word}
+.mv-sep{height:1px;background:#28282d;margin:16px 0}
+
+/* ADD: Mapa de Vendas — responsividade mobile real (isolada em #page-mapa-vendas/.mv-*, não toca CSS global) */
+@media(max-width:640px){
+  #page-mapa-vendas .pg-hdr-top{gap:8px}
+  #page-mapa-vendas .mv-actions{margin-left:0;width:100%}
+  #page-mapa-vendas .mv-actions .mv-btn{flex:1;justify-content:center;font-size:11.5px;padding:0 8px}
+  #page-mapa-vendas .mv-card{padding:14px}
+  #page-mapa-vendas .mv-filters{display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:stretch}
+  #page-mapa-vendas .mv-filter-field{min-width:0}
+  #page-mapa-vendas .mv-filter-search{grid-column:1/-1}
+  #page-mapa-vendas .mv-filters select,#page-mapa-vendas .mv-filters input[type=text]{width:100%;min-width:0}
+  #page-mapa-vendas .mv-clear-btn{grid-column:1/-1;width:100%;justify-content:center}
+  #page-mapa-vendas .mv-chart-box{height:200px}
+  #page-mapa-vendas .mv-kpi-val{font-size:19px}
+}
+@media(max-width:380px){
+  #page-mapa-vendas .mv-kpi-row{grid-template-columns:1fr}
+  #page-mapa-vendas .mv-filters{grid-template-columns:1fr}
+  #page-mapa-vendas .mv-filter-search,#page-mapa-vendas .mv-clear-btn{grid-column:auto}
+}
+@media(max-width:640px){
+  .mv-drawer{width:100vw;max-width:100vw}
+  .mv-drawer-body{padding:16px}
+  .mv-drawer-hdr{padding:16px 46px 16px 16px}
+}
+
 /* ADD: Meu Painel — action-cards (Centro de Comando): breakdown + botão
    de ação, em vez de um número isolado. Continua a reaproveitar .kpi. */
 .mp-action{display:flex;flex-direction:column}
@@ -5915,7 +6018,7 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
   .pg-title{font-size:14px}
 
   /* Topbar */
-  .topbar .search-bar{display:none}
+  .topbar .t-search{display:none}
 
   /* Tables */
   .tw{overflow-x:auto}
@@ -6791,6 +6894,7 @@ tbody tr:hover{background:rgba(255,203,45,.05)}
     <button class="sl-item" data-action="goPage" data-page="equipa-campo"><span class="mk-ic">🗺️</span>Equipa em Campo</button>
     <!-- Comerciais (dinâmico, vindo de ob_colaboradores · dep. Comercial · ativos). Geridos em RH → Colaboradores. -->
     <div id="sl-comercial-colabs"></div>
+    <button class="sl-item" data-action="goPage" data-page="mapa-vendas"><div class="sl-dot" style="background:#facc15"></div>📊 Mapa de Vendas</button>
   </div>
 
   <!-- Espaço "Equipa" (atalhos de pessoas Rui/Paulo/Humberto) removido — limpeza de sidebar.
@@ -7106,6 +7210,80 @@ tbody tr:hover{background:rgba(255,203,45,.05)}
 
   </div>
 </div>
+
+<!-- ─── MAPA DE VENDAS (Etapa A: esqueleto) -->
+<div id="page-mapa-vendas" class="app-page">
+  <div class="pg-hdr">
+    <div class="pg-hdr-top">
+      <div class="pg-space-icon" style="background:#facc15;color:#422006">M</div>
+      <div class="pg-title">Mapa de Vendas</div>
+      <div class="mv-actions">
+        <button class="mv-btn" id="mv-sync-btn" disabled title="Em preparação — próxima fase">🔄 Sincronizar Google Sheet</button>
+        <button class="mv-btn" disabled title="Em preparação — próxima fase">⬇ Exportar</button>
+      </div>
+    </div>
+  </div>
+  <div class="admin-page">
+    <div id="mv-comercial-banner" style="display:none;margin-bottom:14px;padding:10px 14px;border-radius:10px;background:rgba(250,204,21,.06);border:1px solid rgba(250,204,21,.2);font-size:12.5px;color:#fde047"></div>
+
+    <div id="mv-meta-comercial-wrap"></div>
+
+    <div class="mv-kpi-row" id="mv-kpi-row"></div>
+
+    <div class="mv-filters" id="mv-filters"></div>
+
+    <div class="mv-grid2">
+      <div class="mv-card" id="mv-meta-anual-card"></div>
+      <div class="mv-card" id="mv-recebimentos-card"></div>
+    </div>
+
+    <div class="mv-charts-grid" id="mv-charts-grid">
+      <div class="mv-card mv-chart-span2"><div class="mv-card-title">Vendas por Mês</div><div class="mv-card-sub">Valor orçamentado por mês, no filtro atual</div><div class="mv-chart-box"><canvas id="mv-chart-mes"></canvas></div></div>
+      <div class="mv-card"><div class="mv-card-title">Conversão por Estado</div><div class="mv-card-sub">Distribuição por estado</div><div class="mv-chart-box"><canvas id="mv-chart-estado"></canvas></div></div>
+      <div class="mv-card" id="mv-chart-comercial-card"><div class="mv-card-title">Vendas por Comercial</div><div class="mv-card-sub">Valor adjudicado+faturado</div><div class="mv-chart-box"><canvas id="mv-chart-comercial"></canvas></div></div>
+      <div class="mv-card"><div class="mv-card-title">Origem dos Negócios</div><div class="mv-card-sub">Distribuição por origem</div><div class="mv-chart-box"><canvas id="mv-chart-origem"></canvas></div></div>
+      <div class="mv-card" id="mv-chart-tipo-card"><div class="mv-card-title">Tipo de Produção</div><div class="mv-card-sub">Top tipos + "Outros"</div><div class="mv-chart-box"><canvas id="mv-chart-tipo"></canvas></div></div>
+      <div class="mv-card mv-chart-span3"><div class="mv-card-title">Evolução Anual</div><div class="mv-card-sub">Orçamentado vs. Faturado por mês</div><div class="mv-chart-box"><canvas id="mv-chart-anual"></canvas></div></div>
+    </div>
+
+    <div class="mv-card" id="mv-ranking-card" style="display:none;margin-bottom:16px">
+      <div class="mv-card-title">🏆 Ranking de Comerciais</div>
+      <div class="mv-card-sub">Comparação de performance (Adjudicado + Faturado)</div>
+      <div id="mv-ranking-list"></div>
+    </div>
+
+    <div class="mv-card">
+      <div style="display:flex;align-items:center;margin-bottom:4px"><div class="mv-card-title" style="margin-bottom:0">Orçamentos</div></div>
+      <div class="mv-card-sub" id="mv-table-count"></div>
+      <div class="mv-table-wrap">
+        <table class="mv-table" id="mv-table">
+          <thead><tr>
+            <th data-sort="num">Nº Orçamento</th>
+            <th data-sort="data">Data</th>
+            <th data-sort="vendedor">Comercial</th>
+            <th>Origem</th>
+            <th>NIF</th>
+            <th data-sort="cli">Cliente</th>
+            <th>Nome do Projeto</th>
+            <th>Tipo Produção</th>
+            <th>Descrição Trabalho</th>
+            <th>Mês/Ano</th>
+            <th data-sort="val">Valor Orçamentado</th>
+            <th data-sort="st" class="mv-center">Estado</th>
+            <th>Obs Gerais</th>
+          </tr></thead>
+          <tbody id="mv-table-body"></tbody>
+        </table>
+      </div>
+      <div class="mv-pag" id="mv-pag"></div>
+    </div>
+
+    <div style="text-align:center;color:var(--mv-muted);font-size:11px;padding:16px 0">Mapa de Vendas · dados reais de ob_orcamentos · OpportunityBox Business OS</div>
+  </div>
+</div>
+
+<div class="mv-drawer-overlay" id="mv-drawer-overlay"></div>
+<div class="mv-drawer" id="mv-drawer"></div>
 
 <!-- ─── COMERCIAL FOLLOW-UP -->
 <div id="page-comercial-followup" class="app-page">
@@ -10773,7 +10951,7 @@ document.addEventListener('DOMContentLoaded', function(){
 });
 // Pages accessible per role
 var DEPT_PAGES={
-  'Comercial':['home','todas','meu-painel','comercial-pipeline','comercial-followup','comercial-clientes','comercial-orcamentos','wa','equipa-campo','alerts','chat'], // corrigido de 'Dep. Comercial'
+  'Comercial':['home','todas','meu-painel','comercial-pipeline','comercial-followup','comercial-clientes','comercial-orcamentos','wa','equipa-campo','alerts','chat','mapa-vendas'], // corrigido de 'Dep. Comercial'
   'Dep. Design':['home','todas','design-tarefas','design-ficheiros','alerts','chat'],
   'Chão da Fábrica':['home','todas','fabrica-producao','fabrica-instalacoes','alerts','chat'],
   'Gestão Administrativa':['home','todas','admin-agenda','admin-docs','admin-despesas','admin-analise-vendas','admin-rh','stock','alerts','chat','comercial-orcamentos'],
@@ -11096,6 +11274,7 @@ window.goPage=function goPage(id){
   if(id==='comercial-orcamentos'&&typeof orcInitPage==='function')orcInitPage();
   if(id==='comercial-pipeline'&&typeof crmInit==='function')crmInit();
   if(id==='meu-painel'&&typeof renderMeuPainel==='function')renderMeuPainel();
+  if(id==='mapa-vendas'&&typeof renderMapaVendas==='function')renderMapaVendas();
   if(id==='comercial-followup'&&typeof fuInitPage==='function')fuInitPage();
   if(id==='crm'){ try{ renderCRMKanban('crm-kanban-admin'); }catch(e){} }
   if(id==='equipa-campo'&&typeof loadEquipaCampoData==='function')loadEquipaCampoData();
@@ -18243,6 +18422,7 @@ function renderAll(){
   safe(renderDashLeads,'dash-leads');
   safe(renderDashboardCFO,'dashboard-cfo');
   safe(renderMeuPainel,'meu-painel');
+  safe(renderMapaVendas,'mapa-vendas');
   safe(renderFinanceiro,'financeiro');
   safe(renderRelatorios,'relatorios');
   safe(()=>uniInitAll(),'uni');
@@ -25166,6 +25346,559 @@ function renderMeuPainel(){
   try{ mpRenderLembretesHoje(); }catch(e){}
 }
 window.renderMeuPainel=renderMeuPainel;
+
+// ══════════════════════════════════════════════════════════════════
+// MAPA DE VENDAS — leitura independente de ob_orcamentos (não usa
+// orcData/_sbOrcLoadAll, não toca em orcInitPage). Usa crmSBClient()
+// (sessão autenticada real) para que a RLS de ob_orcamentos
+// (ob_can_see(owner_id)) seja respeitada de verdade: um comercial
+// logado só recebe as suas próprias linhas diretamente da BD. O modo
+// "Ver como" (admin a simular um comercial) mantém a sessão real de
+// admin — por isso a RLS devolve tudo; a simulação é feita adiante,
+// só no cliente, pelo mesmo padrão isAdmin/minhas() já usado no resto
+// do CRM (CU passa a ser o próprio objeto do comercial simulado).
+// ══════════════════════════════════════════════════════════════════
+
+var MV_META_CONFIG = {
+  anual: 1300000,
+  get mensal(){ return this.anual/12; },
+  porComercial: { 'Rui Mota': 500000, 'Paulo Faria': 450000, 'Humberto Estrelinha': 350000 }
+};
+
+var MV_RECEBIMENTOS_CONFIG = {
+  global: { recebido: 694420.61, naoRecebido: 162065.85, parcial: 6431.67 },
+  porComercial: {
+    'Humberto Estrelinha': { recebido: 76131.87, naoRecebido: 22295.60, parcial: 6431.67 },
+    'Paulo Faria': { recebido: 455705.02, naoRecebido: 88692.42, parcial: 0 },
+    'Rui Mota': { recebido: 162583.72, naoRecebido: 51077.83, parcial: 0 }
+  }
+};
+
+var MV_ESTADO_LABEL = { 'Pendente':'Proposta', 'Aprovado':'Adjudicada', 'Faturado':'Faturada', 'Cancelado':'Perdida' };
+var MV_ESTADO_BADGE = { 'Pendente':'mv-badge-proposta', 'Aprovado':'mv-badge-adjudicada', 'Faturado':'mv-badge-faturada', 'Cancelado':'mv-badge-perdida' };
+var MV_ESTADO_DOT   = { 'Pendente':'#3b82f6', 'Aprovado':'#facc15', 'Faturado':'#22c55e', 'Cancelado':'#ef4444' };
+var MV_PIE_PALETTE  = ['#facc15','#3b82f6','#22c55e','#f97316','#a855f7','#64748b','#ec4899','#14b8a6'];
+
+var _mvData = null, _mvLoading = false;
+var _mvFilters = { periodo:'', comercial:'', estado:'', origem:'', tipoProd:'', cliente:'', busca:'' };
+var _mvSort = { campo:'data', dir:'desc' };
+var _mvPage = 1;
+var MV_PAGE_SIZE = 8;
+var _mvCharts = {};
+
+function _mvFmtEUR(v){
+  v = Math.round(v||0);
+  return '€' + v.toLocaleString('pt-PT');
+}
+function _mvFmtEURFull(v){
+  return (v||0).toLocaleString('pt-PT', {style:'currency', currency:'EUR'});
+}
+function _mvFmtPct(v){
+  return (v||0).toLocaleString('pt-PT', {minimumFractionDigits:1, maximumFractionDigits:1}) + '%';
+}
+function _mvParseData(str){
+  if(!str) return null;
+  var s = String(str).trim();
+  var m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if(m) return new Date(+m[3], +m[2]-1, +m[1]);
+  var d = new Date(s);
+  return isNaN(d) ? null : d;
+}
+function _mvNum(o){ return (o.extra && o.extra._numOriginal) || o.id || '—'; }
+function _mvOrigem(o){ return (o.extra && o.extra.origem) || '—'; }
+function _mvProjeto(o){ return (o.extra && o.extra.projeto) || '—'; }
+function _mvTipoProdRaw(o){ return (o.extra && o.extra.tipoProd) || ''; }
+function _mvDescricao(o){ return (o.extra && o.extra.descricaoTrabalho) || '—'; }
+function _mvMesAno(o){
+  var d = _mvParseData(o.data||o.dt);
+  return d ? (String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear()) : '—';
+}
+function _mvValor(o){ return typeof o.val==='number' ? o.val : (parseFloat(o.val)||0); }
+
+function _mvTipoProdNorm(raw){
+  if(!raw) return null;
+  var s = String(raw).trim().toLowerCase();
+  s = s.replace(/\s+/g,' ');
+  if(/letras?\s*3\s*d/.test(s)) return 'Letras 3D';
+  if(/vinil/.test(s)) return 'Vinil';
+  if(/reclam[eo]/.test(s)) return 'Reclamo';
+  if(/dupla\s*face/.test(s)) return 'Dupla Face';
+  if(/decora/.test(s)) return 'Decoração';
+  if(/diverso/.test(s)) return 'Diversos';
+  if(/totem/.test(s)) return 'Totem';
+  if(/assist/.test(s)) return 'Assistência Técnica';
+  return raw.trim();
+}
+
+async function _mvEnsureData(){
+  if(_mvData) return _mvData;
+  if(_mvLoading) return null;
+  _mvLoading = true;
+  try{
+    var sb = (typeof crmSBClient==='function') ? crmSBClient() : null;
+    if(!sb){ _mvData = []; _mvLoading=false; return _mvData; }
+    var res = await sb.from('ob_orcamentos')
+      .select('id,cli,vendedor,nif,val,st,data,dt,obs,extra,owner_id')
+      .is('deleted_at', null)
+      .limit(5000);
+    if(res.error){ console.warn('[MV] load falhou:', res.error); _mvData = []; }
+    else { _mvData = res.data || []; }
+  }catch(e){ console.warn('[MV] load exception:', e); _mvData = []; }
+  _mvLoading = false;
+  return _mvData;
+}
+
+function _mvMinhasLinhas(rows){
+  var isAdmin = !!(typeof CU!=='undefined' && CU && CU.admin);
+  var nome = (typeof CU!=='undefined' && CU) ? CU.name : null;
+  if(isAdmin || !nome) return rows.slice();
+  return rows.filter(function(o){ return o.vendedor === nome; });
+}
+
+function _mvApplyFilters(rows){
+  var f = _mvFilters;
+  return rows.filter(function(o){
+    if(f.comercial && o.vendedor !== f.comercial) return false;
+    if(f.estado && o.st !== f.estado) return false;
+    if(f.origem && _mvOrigem(o) !== f.origem) return false;
+    if(f.tipoProd && _mvTipoProdRaw(o) !== f.tipoProd) return false;
+    if(f.cliente && o.cli !== f.cliente) return false;
+    if(f.periodo){
+      var d = _mvParseData(o.data||o.dt);
+      if(!d) return false;
+      var hoje = new Date(); var dias = (hoje-d)/86400000;
+      if(f.periodo==='30' && dias>30) return false;
+      if(f.periodo==='90' && dias>90) return false;
+      if(f.periodo==='ano' && d.getFullYear()!==hoje.getFullYear()) return false;
+    }
+    if(f.busca){
+      var q = f.busca.toLowerCase();
+      var hay = [_mvNum(o), o.cli, _mvProjeto(o), o.vendedor, o.nif].join(' ').toLowerCase();
+      if(hay.indexOf(q)===-1) return false;
+    }
+    return true;
+  });
+}
+
+function _mvGetView(){
+  var isAdmin = !!(typeof CU!=='undefined' && CU && CU.admin);
+  var base = _mvMinhasLinhas(_mvData||[]);
+  return { isAdmin: isAdmin, rows: _mvApplyFilters(base) };
+}
+
+function renderMapaVendas(){
+  var el = document.getElementById('page-mapa-vendas');
+  if(!el) return;
+  if(_mvData===null){
+    var tbody = document.getElementById('mv-table-body');
+    if(tbody) tbody.innerHTML = '<tr><td colspan="13" class="mv-empty">A carregar orçamentos…</td></tr>';
+    _mvEnsureData().then(function(){ renderMapaVendas(); });
+    return;
+  }
+  var view = _mvGetView();
+  var syncBtn = document.getElementById('mv-sync-btn');
+  if(syncBtn) syncBtn.style.display = view.isAdmin ? '' : 'none';
+  _mvRenderBanner();
+  _mvRenderFilters();
+  _mvRenderKpis(view);
+  _mvRenderMetaAnual(view);
+  _mvRenderMetaComercial(view);
+  _mvRenderRecebimentos(view);
+  _mvRenderCharts(view);
+  _mvRenderRanking(view);
+  _mvRenderTable(view);
+}
+window.renderMapaVendas = renderMapaVendas;
+
+function _mvRenderBanner(){
+  var isAdmin = !!(typeof CU!=='undefined' && CU && CU.admin);
+  var banner = document.getElementById('mv-comercial-banner');
+  if(!banner) return;
+  if(!isAdmin && CU && CU.name){
+    banner.style.display = 'block';
+    banner.textContent = '👤 A ver o teu Mapa de Vendas pessoal, ' + CU.name + ' — só os teus próprios orçamentos.';
+  } else {
+    banner.style.display = 'none';
+  }
+}
+
+function _mvRenderFilters(){
+  var wrap = document.getElementById('mv-filters');
+  if(!wrap || wrap.dataset.built) { return; }
+  var view0 = _mvMinhasLinhas(_mvData||[]);
+  var isAdmin = !!(typeof CU!=='undefined' && CU && CU.admin);
+  var uniq = function(arr){ return Array.from(new Set(arr.filter(Boolean))).sort(); };
+  var comerciais = uniq(view0.map(function(o){return o.vendedor;}));
+  var origens = uniq(view0.map(_mvOrigem)).filter(function(v){return v!=='—';});
+  var tipos = uniq(view0.map(_mvTipoProdRaw)).filter(Boolean);
+  var clientes = uniq(view0.map(function(o){return o.cli;}));
+
+  var opts = function(arr, cur){
+    return '<option value="">Todos</option>' + arr.map(function(v){
+      return '<option value="'+v.replace(/"/g,'&quot;')+'"'+(v===cur?' selected':'')+'>'+v+'</option>';
+    }).join('');
+  };
+
+  var html = ''
+    + '<div class="mv-filter-field mv-filter-search"><label>Pesquisa</label><input type="text" id="mv-f-busca" placeholder="Nº orçamento, cliente, projeto, comercial…"></div>'
+    + '<div class="mv-filter-field"><label>Período</label><select id="mv-f-periodo"><option value="">Todo o histórico</option><option value="30">Últimos 30 dias</option><option value="90">Últimos 90 dias</option><option value="ano">Este ano</option></select></div>'
+    + (isAdmin ? '<div class="mv-filter-field"><label>Comercial</label><select id="mv-f-comercial">'+opts(comerciais)+'</select></div>' : '')
+    + '<div class="mv-filter-field"><label>Estado</label><select id="mv-f-estado"><option value="">Todos</option>'
+      + Object.keys(MV_ESTADO_LABEL).map(function(k){return '<option value="'+k+'">'+MV_ESTADO_LABEL[k]+'</option>';}).join('')
+      + '</select></div>'
+    + '<div class="mv-filter-field"><label>Origem</label><select id="mv-f-origem">'+opts(origens)+'</select></div>'
+    + '<div class="mv-filter-field"><label>Tipo Produção</label><select id="mv-f-tipo">'+opts(tipos)+'</select></div>'
+    + '<div class="mv-filter-field"><label>Cliente</label><select id="mv-f-cliente">'+opts(clientes)+'</select></div>'
+    + '<button class="mv-btn mv-clear-btn" id="mv-f-clear">Limpar filtros</button>';
+  wrap.innerHTML = html;
+  wrap.dataset.built = '1';
+
+  var bind = function(id, campo, evt){
+    var elx = document.getElementById(id);
+    if(!elx) return;
+    elx.addEventListener(evt||'change', function(){
+      _mvFilters[campo] = this.value;
+      _mvPage = 1;
+      renderMapaVendas();
+    });
+  };
+  bind('mv-f-busca','busca','input');
+  bind('mv-f-periodo','periodo');
+  bind('mv-f-comercial','comercial');
+  bind('mv-f-estado','estado');
+  bind('mv-f-origem','origem');
+  bind('mv-f-tipo','tipoProd');
+  bind('mv-f-cliente','cliente');
+  var clearBtn = document.getElementById('mv-f-clear');
+  if(clearBtn) clearBtn.addEventListener('click', function(){
+    _mvFilters = { periodo:'', comercial:'', estado:'', origem:'', tipoProd:'', cliente:'', busca:'' };
+    ['mv-f-busca','mv-f-periodo','mv-f-comercial','mv-f-estado','mv-f-origem','mv-f-tipo','mv-f-cliente'].forEach(function(id){
+      var e2=document.getElementById(id); if(e2) e2.value='';
+    });
+    _mvPage = 1;
+    renderMapaVendas();
+  });
+}
+
+function _mvRenderKpis(view){
+  var rows = view.rows;
+  var totalOrc = rows.reduce(function(s,o){ return s+_mvValor(o); }, 0);
+  var aprov = rows.filter(function(o){return o.st==='Aprovado';});
+  var fatur = rows.filter(function(o){return o.st==='Faturado';});
+  var cancel = rows.filter(function(o){return o.st==='Cancelado';});
+  var totalAdj = aprov.reduce(function(s,o){return s+_mvValor(o);},0);
+  var totalFat = fatur.reduce(function(s,o){return s+_mvValor(o);},0);
+  var totalPerd = cancel.reduce(function(s,o){return s+_mvValor(o);},0);
+  var decididos = aprov.length+fatur.length+cancel.length;
+  var conversao = decididos>0 ? ((aprov.length+fatur.length)/decididos*100) : 0;
+  var ganhos = aprov.concat(fatur);
+  var ticketMedio = ganhos.length>0 ? (totalAdj+totalFat)/ganhos.length : 0;
+
+  var cards = [
+    {ic:'💼', lbl:'Total Orçamentado', val:_mvFmtEUR(totalOrc), color:'var(--mv-txt)'},
+    {ic:'✅', lbl:'Total Adjudicado', val:_mvFmtEUR(totalAdj), color:'#fde047'},
+    {ic:'🧾', lbl:'Total Faturado', val:_mvFmtEUR(totalFat), color:'#4ade80'},
+    {ic:'❌', lbl:'Total Perdido', val:_mvFmtEUR(totalPerd), color:'#f87171'},
+    {ic:'🎯', lbl:'Taxa de Conversão', val:_mvFmtPct(conversao), color:'#60a5fa'},
+    {ic:'🪙', lbl:'Ticket Médio', val:_mvFmtEUR(ticketMedio), color:'#c084fc'},
+  ];
+  var wrap = document.getElementById('mv-kpi-row');
+  if(wrap) wrap.innerHTML = cards.map(function(c){
+    return '<div class="mv-kpi"><div class="mv-kpi-top"><div class="mv-kpi-ic">'+c.ic+'</div></div>'
+      + '<div class="mv-kpi-lbl">'+c.lbl+'</div><div class="mv-kpi-val" style="color:'+c.color+'">'+c.val+'</div></div>';
+  }).join('');
+}
+
+function _mvRenderMetaAnual(view){
+  var wrap = document.getElementById('mv-meta-anual-card');
+  if(!wrap) return;
+  if(!view.isAdmin){ wrap.style.display='none'; return; }
+  wrap.style.display='';
+  var rows = view.rows;
+  var acumulado = rows.filter(function(o){return o.st==='Aprovado'||o.st==='Faturado';}).reduce(function(s,o){return s+_mvValor(o);},0);
+  var meta = MV_META_CONFIG.anual;
+  var falta = Math.max(0, meta-acumulado);
+  var pct = meta>0 ? Math.min(100, acumulado/meta*100) : 0;
+  wrap.innerHTML = ''
+    + '<div style="display:flex;justify-content:space-between;align-items:flex-start">'
+    + '<div><div class="mv-card-title">🎯 Meta Anual</div><div class="mv-card-sub">Vendas acumuladas (Adjudicado+Faturado) vs. meta de referência</div></div>'
+    + '<div style="text-align:right"><div style="font-size:22px;font-weight:700;color:var(--mv-y)">'+_mvFmtPct(pct)+'</div><div style="font-size:9.5px;text-transform:uppercase;color:var(--mv-muted)">concluído</div></div>'
+    + '</div>'
+    + '<div class="mv-progress-track" style="margin-top:12px"><div class="mv-progress-fill'+(pct>=100?' mv-done':'')+'" style="width:'+pct+'%"></div></div>'
+    + '<div class="mv-mini-grid mv-mini4">'
+      + '<div class="mv-mini"><div class="mv-mini-lbl">Vendas Acumuladas</div><div class="mv-mini-val" style="color:#4ade80">'+_mvFmtEUR(acumulado)+'</div></div>'
+      + '<div class="mv-mini"><div class="mv-mini-lbl">Falta para Meta</div><div class="mv-mini-val" style="color:#fb923c">'+_mvFmtEUR(falta)+'</div></div>'
+      + '<div class="mv-mini"><div class="mv-mini-lbl">Meta Anual</div><div class="mv-mini-val" style="color:var(--mv-y)">'+_mvFmtEUR(meta)+'</div></div>'
+      + '<div class="mv-mini"><div class="mv-mini-lbl">Meta Mensal</div><div class="mv-mini-val" style="color:#60a5fa">'+_mvFmtEUR(MV_META_CONFIG.mensal)+'</div></div>'
+    + '</div>'
+    + '<div style="font-size:10px;color:var(--mv-muted);margin-top:10px">⚠ Configuração provisória (MV_META_CONFIG) — substituir por dados reais quando autorizado.</div>';
+}
+
+function _mvRenderMetaComercial(view){
+  var wrap = document.getElementById('mv-meta-comercial-wrap');
+  if(!wrap) return;
+  if(view.isAdmin || !CU || !CU.name){ wrap.innerHTML=''; return; }
+  var meta = MV_META_CONFIG.porComercial[CU.name] || 0;
+  var realizado = view.rows.filter(function(o){return o.st==='Aprovado'||o.st==='Faturado';}).reduce(function(s,o){return s+_mvValor(o);},0);
+  var falta = Math.max(0, meta-realizado);
+  var pct = meta>0 ? Math.min(100, realizado/meta*100) : 0;
+  wrap.innerHTML = '<div class="mv-card" style="margin-bottom:16px">'
+    + '<div style="display:flex;justify-content:space-between;align-items:flex-start">'
+    + '<div><div class="mv-card-title">📈 A tua Meta</div><div class="mv-card-sub">'+CU.name+' — Adjudicado+Faturado</div></div>'
+    + '<div style="text-align:right"><div style="font-size:22px;font-weight:700;color:'+(pct>=100?'#4ade80':'var(--mv-y)')+'">'+_mvFmtPct(pct)+'</div></div>'
+    + '</div>'
+    + '<div class="mv-progress-track" style="margin-top:12px"><div class="mv-progress-fill'+(pct>=100?' mv-done':'')+'" style="width:'+pct+'%"></div></div>'
+    + '<div class="mv-mini-grid mv-mini3">'
+      + '<div class="mv-mini"><div class="mv-mini-lbl">Meta Individual</div><div class="mv-mini-val" style="color:var(--mv-y)">'+_mvFmtEUR(meta)+'</div></div>'
+      + '<div class="mv-mini"><div class="mv-mini-lbl">Realizado</div><div class="mv-mini-val" style="color:#4ade80">'+_mvFmtEUR(realizado)+'</div></div>'
+      + '<div class="mv-mini"><div class="mv-mini-lbl">Falta para Meta</div><div class="mv-mini-val" style="color:#fb923c">'+_mvFmtEUR(falta)+'</div></div>'
+    + '</div>'
+    + '<div style="font-size:10px;color:var(--mv-muted);margin-top:10px">⚠ Configuração provisória — substituir por dados reais quando autorizado.</div>'
+    + '</div>';
+}
+
+function _mvRenderRecebimentos(view){
+  var wrap = document.getElementById('mv-recebimentos-card');
+  if(!wrap) return;
+  var src = view.isAdmin ? MV_RECEBIMENTOS_CONFIG.global : (MV_RECEBIMENTOS_CONFIG.porComercial[CU&&CU.name] || {recebido:0,naoRecebido:0,parcial:0});
+  var total = src.recebido+src.naoRecebido+src.parcial;
+  var pctRec = total>0 ? (src.recebido/total*100) : 0;
+  wrap.innerHTML = '<div class="mv-card-title">🏦 Recebimentos</div>'
+    + '<div class="mv-card-sub">'+(view.isAdmin?'Indicador agregado global':'Indicador agregado — '+(CU?CU.name:''))+'</div>'
+    + '<div style="display:flex;align-items:center;gap:16px;margin-top:8px">'
+    + '<div style="position:relative;width:88px;height:88px;border-radius:50%;background:conic-gradient(#22c55e 0% '+pctRec+'%, #ef4444 '+pctRec+'% 100%);display:flex;align-items:center;justify-content:center;flex-shrink:0">'
+      + '<div style="width:60px;height:60px;border-radius:50%;background:var(--mv-card);display:flex;flex-direction:column;align-items:center;justify-content:center">'
+        + '<div style="font-size:14px;font-weight:700;color:#4ade80">'+_mvFmtPct(pctRec)+'</div>'
+        + '<div style="font-size:8px;color:var(--mv-muted);text-transform:uppercase">recebido</div>'
+      + '</div></div>'
+    + '<div style="flex:1;display:flex;flex-direction:column;gap:8px">'
+      + '<div class="mv-mini" style="border-color:rgba(34,197,94,.2);background:rgba(34,197,94,.05)"><div class="mv-mini-lbl">Recebido</div><div class="mv-mini-val" style="color:#4ade80">'+_mvFmtEURFull(src.recebido)+'</div></div>'
+      + '<div class="mv-mini" style="border-color:rgba(239,68,68,.2);background:rgba(239,68,68,.05)"><div class="mv-mini-lbl">Não Recebido</div><div class="mv-mini-val" style="color:#f87171">'+_mvFmtEURFull(src.naoRecebido)+'</div></div>'
+    + '</div></div>'
+    + '<div style="font-size:10px;color:var(--mv-muted);margin-top:10px">⚠ Não existe ligação fatura↔orçamento — indicador agregado (MV_RECEBIMENTOS_CONFIG), não por linha.</div>';
+}
+
+function _mvChart(id, cfg){
+  var canvas = document.getElementById(id);
+  if(!canvas || typeof Chart==='undefined') return;
+  var existing = Chart.getChart(canvas);
+  if(existing) existing.destroy();
+  _mvCharts[id] = new Chart(canvas, cfg);
+}
+
+function _mvRenderCharts(view){
+  if(typeof Chart==='undefined') return;
+  var rows = view.rows;
+
+  var porMes = {};
+  rows.forEach(function(o){ var k=_mvMesAno(o); if(k==='—')return; porMes[k]=(porMes[k]||0)+_mvValor(o); });
+  var mesesOrdenados = Object.keys(porMes).sort(function(a,b){
+    var pa=a.split('/'), pb=b.split('/');
+    return new Date(+pa[1],+pa[0]-1) - new Date(+pb[1],+pb[0]-1);
+  });
+  _mvChart('mv-chart-mes', { type:'line', data:{ labels:mesesOrdenados, datasets:[{ label:'Orçamentado', data:mesesOrdenados.map(function(m){return porMes[m];}), borderColor:'#facc15', backgroundColor:'rgba(250,204,21,.15)', fill:true, tension:.35, pointRadius:2 }]}, options:_mvChartOpts(true) });
+
+  var porEstado = {};
+  rows.forEach(function(o){ var l=MV_ESTADO_LABEL[o.st]||o.st; porEstado[l]=(porEstado[l]||0)+1; });
+  _mvChart('mv-chart-estado', { type:'doughnut', data:{ labels:Object.keys(porEstado), datasets:[{ data:Object.values(porEstado), backgroundColor:MV_PIE_PALETTE, borderColor:'#0c0c0e', borderWidth:2 }]}, options:_mvPieOpts() });
+
+  var cardComercial = document.getElementById('mv-chart-comercial-card');
+  if(view.isAdmin){
+    if(cardComercial) cardComercial.style.display='';
+    var porComercial = {};
+    rows.filter(function(o){return o.st==='Aprovado'||o.st==='Faturado';}).forEach(function(o){ porComercial[o.vendedor]=(porComercial[o.vendedor]||0)+_mvValor(o); });
+    var comerciaisOrd = Object.keys(porComercial).sort(function(a,b){return porComercial[b]-porComercial[a];});
+    _mvChart('mv-chart-comercial', { type:'bar', data:{ labels:comerciaisOrd, datasets:[{ data:comerciaisOrd.map(function(c){return porComercial[c];}), backgroundColor:comerciaisOrd.map(function(c,i){return i===0?'#facc15':'#3f3f46';}), borderRadius:6 }]}, options:_mvChartOpts(true, true) });
+  } else if(cardComercial){ cardComercial.style.display='none'; }
+
+  var porOrigem = {};
+  rows.forEach(function(o){ var v=_mvOrigem(o); if(v==='—')return; porOrigem[v]=(porOrigem[v]||0)+1; });
+  _mvChart('mv-chart-origem', { type:'pie', data:{ labels:Object.keys(porOrigem), datasets:[{ data:Object.values(porOrigem), backgroundColor:MV_PIE_PALETTE, borderColor:'#0c0c0e', borderWidth:2 }]}, options:_mvPieOpts() });
+
+  var porTipo = {};
+  rows.forEach(function(o){ var v=_mvTipoProdNorm(_mvTipoProdRaw(o)); if(!v)return; porTipo[v]=(porTipo[v]||0)+1; });
+  var tiposOrd = Object.keys(porTipo).sort(function(a,b){return porTipo[b]-porTipo[a];});
+  var TOP_N = 6;
+  var tiposFinal = tiposOrd.slice(0,TOP_N);
+  var outrosSoma = tiposOrd.slice(TOP_N).reduce(function(s,t){return s+porTipo[t];},0);
+  if(outrosSoma>0) tiposFinal.push('Outros');
+  var tiposVals = tiposFinal.map(function(t){ return t==='Outros'?outrosSoma:porTipo[t]; });
+  _mvChart('mv-chart-tipo', { type:'bar', data:{ labels:tiposFinal, datasets:[{ data:tiposVals, backgroundColor:'#3b82f6', borderRadius:6 }]}, options:_mvChartOpts(false) });
+
+  var porMesOrc = {}, porMesFat = {};
+  rows.forEach(function(o){
+    var k=_mvMesAno(o); if(k==='—')return;
+    porMesOrc[k]=(porMesOrc[k]||0)+_mvValor(o);
+    if(o.st==='Faturado') porMesFat[k]=(porMesFat[k]||0)+_mvValor(o);
+  });
+  _mvChart('mv-chart-anual', { type:'line', data:{ labels:mesesOrdenados, datasets:[
+    { label:'Orçamentado', data:mesesOrdenados.map(function(m){return porMesOrc[m]||0;}), borderColor:'#facc15', backgroundColor:'transparent', tension:.3, pointRadius:3 },
+    { label:'Faturado', data:mesesOrdenados.map(function(m){return porMesFat[m]||0;}), borderColor:'#22c55e', backgroundColor:'transparent', tension:.3, pointRadius:3 }
+  ]}, options:_mvChartOpts(true) });
+}
+
+function _mvChartOpts(showY, horizontal){
+  return {
+    responsive:true, maintainAspectRatio:false, indexAxis: horizontal?'y':'x',
+    plugins:{ legend:{display:false}, tooltip:{backgroundColor:'#141416', borderColor:'#28282d', borderWidth:1, titleColor:'#f8fafc', bodyColor:'#d4d4d8'} },
+    scales:{
+      x:{ grid:{color:'#1f1f23', display:!horizontal}, ticks:{color:'#94a3b8', font:{size:10}} },
+      y:{ display:showY, grid:{color:'#1f1f23'}, ticks:{color:'#94a3b8', font:{size:10}} }
+    }
+  };
+}
+function _mvPieOpts(){
+  return { responsive:true, maintainAspectRatio:false, plugins:{ legend:{position:'bottom', labels:{color:'#94a3b8', font:{size:10.5}, boxWidth:10, padding:10}}, tooltip:{backgroundColor:'#141416', borderColor:'#28282d', borderWidth:1, titleColor:'#f8fafc', bodyColor:'#d4d4d8'} } };
+}
+
+function _mvRenderRanking(view){
+  var card = document.getElementById('mv-ranking-card');
+  if(!card) return;
+  if(!view.isAdmin){ card.style.display='none'; return; }
+  card.style.display='';
+  var porComercial = {};
+  view.rows.forEach(function(o){
+    var v = o.vendedor; if(!v) return;
+    if(!porComercial[v]) porComercial[v] = { valor:0, negocios:0, decididos:0, ganhos:0 };
+    var pc = porComercial[v];
+    if(o.st==='Aprovado'||o.st==='Faturado'){ pc.valor += _mvValor(o); pc.negocios++; pc.ganhos++; pc.decididos++; }
+    else if(o.st==='Cancelado'){ pc.decididos++; }
+  });
+  var lista = Object.keys(porComercial).map(function(n){ return Object.assign({nome:n}, porComercial[n]); });
+  lista.sort(function(a,b){ return b.valor-a.valor; });
+  var maxValor = lista.length ? lista[0].valor : 1;
+  var medalhas = ['#fde047','#cbd5e1','#d97706'];
+  var listEl = document.getElementById('mv-ranking-list');
+  if(listEl) listEl.innerHTML = lista.map(function(c,i){
+    var conv = c.decididos>0 ? (c.ganhos/c.decididos*100) : 0;
+    var pct = maxValor>0 ? (c.valor/maxValor*100) : 0;
+    return '<div class="mv-rank-row"><div class="mv-rank-pos" style="color:'+(medalhas[i]||'#94a3b8')+'">'+(i+1)+'</div>'
+      + '<div class="mv-rank-body"><div class="mv-rank-top"><span>'+c.nome+'</span><span style="font-weight:700">'+_mvFmtEUR(c.valor)+'</span></div>'
+      + '<div class="mv-progress-track"><div class="mv-progress-fill" style="width:'+pct+'%"></div></div>'
+      + '<div class="mv-rank-sub">'+c.negocios+' negócio'+(c.negocios===1?'':'s')+' · Conversão: '+_mvFmtPct(conv)+'</div></div></div>';
+  }).join('') || '<div class="mv-empty">Sem dados no filtro atual.</div>';
+}
+
+function _mvRenderTable(view){
+  var rows = view.rows.slice();
+  var campo = _mvSort.campo, dir = _mvSort.dir;
+  rows.sort(function(a,b){
+    var va, vb;
+    if(campo==='num'){ va=_mvNum(a); vb=_mvNum(b); }
+    else if(campo==='data'){ va=_mvParseData(a.data||a.dt)||new Date(0); vb=_mvParseData(b.data||b.dt)||new Date(0); }
+    else if(campo==='val'){ va=_mvValor(a); vb=_mvValor(b); }
+    else { va=a[campo]||''; vb=b[campo]||''; }
+    if(va<vb) return dir==='asc'?-1:1;
+    if(va>vb) return dir==='asc'?1:-1;
+    return 0;
+  });
+
+  var countEl = document.getElementById('mv-table-count');
+  if(countEl) countEl.textContent = rows.length + ' registo'+(rows.length===1?'':'s')+' · clique numa linha para ver detalhes';
+
+  var totalPages = Math.max(1, Math.ceil(rows.length/MV_PAGE_SIZE));
+  if(_mvPage>totalPages) _mvPage = totalPages;
+  var start = (_mvPage-1)*MV_PAGE_SIZE;
+  var pageRows = rows.slice(start, start+MV_PAGE_SIZE);
+
+  var tbody = document.getElementById('mv-table-body');
+  if(tbody){
+    if(!pageRows.length){
+      tbody.innerHTML = '<tr><td colspan="13" class="mv-empty">Sem resultados para os filtros aplicados.</td></tr>';
+    } else {
+      tbody.innerHTML = pageRows.map(function(o){
+        var estLabel = MV_ESTADO_LABEL[o.st]||o.st;
+        var badgeCls = MV_ESTADO_BADGE[o.st]||'';
+        var dot = MV_ESTADO_DOT[o.st]||'#94a3b8';
+        return '<tr data-id="'+o.id+'">'
+          + '<td class="mv-num">'+_mvNum(o)+'</td>'
+          + '<td>'+(o.data||o.dt||'—')+'</td>'
+          + '<td>'+(o.vendedor||'—')+'</td>'
+          + '<td>'+_mvOrigem(o)+'</td>'
+          + '<td>'+(o.nif||'—')+'</td>'
+          + '<td>'+(o.cli||'—')+'</td>'
+          + '<td>'+_mvProjeto(o)+'</td>'
+          + '<td>'+(_mvTipoProdRaw(o)||'—')+'</td>'
+          + '<td>'+_mvDescricao(o)+'</td>'
+          + '<td>'+_mvMesAno(o)+'</td>'
+          + '<td class="mv-val">'+_mvFmtEUR(_mvValor(o))+'</td>'
+          + '<td class="mv-center"><span class="mv-badge '+badgeCls+'"><span class="dot" style="background:'+dot+'"></span>'+estLabel+'</span></td>'
+          + '<td>'+(o.obs||'—')+'</td>'
+          + '</tr>';
+      }).join('');
+      Array.prototype.forEach.call(tbody.querySelectorAll('tr[data-id]'), function(tr){
+        tr.addEventListener('click', function(){ _mvOpenDetail(this.dataset.id); });
+      });
+    }
+  }
+
+  var pagEl = document.getElementById('mv-pag');
+  if(pagEl){
+    pagEl.innerHTML = '<span>Página '+_mvPage+' de '+totalPages+'</span>'
+      + '<div class="mv-pag-btns"><button id="mv-pag-prev" '+(_mvPage<=1?'disabled':'')+'>‹</button><button id="mv-pag-next" '+(_mvPage>=totalPages?'disabled':'')+'>›</button></div>';
+    var prevBtn = document.getElementById('mv-pag-prev'), nextBtn = document.getElementById('mv-pag-next');
+    if(prevBtn) prevBtn.addEventListener('click', function(){ if(_mvPage>1){ _mvPage--; renderMapaVendas(); } });
+    if(nextBtn) nextBtn.addEventListener('click', function(){ if(_mvPage<totalPages){ _mvPage++; renderMapaVendas(); } });
+  }
+
+  Array.prototype.forEach.call(document.querySelectorAll('#mv-table th[data-sort]'), function(th){
+    th.onclick = function(){
+      var c = this.dataset.sort;
+      if(_mvSort.campo===c) _mvSort.dir = (_mvSort.dir==='asc'?'desc':'asc');
+      else { _mvSort.campo=c; _mvSort.dir='asc'; }
+      renderMapaVendas();
+    };
+  });
+}
+
+function _mvOpenDetail(id){
+  var o = (_mvData||[]).find(function(x){ return String(x.id)===String(id); });
+  if(!o) return;
+  var estLabel = MV_ESTADO_LABEL[o.st]||o.st;
+  var badgeCls = MV_ESTADO_BADGE[o.st]||'';
+  var dot = MV_ESTADO_DOT[o.st]||'#94a3b8';
+  var field = function(ic,lbl,val){
+    return '<div class="mv-field"><div class="mv-field-ic">'+ic+'</div><div><div class="mv-field-lbl">'+lbl+'</div><div class="mv-field-val">'+(val||'—')+'</div></div></div>';
+  };
+  var drawer = document.getElementById('mv-drawer');
+  var overlay = document.getElementById('mv-drawer-overlay');
+  if(!drawer||!overlay) return;
+  drawer.innerHTML = ''
+    + '<div class="mv-drawer-hdr">'
+      + '<button class="mv-drawer-close" id="mv-drawer-close">✕</button>'
+      + '<div style="font-family:monospace;color:#facc15;font-size:12px;margin-bottom:4px">'+_mvNum(o)+'</div>'
+      + '<div style="font-size:19px;font-weight:600">'+_mvProjeto(o)+'</div>'
+      + '<div style="font-size:12.5px;color:#94a3b8;margin-top:2px">'+(o.cli||'—')+'</div>'
+      + '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px">'
+        + '<span class="mv-badge '+badgeCls+'"><span class="dot" style="background:'+dot+'"></span>'+estLabel+'</span>'
+        + '<span style="color:#facc15;font-weight:700;font-size:16px">'+_mvFmtEUR(_mvValor(o))+'</span>'
+      + '</div>'
+    + '</div>'
+    + '<div class="mv-drawer-body">'
+      + field('📅','Data', o.data||o.dt)
+      + field('🗓','Mês/Ano', _mvMesAno(o))
+      + field('👤','Comercial', o.vendedor)
+      + field('📍','Origem', _mvOrigem(o))
+      + field('🏢','Cliente', o.cli)
+      + field('🪪','NIF', o.nif)
+      + '<div class="mv-sep"></div>'
+      + field('🏷','Tipo de Produção', _mvTipoProdRaw(o))
+      + field('📁','Nome do Projeto', _mvProjeto(o))
+      + field('📝','Descrição do Trabalho', _mvDescricao(o))
+      + field('💶','Valor Orçamentado', _mvFmtEUR(_mvValor(o)))
+      + '<div class="mv-sep"></div>'
+      + field('🗒','Observações', o.obs)
+    + '</div>';
+  overlay.classList.add('mv-open');
+  drawer.classList.add('mv-open');
+  document.getElementById('mv-drawer-close').addEventListener('click', _mvCloseDetail);
+  overlay.onclick = _mvCloseDetail;
+}
+function _mvCloseDetail(){
+  var drawer = document.getElementById('mv-drawer'), overlay = document.getElementById('mv-drawer-overlay');
+  if(drawer) drawer.classList.remove('mv-open');
+  if(overlay) overlay.classList.remove('mv-open');
+}
 
 // ADD: popula o corpo da tabela "Lembretes de Hoje" no Meu Painel.
 // Fonte: crmAtividades (tipo 'Lembrete', due de hoje) + cliData (nome do cliente).
