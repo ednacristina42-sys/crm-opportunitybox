@@ -2560,6 +2560,13 @@ function crmBuildCUFromProfile(profile){
   };
 }
 
+// Página inicial por perfil: Comercial entra no Meu Painel; admin/restantes em 'home'.
+function crmPaginaInicial(){
+  try{ return (typeof CU!=='undefined' && CU && !CU.admin && CU.dept==='Comercial') ? 'meu-painel' : 'home'; }
+  catch(e){ return 'home'; }
+}
+window.crmPaginaInicial = crmPaginaInicial;
+
 function crmEnterAppWithProfile(profile){
   CU = crmBuildCUFromProfile(profile);
   selectedUser = CU;
@@ -2573,7 +2580,7 @@ function crmEnterAppWithProfile(profile){
   setTimeout(function(){
     try{ if(typeof renderAll === 'function') renderAll(); } catch(e){}
     try{ if(typeof gsInitUI === 'function') gsInitUI(); } catch(e){}
-    try{ if(typeof goPage === 'function') goPage('home'); } catch(e){}
+    try{ if(typeof goPage === 'function') goPage(crmPaginaInicial()); } catch(e){}
     try{ if(typeof initNovosModulos === 'function') initNovosModulos(); } catch(e){}
     // Fase 4, Etapa 6: só agora (sessão + perfil já validados) é que os
     // orçamentos são pedidos ao Supabase — nunca antes de existir CU.
@@ -5184,6 +5191,11 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--txt);min-he
 /* Space children (lists) */
 .space-lists{display:none;padding-left:28px}
 .space-item.open+.space-lists{display:block}
+/* ADD: sidebar reorganizada por função — Meu Painel destacado + ícones */
+.sb-mp{display:flex;align-items:center;gap:9px;width:calc(100% - 16px);margin:8px 8px 4px;padding:9px 12px;border-radius:8px;background:rgba(245,196,0,.10);border:1px solid rgba(245,196,0,.24);color:var(--txt2);font-family:'Inter',sans-serif;font-size:14px;font-weight:600;cursor:pointer;text-align:left}
+.sb-mp:hover{background:rgba(245,196,0,.16)}
+.sb-mp .si{font-size:15px}
+.mk-ic{display:inline-flex;width:18px;justify-content:center;margin-right:9px;font-size:13px;flex-shrink:0}
 .sl-item{
   display:flex;align-items:center;gap:6px;
   padding:4px 10px 4px 4px;font-size:13.5px;
@@ -5213,6 +5225,9 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--txt);min-he
 .sb-ava{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#000;flex-shrink:0}
 .sb-uname{font-size:13px;font-weight:600;color:var(--txt2)}
 .sb-urole{font-size:11px;color:var(--muted)}
+/* ADD: branding discreto — crédito de desenvolvimento */
+.sb-credit{padding:8px 14px 12px;font-size:10.5px;line-height:1.4;color:var(--muted);text-align:center;opacity:.85}
+.sb-credit strong{font-weight:600;color:var(--txt2)}
 .logout-btn{margin-left:auto;font-size:13px;color:var(--muted);cursor:pointer;padding:3px 6px;border-radius:4px;transition:all .15s;background:none;border:none}
 .logout-btn:hover{background:var(--bg4);color:var(--txt2)}
 
@@ -5431,6 +5446,131 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--txt);min-he
 .kdlt{font-size:13px;font-weight:500}
 .up{color:var(--g)}.dn{color:var(--r)}
 .ksub{font-size:12px;color:var(--muted);margin-top:3px}
+
+/* ADD: Meu Painel — cards placeholder (funcionalidade "em breve", sem
+   dados fictícios). Reaproveita .kpi/.klbl/.kval/.ksub, só esbate visualmente. */
+.mp-placeholder{opacity:.5;filter:grayscale(.4);cursor:default;pointer-events:none}
+.mp-placeholder .kval{color:var(--muted)}
+
+/* ADD: Mapa de Vendas — paleta e componentes isolados (não tocam :root nem outras páginas) */
+#page-mapa-vendas{--mv-y:#facc15;--mv-y-fg:#422006;--mv-g:#22c55e;--mv-r:#ef4444;--mv-b:#3b82f6;--mv-p:#a855f7;--mv-gray:#64748b;--mv-card:#141416;--mv-bg2:#1e1e21;--mv-border:#28282d;--mv-muted:#94a3b8;--mv-txt:#f8fafc}
+#page-mapa-vendas .mv-card{background:var(--mv-card);border:1px solid var(--mv-border);border-radius:12px;padding:18px}
+#page-mapa-vendas .mv-card-title{font-size:14px;font-weight:600;color:var(--mv-txt);margin-bottom:2px}
+#page-mapa-vendas .mv-card-sub{font-size:11.5px;color:var(--mv-muted);margin-bottom:12px}
+#page-mapa-vendas .mv-actions{display:flex;gap:8px;margin-left:auto}
+#page-mapa-vendas .mv-btn{display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 12px;border-radius:8px;background:var(--mv-bg2);border:1px solid var(--mv-border);color:var(--mv-txt);font-size:12.5px;cursor:pointer}
+#page-mapa-vendas .mv-btn:disabled{opacity:.45;cursor:not-allowed}
+#page-mapa-vendas .mv-kpi-row{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;margin-bottom:16px}
+@media(min-width:900px){#page-mapa-vendas .mv-kpi-row{grid-template-columns:repeat(3,1fr)}}
+@media(min-width:1300px){#page-mapa-vendas .mv-kpi-row{grid-template-columns:repeat(6,1fr)}}
+#page-mapa-vendas .mv-kpi{background:var(--mv-card);border:1px solid var(--mv-border);border-radius:12px;padding:16px}
+#page-mapa-vendas .mv-kpi-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+#page-mapa-vendas .mv-kpi-ic{width:34px;height:34px;border-radius:8px;background:var(--mv-bg2);display:flex;align-items:center;justify-content:center;font-size:16px}
+#page-mapa-vendas .mv-kpi-lbl{font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--mv-muted);margin-bottom:6px}
+#page-mapa-vendas .mv-kpi-val{font-size:22px;font-weight:700;color:var(--mv-txt)}
+#page-mapa-vendas .mv-filters{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin-bottom:16px}
+#page-mapa-vendas .mv-filter-field{display:flex;flex-direction:column;gap:4px}
+#page-mapa-vendas .mv-filter-field label{font-size:9.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--mv-muted)}
+#page-mapa-vendas .mv-filters select,#page-mapa-vendas .mv-filters input[type=text]{background:var(--mv-bg2);border:1px solid var(--mv-border);color:var(--mv-txt);border-radius:8px;padding:7px 10px;font-size:12.5px;min-width:130px}
+#page-mapa-vendas .mv-filter-search{flex:1;min-width:220px}
+#page-mapa-vendas .mv-clear-btn{color:#f87171;border-color:rgba(239,68,68,.25);background:rgba(239,68,68,.08)}
+#page-mapa-vendas .mv-grid2{display:grid;grid-template-columns:1fr;gap:14px;margin-bottom:16px}
+@media(min-width:1100px){#page-mapa-vendas .mv-grid2{grid-template-columns:2fr 1fr}}
+#page-mapa-vendas .mv-progress-track{height:12px;border-radius:999px;background:var(--mv-bg2);overflow:hidden}
+#page-mapa-vendas .mv-progress-fill{height:100%;border-radius:999px;background:linear-gradient(90deg,rgba(250,204,21,.7),var(--mv-y));transition:width .6s ease}
+#page-mapa-vendas .mv-progress-fill.mv-done{background:linear-gradient(90deg,rgba(34,197,94,.7),var(--mv-g))}
+#page-mapa-vendas .mv-mini-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-top:14px}
+@media(min-width:700px){#page-mapa-vendas .mv-mini-grid.mv-mini4{grid-template-columns:repeat(4,1fr)}}
+@media(min-width:600px){#page-mapa-vendas .mv-mini-grid.mv-mini3{grid-template-columns:repeat(3,1fr)}}
+#page-mapa-vendas .mv-mini{background:rgba(255,255,255,.02);border:1px solid var(--mv-border);border-radius:8px;padding:10px 12px}
+#page-mapa-vendas .mv-mini-lbl{font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--mv-muted);margin-bottom:4px}
+#page-mapa-vendas .mv-mini-val{font-size:15px;font-weight:700}
+#page-mapa-vendas .mv-charts-grid{display:grid;grid-template-columns:1fr;gap:14px;margin-bottom:16px}
+@media(min-width:1100px){#page-mapa-vendas .mv-charts-grid{grid-template-columns:repeat(3,1fr)}}
+#page-mapa-vendas .mv-chart-span2{grid-column:span 1}
+@media(min-width:1100px){#page-mapa-vendas .mv-chart-span2{grid-column:span 2}}
+@media(min-width:1100px){#page-mapa-vendas .mv-chart-span3{grid-column:span 3}}
+#page-mapa-vendas .mv-chart-box{position:relative;height:230px}
+#page-mapa-vendas .mv-rank-row{display:flex;align-items:center;gap:12px;padding:10px;border:1px solid rgba(255,255,255,.06);background:rgba(255,255,255,.02);border-radius:8px;margin-bottom:8px}
+#page-mapa-vendas .mv-rank-pos{width:30px;height:30px;border-radius:50%;background:var(--mv-bg2);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;flex-shrink:0}
+#page-mapa-vendas .mv-rank-body{flex:1;min-width:0}
+#page-mapa-vendas .mv-rank-top{display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px}
+#page-mapa-vendas .mv-rank-sub{font-size:11px;color:var(--mv-muted);margin-top:4px}
+#page-mapa-vendas .mv-badge{display:inline-flex;align-items:center;gap:5px;padding:2px 9px;border-radius:999px;font-size:10.5px;font-weight:700;border:1px solid transparent;white-space:nowrap}
+#page-mapa-vendas .mv-badge .dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+#page-mapa-vendas .mv-badge-proposta{background:rgba(59,130,246,.12);color:#60a5fa;border-color:rgba(59,130,246,.25)}
+#page-mapa-vendas .mv-badge-adjudicada{background:rgba(250,204,21,.12);color:#fde047;border-color:rgba(250,204,21,.25)}
+#page-mapa-vendas .mv-badge-faturada{background:rgba(34,197,94,.12);color:#4ade80;border-color:rgba(34,197,94,.25)}
+#page-mapa-vendas .mv-badge-perdida{background:rgba(239,68,68,.12);color:#f87171;border-color:rgba(239,68,68,.25)}
+#page-mapa-vendas .mv-table-wrap{overflow-x:auto}
+#page-mapa-vendas .mv-table{width:100%;border-collapse:collapse;font-size:12.5px;min-width:1450px}
+#page-mapa-vendas .mv-table th{text-align:left;font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:var(--mv-muted);padding:9px 10px;border-bottom:1px solid var(--mv-border);cursor:pointer;white-space:nowrap;user-select:none}
+#page-mapa-vendas .mv-table th:hover{color:var(--mv-txt)}
+#page-mapa-vendas .mv-table td{padding:9px 10px;border-bottom:1px solid rgba(255,255,255,.04);color:#d4d4d8;white-space:nowrap;max-width:220px;overflow:hidden;text-overflow:ellipsis}
+#page-mapa-vendas .mv-table tbody tr{cursor:pointer}
+#page-mapa-vendas .mv-table tbody tr:hover{background:rgba(255,255,255,.03)}
+#page-mapa-vendas .mv-table td.mv-num{font-family:'DM Mono',monospace;color:var(--mv-y);font-size:11.5px}
+#page-mapa-vendas .mv-table td.mv-val{text-align:right;font-weight:700;color:var(--mv-txt)}
+#page-mapa-vendas .mv-table td.mv-center{text-align:center}
+#page-mapa-vendas .mv-pag{display:flex;align-items:center;justify-content:space-between;padding:12px 2px 2px;font-size:12px;color:var(--mv-muted)}
+#page-mapa-vendas .mv-pag-btns{display:flex;gap:6px}
+#page-mapa-vendas .mv-pag button{width:28px;height:28px;border-radius:7px;background:var(--mv-bg2);border:1px solid var(--mv-border);color:var(--mv-txt);cursor:pointer}
+#page-mapa-vendas .mv-pag button:disabled{opacity:.4;cursor:default}
+#page-mapa-vendas .mv-empty{text-align:center;padding:40px 20px;color:var(--mv-muted);font-size:13px}
+.mv-drawer-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9994;display:none}
+.mv-drawer-overlay.mv-open{display:block}
+.mv-drawer{position:fixed;top:0;right:0;bottom:0;width:440px;max-width:92vw;background:#0c0c0e;border-left:1px solid #28282d;z-index:9995;transform:translateX(100%);transition:transform .25s ease;overflow-y:auto;color:#f8fafc}
+.mv-drawer.mv-open{transform:translateX(0)}
+.mv-drawer-hdr{position:sticky;top:0;background:rgba(12,12,14,.95);border-bottom:1px solid #28282d;padding:18px 20px;z-index:2}
+.mv-drawer-close{position:absolute;top:16px;right:16px;width:30px;height:30px;border-radius:8px;background:#1e1e21;border:1px solid #28282d;color:#f8fafc;cursor:pointer;font-size:14px}
+.mv-drawer-body{padding:20px}
+.mv-field{display:flex;align-items:flex-start;gap:10px;margin-bottom:14px}
+.mv-field-ic{width:30px;height:30px;border-radius:8px;background:#1e1e21;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0}
+.mv-field-lbl{font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;margin-bottom:2px}
+.mv-field-val{font-size:13.5px;color:#f8fafc;word-break:break-word}
+.mv-sep{height:1px;background:#28282d;margin:16px 0}
+
+/* ADD: Mapa de Vendas — responsividade mobile real (isolada em #page-mapa-vendas/.mv-*, não toca CSS global) */
+@media(max-width:640px){
+  #page-mapa-vendas .pg-hdr-top{gap:8px}
+  #page-mapa-vendas .mv-actions{margin-left:0;width:100%}
+  #page-mapa-vendas .mv-actions .mv-btn{flex:1;justify-content:center;font-size:11.5px;padding:0 8px}
+  #page-mapa-vendas .mv-card{padding:14px}
+  #page-mapa-vendas .mv-filters{display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:stretch}
+  #page-mapa-vendas .mv-filter-field{min-width:0}
+  #page-mapa-vendas .mv-filter-search{grid-column:1/-1}
+  #page-mapa-vendas .mv-filters select,#page-mapa-vendas .mv-filters input[type=text]{width:100%;min-width:0}
+  #page-mapa-vendas .mv-clear-btn{grid-column:1/-1;width:100%;justify-content:center}
+  #page-mapa-vendas .mv-chart-box{height:200px}
+  #page-mapa-vendas .mv-kpi-val{font-size:19px}
+}
+@media(max-width:380px){
+  #page-mapa-vendas .mv-kpi-row{grid-template-columns:1fr}
+  #page-mapa-vendas .mv-filters{grid-template-columns:1fr}
+  #page-mapa-vendas .mv-filter-search,#page-mapa-vendas .mv-clear-btn{grid-column:auto}
+}
+@media(max-width:640px){
+  .mv-drawer{width:100vw;max-width:100vw}
+  .mv-drawer-body{padding:16px}
+  .mv-drawer-hdr{padding:16px 46px 16px 16px}
+}
+
+/* ADD: Meu Painel — action-cards (Centro de Comando): breakdown + botão
+   de ação, em vez de um número isolado. Continua a reaproveitar .kpi. */
+.mp-action{display:flex;flex-direction:column}
+.mp-breakdown{margin-top:8px;display:flex;flex-direction:column;gap:3px}
+.mp-breakdown-row{display:flex;justify-content:space-between;font-size:12px;color:var(--muted)}
+.mp-breakdown-row b{color:var(--txt2);font-weight:600}
+.mp-action-btn{margin-top:10px;padding:7px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--txt2);font-size:12.5px;font-weight:600;cursor:pointer;text-align:center;font-family:inherit}
+.mp-action-btn:hover{filter:brightness(1.2)}
+/* ADD: Meu Painel — secção Financeiro em largura total (local, sem tocar em vars globais) */
+.mp-fin-grid{display:grid;grid-template-columns:1fr;gap:12px;margin-bottom:12px}
+/* ADD: Meu Painel — cabeçalho vivo (avatar + saudação + resumo do dia). Local. */
+.mp-avatar{flex-shrink:0;line-height:0}
+.mp-avatar .av-ini,.mp-avatar .av-img{border-color:var(--border2)}
+.mp-daysummary{font-size:13px;color:var(--muted);margin-top:3px;font-family:'Inter',sans-serif;line-height:1.5}
+.mp-daysummary b{color:var(--txt2);font-weight:600}
+.mp-daysummary .mp-sep{opacity:.45;margin:0 7px}
 
 /* Grid layouts */
 .g2{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
@@ -5878,7 +6018,7 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
   .pg-title{font-size:14px}
 
   /* Topbar */
-  .topbar .search-bar{display:none}
+  .topbar .t-search{display:none}
 
   /* Tables */
   .tw{overflow-x:auto}
@@ -6470,6 +6610,49 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
 
 /* CRM page — admin-page should not force full height */
 #page-crm .admin-page, #page-comercial-pipeline .admin-page { flex: 0 0 auto; }
+
+/* ═══════════════════════════════════════════════════════
+   VISUAL SEGURO (inspirado no Emergent) — SÓ aparência.
+   Overrides aditivos: cores, fundos, radius, bordas, sombras
+   estáticas e tipografia. SEM backdrop-filter, transform,
+   animações, pseudo-elementos novos, position/z-index/
+   pointer-events — nada que afete interação. Base intacta.
+═══════════════════════════════════════════════════════ */
+
+/* ── CAMADA 1 — Cores / variáveis ── */
+:root{
+  --y:#FFCB2D;--ys:rgba(255,203,45,.12);--yb:rgba(255,203,45,.34);
+  --bg:#0E0F14;--bg1:#0A0B0F;--bg2:#15171E;--bg3:#1C1F28;--bg4:#262A35;--bg5:#333845;
+  --txt:#B9BEC9;--txt2:#F3F5F9;--muted:#6E7484;--muted2:#2A2E39;
+  --border:rgba(255,255,255,.07);--border2:rgba(255,255,255,.13);
+  --g:#34D399;--g2:rgba(52,211,153,.12);
+  --r:#F26D6D;--r2:rgba(242,109,109,.12);
+  --a:#F0A03C;--a2:rgba(240,160,60,.12);
+  --b:#5B9CF0;--b2:rgba(91,156,240,.12);
+  --p:#A78BFA;--p2:rgba(167,139,250,.12);
+  --dc:#F05252;--dd:#F0872E;--cf:#4C8DF6;--da:#9B7CF6;
+}
+
+/* ── CAMADA 2 — Cards / KPIs ── */
+.card,.cc,.mn,.kpi{border-radius:12px;box-shadow:0 6px 22px rgba(0,0,0,.30)}
+
+/* ── CAMADA 3 — Botões / inputs ── */
+.tbtn.y{background:linear-gradient(135deg,#FFD860,#FFB800)}
+.tbtn{border-radius:8px}
+.form-input,.form-select{border-radius:8px}
+.form-input:focus,.form-select:focus{border-color:var(--yb)}
+
+/* ── CAMADA 4 — Sidebar / topbar ── */
+.sidebar{background:linear-gradient(180deg,var(--bg2),var(--bg))}
+.sni,.space-item,.sl-item{border-radius:8px}
+.sni.on{background:linear-gradient(90deg,rgba(255,203,45,.15),rgba(255,203,45,.04))}
+.topbar{background:var(--bg2);box-shadow:0 1px 0 rgba(255,255,255,.02)}
+
+/* ── CAMADA 5 — Tabelas / modais (sem backdrop-filter) ── */
+thead th{background:linear-gradient(180deg,var(--bg3),var(--bg2))}
+tbody tr:hover{background:rgba(255,203,45,.05)}
+.tw{box-shadow:0 6px 22px rgba(0,0,0,.30)}
+.crm-modal{box-shadow:0 18px 50px rgba(0,0,0,.55);border-color:var(--border2)}
 </style>
 
 
@@ -6619,6 +6802,7 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
 
   <!-- Rodapé -->
   <div style="margin-top:20px;font-size:12px;color:var(--muted)">OpportunityBox · v2.0 · {}</div>
+  <div style="margin-top:6px;font-size:11px;color:var(--muted);opacity:.8;letter-spacing:.02em">Desenvolvido por <strong style="font-weight:600;color:var(--txt2)">Marketing Digitalbox</strong></div>
 
   <!-- Grid oculto (compatibilidade) -->
   <div id="user-grid" style="display:none"></div>
@@ -6679,7 +6863,10 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
     <button class="sni" id="ni-chat" data-action="goPage" data-page="chat"><span class="si">💬</span>Chat Equipa<span class="sbadge y">3</span></button>
   </div>
 
-  <!-- SPACES — mirrors ClickUp screenshot -->
+  <!-- ⭐ PAINEL — sempre visível e destacado -->
+  <button class="sb-mp" id="ni-meu-painel" data-action="goPage" data-page="meu-painel"><span class="si">👤</span>Meu Painel</button>
+
+  <!-- SPACES -->
   <div class="spaces-hdr">
     <span>Espaços</span>
     <button class="spaces-add" id="add-space-btn" title="Novo Espaço">+</button>
@@ -6692,71 +6879,90 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
     <span class="space-chevron">›</span>
   </button>
 
-  <!-- Dep. Comercial -->
+  <!-- 🎯 Comercial -->
   <button class="space-item" id="si-comercial" data-action="toggleSpace" data-space="comercial">
-    <div class="space-icon" style="background:var(--dc)">D</div>
-    <span class="space-name">Dep. Comercial</span>
+    <div class="space-icon" style="background:var(--dc)">🎯</div>
+    <span class="space-name">Comercial</span>
     <span id="ob-badge-pendencias-hdr" style="display:none;background:var(--r);color:#fff;font-size:10.5px;font-weight:700;font-family:'DM Mono',monospace;padding:1px 6px;border-radius:8px;margin-left:auto;flex-shrink:0" title="Pendências: leads parados e acções em atraso">0</span>
     <span class="space-chevron">›</span>
   </button>
   <div class="space-lists" id="sl-comercial">
-    <button class="sl-item" data-action="goPage" data-page="comercial-pipeline"><div class="sl-dot" style="background:var(--y)"></div>Pipeline de Leads<span id="ob-badge-pendencias" style="display:none;background:var(--r);color:#fff;font-size:10.5px;font-weight:700;font-family:'DM Mono',monospace;padding:1px 6px;border-radius:8px;margin-left:auto;flex-shrink:0" title="Pendências: leads parados e acções em atraso">0</span></button>
-    <button class="sl-item" data-action="goPage" data-page="comercial-followup"><div class="sl-dot" style="background:#f5c400"></div>Follow-up</button>
-    <button class="sl-item" data-action="goPage" data-page="comercial-clientes"><div class="sl-dot" style="background:#4d94db"></div>Clientes</button>
-    <button class="sl-item" data-action="goPage" data-page="comercial-orcamentos"><div class="sl-dot" style="background:#3fcf8e"></div>Orçamentos<span id="toco-vencidas-badge">!</span></button>
-    <button class="sl-item" data-action="goPage" data-page="equipa-campo"><div class="sl-dot" style="background:#4d94db"></div>🗺️ Equipa em Campo</button>
-    <button class="sl-item" onclick="homeFilterTasks('Dep. Comercial','Rui Mota')"><div class="sl-dot" style="background:#e74c3c"></div>👤 Rui Mota</button>
-    <button class="sl-item" onclick="homeFilterTasks('Dep. Comercial','Paulo Faria')"><div class="sl-dot" style="background:#e74c3c"></div>👤 Paulo Faria</button>
-    <button class="sl-item" onclick="homeFilterTasks('Dep. Comercial','Humberto Estrelinha')"><div class="sl-dot" style="background:#e74c3c"></div>👤 Humberto Estrelinha</button>
+    <button class="sl-item" data-action="goPage" data-page="comercial-pipeline"><span class="mk-ic">📈</span>Pipeline<span id="ob-badge-pendencias" style="display:none;background:var(--r);color:#fff;font-size:10.5px;font-weight:700;font-family:'DM Mono',monospace;padding:1px 6px;border-radius:8px;margin-left:auto;flex-shrink:0" title="Pendências: leads parados e acções em atraso">0</span></button>
+    <button class="sl-item" data-action="goPage" data-page="comercial-followup"><span class="mk-ic">📞</span>Follow-up</button>
+    <button class="sl-item" data-action="goPage" data-page="comercial-clientes"><span class="mk-ic">👤</span>Clientes</button>
+    <button class="sl-item" data-action="goPage" data-page="comercial-orcamentos"><span class="mk-ic">📄</span>Orçamentos<span id="toco-vencidas-badge">!</span></button>
+    <button class="sl-item" data-action="goPage" data-page="equipa-campo"><span class="mk-ic">🗺️</span>Equipa em Campo</button>
+    <!-- Comerciais (dinâmico, vindo de ob_colaboradores · dep. Comercial · ativos). Geridos em RH → Colaboradores. -->
+    <div id="sl-comercial-colabs"></div>
+    <button class="sl-item" data-action="goPage" data-page="mapa-vendas"><div class="sl-dot" style="background:#facc15"></div>📊 Mapa de Vendas</button>
   </div>
 
-  <!-- Dep. Design -->
+  <!-- Espaço "Equipa" (atalhos de pessoas Rui/Paulo/Humberto) removido — limpeza de sidebar.
+       Não apaga utilizadores/filtros/dados; a filtragem por pessoa continua nas páginas. -->
+
+  <!-- 🎨 Design -->
   <button class="space-item" id="si-design" data-action="toggleSpace" data-space="design">
-    <div class="space-icon" style="background:var(--dd)">D</div>
-    <span class="space-name">Dep. Design</span>
+    <div class="space-icon" style="background:var(--dd)">🎨</div>
+    <span class="space-name">Design</span>
     <span class="space-chevron">›</span>
   </button>
   <div class="space-lists" id="sl-design">
-    <button class="sl-item" data-action="goPage" data-page="design-tarefas"><div class="sl-dot" style="background:var(--y)"></div>Tarefas Design</button>
-    <button class="sl-item" data-action="goPage" data-page="design-ficheiros"><div class="sl-dot" style="background:#4d94db"></div>Ficheiros e Artes</button>
+    <button class="sl-item" data-action="goPage" data-page="design-tarefas"><span class="mk-ic">🗂️</span>Tarefas de Design</button>
+    <button class="sl-item" data-action="goPage" data-page="design-ficheiros"><span class="mk-ic">🖼️</span>Ficheiros e Artes</button>
+    <!-- Colaboradores de Design (dinâmico, ob_colaboradores · ativos) -->
+    <div id="sl-design-colabs"></div>
   </div>
 
-  <!-- Chão da Fábrica -->
+  <!-- 🏭 Produção (Chão da Fábrica) -->
   <button class="space-item" id="si-fabrica" data-action="toggleSpace" data-space="fabrica">
-    <div class="space-icon" style="background:var(--cf)">C</div>
-    <span class="space-name">Chão da Fábrica</span>
+    <div class="space-icon" style="background:var(--cf)">🏭</div>
+    <span class="space-name">Produção</span>
     <span class="space-chevron">›</span>
   </button>
   <div class="space-lists" id="sl-fabrica">
-    <button class="sl-item" data-action="goPage" data-page="fabrica-producao"><div class="sl-dot" style="background:var(--y)"></div>Pipeline Produção</button>
-    <button class="sl-item" data-action="goPage" data-page="fabrica-instalacoes"><div class="sl-dot" style="background:#3fcf8e"></div>Instalações</button>
+    <button class="sl-item" data-action="goPage" data-page="fabrica-producao"><span class="mk-ic">📈</span>Obras</button>
+    <button class="sl-item" data-action="goPage" data-page="fabrica-instalacoes"><span class="mk-ic">🔧</span>Instalações</button>
+    <!-- Colaboradores de Produção (dinâmico, ob_colaboradores · ativos) -->
+    <div id="sl-fabrica-colabs"></div>
   </div>
 
   <!-- ADMIN ONLY section -->
   <div class="sb-admin" id="admin-nav" style="display:none">
     <div class="sb-admin-lbl">Gestão — Admin</div>
-    <button class="sni" id="ni-dashboard" data-action="goPage" data-page="dashboard"><span class="si">◈</span>Dashboard CFO</button>
-    <button class="sni" id="ni-crm" data-action="goPage" data-page="crm"><span class="si">◫</span>CRM Completo</button>
-    <!-- Gestão Administrativa -->
-    <button class="space-item" id="si-admin-dept" data-action="toggleSpace" data-space="admin-dept">
-      <div class="space-icon" style="background:var(--da)">D</div>
-      <span class="space-name">Gestão Administrativa</span>
+
+    <!-- 💰 Financeiro -->
+    <button class="space-item" id="si-financeiro" data-action="toggleSpace" data-space="financeiro">
+      <div class="space-icon" style="background:var(--g)">💰</div>
+      <span class="space-name">Financeiro</span>
       <span class="space-chevron">›</span>
     </button>
-    <div class="space-lists" id="sl-admin-dept">
-      <button class="sl-item" data-action="goPage" data-page="admin-agenda"><div class="sl-dot" style="background:var(--y)"></div>Agenda</button>
-      <button class="sl-item" data-action="goPage" data-page="admin-docs"><div class="sl-dot" style="background:#4d94db"></div>Documentos</button>
-      <button class="sl-item" data-action="goPage" data-page="admin-despesas"><div class="sl-dot" style="background:#d9822b"></div>Despesas</button>
-      <button class="sl-item" onclick="goFaturasAdmin()"><div class="sl-dot" style="background:#3fcf8e"></div>🧾 Faturas</button>
-      <button class="sl-item" data-action="goPage" data-page="admin-rh"><div class="sl-dot" style="background:#ec4899"></div>👥 Recursos Humanos</button>
+    <div class="space-lists" id="sl-financeiro">
+      <button class="sl-item" id="ni-dashboard" data-action="goPage" data-page="dashboard"><span class="mk-ic">◈</span>Dashboard CFO</button>
+      <button class="sl-item" id="ni-financeiro" data-action="goPage" data-page="financeiro"><span class="mk-ic">💶</span>Financeiro</button>
+      <button class="sl-item" id="ni-tesouraria" data-action="goPage" data-page="tesouraria"><span class="mk-ic">🏦</span>Tesouraria</button>
+      <button class="sl-item" data-action="goPage" data-page="admin-analise-vendas"><span class="mk-ic">📊</span>Análise de Vendas</button>
+      <button class="sl-item" id="ni-relatorios" data-action="goPage" data-page="relatorios"><span class="mk-ic">📑</span>Relatórios</button>
+      <button class="sl-item" onclick="goFaturasAdmin()"><span class="mk-ic">🧾</span>Faturas</button>
     </div>
-    <button class="sni" id="ni-financeiro" data-action="goPage" data-page="financeiro"><span class="si">💰</span>Financeiro</button>
-    <button class="sni" id="ni-tesouraria" data-action="goPage" data-page="tesouraria"><span class="si">🏦</span>Tesouraria</button>
-    <button class="sni" id="ni-stock" data-action="goPage" data-page="stock"><span class="si">📦</span>Stock</button>
-    <button class="sni" id="ni-relatorios" data-action="goPage" data-page="relatorios"><span class="si">📊</span>Relatórios</button>
-    <button class="sni" data-action="goPage" data-page="admin-analise-vendas"><span class="si">📈</span>Análise de Vendas</button>
-    <button class="sni" id="ni-equipa" data-action="goPage" data-page="equipa"><span class="si">👥</span>Equipa (22)</button>
-    <button class="sni" id="ni-integracoes" data-action="goPage" data-page="integracoes"><span class="si">⚙</span>Integrações</button>
+
+    <!-- 🗂️ Administração -->
+    <button class="space-item" id="si-admin" data-action="toggleSpace" data-space="admin">
+      <div class="space-icon" style="background:var(--da)">🗂️</div>
+      <span class="space-name">Administração</span>
+      <span class="space-chevron">›</span>
+    </button>
+    <div class="space-lists" id="sl-admin">
+      <button class="sl-item" id="ni-crm" data-action="goPage" data-page="crm"><span class="mk-ic">◫</span>CRM Completo</button>
+      <button class="sl-item" data-action="goPage" data-page="admin-agenda"><span class="mk-ic">📅</span>Agenda</button>
+      <button class="sl-item" data-action="goPage" data-page="admin-docs"><span class="mk-ic">📁</span>Documentos</button>
+      <button class="sl-item" data-action="goPage" data-page="admin-despesas"><span class="mk-ic">💳</span>Despesas</button>
+      <button class="sl-item" data-action="goPage" data-page="admin-rh"><span class="mk-ic">👥</span>Recursos Humanos</button>
+      <button class="sl-item" id="ni-stock" data-action="goPage" data-page="stock"><span class="mk-ic">📦</span>Stock</button>
+      <button class="sl-item" id="ni-equipa" data-action="goPage" data-page="equipa"><span class="mk-ic">🧑‍🤝‍🧑</span>Equipa</button>
+      <button class="sl-item" id="ni-integracoes" data-action="goPage" data-page="integracoes"><span class="mk-ic">⚙️</span>Integrações</button>
+      <!-- Colaboradores de Gestão Administrativa (dinâmico, ob_colaboradores · ativos) -->
+      <div id="sl-admin-colabs"></div>
+    </div>
   </div>
 
   <div style="padding:8px"></div>
@@ -6769,11 +6975,9 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
     </div>
     <button class="logout-btn" data-action="crmRealLogout">Sair</button>
   </div>
+  <div class="sb-credit">Desenvolvido por <strong>Marketing Digitalbox</strong></div>
 </div>
 
-<!-- ═════════════════════════════════════════════════════
-     PAGES
-═════════════════════════════════════════════════════ -->
 <div class="main" id="main-content">
 
 <!-- HOME / TAREFAS (ClickUp style - role filtered) -->
@@ -6903,6 +7107,183 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
   <div id="crm-funnel-bar" class="crm-funnel-bar"></div>
   <div class="crm-kanban" id="crm-kanban"></div>
 </div>
+
+<!-- ═══════════════════════════════════════════════════════
+     ADD: MEU PAINEL — dashboard pessoal do comercial (Fase inicial).
+     Populado por renderMeuPainel(). Cards activos usam dados reais de
+     orcData/crmAtividades já carregados; cards placeholder (Meta do mês,
+     Valor vendido, Valor por faturar, Valor por cobrar, Agenda, IA
+     recomenda) ficam visualmente esbatidos (.mp-placeholder) sem valores
+     inventados, à espera de fontes de dados próprias.
+═══════════════════════════════════════════════════════ -->
+<div id="page-meu-painel" class="app-page">
+  <div class="pg-hdr">
+    <div class="pg-hdr-top" style="align-items:center">
+      <div id="mp-avatar" class="mp-avatar"></div>
+      <div style="flex:1;min-width:0">
+        <div class="pg-title" id="mp-greeting">Meu Painel</div>
+        <div class="mp-daysummary" id="mp-daysummary"></div>
+      </div>
+    </div>
+  </div>
+  <div class="admin-page">
+
+    <div class="sh"><h2>Prioridades de hoje</h2></div>
+    <div class="g3">
+      <div class="kpi kA mp-action">
+        <div class="klbl">📞 Follow-up</div>
+        <div class="kval" id="mp-kpi-followup">—</div>
+        <div class="ksub">clientes com follow-up activo</div>
+        <div class="mp-breakdown" id="mp-followup-breakdown"></div>
+        <button class="mp-action-btn" data-action="goPage" data-page="comercial-followup">Abrir Follow-up</button>
+      </div>
+      <div class="kpi kR mp-action">
+        <div class="klbl">🚨 Clientes em risco</div>
+        <div class="kval" id="mp-kpi-risco">—</div>
+        <div class="ksub">prioridade alta / crítica / perdido sugerido</div>
+        <div class="mp-breakdown" id="mp-risco-breakdown"></div>
+        <button class="mp-action-btn" data-action="goPage" data-page="comercial-followup">Ver prioritários</button>
+      </div>
+      <div class="kpi mp-action">
+        <div class="klbl">💰 Negócios em aberto</div>
+        <div class="kval" id="mp-kpi-pendentes">—</div>
+        <div class="ksub" id="mp-kpi-pendentes-sub">propostas em estado "Pendente"</div>
+        <button class="mp-action-btn" data-action="goPage" data-page="comercial-orcamentos">Abrir Orçamentos</button>
+      </div>
+    </div>
+
+    <!-- ADD: card funcional "Lembretes de Hoje" — lê crmAtividades (tipo Lembrete,
+         due de hoje) e cliData. Só leitura; populado por mpRenderLembretesHoje()
+         chamado de dentro de renderMeuPainel(). Reutiliza .sh/.tw/table existentes. -->
+    <div class="sh"><h2>📌 Lembretes de Hoje</h2></div>
+    <div class="tw" id="mp-lembretes-hoje-wrap">
+      <table>
+        <thead><tr><th>Hora</th><th>Cliente</th><th>Tipo</th><th>Prioridade</th><th>Estado</th><th>Abrir</th></tr></thead>
+        <tbody id="mp-lembretes-hoje"></tbody>
+      </table>
+    </div>
+
+    <div class="sh"><h2>Resumo comercial</h2></div>
+    <div class="g3">
+      <div class="kpi kY">
+        <div class="klbl">Valor em negociação</div>
+        <div class="kval" id="mp-kpi-negociacao">—</div>
+        <div class="ksub" id="mp-kpi-negociacao-sub">—</div>
+      </div>
+      <div class="kpi kB">
+        <div class="klbl">Ticket médio</div>
+        <div class="kval" id="mp-kpi-ticket">—</div>
+        <div class="ksub" id="mp-kpi-ticket-sub">—</div>
+      </div>
+      <div class="kpi kG">
+        <div class="klbl">Taxa de conversão</div>
+        <div class="kval" id="mp-kpi-conversao">—</div>
+        <div class="ksub">do Pipeline de Leads</div>
+      </div>
+    </div>
+    <div class="sh"><h2>Financeiro</h2></div>
+    <div class="mp-fin-grid">
+      <div class="kpi mp-action mp-placeholder" id="mp-cobrar-card">
+        <div class="klbl">💳 Por cobrar</div>
+        <div class="kval" id="mp-kpi-cobrar">—</div>
+        <div class="ksub" id="mp-kpi-cobrar-sub">clientes com valores em aberto</div>
+        <div class="mp-breakdown" id="mp-cobrar-breakdown"></div>
+        <button class="mp-action-btn" id="mp-cobrar-btn" data-action="goPage" data-page="tesouraria" style="display:none">Abrir Cobranças</button>
+      </div>
+    </div>
+
+    <div class="sh"><h2>Últimas actividades</h2></div>
+    <div class="tw" id="mp-atividades-wrap">
+      <div id="mp-atividades-list" style="padding:4px 6px"></div>
+    </div>
+    <div class="sh"><h2>Em breve</h2></div>
+    <div class="g3">
+      <div class="kpi mp-placeholder"><div class="klbl">Meta do mês</div><div class="kval">—</div><div class="ksub">Em breve</div></div>
+      <div class="kpi mp-placeholder"><div class="klbl">Valor vendido</div><div class="kval">—</div><div class="ksub">Em breve</div></div>
+      <div class="kpi mp-placeholder"><div class="klbl">Valor por faturar</div><div class="kval">—</div><div class="ksub">Em breve</div></div>
+    </div>
+    <div class="g3">
+      <div class="kpi mp-placeholder"><div class="klbl">Agenda</div><div class="kval">—</div><div class="ksub">Em breve</div></div>
+      <div class="kpi mp-placeholder"><div class="klbl">IA recomenda</div><div class="kval">—</div><div class="ksub">Em breve</div></div>
+    </div>
+
+
+  </div>
+</div>
+
+<!-- ─── MAPA DE VENDAS (Etapa A: esqueleto) -->
+<div id="page-mapa-vendas" class="app-page">
+  <div class="pg-hdr">
+    <div class="pg-hdr-top">
+      <div class="pg-space-icon" style="background:#facc15;color:#422006">M</div>
+      <div class="pg-title">Mapa de Vendas</div>
+      <div class="mv-actions">
+        <button class="mv-btn" id="mv-sync-btn" disabled title="Em preparação — próxima fase">🔄 Sincronizar Google Sheet</button>
+        <button class="mv-btn" disabled title="Em preparação — próxima fase">⬇ Exportar</button>
+      </div>
+    </div>
+  </div>
+  <div class="admin-page">
+    <div id="mv-comercial-banner" style="display:none;margin-bottom:14px;padding:10px 14px;border-radius:10px;background:rgba(250,204,21,.06);border:1px solid rgba(250,204,21,.2);font-size:12.5px;color:#fde047"></div>
+
+    <div id="mv-meta-comercial-wrap"></div>
+
+    <div class="mv-kpi-row" id="mv-kpi-row"></div>
+
+    <div class="mv-filters" id="mv-filters"></div>
+
+    <div class="mv-grid2">
+      <div class="mv-card" id="mv-meta-anual-card"></div>
+      <div class="mv-card" id="mv-recebimentos-card"></div>
+    </div>
+
+    <div class="mv-charts-grid" id="mv-charts-grid">
+      <div class="mv-card mv-chart-span2"><div class="mv-card-title">Vendas por Mês</div><div class="mv-card-sub">Valor orçamentado por mês, no filtro atual</div><div class="mv-chart-box"><canvas id="mv-chart-mes"></canvas></div></div>
+      <div class="mv-card"><div class="mv-card-title">Conversão por Estado</div><div class="mv-card-sub">Distribuição por estado</div><div class="mv-chart-box"><canvas id="mv-chart-estado"></canvas></div></div>
+      <div class="mv-card" id="mv-chart-comercial-card"><div class="mv-card-title">Vendas por Comercial</div><div class="mv-card-sub">Valor adjudicado+faturado</div><div class="mv-chart-box"><canvas id="mv-chart-comercial"></canvas></div></div>
+      <div class="mv-card"><div class="mv-card-title">Origem dos Negócios</div><div class="mv-card-sub">Distribuição por origem</div><div class="mv-chart-box"><canvas id="mv-chart-origem"></canvas></div></div>
+      <div class="mv-card" id="mv-chart-tipo-card"><div class="mv-card-title">Tipo de Produção</div><div class="mv-card-sub">Top tipos + "Outros"</div><div class="mv-chart-box"><canvas id="mv-chart-tipo"></canvas></div></div>
+      <div class="mv-card mv-chart-span3"><div class="mv-card-title">Evolução Anual</div><div class="mv-card-sub">Orçamentado vs. Faturado por mês</div><div class="mv-chart-box"><canvas id="mv-chart-anual"></canvas></div></div>
+    </div>
+
+    <div class="mv-card" id="mv-ranking-card" style="display:none;margin-bottom:16px">
+      <div class="mv-card-title">🏆 Ranking de Comerciais</div>
+      <div class="mv-card-sub">Comparação de performance (Adjudicado + Faturado)</div>
+      <div id="mv-ranking-list"></div>
+    </div>
+
+    <div class="mv-card">
+      <div style="display:flex;align-items:center;margin-bottom:4px"><div class="mv-card-title" style="margin-bottom:0">Orçamentos</div></div>
+      <div class="mv-card-sub" id="mv-table-count"></div>
+      <div class="mv-table-wrap">
+        <table class="mv-table" id="mv-table">
+          <thead><tr>
+            <th data-sort="num">Nº Orçamento</th>
+            <th data-sort="data">Data</th>
+            <th data-sort="vendedor">Comercial</th>
+            <th>Origem</th>
+            <th>NIF</th>
+            <th data-sort="cli">Cliente</th>
+            <th>Nome do Projeto</th>
+            <th>Tipo Produção</th>
+            <th>Descrição Trabalho</th>
+            <th>Mês/Ano</th>
+            <th data-sort="val">Valor Orçamentado</th>
+            <th data-sort="st" class="mv-center">Estado</th>
+            <th>Obs Gerais</th>
+          </tr></thead>
+          <tbody id="mv-table-body"></tbody>
+        </table>
+      </div>
+      <div class="mv-pag" id="mv-pag"></div>
+    </div>
+
+    <div style="text-align:center;color:var(--mv-muted);font-size:11px;padding:16px 0">Mapa de Vendas · dados reais de ob_orcamentos · OpportunityBox Business OS</div>
+  </div>
+</div>
+
+<div class="mv-drawer-overlay" id="mv-drawer-overlay"></div>
+<div class="mv-drawer" id="mv-drawer"></div>
 
 <!-- ─── COMERCIAL FOLLOW-UP -->
 <div id="page-comercial-followup" class="app-page">
@@ -10202,6 +10583,11 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
         </div>
       </div>
 
+      <div id="cli-acoes-comerciais" style="display:none;gap:8px;flex-wrap:wrap;margin-top:6px;border-top:1px solid var(--border);padding-top:12px">
+        <button class="tbtn" onclick="cliRegistarContacto()">📇 Registar contacto</button>
+        <button class="tbtn" onclick="cliCriarLembrete()">📌 Criar Lembrete Comercial</button>
+        <button class="tbtn" onclick="cliEnviarWhatsApp()">💬 Enviar WhatsApp</button>
+      </div>
       <div class="crm-modal-btns">
         <button class="tbtn" id="cli-del-btn" data-action="cliDelete" style="color:var(--r);border-color:var(--r);margin-right:auto;display:none">🗑️ Eliminar</button>
         <button class="tbtn" data-action="closeCliModal">Cancelar</button>
@@ -10459,6 +10845,91 @@ var USERS=[
   {id:'edna',name:'Edna Faria',role:'CEO · Direcção',dept:'Direcção',color:'#F5C400',admin:true,online:true},
 ];
 
+// ── PERFIS DE PRÉ-VISUALIZAÇÃO ("Ver como comercial") ─────────────
+// A lista é DINÂMICA: vem dos Colaboradores reais (ob_colaboradores, dep.
+// Comercial) que a admin gere em RH → Colaboradores. Editar a lista =
+// adicionar/desativar colaboradores nessa página (sem chat, sem codigo).
+// NÃO sao logins: nao aparecem no ecra de login, nao existem em auth.users
+// nem ob_profiles, e nao alteram RLS. Servem so para o admin pre-visualizar
+// a experiencia (menus + Meu Painel) de um comercial; a seguranca real
+// continua a ser feita pelas permissoes quando cada pessoa entra com login.
+function obVerComoComerciais(){
+  var src = (window.rhColabs||[]);
+  return src.filter(function(c){
+    if(!c || c.deleted_at || c.ativo===false) return false;
+    return /comercial/i.test(String(c.dept||c.departamento||''));
+  }).map(function(c){
+    return { id:'vc-'+c.id, name:(c.nome||c.name||'(sem nome)'), role:'Comercial',
+             dept:'Comercial', color:(c.color||c.cor||'#3B82F6'), admin:false,
+             preview:true, colabId:c.id };
+  });
+}
+window.obVerComoComerciais = obVerComoComerciais;
+// Sidebar (Dep. Comercial): mostra os comerciais ativos vindos de ob_colaboradores,
+// no mesmo local dos antigos atalhos. Editar = adicionar/desativar em RH → Colaboradores.
+function obRenderComerciaisSidebar(){
+  // Monta os colaboradores ATIVOS por departamento nos respetivos espaços do
+  // sidebar (Comercial, Design, Produção, Gestão Administrativa). Fonte única:
+  // ob_colaboradores (via window.rhColabs). Sem nomes fixos. Agrupa pelo campo
+  // departamento; não duplica; oculta inativos/eliminados automaticamente.
+  var MAP = [
+    { re:/comercial/i,                        box:'sl-comercial-colabs', verComo:true },
+    { re:/design/i,                            box:'sl-design-colabs' },
+    { re:/f[áa]brica|produ|obras|instala/i,    box:'sl-fabrica-colabs' },
+    { re:/administrativ|gest[ãa]o\s*admin/i,   box:'sl-admin-colabs' }
+  ];
+  var isAdmin = !!(window.CU && window.CU.admin === true);
+  var colabs = (window.rhColabs||[]).filter(function(c){ return c && !c.deleted_at && c.ativo!==false; });
+  MAP.forEach(function(m){ var b=document.getElementById(m.box); if(b) b.innerHTML=''; });
+  MAP.forEach(function(m){
+    var box = document.getElementById(m.box); if(!box) return;
+    var items = colabs.filter(function(c){ return m.re.test(String(c.dept||c.departamento||'')); });
+    if(!items.length) return;
+    var sep = document.createElement('div');
+    sep.style.cssText = 'height:1px;margin:5px 12px 4px;background:var(--border,rgba(255,255,255,.08))';
+    box.appendChild(sep);
+    var seen = {};
+    items.forEach(function(c){
+      var nome = String(c.nome||c.name||'').trim(); if(!nome) return;
+      var key = nome.toLowerCase(); if(seen[key]) return; seen[key] = 1;
+      var b = document.createElement('button');
+      b.className = 'sl-item';
+      b.style.opacity = '0.92';
+      b.innerHTML = '<span class="mk-ic">🧑</span>';
+      b.appendChild(document.createTextNode(nome));
+      if(m.verComo){
+        b.title = 'Ver como ' + nome;
+        b.addEventListener('click', function(){
+          try{
+            if(isAdmin && typeof window.switchUser==='function'){ window.switchUser('vc-'+c.id); }
+            else if(typeof homeFilterTasks==='function'){ homeFilterTasks('Dep. Comercial', nome); }
+          }catch(e){}
+        });
+      } else {
+        b.title = 'Filtrar tarefas de ' + nome;
+        b.addEventListener('click', function(){ try{ if(typeof homeFilterTasks==='function') homeFilterTasks(String(c.dept||c.departamento||''), nome); }catch(e){} });
+      }
+      box.appendChild(b);
+    });
+  });
+}
+window.obRenderComerciaisSidebar = obRenderComerciaisSidebar;
+// Sempre que os colaboradores (re)carregam do Supabase, actualiza o seletor
+// "ver como" — assim a lista reflete em tempo real quem foi adicionado/desativado.
+document.addEventListener('DOMContentLoaded', function(){
+  setTimeout(function(){
+    if(typeof window.rhLoadColabsFromSB==='function' && !window.rhLoadColabsFromSB._vcWrapped){
+      var _o=window.rhLoadColabsFromSB;
+      window.rhLoadColabsFromSB=function(){
+        var r=_o.apply(this,arguments);
+        try{ Promise.resolve(r).then(function(){ if(typeof renderUserSwitcher==='function') renderUserSwitcher(); if(typeof obRenderComerciaisSidebar==='function') obRenderComerciaisSidebar(); }); }catch(e){}
+        return r;
+      };
+      window.rhLoadColabsFromSB._vcWrapped=true;
+    }
+  }, 0);
+});
+
 // Dept → which spaces are visible
 var DEPT_ACCESS={
   'Direcção':['todas','comercial','design','fabrica','admin-dept'],
@@ -10467,13 +10938,30 @@ var DEPT_ACCESS={
   'Chão da Fábrica':['fabrica'],
   'Gestão Administrativa':['admin-dept'],
 };
+// ── FEATURE FLAGS ─────────────────────────────────────────────
+// Ocultar módulos da interface SEM remover código. Reativar um
+// módulo = pôr a respetiva flag a true (não é preciso reconstruir nada).
+var FEATURES = { equipaEmCampo: false };
+window.FEATURES = FEATURES;
+// Esconde do menu lateral os itens de módulos desativados (sem apagar o HTML):
+document.addEventListener('DOMContentLoaded', function(){
+  if(!FEATURES.equipaEmCampo){
+    document.querySelectorAll('.sl-item[data-page="equipa-campo"]').forEach(function(b){ b.style.display='none'; });
+  }
+});
 // Pages accessible per role
 var DEPT_PAGES={
-  'Comercial':['home','todas','comercial-pipeline','comercial-followup','comercial-clientes','comercial-orcamentos','wa','equipa-campo','alerts','chat'], // corrigido de 'Dep. Comercial'
+  'Comercial':['home','todas','meu-painel','comercial-pipeline','comercial-followup','comercial-clientes','comercial-orcamentos','wa','equipa-campo','alerts','chat','mapa-vendas'], // corrigido de 'Dep. Comercial'
   'Dep. Design':['home','todas','design-tarefas','design-ficheiros','alerts','chat'],
   'Chão da Fábrica':['home','todas','fabrica-producao','fabrica-instalacoes','alerts','chat'],
   'Gestão Administrativa':['home','todas','admin-agenda','admin-docs','admin-despesas','admin-analise-vendas','admin-rh','stock','alerts','chat','comercial-orcamentos'],
 };
+// Aplica as feature flags às páginas por perfil (arrays literais acima ficam intactos):
+if(!FEATURES.equipaEmCampo){
+  Object.keys(DEPT_PAGES).forEach(function(d){
+    DEPT_PAGES[d]=DEPT_PAGES[d].filter(function(pg){ return pg!=='equipa-campo'; });
+  });
+}
 
 var CU=null; // current user
 var selectedUser=null;
@@ -10547,7 +11035,7 @@ function loginComSenha() {
   try{
     var _imp = JSON.parse(localStorage.getItem('ob-impersonate') || 'null');
     if(_imp && _adminUser && _imp.adminId === _adminUser.id && _imp.userId !== _adminUser.id){
-      var _impUser = USERS.find(function(u){ return u.id === _imp.userId; });
+      var _impUser = USERS.concat(typeof obVerComoComerciais==='function'?obVerComoComerciais():[]).find(function(u){ return u.id === _imp.userId; });
       if(_impUser) CU = _impUser;
     }
   }catch(e){}
@@ -10557,7 +11045,7 @@ function loginComSenha() {
   setTimeout(function(){
     try{ if(typeof renderAll === 'function') renderAll(); } catch(e){}
     try{ if(typeof gsInitUI === 'function') gsInitUI(); } catch(e){}
-    try{ if(typeof goPage === 'function') goPage('home'); } catch(e){}
+    try{ if(typeof goPage === 'function') goPage(crmPaginaInicial()); } catch(e){}
     try{ if(typeof initNovosModulos === 'function') initNovosModulos(); } catch(e){}
   }, 0);
 }
@@ -10612,7 +11100,7 @@ function doLogin(){
     setTimeout(function(){
       try{if(typeof renderAll==='function') renderAll();}catch(e){}
       try{if(typeof gsInitUI==='function') gsInitUI();}catch(e){}
-      try{if(typeof goPage==='function') goPage('home');}catch(e){}
+      try{if(typeof goPage==='function') goPage(crmPaginaInicial());}catch(e){}
     },0);
     if(typeof GS_URL!=='undefined'&&GS_URL&&typeof gsIniciarAutoSync==='function') gsIniciarAutoSync();
   }
@@ -10661,17 +11149,35 @@ function setupApp(){
     const sl=document.getElementById('sl-'+s);
     if(sl)sl.style.display='none';
   });
+  // Reorg: Meu Painel (topo) e grupo Equipa visíveis para acesso comercial ou admin
+  var _verCom = CU.admin || (DEPT_ACCESS[CU.dept]||[]).includes('comercial');
+  var _mp=document.getElementById('ni-meu-painel'); if(_mp)_mp.style.display=_verCom?'flex':'none';
+  var _siEq=document.getElementById('si-equipa'); if(_siEq)_siEq.style.display=_verCom?'flex':'none';
+  var _slEq=document.getElementById('sl-equipa'); if(_slEq)_slEq.style.display='none';
+  var _slFin=document.getElementById('sl-financeiro'); if(_slFin)_slFin.style.display='none';
+  var _slAdm=document.getElementById('sl-admin'); if(_slAdm)_slAdm.style.display='none';
+  // Reorg: abrir por padrão apenas o grupo principal do perfil
+  var _grpIni = CU.admin ? 'comercial' : ({'Comercial':'comercial','Dep. Design':'design','Chão da Fábrica':'fabrica','Gestão Administrativa':'admin'}[CU.dept]||'comercial');
+  var _bIni=document.getElementById('si-'+_grpIni), _lIni=document.getElementById('sl-'+_grpIni);
+  if(_bIni&&_lIni){ _bIni.classList.add('open'); _lIni.style.display='block'; }
 
   // home title
   document.getElementById('home-title').textContent=
     CU.admin?'Todas as tarefas — OpportunityBox':
     `Minhas tarefas — ${CU.dept}`;
 
-  // Go to home
-  goPage('home');
+  // Go to página inicial do perfil (Comercial → Meu Painel; restantes → home)
+  goPage(crmPaginaInicial());
 
   // Seletor de utilizadores (modo "ver como") — só visível para o admin original
   renderUserSwitcher();
+  // Render imediato dos comerciais no sidebar (se já há colaboradores em memória)
+  if(typeof obRenderComerciaisSidebar==='function') obRenderComerciaisSidebar();
+  // Carrega os colaboradores (fonte do "Ver como" e dos atalhos do sidebar) e
+  // reactualiza quando chegam do Supabase. Para qualquer perfil que veja o Comercial.
+  if(typeof window.rhLoadColabsFromSB==='function' && (!window.rhColabs || !window.rhColabs.length)){
+    try{ Promise.resolve(window.rhLoadColabsFromSB()).then(function(){ try{ renderUserSwitcher(); }catch(e){} try{ if(typeof obRenderComerciaisSidebar==='function') obRenderComerciaisSidebar(); }catch(e){} }); }catch(e){}
+  }
 }
 
 // ── TROCA TEMPORÁRIA DE UTILIZADOR (modo "ver como") — apenas admins ──
@@ -10686,9 +11192,17 @@ function renderUserSwitcher(){
     return;
   }
   sel.style.display='inline-block';
-  sel.innerHTML = USERS.map(function(u){
+  var _optsAdmin = USERS.map(function(u){
     return '<option value="'+u.id+'" '+(u.id===CU.id?'selected':'')+'>'+u.name+(u.id===_adminUser.id?' (eu)':'')+'</option>';
   }).join('');
+  var _com = (typeof obVerComoComerciais==='function'?obVerComoComerciais():[]);
+  var _optsComercial = _com.map(function(u){
+    return '<option value="'+u.id+'" '+(u.id===CU.id?'selected':'')+'>'+u.name+'</option>';
+  }).join('');
+  sel.innerHTML = '<optgroup label="Admin">'+_optsAdmin+'</optgroup>'+
+    (_optsComercial
+      ? '<optgroup label="Ver como (comercial)">'+_optsComercial+'</optgroup>'
+      : '<optgroup label="Ver como (comercial)"><option value="" disabled>— adiciona comerciais em RH → Colaboradores —</option></optgroup>');
   if(CU.id !== _adminUser.id){
     badge.style.display='flex';
     badgeLabel.textContent = '🔁 Modo: ' + CU.name;
@@ -10700,7 +11214,7 @@ window.renderUserSwitcher = renderUserSwitcher;
 
 function switchUser(newUserId){
   if(!_adminUser) return;
-  var novo = USERS.find(function(u){ return u.id === newUserId; });
+  var novo = USERS.concat(typeof obVerComoComerciais==='function'?obVerComoComerciais():[]).find(function(u){ return u.id === newUserId; });
   if(!novo) return;
   if(newUserId === _adminUser.id){
     switchUserRestore();
@@ -10735,6 +11249,8 @@ window.toggleAdminSensitiveFields = toggleAdminSensitiveFields;
 
 // ── NAV ──────────────────────────────────────────────────
 window.goPage=function goPage(id){
+  // Feature flag: módulos ocultos não abrem por navegação (inclui admin)
+  if(id==='equipa-campo' && !(window.FEATURES&&window.FEATURES.equipaEmCampo)){ return; }
   // Access check for non-admins
   if(!CU)return;
   if(!CU.admin){
@@ -10757,6 +11273,8 @@ window.goPage=function goPage(id){
   if(id==='admin-analise-vendas'&&typeof afLoad==='function')afLoad();
   if(id==='comercial-orcamentos'&&typeof orcInitPage==='function')orcInitPage();
   if(id==='comercial-pipeline'&&typeof crmInit==='function')crmInit();
+  if(id==='meu-painel'&&typeof renderMeuPainel==='function')renderMeuPainel();
+  if(id==='mapa-vendas'&&typeof renderMapaVendas==='function')renderMapaVendas();
   if(id==='comercial-followup'&&typeof fuInitPage==='function')fuInitPage();
   if(id==='crm'){ try{ renderCRMKanban('crm-kanban-admin'); }catch(e){} }
   if(id==='equipa-campo'&&typeof loadEquipaCampoData==='function')loadEquipaCampoData();
@@ -12382,7 +12900,11 @@ function crmAddAtividade(leadId, tipo, texto, autor, opts){
   opts = opts || {};
   crmAtividades.unshift({
     leadId, ts: new Date().toISOString(), tipo, texto: texto.trim(), autor,
-    orcId: opts.orcId || null, resultado: opts.resultado || null
+    orcId: opts.orcId || null, resultado: opts.resultado || null,
+    clienteId: opts.clienteId || null, due: opts.due || null,
+    canal: opts.canal || null, prioridade: opts.prioridade || null,
+    tags: Array.isArray(opts.tags) ? opts.tags : [], data: opts.data || null,
+    origem: opts.origem || null, acao: opts.acao || null
   });
   saveCrmAtividades();
 }
@@ -14701,6 +15223,7 @@ function cliOpenNew(){
   if(!cm) return;
   document.getElementById('cli-modal-title').textContent='+ Novo Cliente';
   document.getElementById('cli-del-btn').style.display='none';
+  { var _ac=document.getElementById('cli-acoes-comerciais'); if(_ac) _ac.style.display='none'; }
   cm.classList.add('open');
 }
 
@@ -14726,10 +15249,94 @@ function cliOpenEdit(id){
   cliToggleIvaIsento();
   document.getElementById('cli-modal-title').textContent='✏️ Editar Cliente';
   document.getElementById('cli-del-btn').style.display='block';
+  { var _ac=document.getElementById('cli-acoes-comerciais'); if(_ac) _ac.style.display='flex'; }
   document.getElementById('cli-modal').classList.add('open');
   // Painel de recebimentos
   cliRenderRecebimentos(c);
 }
+
+// ── P1 Clientes: ações comerciais (Registar contacto / Agendar follow-up /
+//    Enviar WhatsApp). Reutilizam crmAddAtividade() e o padrão wa.me existentes.
+//    Só index.html; não tocam em ob_orcamentos, RLS, autenticação nem owner_id.
+function _cliAtual(){ try{ return (cliData||[]).find(function(x){return x.id===cliEditId;}); }catch(e){ return null; } }
+function _cliNormTel(tel){ var d=(''+(tel||'')).replace(/\D/g,''); if(d.length===9) d='351'+d; return d; }
+function _cliDynModal(titulo, corpoHTML, onOK, okLabel){
+  var ov=document.createElement('div'); ov.className='crm-modal-overlay open';
+  ov.innerHTML='<div class="crm-modal" style="max-width:460px"><h2 style="margin-bottom:16px">'+titulo+'</h2>'
+    +corpoHTML+'<div class="crm-modal-btns"><button class="tbtn" id="_cdm-cancel">Cancelar</button>'
+    +'<button class="tbtn y" id="_cdm-ok">'+(okLabel||'OK')+'</button></div></div>';
+  document.body.appendChild(ov);
+  function close(){ if(ov&&ov.parentNode) ov.parentNode.removeChild(ov); }
+  ov.addEventListener('click', function(e){ if(e.target===ov) close(); });
+  ov.querySelector('#_cdm-cancel').onclick=close;
+  ov.querySelector('#_cdm-ok').onclick=function(){ var r=true; try{ r=onOK(ov); }catch(e){ console.warn('[cli-acao]',e); } if(r!==false) close(); };
+  return ov;
+}
+function cliRegistarContacto(){
+  var c=_cliAtual(); if(!c){ return; }
+  _cliDynModal('📇 Registar contacto',
+    '<div class="form-row"><div class="form-group"><label class="form-label">Tipo</label><select class="form-select" id="cli-ct-tipo"><option>Nota</option><option>Chamada</option><option>Email</option><option>Visita</option><option>WhatsApp</option></select></div>'
+   +'<div class="form-group"><label class="form-label">Resultado</label><select class="form-select" id="cli-ct-res"><option value="">Selecione…</option><option>Interessado</option><option>Muito interessado</option><option>Proposta enviada</option><option>Aguardando decisão</option><option>Cliente ocupado</option><option>Ligar novamente</option><option>Sem resposta</option><option>Sem interesse</option></select></div></div>'
+   +'<div class="form-group"><label class="form-label">Nota</label><textarea class="form-input" id="cli-ct-nota" rows="3" placeholder="O que aconteceu neste contacto…"></textarea></div>',
+    function(ov){
+      var tipo=(ov.querySelector('#cli-ct-tipo')||{}).value||'Nota';
+      var res=(ov.querySelector('#cli-ct-res')||{}).value||'';
+      var nota=((ov.querySelector('#cli-ct-nota')||{}).value||'').trim();
+      if(!res){ alert('Escolhe um resultado do contacto.'); return false; }
+      if(!nota){ alert('Escreve uma nota do contacto.'); return false; }
+      crmAddAtividade(c.leadId||null, tipo, nota+' — '+(c.n||'cliente'), (typeof CU!=='undefined'&&CU&&CU.name)?CU.name:'Sistema',
+        {clienteId:c.id, resultado:res, canal:'Contacto', origem:'CRM'});
+      if(typeof showToast==='function') showToast('✓ Contacto registado');
+      return true;
+    }, 'Registar');
+}
+function cliCriarLembrete(){
+  var c=_cliAtual(); if(!c){ return; }
+  var aberto=(crmAtividades||[]).some(function(a){ return a && a.tipo==='Lembrete' && a.clienteId===c.id && !a.resultado; });
+  if(aberto){ alert('Já existe um lembrete aberto para este cliente. Fecha-o antes de criar outro.'); return; }
+  _cliDynModal('📌 Criar Lembrete Comercial',
+    '<div style="font-size:12px;color:var(--muted);margin-bottom:10px;line-height:1.5">Lembrete comercial associado a <b style="color:var(--txt2)">'+(c.n||'este cliente')+'</b>. Não cria orçamento nem entra no Kanban de Follow-up de orçamentos.</div>'
+   +'<div class="form-row"><div class="form-group"><label class="form-label">Data</label><input class="form-input" type="date" id="cli-lb-data"></div>'
+   +'<div class="form-group"><label class="form-label">Hora</label><input class="form-input" type="time" id="cli-lb-hora" value="09:00"></div></div>'
+   +'<div class="form-row"><div class="form-group"><label class="form-label">Prioridade</label><select class="form-select" id="cli-lb-prio"><option>Média</option><option>Alta</option><option>Baixa</option></select></div>'
+   +'<div class="form-group"><label class="form-label">Tipo</label><select class="form-select" id="cli-lb-tipo"><option>📞 Ligar</option><option>💬 WhatsApp</option><option>✉️ Email</option><option>🤝 Visita</option><option>📄 Enviar proposta</option><option>💰 Cobrança</option><option>📌 Outro</option></select></div></div>'
+   +'<div class="form-group"><label class="form-label">Nota (opcional)</label><textarea class="form-input" id="cli-lb-nota" rows="2" placeholder="Ex.: confirmar interesse na proposta"></textarea></div>',
+    function(ov){
+      var d=(ov.querySelector('#cli-lb-data')||{}).value||'';
+      if(!d){ alert('Escolhe uma data para o lembrete.'); return false; }
+      var hora=(ov.querySelector('#cli-lb-hora')||{}).value||'09:00';
+      var prio=(ov.querySelector('#cli-lb-prio')||{}).value||'Média';
+      var acao=(ov.querySelector('#cli-lb-tipo')||{}).value||'📌 Outro';
+      var nota=((ov.querySelector('#cli-lb-nota')||{}).value||'').trim();
+      var quando=d+'T'+hora;
+      crmAddAtividade(c.leadId||null, 'Lembrete', acao+' '+d+' '+hora+(nota?': '+nota:'')+' — '+(c.n||'cliente'), (typeof CU!=='undefined'&&CU&&CU.name)?CU.name:'Sistema',
+        {clienteId:c.id, due:quando, data:quando, prioridade:prio, acao:acao, canal:'lembrete', origem:'CRM', tags:['lembrete']});
+      if(typeof showToast==='function') showToast('✓ Lembrete criado p/ '+d+' '+hora);
+      return true;
+    }, 'Criar Lembrete');
+}
+function cliEnviarWhatsApp(){
+  var c=_cliAtual(); if(!c){ return; }
+  var telRaw=c.tel||c.finTel||'';
+  if(!telRaw || !(''+telRaw).replace(/\D/g,'')){ alert('Este cliente não tem telefone — não é possível abrir o WhatsApp.'); return; }
+  var num=_cliNormTel(telRaw);
+  var sugestao='Olá '+(c.cont||c.n||'')+', tudo bem? Aqui é a OpportunityBox.';
+  var ov=_cliDynModal('💬 Enviar WhatsApp',
+    '<div style="font-size:12px;color:var(--muted);margin-bottom:8px;line-height:1.5">Número: <b style="color:var(--txt2)">+'+num+'</b> · a mensagem é <b>sugerida e editável</b>. Nada é enviado automaticamente — abre o WhatsApp para confirmares o envio.</div>'
+   +'<div class="form-group"><label class="form-label">Mensagem sugerida</label><textarea class="form-input" id="cli-wa-msg" rows="3"></textarea></div>',
+    function(ov){
+      var msg=(ov.querySelector('#cli-wa-msg')||{}).value||'';
+      window.open('https://wa.me/'+num+'?text='+encodeURIComponent(msg),'_blank');
+      crmAddAtividade(c.leadId||null, 'WhatsApp', 'WhatsApp iniciado — '+(c.n||'cliente')+' | Msg: '+msg, (typeof CU!=='undefined'&&CU&&CU.name)?CU.name:'Sistema',
+        {clienteId:c.id, canal:'whatsapp', origem:'CRM', tags:['whatsapp']});
+      if(typeof showToast==='function') showToast('✓ WhatsApp aberto (registado)');
+      return true;
+    }, 'Abrir WhatsApp');
+  var ta=ov.querySelector('#cli-wa-msg'); if(ta) ta.value=sugestao;
+}
+window.cliRegistarContacto=cliRegistarContacto;
+window.cliCriarLembrete=cliCriarLembrete;
+window.cliEnviarWhatsApp=cliEnviarWhatsApp;
 
 function cliToggleIvaIsento(){
   const checked=document.getElementById('cli-iva-isento')?.checked;
@@ -16136,7 +16743,7 @@ window.doLogin=function(){
   setTimeout(function(){
     try{if(typeof renderAll==='function') renderAll();}catch(e){console.warn('renderAll:',e);}
     try{if(typeof gsInitUI==='function') gsInitUI();}catch(e){}
-    try{if(typeof goPage==='function') goPage('home');}catch(e){}
+    try{if(typeof goPage==='function') goPage(crmPaginaInicial());}catch(e){}
   },0);
   try{if(typeof GS_URL!=='undefined'&&GS_URL&&typeof gsIniciarAutoSync==='function') gsIniciarAutoSync();}catch(e){}
 };
@@ -17814,6 +18421,8 @@ function renderAll(){
   safe(renderEquipa,'equipa');
   safe(renderDashLeads,'dash-leads');
   safe(renderDashboardCFO,'dashboard-cfo');
+  safe(renderMeuPainel,'meu-painel');
+  safe(renderMapaVendas,'mapa-vendas');
   safe(renderFinanceiro,'financeiro');
   safe(renderRelatorios,'relatorios');
   safe(()=>uniInitAll(),'uni');
@@ -22068,6 +22677,7 @@ document.addEventListener('click', function(e){
     case 'toggleSpace': e.preventDefault(); safe(toggleSpace,[sp]); break;
     case 'doLogin': e.preventDefault(); safe(window.doLogin); break;
     case 'doLogout': e.preventDefault(); safe(window.doLogout); break;
+    case 'crmRealLogout': e.preventDefault(); safe(window.crmRealLogout); break;
     case 'print': e.preventDefault(); window.print(); break;
     case 'switchView': safe(switchView,[vw]); break;
     case 'taskOriginFilter':
@@ -24552,6 +25162,808 @@ function obPendenciasDoUtilizador(){
   };
 }
 
+// ══════════════════════════════════════════════════════════════════
+// ADD: MEU PAINEL — dashboard pessoal do comercial (Fase inicial)
+// ══════════════════════════════════════════════════════════════════
+// Popula os cards de #page-meu-painel a partir dos dados já carregados
+// em memória (orcData / crmAtividades) — não faz novas queries. Segue o
+// mesmo padrão de "os meus vs todos" de obPendenciasDoUtilizador(): um
+// comercial (!CU.admin) só vê os seus próprios orçamentos/actividades
+// (o.vendedor / a.autor === CU.name); um admin vê tudo.
+//
+// Critério de "orçamento em aberto / follow-up activo" reaproveitado de
+// fuOrcamentosAtivos() (motor de Follow-up, mais acima neste ficheiro):
+// exclui os estados terminais FU_ESTADOS_ORC_TERMINAIS (Aprovado /
+// Faturado / Cancelado) e os Pendente já classificados como "histórico"
+// por fuClassificarOrc(). Não inventa um critério novo.
+//
+// "Clientes em risco" reaproveita fuPrioridade()/obOrcUltimaAtividade()
+// já existentes (chaves 'alta'/'critica'/'perdido_sugerido').
+//
+// "Taxa de conversão" NÃO é recalculada aqui — lê o mesmo valor já
+// mostrado em #crm-conv, calculado por crmUpdateStats() (Pipeline de
+// Leads), garantindo que os dois ecrãs nunca divergem.
+function renderMeuPainel(){
+  var set=function(id,v){ var e=document.getElementById(id); if(e) e.textContent=v; };
+  var fmtEuro=function(v){ return (typeof fmt==='function') ? fmt(Math.round(v||0)) : ('€'+Math.round(v||0)); };
+
+  var isAdmin=!!(typeof CU!=='undefined'&&CU&&CU.admin);
+  var nome=(typeof CU!=='undefined'&&CU)?CU.name:null;
+  var minhas=function(v){ return isAdmin||!nome||v===nome; };
+
+  var orcAll=(typeof orcData!=='undefined'&&orcData)?orcData:[];
+  var minhasOrc=orcAll.filter(function(o){ return minhas(o.vendedor); });
+  var valorOrc=function(o){ return (typeof orcGetValorTotal==='function')?orcGetValorTotal(o):(o.val||0); };
+
+  // Orçamentos "em aberto"/follow-up activo do comercial — mesmo critério
+  // já usado no motor de Follow-up (fuOrcamentosAtivos), filtrado por dono.
+  var ativosTodos=(typeof fuOrcamentosAtivos==='function')?fuOrcamentosAtivos():[];
+  var ativosMeus=ativosTodos.filter(function(o){ return minhas(o.vendedor); });
+
+  // Valor em negociação
+  var valorNegociacao=ativosMeus.reduce(function(s,o){ return s+valorOrc(o); },0);
+  set('mp-kpi-negociacao', fmtEuro(valorNegociacao));
+  set('mp-kpi-negociacao-sub', ativosMeus.length+' orçamento'+(ativosMeus.length===1?'':'s')+' em aberto');
+
+  // Ticket médio — valor médio dos orçamentos do comercial (com valor >0)
+  var comValor=minhasOrc.filter(function(o){ return valorOrc(o)>0; });
+  var ticketMedio=comValor.length ? (comValor.reduce(function(s,o){ return s+valorOrc(o); },0)/comValor.length) : 0;
+  set('mp-kpi-ticket', fmtEuro(ticketMedio));
+  set('mp-kpi-ticket-sub', comValor.length+' orçamento'+(comValor.length===1?'':'s')+' com valor');
+
+  // Taxa de conversão — reaproveita o valor já calculado em crmUpdateStats()/#crm-conv
+  if(typeof crmUpdateStats==='function'){ try{ crmUpdateStats(); }catch(e){} }
+  var convEl=document.getElementById('crm-conv');
+  set('mp-kpi-conversao', convEl?convEl.textContent:'—');
+
+  // Follow-up + Clientes em risco — uma só passagem por ativosMeus,
+  // classificando cada orçamento por prioridade (fuPrioridade), reaproveitada
+  // pelos 2 cards de ação (evita calcular a mesma coisa duas vezes).
+  var porPrioridade={em_dia:0,lembrete:0,normal:0,alta:0,critica:0,perdido_sugerido:0,sem_dados:0};
+  ativosMeus.forEach(function(o){
+    var dias=(typeof obOrcUltimaAtividade==='function'&&typeof obDiasEntre==='function') ? obDiasEntre(obOrcUltimaAtividade(o)) : null;
+    var prio=(typeof fuPrioridade==='function') ? fuPrioridade(dias) : {key:'sem_dados'};
+    var key=porPrioridade.hasOwnProperty(prio.key) ? prio.key : 'sem_dados';
+    porPrioridade[key]++;
+  });
+  var normalCount=porPrioridade.em_dia+porPrioridade.lembrete+porPrioridade.normal+porPrioridade.sem_dados;
+  var prioritarioCount=porPrioridade.alta+porPrioridade.critica+porPrioridade.perdido_sugerido;
+
+  // Card "Follow-up" — total + repartição normais vs prioritários
+  set('mp-kpi-followup', ativosMeus.length);
+  var fuBreakdown=document.getElementById('mp-followup-breakdown');
+  if(fuBreakdown){
+    fuBreakdown.innerHTML=
+      '<div class="mp-breakdown-row"><span>Normais</span><b>'+normalCount+'</b></div>'
+     +'<div class="mp-breakdown-row"><span>Prioritários</span><b>'+prioritarioCount+'</b></div>';
+  }
+
+  // Card "Clientes em risco" — prioridade alta/crítica/perdido sugerido (fuPrioridade)
+  set('mp-kpi-risco', prioritarioCount);
+  var riscoBreakdown=document.getElementById('mp-risco-breakdown');
+  if(riscoBreakdown){
+    riscoBreakdown.innerHTML=
+      '<div class="mp-breakdown-row"><span>Crítica</span><b>'+porPrioridade.critica+'</b></div>'
+     +'<div class="mp-breakdown-row"><span>Alta</span><b>'+porPrioridade.alta+'</b></div>'
+     +'<div class="mp-breakdown-row"><span>Perdido sugerido</span><b>'+porPrioridade.perdido_sugerido+'</b></div>';
+  }
+
+  // Card "Negócios em aberto" — orçamentos em estado "Pendente" + valor total
+  var pendentes=minhasOrc.filter(function(o){ return o.st==='Pendente'; });
+  var valorPendentes=pendentes.reduce(function(s,o){ return s+valorOrc(o); },0);
+  set('mp-kpi-pendentes', pendentes.length);
+  set('mp-kpi-pendentes-sub', (pendentes.length===1?'proposta pendente':pendentes.length+' propostas pendentes')+' · '+fmtEuro(valorPendentes));
+
+  // A1 — Cabeçalho vivo: avatar + saudação por hora + resumo do dia.
+  // Usa apenas valores já calculados acima (reais): follow-ups activos
+  // (ativosMeus), propostas pendentes (pendentes) e valor em negociação.
+  (function(){
+    var h=new Date().getHours();
+    var saud = h<12 ? 'Bom dia' : (h<20 ? 'Boa tarde' : 'Boa noite');
+    var primeiro = nome ? String(nome).trim().split(/\s+/)[0] : '';
+    var gEl=document.getElementById('mp-greeting');
+    if(gEl) gEl.textContent = primeiro ? (saud+', '+primeiro+' \uD83D\uDC4B') : (saud+' \uD83D\uDC4B');
+    var avEl=document.getElementById('mp-avatar');
+    if(avEl && typeof avHtml==='function') avEl.innerHTML = avHtml(nome||'?', null, 40);
+    var dsEl=document.getElementById('mp-daysummary');
+    if(dsEl){
+      var nf=ativosMeus.length, np=pendentes.length;
+      if(nf===0 && np===0 && valorNegociacao===0){
+        dsEl.textContent='Sem pendências para hoje. Bom trabalho!';
+      } else {
+        dsEl.innerHTML='Hoje tens: '
+          +'<b>'+nf+'</b> follow-up'+(nf===1?'':'s')
+          +'<span class="mp-sep">·</span><b>'+np+'</b> proposta'+(np===1?'':'s')+' pendente'+(np===1?'':'s')
+          +'<span class="mp-sep">·</span><b>'+fmtEuro(valorNegociacao)+'</b> em negociação';
+      }
+    }
+  })();
+
+  // Card "Por cobrar" — dados reais de TES_RECEBER (Tesouraria), mesmo
+  // critério já usado em tesRenderReceber()/dash CFO: estado!=='Recebido'
+  // = em aberto; vencimento<hoje = vencido. TES_RECEBER não tem dono por
+  // comercial (só cliente) — por isso este card respeita a MESMA regra
+  // já existente no resto do CRM (obPodeVerFinanceiro): um comercial
+  // nunca vê dados financeiros, mesmo agregados, aqui incluído.
+  var cobrarCard=document.getElementById('mp-cobrar-card');
+  if(cobrarCard){
+    var podeVerFin=(typeof obPodeVerFinanceiro==='function') ? obPodeVerFinanceiro() : false;
+    if(podeVerFin){
+      try{ if(typeof tocoMergeFaturasCacheReceber==='function') tocoMergeFaturasCacheReceber(); }catch(e){}
+      var hojeVenc=new Date();
+      var receberAberto=(typeof TES_RECEBER!=='undefined'&&TES_RECEBER) ? TES_RECEBER.filter(function(r){ return r.estado!=='Recebido'; }) : [];
+      var clientesUnicos={};
+      receberAberto.forEach(function(r){ if(r.cliente) clientesUnicos[r.cliente]=true; });
+      var valorAberto=receberAberto.reduce(function(s,r){ return s+parseFloat(r.total||0); },0);
+      var receberVencido=receberAberto.filter(function(r){
+        var vd=(typeof parseVencTes==='function') ? parseVencTes(r.vencimento) : new Date(NaN);
+        return !isNaN(vd) && vd<hojeVenc;
+      });
+      var valorVencido=receberVencido.reduce(function(s,r){ return s+parseFloat(r.total||0); },0);
+
+      set('mp-kpi-cobrar', Object.keys(clientesUnicos).length);
+      set('mp-kpi-cobrar-sub', Object.keys(clientesUnicos).length===1?'cliente com valores em aberto':'clientes com valores em aberto');
+      var cobrarBreakdown=document.getElementById('mp-cobrar-breakdown');
+      if(cobrarBreakdown){
+        cobrarBreakdown.innerHTML=
+          '<div class="mp-breakdown-row"><span>Valor em aberto</span><b>'+fmtEuro(valorAberto)+'</b></div>'
+         +'<div class="mp-breakdown-row"><span>Valor vencido</span><b>'+fmtEuro(valorVencido)+'</b></div>';
+      }
+      cobrarCard.classList.remove('mp-placeholder');
+      var cobrarBtn=document.getElementById('mp-cobrar-btn');
+      if(cobrarBtn) cobrarBtn.style.display='';
+    } else {
+      set('mp-kpi-cobrar', '—');
+      set('mp-kpi-cobrar-sub', 'sem acesso a dados financeiros');
+    }
+  }
+
+  // Últimas actividades (crmAtividades já vem ordenado do mais recente
+  // para o mais antigo — crmAddAtividade usa unshift())
+  var ativEl=document.getElementById('mp-atividades-list');
+  if(ativEl){
+    var todasAtiv=(typeof crmAtividades!=='undefined'&&crmAtividades)?crmAtividades:[];
+    var minhasAtiv= (isAdmin||!nome) ? todasAtiv : todasAtiv.filter(function(a){ return a.autor===nome; });
+    var ultimas=minhasAtiv.slice(0,5);
+    if(!ultimas.length){
+      ativEl.innerHTML='<div style="color:var(--muted);font-size:13px;padding:8px 4px;font-style:italic">Sem actividades registadas.</div>';
+    } else {
+      var icones={'Nota':'📝','Chamada':'📞','Email':'✉','Visita':'🚗','WhatsApp':'💬'};
+      ativEl.innerHTML=ultimas.map(function(a){
+        var d=new Date(a.ts);
+        var dStr=isNaN(d) ? '—' : (d.toLocaleDateString('pt-PT',{day:'2-digit',month:'2-digit',year:'2-digit'})+' '+d.toLocaleTimeString('pt-PT',{hour:'2-digit',minute:'2-digit'}));
+        return '<div style="display:flex;gap:10px;align-items:flex-start;padding:8px 6px;border-bottom:1px solid var(--border)">'
+          +'<span style="font-size:15px">'+(icones[a.tipo]||'📝')+'</span>'
+          +'<div style="flex:1;min-width:0">'
+            +'<div style="font-size:13px;color:var(--txt2)">'+(a.texto||'—')+'</div>'
+            +'<div style="font-size:11px;color:var(--muted);margin-top:2px">'+(a.autor||'—')+' · '+dStr+'</div>'
+          +'</div>'
+        +'</div>';
+      }).join('');
+    }
+  }
+  // ADD: card "Lembretes de Hoje" — só leitura de crmAtividades + cliData.
+  try{ mpRenderLembretesHoje(); }catch(e){}
+}
+window.renderMeuPainel=renderMeuPainel;
+
+// ══════════════════════════════════════════════════════════════════
+// MAPA DE VENDAS — leitura independente de ob_orcamentos (não usa
+// orcData/_sbOrcLoadAll, não toca em orcInitPage). Usa crmSBClient()
+// (sessão autenticada real) para que a RLS de ob_orcamentos
+// (ob_can_see(owner_id)) seja respeitada de verdade: um comercial
+// logado só recebe as suas próprias linhas diretamente da BD. O modo
+// "Ver como" (admin a simular um comercial) mantém a sessão real de
+// admin — por isso a RLS devolve tudo; a simulação é feita adiante,
+// só no cliente, pelo mesmo padrão isAdmin/minhas() já usado no resto
+// do CRM (CU passa a ser o próprio objeto do comercial simulado).
+// ══════════════════════════════════════════════════════════════════
+
+var MV_META_CONFIG = {
+  anual: 1300000,
+  get mensal(){ return this.anual/12; },
+  porComercial: { 'Rui Mota': 500000, 'Paulo Faria': 450000, 'Humberto Estrelinha': 350000 }
+};
+
+var MV_RECEBIMENTOS_CONFIG = {
+  global: { recebido: 694420.61, naoRecebido: 162065.85, parcial: 6431.67 },
+  porComercial: {
+    'Humberto Estrelinha': { recebido: 76131.87, naoRecebido: 22295.60, parcial: 6431.67 },
+    'Paulo Faria': { recebido: 455705.02, naoRecebido: 88692.42, parcial: 0 },
+    'Rui Mota': { recebido: 162583.72, naoRecebido: 51077.83, parcial: 0 }
+  }
+};
+
+var MV_ESTADO_LABEL = { 'Pendente':'Proposta', 'Aprovado':'Adjudicada', 'Faturado':'Faturada', 'Cancelado':'Perdida' };
+var MV_ESTADO_BADGE = { 'Pendente':'mv-badge-proposta', 'Aprovado':'mv-badge-adjudicada', 'Faturado':'mv-badge-faturada', 'Cancelado':'mv-badge-perdida' };
+var MV_ESTADO_DOT   = { 'Pendente':'#3b82f6', 'Aprovado':'#facc15', 'Faturado':'#22c55e', 'Cancelado':'#ef4444' };
+var MV_PIE_PALETTE  = ['#facc15','#3b82f6','#22c55e','#f97316','#a855f7','#64748b','#ec4899','#14b8a6'];
+
+var _mvData = null, _mvLoading = false;
+var _mvFilters = { periodo:'', comercial:'', estado:'', origem:'', tipoProd:'', cliente:'', busca:'' };
+var _mvSort = { campo:'data', dir:'desc' };
+var _mvPage = 1;
+var MV_PAGE_SIZE = 8;
+var _mvCharts = {};
+
+function _mvFmtEUR(v){
+  v = Math.round(v||0);
+  return '€' + v.toLocaleString('pt-PT');
+}
+function _mvFmtEURFull(v){
+  return (v||0).toLocaleString('pt-PT', {style:'currency', currency:'EUR'});
+}
+function _mvFmtPct(v){
+  return (v||0).toLocaleString('pt-PT', {minimumFractionDigits:1, maximumFractionDigits:1}) + '%';
+}
+function _mvParseData(str){
+  if(!str) return null;
+  var s = String(str).trim();
+  var m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if(m) return new Date(+m[3], +m[2]-1, +m[1]);
+  var d = new Date(s);
+  return isNaN(d) ? null : d;
+}
+function _mvNum(o){ return (o.extra && o.extra._numOriginal) || o.id || '—'; }
+function _mvOrigem(o){ return (o.extra && o.extra.origem) || '—'; }
+function _mvProjeto(o){ return (o.extra && o.extra.projeto) || '—'; }
+function _mvTipoProdRaw(o){ return (o.extra && o.extra.tipoProd) || ''; }
+function _mvDescricao(o){ return (o.extra && o.extra.descricaoTrabalho) || '—'; }
+function _mvMesAno(o){
+  var d = _mvParseData(o.data||o.dt);
+  return d ? (String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear()) : '—';
+}
+function _mvValor(o){ return typeof o.val==='number' ? o.val : (parseFloat(o.val)||0); }
+
+function _mvTipoProdNorm(raw){
+  if(!raw) return null;
+  var s = String(raw).trim().toLowerCase();
+  s = s.replace(/\s+/g,' ');
+  if(/letras?\s*3\s*d/.test(s)) return 'Letras 3D';
+  if(/vinil/.test(s)) return 'Vinil';
+  if(/reclam[eo]/.test(s)) return 'Reclamo';
+  if(/dupla\s*face/.test(s)) return 'Dupla Face';
+  if(/decora/.test(s)) return 'Decoração';
+  if(/diverso/.test(s)) return 'Diversos';
+  if(/totem/.test(s)) return 'Totem';
+  if(/assist/.test(s)) return 'Assistência Técnica';
+  return raw.trim();
+}
+
+async function _mvEnsureData(){
+  if(_mvData) return _mvData;
+  if(_mvLoading) return null;
+  _mvLoading = true;
+  try{
+    var sb = (typeof crmSBClient==='function') ? crmSBClient() : null;
+    if(!sb){ _mvData = []; _mvLoading=false; return _mvData; }
+    var res = await sb.from('ob_orcamentos')
+      .select('id,cli,vendedor,nif,val,st,data,dt,obs,extra,owner_id')
+      .is('deleted_at', null)
+      .limit(5000);
+    if(res.error){ console.warn('[MV] load falhou:', res.error); _mvData = []; }
+    else { _mvData = res.data || []; }
+  }catch(e){ console.warn('[MV] load exception:', e); _mvData = []; }
+  _mvLoading = false;
+  return _mvData;
+}
+
+function _mvMinhasLinhas(rows){
+  var isAdmin = !!(typeof CU!=='undefined' && CU && CU.admin);
+  var nome = (typeof CU!=='undefined' && CU) ? CU.name : null;
+  if(isAdmin || !nome) return rows.slice();
+  return rows.filter(function(o){ return o.vendedor === nome; });
+}
+
+function _mvApplyFilters(rows){
+  var f = _mvFilters;
+  return rows.filter(function(o){
+    if(f.comercial && o.vendedor !== f.comercial) return false;
+    if(f.estado && o.st !== f.estado) return false;
+    if(f.origem && _mvOrigem(o) !== f.origem) return false;
+    if(f.tipoProd && _mvTipoProdRaw(o) !== f.tipoProd) return false;
+    if(f.cliente && o.cli !== f.cliente) return false;
+    if(f.periodo){
+      var d = _mvParseData(o.data||o.dt);
+      if(!d) return false;
+      var hoje = new Date(); var dias = (hoje-d)/86400000;
+      if(f.periodo==='30' && dias>30) return false;
+      if(f.periodo==='90' && dias>90) return false;
+      if(f.periodo==='ano' && d.getFullYear()!==hoje.getFullYear()) return false;
+    }
+    if(f.busca){
+      var q = f.busca.toLowerCase();
+      var hay = [_mvNum(o), o.cli, _mvProjeto(o), o.vendedor, o.nif].join(' ').toLowerCase();
+      if(hay.indexOf(q)===-1) return false;
+    }
+    return true;
+  });
+}
+
+function _mvGetView(){
+  var isAdmin = !!(typeof CU!=='undefined' && CU && CU.admin);
+  var base = _mvMinhasLinhas(_mvData||[]);
+  return { isAdmin: isAdmin, rows: _mvApplyFilters(base) };
+}
+
+function renderMapaVendas(){
+  var el = document.getElementById('page-mapa-vendas');
+  if(!el) return;
+  if(_mvData===null){
+    var tbody = document.getElementById('mv-table-body');
+    if(tbody) tbody.innerHTML = '<tr><td colspan="13" class="mv-empty">A carregar orçamentos…</td></tr>';
+    _mvEnsureData().then(function(){ renderMapaVendas(); });
+    return;
+  }
+  var view = _mvGetView();
+  var syncBtn = document.getElementById('mv-sync-btn');
+  if(syncBtn) syncBtn.style.display = view.isAdmin ? '' : 'none';
+  _mvRenderBanner();
+  _mvRenderFilters();
+  _mvRenderKpis(view);
+  _mvRenderMetaAnual(view);
+  _mvRenderMetaComercial(view);
+  _mvRenderRecebimentos(view);
+  _mvRenderCharts(view);
+  _mvRenderRanking(view);
+  _mvRenderTable(view);
+}
+window.renderMapaVendas = renderMapaVendas;
+
+function _mvRenderBanner(){
+  var isAdmin = !!(typeof CU!=='undefined' && CU && CU.admin);
+  var banner = document.getElementById('mv-comercial-banner');
+  if(!banner) return;
+  if(!isAdmin && CU && CU.name){
+    banner.style.display = 'block';
+    banner.textContent = '👤 A ver o teu Mapa de Vendas pessoal, ' + CU.name + ' — só os teus próprios orçamentos.';
+  } else {
+    banner.style.display = 'none';
+  }
+}
+
+function _mvRenderFilters(){
+  var wrap = document.getElementById('mv-filters');
+  if(!wrap || wrap.dataset.built) { return; }
+  var view0 = _mvMinhasLinhas(_mvData||[]);
+  var isAdmin = !!(typeof CU!=='undefined' && CU && CU.admin);
+  var uniq = function(arr){ return Array.from(new Set(arr.filter(Boolean))).sort(); };
+  var comerciais = uniq(view0.map(function(o){return o.vendedor;}));
+  var origens = uniq(view0.map(_mvOrigem)).filter(function(v){return v!=='—';});
+  var tipos = uniq(view0.map(_mvTipoProdRaw)).filter(Boolean);
+  var clientes = uniq(view0.map(function(o){return o.cli;}));
+
+  var opts = function(arr, cur){
+    return '<option value="">Todos</option>' + arr.map(function(v){
+      return '<option value="'+v.replace(/"/g,'&quot;')+'"'+(v===cur?' selected':'')+'>'+v+'</option>';
+    }).join('');
+  };
+
+  var html = ''
+    + '<div class="mv-filter-field mv-filter-search"><label>Pesquisa</label><input type="text" id="mv-f-busca" placeholder="Nº orçamento, cliente, projeto, comercial…"></div>'
+    + '<div class="mv-filter-field"><label>Período</label><select id="mv-f-periodo"><option value="">Todo o histórico</option><option value="30">Últimos 30 dias</option><option value="90">Últimos 90 dias</option><option value="ano">Este ano</option></select></div>'
+    + (isAdmin ? '<div class="mv-filter-field"><label>Comercial</label><select id="mv-f-comercial">'+opts(comerciais)+'</select></div>' : '')
+    + '<div class="mv-filter-field"><label>Estado</label><select id="mv-f-estado"><option value="">Todos</option>'
+      + Object.keys(MV_ESTADO_LABEL).map(function(k){return '<option value="'+k+'">'+MV_ESTADO_LABEL[k]+'</option>';}).join('')
+      + '</select></div>'
+    + '<div class="mv-filter-field"><label>Origem</label><select id="mv-f-origem">'+opts(origens)+'</select></div>'
+    + '<div class="mv-filter-field"><label>Tipo Produção</label><select id="mv-f-tipo">'+opts(tipos)+'</select></div>'
+    + '<div class="mv-filter-field"><label>Cliente</label><select id="mv-f-cliente">'+opts(clientes)+'</select></div>'
+    + '<button class="mv-btn mv-clear-btn" id="mv-f-clear">Limpar filtros</button>';
+  wrap.innerHTML = html;
+  wrap.dataset.built = '1';
+
+  var bind = function(id, campo, evt){
+    var elx = document.getElementById(id);
+    if(!elx) return;
+    elx.addEventListener(evt||'change', function(){
+      _mvFilters[campo] = this.value;
+      _mvPage = 1;
+      renderMapaVendas();
+    });
+  };
+  bind('mv-f-busca','busca','input');
+  bind('mv-f-periodo','periodo');
+  bind('mv-f-comercial','comercial');
+  bind('mv-f-estado','estado');
+  bind('mv-f-origem','origem');
+  bind('mv-f-tipo','tipoProd');
+  bind('mv-f-cliente','cliente');
+  var clearBtn = document.getElementById('mv-f-clear');
+  if(clearBtn) clearBtn.addEventListener('click', function(){
+    _mvFilters = { periodo:'', comercial:'', estado:'', origem:'', tipoProd:'', cliente:'', busca:'' };
+    ['mv-f-busca','mv-f-periodo','mv-f-comercial','mv-f-estado','mv-f-origem','mv-f-tipo','mv-f-cliente'].forEach(function(id){
+      var e2=document.getElementById(id); if(e2) e2.value='';
+    });
+    _mvPage = 1;
+    renderMapaVendas();
+  });
+}
+
+function _mvRenderKpis(view){
+  var rows = view.rows;
+  var totalOrc = rows.reduce(function(s,o){ return s+_mvValor(o); }, 0);
+  var aprov = rows.filter(function(o){return o.st==='Aprovado';});
+  var fatur = rows.filter(function(o){return o.st==='Faturado';});
+  var cancel = rows.filter(function(o){return o.st==='Cancelado';});
+  var totalAdj = aprov.reduce(function(s,o){return s+_mvValor(o);},0);
+  var totalFat = fatur.reduce(function(s,o){return s+_mvValor(o);},0);
+  var totalPerd = cancel.reduce(function(s,o){return s+_mvValor(o);},0);
+  var decididos = aprov.length+fatur.length+cancel.length;
+  var conversao = decididos>0 ? ((aprov.length+fatur.length)/decididos*100) : 0;
+  var ganhos = aprov.concat(fatur);
+  var ticketMedio = ganhos.length>0 ? (totalAdj+totalFat)/ganhos.length : 0;
+
+  var cards = [
+    {ic:'💼', lbl:'Total Orçamentado', val:_mvFmtEUR(totalOrc), color:'var(--mv-txt)'},
+    {ic:'✅', lbl:'Total Adjudicado', val:_mvFmtEUR(totalAdj), color:'#fde047'},
+    {ic:'🧾', lbl:'Total Faturado', val:_mvFmtEUR(totalFat), color:'#4ade80'},
+    {ic:'❌', lbl:'Total Perdido', val:_mvFmtEUR(totalPerd), color:'#f87171'},
+    {ic:'🎯', lbl:'Taxa de Conversão', val:_mvFmtPct(conversao), color:'#60a5fa'},
+    {ic:'🪙', lbl:'Ticket Médio', val:_mvFmtEUR(ticketMedio), color:'#c084fc'},
+  ];
+  var wrap = document.getElementById('mv-kpi-row');
+  if(wrap) wrap.innerHTML = cards.map(function(c){
+    return '<div class="mv-kpi"><div class="mv-kpi-top"><div class="mv-kpi-ic">'+c.ic+'</div></div>'
+      + '<div class="mv-kpi-lbl">'+c.lbl+'</div><div class="mv-kpi-val" style="color:'+c.color+'">'+c.val+'</div></div>';
+  }).join('');
+}
+
+function _mvRenderMetaAnual(view){
+  var wrap = document.getElementById('mv-meta-anual-card');
+  if(!wrap) return;
+  if(!view.isAdmin){ wrap.style.display='none'; return; }
+  wrap.style.display='';
+  var rows = view.rows;
+  var acumulado = rows.filter(function(o){return o.st==='Aprovado'||o.st==='Faturado';}).reduce(function(s,o){return s+_mvValor(o);},0);
+  var meta = MV_META_CONFIG.anual;
+  var falta = Math.max(0, meta-acumulado);
+  var pct = meta>0 ? Math.min(100, acumulado/meta*100) : 0;
+  wrap.innerHTML = ''
+    + '<div style="display:flex;justify-content:space-between;align-items:flex-start">'
+    + '<div><div class="mv-card-title">🎯 Meta Anual</div><div class="mv-card-sub">Vendas acumuladas (Adjudicado+Faturado) vs. meta de referência</div></div>'
+    + '<div style="text-align:right"><div style="font-size:22px;font-weight:700;color:var(--mv-y)">'+_mvFmtPct(pct)+'</div><div style="font-size:9.5px;text-transform:uppercase;color:var(--mv-muted)">concluído</div></div>'
+    + '</div>'
+    + '<div class="mv-progress-track" style="margin-top:12px"><div class="mv-progress-fill'+(pct>=100?' mv-done':'')+'" style="width:'+pct+'%"></div></div>'
+    + '<div class="mv-mini-grid mv-mini4">'
+      + '<div class="mv-mini"><div class="mv-mini-lbl">Vendas Acumuladas</div><div class="mv-mini-val" style="color:#4ade80">'+_mvFmtEUR(acumulado)+'</div></div>'
+      + '<div class="mv-mini"><div class="mv-mini-lbl">Falta para Meta</div><div class="mv-mini-val" style="color:#fb923c">'+_mvFmtEUR(falta)+'</div></div>'
+      + '<div class="mv-mini"><div class="mv-mini-lbl">Meta Anual</div><div class="mv-mini-val" style="color:var(--mv-y)">'+_mvFmtEUR(meta)+'</div></div>'
+      + '<div class="mv-mini"><div class="mv-mini-lbl">Meta Mensal</div><div class="mv-mini-val" style="color:#60a5fa">'+_mvFmtEUR(MV_META_CONFIG.mensal)+'</div></div>'
+    + '</div>'
+    + '<div style="font-size:10px;color:var(--mv-muted);margin-top:10px">⚠ Configuração provisória (MV_META_CONFIG) — substituir por dados reais quando autorizado.</div>';
+}
+
+function _mvRenderMetaComercial(view){
+  var wrap = document.getElementById('mv-meta-comercial-wrap');
+  if(!wrap) return;
+  if(view.isAdmin || !CU || !CU.name){ wrap.innerHTML=''; return; }
+  var meta = MV_META_CONFIG.porComercial[CU.name] || 0;
+  var realizado = view.rows.filter(function(o){return o.st==='Aprovado'||o.st==='Faturado';}).reduce(function(s,o){return s+_mvValor(o);},0);
+  var falta = Math.max(0, meta-realizado);
+  var pct = meta>0 ? Math.min(100, realizado/meta*100) : 0;
+  wrap.innerHTML = '<div class="mv-card" style="margin-bottom:16px">'
+    + '<div style="display:flex;justify-content:space-between;align-items:flex-start">'
+    + '<div><div class="mv-card-title">📈 A tua Meta</div><div class="mv-card-sub">'+CU.name+' — Adjudicado+Faturado</div></div>'
+    + '<div style="text-align:right"><div style="font-size:22px;font-weight:700;color:'+(pct>=100?'#4ade80':'var(--mv-y)')+'">'+_mvFmtPct(pct)+'</div></div>'
+    + '</div>'
+    + '<div class="mv-progress-track" style="margin-top:12px"><div class="mv-progress-fill'+(pct>=100?' mv-done':'')+'" style="width:'+pct+'%"></div></div>'
+    + '<div class="mv-mini-grid mv-mini3">'
+      + '<div class="mv-mini"><div class="mv-mini-lbl">Meta Individual</div><div class="mv-mini-val" style="color:var(--mv-y)">'+_mvFmtEUR(meta)+'</div></div>'
+      + '<div class="mv-mini"><div class="mv-mini-lbl">Realizado</div><div class="mv-mini-val" style="color:#4ade80">'+_mvFmtEUR(realizado)+'</div></div>'
+      + '<div class="mv-mini"><div class="mv-mini-lbl">Falta para Meta</div><div class="mv-mini-val" style="color:#fb923c">'+_mvFmtEUR(falta)+'</div></div>'
+    + '</div>'
+    + '<div style="font-size:10px;color:var(--mv-muted);margin-top:10px">⚠ Configuração provisória — substituir por dados reais quando autorizado.</div>'
+    + '</div>';
+}
+
+function _mvRenderRecebimentos(view){
+  var wrap = document.getElementById('mv-recebimentos-card');
+  if(!wrap) return;
+  var src = view.isAdmin ? MV_RECEBIMENTOS_CONFIG.global : (MV_RECEBIMENTOS_CONFIG.porComercial[CU&&CU.name] || {recebido:0,naoRecebido:0,parcial:0});
+  var total = src.recebido+src.naoRecebido+src.parcial;
+  var pctRec = total>0 ? (src.recebido/total*100) : 0;
+  wrap.innerHTML = '<div class="mv-card-title">🏦 Recebimentos</div>'
+    + '<div class="mv-card-sub">'+(view.isAdmin?'Indicador agregado global':'Indicador agregado — '+(CU?CU.name:''))+'</div>'
+    + '<div style="display:flex;align-items:center;gap:16px;margin-top:8px">'
+    + '<div style="position:relative;width:88px;height:88px;border-radius:50%;background:conic-gradient(#22c55e 0% '+pctRec+'%, #ef4444 '+pctRec+'% 100%);display:flex;align-items:center;justify-content:center;flex-shrink:0">'
+      + '<div style="width:60px;height:60px;border-radius:50%;background:var(--mv-card);display:flex;flex-direction:column;align-items:center;justify-content:center">'
+        + '<div style="font-size:14px;font-weight:700;color:#4ade80">'+_mvFmtPct(pctRec)+'</div>'
+        + '<div style="font-size:8px;color:var(--mv-muted);text-transform:uppercase">recebido</div>'
+      + '</div></div>'
+    + '<div style="flex:1;display:flex;flex-direction:column;gap:8px">'
+      + '<div class="mv-mini" style="border-color:rgba(34,197,94,.2);background:rgba(34,197,94,.05)"><div class="mv-mini-lbl">Recebido</div><div class="mv-mini-val" style="color:#4ade80">'+_mvFmtEURFull(src.recebido)+'</div></div>'
+      + '<div class="mv-mini" style="border-color:rgba(239,68,68,.2);background:rgba(239,68,68,.05)"><div class="mv-mini-lbl">Não Recebido</div><div class="mv-mini-val" style="color:#f87171">'+_mvFmtEURFull(src.naoRecebido)+'</div></div>'
+    + '</div></div>'
+    + '<div style="font-size:10px;color:var(--mv-muted);margin-top:10px">⚠ Não existe ligação fatura↔orçamento — indicador agregado (MV_RECEBIMENTOS_CONFIG), não por linha.</div>';
+}
+
+function _mvChart(id, cfg){
+  var canvas = document.getElementById(id);
+  if(!canvas || typeof Chart==='undefined') return;
+  var existing = Chart.getChart(canvas);
+  if(existing) existing.destroy();
+  _mvCharts[id] = new Chart(canvas, cfg);
+}
+
+function _mvRenderCharts(view){
+  if(typeof Chart==='undefined') return;
+  var rows = view.rows;
+
+  var porMes = {};
+  rows.forEach(function(o){ var k=_mvMesAno(o); if(k==='—')return; porMes[k]=(porMes[k]||0)+_mvValor(o); });
+  var mesesOrdenados = Object.keys(porMes).sort(function(a,b){
+    var pa=a.split('/'), pb=b.split('/');
+    return new Date(+pa[1],+pa[0]-1) - new Date(+pb[1],+pb[0]-1);
+  });
+  _mvChart('mv-chart-mes', { type:'line', data:{ labels:mesesOrdenados, datasets:[{ label:'Orçamentado', data:mesesOrdenados.map(function(m){return porMes[m];}), borderColor:'#facc15', backgroundColor:'rgba(250,204,21,.15)', fill:true, tension:.35, pointRadius:2 }]}, options:_mvChartOpts(true) });
+
+  var porEstado = {};
+  rows.forEach(function(o){ var l=MV_ESTADO_LABEL[o.st]||o.st; porEstado[l]=(porEstado[l]||0)+1; });
+  _mvChart('mv-chart-estado', { type:'doughnut', data:{ labels:Object.keys(porEstado), datasets:[{ data:Object.values(porEstado), backgroundColor:MV_PIE_PALETTE, borderColor:'#0c0c0e', borderWidth:2 }]}, options:_mvPieOpts() });
+
+  var cardComercial = document.getElementById('mv-chart-comercial-card');
+  if(view.isAdmin){
+    if(cardComercial) cardComercial.style.display='';
+    var porComercial = {};
+    rows.filter(function(o){return o.st==='Aprovado'||o.st==='Faturado';}).forEach(function(o){ porComercial[o.vendedor]=(porComercial[o.vendedor]||0)+_mvValor(o); });
+    var comerciaisOrd = Object.keys(porComercial).sort(function(a,b){return porComercial[b]-porComercial[a];});
+    _mvChart('mv-chart-comercial', { type:'bar', data:{ labels:comerciaisOrd, datasets:[{ data:comerciaisOrd.map(function(c){return porComercial[c];}), backgroundColor:comerciaisOrd.map(function(c,i){return i===0?'#facc15':'#3f3f46';}), borderRadius:6 }]}, options:_mvChartOpts(true, true) });
+  } else if(cardComercial){ cardComercial.style.display='none'; }
+
+  var porOrigem = {};
+  rows.forEach(function(o){ var v=_mvOrigem(o); if(v==='—')return; porOrigem[v]=(porOrigem[v]||0)+1; });
+  _mvChart('mv-chart-origem', { type:'pie', data:{ labels:Object.keys(porOrigem), datasets:[{ data:Object.values(porOrigem), backgroundColor:MV_PIE_PALETTE, borderColor:'#0c0c0e', borderWidth:2 }]}, options:_mvPieOpts() });
+
+  var porTipo = {};
+  rows.forEach(function(o){ var v=_mvTipoProdNorm(_mvTipoProdRaw(o)); if(!v)return; porTipo[v]=(porTipo[v]||0)+1; });
+  var tiposOrd = Object.keys(porTipo).sort(function(a,b){return porTipo[b]-porTipo[a];});
+  var TOP_N = 6;
+  var tiposFinal = tiposOrd.slice(0,TOP_N);
+  var outrosSoma = tiposOrd.slice(TOP_N).reduce(function(s,t){return s+porTipo[t];},0);
+  if(outrosSoma>0) tiposFinal.push('Outros');
+  var tiposVals = tiposFinal.map(function(t){ return t==='Outros'?outrosSoma:porTipo[t]; });
+  _mvChart('mv-chart-tipo', { type:'bar', data:{ labels:tiposFinal, datasets:[{ data:tiposVals, backgroundColor:'#3b82f6', borderRadius:6 }]}, options:_mvChartOpts(false) });
+
+  var porMesOrc = {}, porMesFat = {};
+  rows.forEach(function(o){
+    var k=_mvMesAno(o); if(k==='—')return;
+    porMesOrc[k]=(porMesOrc[k]||0)+_mvValor(o);
+    if(o.st==='Faturado') porMesFat[k]=(porMesFat[k]||0)+_mvValor(o);
+  });
+  _mvChart('mv-chart-anual', { type:'line', data:{ labels:mesesOrdenados, datasets:[
+    { label:'Orçamentado', data:mesesOrdenados.map(function(m){return porMesOrc[m]||0;}), borderColor:'#facc15', backgroundColor:'transparent', tension:.3, pointRadius:3 },
+    { label:'Faturado', data:mesesOrdenados.map(function(m){return porMesFat[m]||0;}), borderColor:'#22c55e', backgroundColor:'transparent', tension:.3, pointRadius:3 }
+  ]}, options:_mvChartOpts(true) });
+}
+
+function _mvChartOpts(showY, horizontal){
+  return {
+    responsive:true, maintainAspectRatio:false, indexAxis: horizontal?'y':'x',
+    plugins:{ legend:{display:false}, tooltip:{backgroundColor:'#141416', borderColor:'#28282d', borderWidth:1, titleColor:'#f8fafc', bodyColor:'#d4d4d8'} },
+    scales:{
+      x:{ grid:{color:'#1f1f23', display:!horizontal}, ticks:{color:'#94a3b8', font:{size:10}} },
+      y:{ display:showY, grid:{color:'#1f1f23'}, ticks:{color:'#94a3b8', font:{size:10}} }
+    }
+  };
+}
+function _mvPieOpts(){
+  return { responsive:true, maintainAspectRatio:false, plugins:{ legend:{position:'bottom', labels:{color:'#94a3b8', font:{size:10.5}, boxWidth:10, padding:10}}, tooltip:{backgroundColor:'#141416', borderColor:'#28282d', borderWidth:1, titleColor:'#f8fafc', bodyColor:'#d4d4d8'} } };
+}
+
+function _mvRenderRanking(view){
+  var card = document.getElementById('mv-ranking-card');
+  if(!card) return;
+  if(!view.isAdmin){ card.style.display='none'; return; }
+  card.style.display='';
+  var porComercial = {};
+  view.rows.forEach(function(o){
+    var v = o.vendedor; if(!v) return;
+    if(!porComercial[v]) porComercial[v] = { valor:0, negocios:0, decididos:0, ganhos:0 };
+    var pc = porComercial[v];
+    if(o.st==='Aprovado'||o.st==='Faturado'){ pc.valor += _mvValor(o); pc.negocios++; pc.ganhos++; pc.decididos++; }
+    else if(o.st==='Cancelado'){ pc.decididos++; }
+  });
+  var lista = Object.keys(porComercial).map(function(n){ return Object.assign({nome:n}, porComercial[n]); });
+  lista.sort(function(a,b){ return b.valor-a.valor; });
+  var maxValor = lista.length ? lista[0].valor : 1;
+  var medalhas = ['#fde047','#cbd5e1','#d97706'];
+  var listEl = document.getElementById('mv-ranking-list');
+  if(listEl) listEl.innerHTML = lista.map(function(c,i){
+    var conv = c.decididos>0 ? (c.ganhos/c.decididos*100) : 0;
+    var pct = maxValor>0 ? (c.valor/maxValor*100) : 0;
+    return '<div class="mv-rank-row"><div class="mv-rank-pos" style="color:'+(medalhas[i]||'#94a3b8')+'">'+(i+1)+'</div>'
+      + '<div class="mv-rank-body"><div class="mv-rank-top"><span>'+c.nome+'</span><span style="font-weight:700">'+_mvFmtEUR(c.valor)+'</span></div>'
+      + '<div class="mv-progress-track"><div class="mv-progress-fill" style="width:'+pct+'%"></div></div>'
+      + '<div class="mv-rank-sub">'+c.negocios+' negócio'+(c.negocios===1?'':'s')+' · Conversão: '+_mvFmtPct(conv)+'</div></div></div>';
+  }).join('') || '<div class="mv-empty">Sem dados no filtro atual.</div>';
+}
+
+function _mvRenderTable(view){
+  var rows = view.rows.slice();
+  var campo = _mvSort.campo, dir = _mvSort.dir;
+  rows.sort(function(a,b){
+    var va, vb;
+    if(campo==='num'){ va=_mvNum(a); vb=_mvNum(b); }
+    else if(campo==='data'){ va=_mvParseData(a.data||a.dt)||new Date(0); vb=_mvParseData(b.data||b.dt)||new Date(0); }
+    else if(campo==='val'){ va=_mvValor(a); vb=_mvValor(b); }
+    else { va=a[campo]||''; vb=b[campo]||''; }
+    if(va<vb) return dir==='asc'?-1:1;
+    if(va>vb) return dir==='asc'?1:-1;
+    return 0;
+  });
+
+  var countEl = document.getElementById('mv-table-count');
+  if(countEl) countEl.textContent = rows.length + ' registo'+(rows.length===1?'':'s')+' · clique numa linha para ver detalhes';
+
+  var totalPages = Math.max(1, Math.ceil(rows.length/MV_PAGE_SIZE));
+  if(_mvPage>totalPages) _mvPage = totalPages;
+  var start = (_mvPage-1)*MV_PAGE_SIZE;
+  var pageRows = rows.slice(start, start+MV_PAGE_SIZE);
+
+  var tbody = document.getElementById('mv-table-body');
+  if(tbody){
+    if(!pageRows.length){
+      tbody.innerHTML = '<tr><td colspan="13" class="mv-empty">Sem resultados para os filtros aplicados.</td></tr>';
+    } else {
+      tbody.innerHTML = pageRows.map(function(o){
+        var estLabel = MV_ESTADO_LABEL[o.st]||o.st;
+        var badgeCls = MV_ESTADO_BADGE[o.st]||'';
+        var dot = MV_ESTADO_DOT[o.st]||'#94a3b8';
+        return '<tr data-id="'+o.id+'">'
+          + '<td class="mv-num">'+_mvNum(o)+'</td>'
+          + '<td>'+(o.data||o.dt||'—')+'</td>'
+          + '<td>'+(o.vendedor||'—')+'</td>'
+          + '<td>'+_mvOrigem(o)+'</td>'
+          + '<td>'+(o.nif||'—')+'</td>'
+          + '<td>'+(o.cli||'—')+'</td>'
+          + '<td>'+_mvProjeto(o)+'</td>'
+          + '<td>'+(_mvTipoProdRaw(o)||'—')+'</td>'
+          + '<td>'+_mvDescricao(o)+'</td>'
+          + '<td>'+_mvMesAno(o)+'</td>'
+          + '<td class="mv-val">'+_mvFmtEUR(_mvValor(o))+'</td>'
+          + '<td class="mv-center"><span class="mv-badge '+badgeCls+'"><span class="dot" style="background:'+dot+'"></span>'+estLabel+'</span></td>'
+          + '<td>'+(o.obs||'—')+'</td>'
+          + '</tr>';
+      }).join('');
+      Array.prototype.forEach.call(tbody.querySelectorAll('tr[data-id]'), function(tr){
+        tr.addEventListener('click', function(){ _mvOpenDetail(this.dataset.id); });
+      });
+    }
+  }
+
+  var pagEl = document.getElementById('mv-pag');
+  if(pagEl){
+    pagEl.innerHTML = '<span>Página '+_mvPage+' de '+totalPages+'</span>'
+      + '<div class="mv-pag-btns"><button id="mv-pag-prev" '+(_mvPage<=1?'disabled':'')+'>‹</button><button id="mv-pag-next" '+(_mvPage>=totalPages?'disabled':'')+'>›</button></div>';
+    var prevBtn = document.getElementById('mv-pag-prev'), nextBtn = document.getElementById('mv-pag-next');
+    if(prevBtn) prevBtn.addEventListener('click', function(){ if(_mvPage>1){ _mvPage--; renderMapaVendas(); } });
+    if(nextBtn) nextBtn.addEventListener('click', function(){ if(_mvPage<totalPages){ _mvPage++; renderMapaVendas(); } });
+  }
+
+  Array.prototype.forEach.call(document.querySelectorAll('#mv-table th[data-sort]'), function(th){
+    th.onclick = function(){
+      var c = this.dataset.sort;
+      if(_mvSort.campo===c) _mvSort.dir = (_mvSort.dir==='asc'?'desc':'asc');
+      else { _mvSort.campo=c; _mvSort.dir='asc'; }
+      renderMapaVendas();
+    };
+  });
+}
+
+function _mvOpenDetail(id){
+  var o = (_mvData||[]).find(function(x){ return String(x.id)===String(id); });
+  if(!o) return;
+  var estLabel = MV_ESTADO_LABEL[o.st]||o.st;
+  var badgeCls = MV_ESTADO_BADGE[o.st]||'';
+  var dot = MV_ESTADO_DOT[o.st]||'#94a3b8';
+  var field = function(ic,lbl,val){
+    return '<div class="mv-field"><div class="mv-field-ic">'+ic+'</div><div><div class="mv-field-lbl">'+lbl+'</div><div class="mv-field-val">'+(val||'—')+'</div></div></div>';
+  };
+  var drawer = document.getElementById('mv-drawer');
+  var overlay = document.getElementById('mv-drawer-overlay');
+  if(!drawer||!overlay) return;
+  drawer.innerHTML = ''
+    + '<div class="mv-drawer-hdr">'
+      + '<button class="mv-drawer-close" id="mv-drawer-close">✕</button>'
+      + '<div style="font-family:monospace;color:#facc15;font-size:12px;margin-bottom:4px">'+_mvNum(o)+'</div>'
+      + '<div style="font-size:19px;font-weight:600">'+_mvProjeto(o)+'</div>'
+      + '<div style="font-size:12.5px;color:#94a3b8;margin-top:2px">'+(o.cli||'—')+'</div>'
+      + '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px">'
+        + '<span class="mv-badge '+badgeCls+'"><span class="dot" style="background:'+dot+'"></span>'+estLabel+'</span>'
+        + '<span style="color:#facc15;font-weight:700;font-size:16px">'+_mvFmtEUR(_mvValor(o))+'</span>'
+      + '</div>'
+    + '</div>'
+    + '<div class="mv-drawer-body">'
+      + field('📅','Data', o.data||o.dt)
+      + field('🗓','Mês/Ano', _mvMesAno(o))
+      + field('👤','Comercial', o.vendedor)
+      + field('📍','Origem', _mvOrigem(o))
+      + field('🏢','Cliente', o.cli)
+      + field('🪪','NIF', o.nif)
+      + '<div class="mv-sep"></div>'
+      + field('🏷','Tipo de Produção', _mvTipoProdRaw(o))
+      + field('📁','Nome do Projeto', _mvProjeto(o))
+      + field('📝','Descrição do Trabalho', _mvDescricao(o))
+      + field('💶','Valor Orçamentado', _mvFmtEUR(_mvValor(o)))
+      + '<div class="mv-sep"></div>'
+      + field('🗒','Observações', o.obs)
+    + '</div>';
+  overlay.classList.add('mv-open');
+  drawer.classList.add('mv-open');
+  document.getElementById('mv-drawer-close').addEventListener('click', _mvCloseDetail);
+  overlay.onclick = _mvCloseDetail;
+}
+function _mvCloseDetail(){
+  var drawer = document.getElementById('mv-drawer'), overlay = document.getElementById('mv-drawer-overlay');
+  if(drawer) drawer.classList.remove('mv-open');
+  if(overlay) overlay.classList.remove('mv-open');
+}
+
+// ADD: popula o corpo da tabela "Lembretes de Hoje" no Meu Painel.
+// Fonte: crmAtividades (tipo 'Lembrete', due de hoje) + cliData (nome do cliente).
+// Não escreve nada; não altera crmAddAtividade nem a criação de lembretes.
+function mpRenderLembretesHoje(){
+  var tb=document.getElementById('mp-lembretes-hoje');
+  if(!tb) return;
+  var isAdmin=!!(typeof CU!=='undefined'&&CU&&CU.admin);
+  var nome=(typeof CU!=='undefined'&&CU)?CU.name:null;
+  var minhas=function(autor){ return isAdmin||!nome||autor===nome; };
+  var todas=(typeof crmAtividades!=='undefined'&&crmAtividades)?crmAtividades:[];
+  var cli=(typeof cliData!=='undefined'&&cliData)?cliData:[];
+  var pad=function(n){ return (n<10?'0':'')+n; };
+  var hj=new Date();
+  var hojeStr=hj.getFullYear()+'-'+pad(hj.getMonth()+1)+'-'+pad(hj.getDate());
+  var esc=function(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(ch){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]; }); };
+  // Aceita 'AAAA-MM-DDTHH:MM', 'AAAA-MM-DD HH:MM' ou só 'AAAA-MM-DD'. due inválido -> null.
+  var parseDue=function(d){
+    if(!d) return null;
+    var m=String(d).match(/^(\d{4}-\d{2}-\d{2})(?:[T ](\d{2}:\d{2}))?/);
+    return m ? {data:m[1], hora:m[2]||''} : null;
+  };
+  var lista=todas.filter(function(a){
+    if(!a||a.tipo!=='Lembrete') return false;
+    if(!minhas(a.autor)) return false;
+    var p=parseDue(a.due||a.data);
+    return !!(p && p.data===hojeStr);
+  });
+  // Ordenar por hora ascendente (sem hora vai para o fim).
+  lista.sort(function(a,b){
+    var ha=((parseDue(a.due||a.data)||{}).hora)||'99:99';
+    var hb=((parseDue(b.due||b.data)||{}).hora)||'99:99';
+    return ha<hb?-1:(ha>hb?1:0);
+  });
+  if(!lista.length){
+    tb.innerHTML='<tr><td colspan="6" style="text-align:center;color:var(--muted);font-style:italic;padding:14px">Sem lembretes para hoje.</td></tr>';
+    return;
+  }
+  tb.innerHTML=lista.map(function(a){
+    var p=parseDue(a.due||a.data)||{};
+    var hora=p.hora||'—';
+    var c=(a.clienteId!=null)?cli.find(function(x){ return x && x.id===a.clienteId; }):null;
+    var nomeCli=c?(c.n||'—'):((a.clienteId!=null)?'(cliente removido)':'—');
+    var tipo=a.acao||a.canal||'—';
+    var prio=a.prioridade||'—';
+    var estado=a.resultado?'Concluído':'Pendente';
+    var abrir;
+    if(a.clienteId!=null && c){
+      var idLit=esc(JSON.stringify(a.clienteId)); // preserva número/string; seguro em atributo
+      abrir='<button class="mp-action-btn" style="margin:0;padding:4px 10px;font-size:12px" onclick="cliOpenEdit('+idLit+')">Abrir</button>';
+    } else {
+      abrir='<span style="color:var(--muted);font-size:12px">—</span>';
+    }
+    return '<tr>'
+      +'<td>'+esc(hora)+'</td>'
+      +'<td>'+esc(nomeCli)+'</td>'
+      +'<td>'+esc(tipo)+'</td>'
+      +'<td>'+esc(prio)+'</td>'
+      +'<td>'+esc(estado)+'</td>'
+      +'<td>'+abrir+'</td>'
+    +'</tr>';
+  }).join('');
+}
+window.mpRenderLembretesHoje=mpRenderLembretesHoje;
+
 function obAbrirLead(id){
   try{ goPage('comercial-pipeline'); }catch(e){}
   setTimeout(function(){ try{ crmOpenEdit(id); }catch(e){} },250);
@@ -25779,6 +27191,228 @@ if(typeof window.goPage==='function'){
   };
 });
 
+})();
+</script>
+
+<script>/* SIDEBAR — persistência do estado recolhível + abertura por defeito por perfil.
+   Aditivo: envolve toggleSpace()/setupApp() existentes. NÃO altera permissões,
+   navegação, IDs nem data-page. Sem tocar em Orçamentos. */
+(function(){
+  var KEY='ob-sidebar-spaces';
+  var SPACES=['comercial','design','fabrica','financeiro','admin'];
+  function saveOpen(){
+    try{ var open=[]; SPACES.forEach(function(id){ var b=document.getElementById('si-'+id); if(b&&b.classList.contains('open')) open.push(id); });
+      localStorage.setItem(KEY, JSON.stringify(open)); }catch(e){}
+  }
+  function setSpace(id,on){ var b=document.getElementById('si-'+id), l=document.getElementById('sl-'+id); if(!b||!l) return;
+    if(on){ b.classList.add('open'); l.style.display='block'; } else { b.classList.remove('open'); l.style.display='none'; } }
+  // Persistir sempre que o utilizador abre/fecha um espaço (envolve o toggleSpace existente)
+  var _toggle=window.toggleSpace;
+  window.toggleSpace=function(id){ if(typeof _toggle==='function') _toggle.apply(this,arguments); saveOpen(); };
+  // Restaura o estado guardado; se não houver, abre por defeito o espaço do perfil
+  function applyState(){
+    var saved=null; try{ saved=JSON.parse(localStorage.getItem(KEY)||'null'); }catch(e){}
+    if(saved && saved.length!==undefined){ SPACES.forEach(function(id){ setSpace(id, saved.indexOf(id)>=0); }); return; }
+    var dept=(window.CU&&(window.CU.dept||window.CU.department))||'';
+    var map={'Comercial':'comercial','Dep. Design':'design','Chão da Fábrica':'fabrica'};
+    var alvo=map[dept]||'comercial'; // admin/Direcção → Comercial por defeito
+    setSpace('comercial', alvo==='comercial');
+    setSpace('design',    alvo==='design');
+    setSpace('fabrica',   alvo==='fabrica');
+    // Espaços administrativos (financeiro/admin) mantêm-se disponíveis (colapsados).
+  }
+  // Corre a seguir a setupApp() (entrada na app), de forma aditiva
+  var _setup=window.setupApp;
+  if(typeof _setup==='function'){ window.setupApp=function(){ var r=_setup.apply(this,arguments); try{ applyState(); }catch(e){} return r; }; }
+  // Fallback: se já houver sessão activa ao carregar
+  document.addEventListener('DOMContentLoaded', function(){ setTimeout(function(){ try{ if(window.CU) applyState(); }catch(e){} }, 300); });
+})();
+</script>
+
+<script>/* ============================================================================
+   RH · COLABORADORES — persistência real em Supabase (tabela ob_colaboradores).
+   Aditivo e isolado. A fonte oficial passa a ser a tabela relacional; localStorage
+   fica só como cache. Ciclo de vida completo (criar/editar/desativar/restaurar/
+   apagar definitivo) com confirmação do backend. NÃO toca em Orçamentos, ob_leads,
+   ob_profiles, autenticação, sidebar nem no resto do CRM.
+   ============================================================================ */
+(function(){
+  var TABLE='ob_colaboradores';
+  function sb(){ try{ return (typeof crmSBClient==='function')?crmSBClient():null; }catch(e){ return null; } }
+  window._rhInativosMap = window._rhInativosMap || {};
+
+  // Regra 5: a tabela ob_colaboradores é a única fonte e só é escrita pelo CRUD
+  // autenticado abaixo. O blob 'ob-rh-colabs' (ob_crm_dados) é armazenamento
+  // SEPARADO e nunca escreve na tabela. Por limpeza, deixamos de o empurrar.
+  try{ var _obPush=window.obSbPush; if(typeof _obPush==='function'){ window.obSbPush=function(ch){ if(ch==='ob-rh-colabs') return; return _obPush.apply(this, arguments); }; } }catch(e){}
+
+  function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+  function rowToColab(r){
+    return { id:r.id, legacy_id:r.legacy_id, nome:r.nome||'', nif:r.nif||'', niss:r.niss||'',
+      admissao:r.admissao||'', cargo:r.funcao||'', dept:r.departamento||'', salario:(r.salario==null?'':r.salario),
+      contrato:r.contrato||'', tel:r.telefone||'', email:r.email||'', iban:r.iban||'', morada:r.morada||'',
+      foto:r.foto||'', color:r.cor||'#ec4899', ativo:r.ativo, deleted_at:r.deleted_at||null };
+  }
+  function formToPayload(){
+    var g=function(id){ var el=document.getElementById(id); return el?String(el.value||'').trim():''; };
+    var val=function(id){ var el=document.getElementById(id); return el?el.value:null; };
+    var sal=g('rh-c-salario'); var salN = sal===''?null:Number(String(sal).replace(',','.')); if(isNaN(salN)) salN=null;
+    var adm=g('rh-c-admissao')||null;
+    var fotoEl=document.getElementById('rh-c-foto');
+    return {
+      nome:g('rh-c-nome'), nif:g('rh-c-nif')||null, niss:g('rh-c-niss')||null, admissao:adm,
+      funcao:g('rh-c-cargo')||null, departamento:val('rh-c-dept')||null, salario:salN, contrato:val('rh-c-contrato')||null,
+      telefone:g('rh-c-tel')||null, email:g('rh-c-email')||null, iban:g('rh-c-iban')||null, morada:g('rh-c-morada')||null,
+      foto:(fotoEl&&fotoEl.dataset?fotoEl.dataset.foto:'')||null, cor:'#ec4899'
+    };
+  }
+  async function uid(){ try{ var r=await sb().auth.getUser(); return (r&&r.data&&r.data.user)?r.data.user.id:null; }catch(e){ return null; } }
+  function closeModal(){ var m=document.getElementById('rh-colab-modal'); if(m) m.classList.remove('open'); }
+
+  // ---- Toolbar de gestão (Atualizar / Ver inativos) injetada no painel colabs ----
+  function ensureToolbar(){
+    var cards=document.getElementById('rh-colab-cards'); if(!cards) return;
+    if(document.getElementById('rh-colab-toolbar')) return;
+    var bar=document.createElement('div'); bar.id='rh-colab-toolbar';
+    bar.style.cssText='display:flex;gap:8px;align-items:center;margin:0 0 10px 0;flex-wrap:wrap';
+    bar.innerHTML='<button id="rh-btn-refresh" class="btn-sec" style="cursor:pointer;background:var(--bg2);border:1px solid var(--border);color:var(--txt2);border-radius:8px;padding:6px 12px">🔄 Atualizar</button>'
+      +'<button id="rh-btn-inativos" class="btn-sec" style="cursor:pointer;background:var(--bg2);border:1px solid var(--border);color:var(--txt2);border-radius:8px;padding:6px 12px">👁️ Ver inativos</button>'
+      +'<span id="rh-colab-status" style="font-size:12px;color:var(--muted)"></span>';
+    cards.parentNode.insertBefore(bar, cards);
+    var inat=document.createElement('div'); inat.id='rh-inativos-box'; inat.style.cssText='display:none;margin-top:12px';
+    cards.parentNode.insertBefore(inat, cards.nextSibling);
+    document.getElementById('rh-btn-refresh').onclick=function(){ rhLoadColabsFromSB(); };
+    document.getElementById('rh-btn-inativos').onclick=function(){
+      window._rhShowInativos=!window._rhShowInativos;
+      this.textContent = window._rhShowInativos?'👁️ Ocultar inativos':'👁️ Ver inativos';
+      rhRenderInativos();
+    };
+  }
+  function setStatus(t){ var s=document.getElementById('rh-colab-status'); if(s) s.textContent=t||''; }
+
+  async function rhRenderInativos(){
+    var box=document.getElementById('rh-inativos-box'); if(!box) return;
+    if(!window._rhShowInativos){ box.style.display='none'; box.innerHTML=''; return; }
+    box.style.display='block'; box.innerHTML='<div style="color:var(--muted);font-size:12px;padding:8px">A carregar inativos…</div>';
+    var c=sb(); if(!c){ box.innerHTML=''; return; }
+    var res=await c.from(TABLE).select('*').not('deleted_at','is',null).order('nome',{ascending:true});
+    if(res.error){ box.innerHTML='<div style="color:var(--r);font-size:12px;padding:8px">Erro ao carregar inativos.</div>'; return; }
+    window._rhInativosMap={};
+    var rows=res.data||[];
+    if(!rows.length){ box.innerHTML='<div style="color:var(--muted);font-size:12px;padding:8px;border-top:1px solid var(--border)">Sem colaboradores inativos.</div>'; return; }
+    var html='<div style="font-size:12px;color:var(--muted);border-top:1px solid var(--border);padding:8px 0 4px">Colaboradores inativos ('+rows.length+')</div>';
+    rows.forEach(function(r){ window._rhInativosMap[r.id]=r.nome;
+      html+='<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;margin-bottom:6px">'
+        +'<span style="flex:1;color:var(--txt2)">'+esc(r.nome)+' <span style="color:var(--muted);font-size:11px">· '+esc(r.funcao||'')+'</span></span>'
+        +'<button onclick="rhRestoreColab(\''+r.id+'\')" style="cursor:pointer;background:transparent;border:1px solid #3fcf8e;color:#3fcf8e;border-radius:6px;padding:4px 10px">♻️ Restaurar</button>'
+        +'<button onclick="rhHardDeleteColab(\''+r.id+'\')" style="cursor:pointer;background:transparent;border:1px solid var(--r);color:var(--r);border-radius:6px;padding:4px 10px">🗑️ Apagar definitivo</button>'
+        +'</div>';
+    });
+    box.innerHTML=html;
+  }
+
+  // ---- Carregar (fonte oficial) ----
+  window.rhLoadColabsFromSB = async function(){
+    var c=sb(); if(!c){ setStatus('sem ligação'); return false; }
+    setStatus('a carregar…');
+    try{
+      var res=await c.from(TABLE).select('*').is('deleted_at',null).order('nome',{ascending:true});
+      if(res.error){ console.error('[colab] load', res.error); setStatus('erro ao carregar'); return false; }
+      window.rhColabs=(res.data||[]).map(rowToColab);
+      try{ localStorage.setItem('ob-rh-colabs', JSON.stringify(rhColabs)); }catch(e){}
+      if(typeof rhRenderColabs==='function') rhRenderColabs();
+      ensureToolbar(); setStatus(rhColabs.length+' ativo(s)');
+      if(window._rhShowInativos) rhRenderInativos();
+      return true;
+    }catch(e){ console.error('[colab] load ex', e); setStatus('erro'); return false; }
+  };
+
+  // Entrada no RH: sincroniza app de pontos e carrega colaboradores do Supabase
+  window.rhRender=function(){
+    try{ if(typeof ecSyncFuncionarios==='function'){ ecSyncFuncionarios().then(function(){ rhLoadColabsFromSB(); }); } else { rhLoadColabsFromSB(); } }
+    catch(e){ rhLoadColabsFromSB(); }
+  };
+
+  // ---- Criar / Editar (gravação confirmada pelo backend) ----
+  window.rhSaveColab=async function(){
+    var nomeEl=document.getElementById('rh-c-nome'); var nome=nomeEl?nomeEl.value.trim():'';
+    if(!nome){ alert('Preenche o nome.'); return; }
+    var c=sb(); if(!c){ alert('Sem ligação ao Supabase. O colaborador NÃO foi guardado.'); return; }
+    var me=await uid();
+    if(!me){ alert('Sessão não autenticada — faz login novamente. O colaborador NÃO foi guardado.'); return; }
+    var payload=formToPayload();
+    try{
+      var res;
+      if(window.rhEditColabId){
+        payload.updated_by=me;
+        res=await c.from(TABLE).update(payload).eq('id', rhEditColabId).is('deleted_at',null).select();
+      } else {
+        payload.created_by=me;
+        res=await c.from(TABLE).insert(payload).select();
+      }
+      if(res.error){ console.error('[colab] save', res.error); alert('ERRO ao guardar no Supabase:\n'+(res.error.message||res.error)+'\n\nO colaborador NÃO foi guardado.'); return; }
+      if(!res.data || !res.data.length){ alert('Não foi possível confirmar a gravação (sem permissão de admin?).\nO colaborador NÃO foi guardado.'); return; }
+      closeModal();
+      await rhLoadColabsFromSB();
+    }catch(e){ console.error('[colab] save ex', e); alert('ERRO ao guardar:\n'+e+'\n\nO colaborador NÃO foi guardado.'); }
+  };
+
+  // ---- Desativar (soft-delete: recuperável) ----
+  window.rhDeleteColab=async function(){
+    if(!window.rhEditColabId) return;
+    var nome=(document.getElementById('rh-c-nome')||{}).value||'este colaborador';
+    if(!confirm('Desativar '+nome+'?\n\nFica inativo (deixa de aparecer na lista), mas pode ser restaurado depois.')) return;
+    var c=sb(); if(!c){ alert('Sem ligação ao Supabase.'); return; }
+    var me=await uid(); if(!me){ alert('Sessão não autenticada.'); return; }
+    try{
+      var res=await c.from(TABLE).update({ativo:false, deleted_at:new Date().toISOString(), deleted_by:me, updated_by:me}).eq('id', rhEditColabId).select();
+      if(res.error){ alert('ERRO ao desativar:\n'+(res.error.message||res.error)); return; }
+      closeModal(); await rhLoadColabsFromSB();
+    }catch(e){ alert('ERRO ao desativar:\n'+e); }
+  };
+
+  // ---- Restaurar ----
+  window.rhRestoreColab=async function(id){
+    var c=sb(); if(!c){ alert('Sem ligação ao Supabase.'); return; }
+    var me=await uid(); if(!me){ alert('Sessão não autenticada.'); return; }
+    try{
+      var res=await c.from(TABLE).update({ativo:true, deleted_at:null, deleted_by:null, updated_by:me}).eq('id', id).select();
+      if(res.error){ alert('ERRO ao restaurar:\n'+(res.error.message||res.error)); return; }
+      await rhLoadColabsFromSB(); rhRenderInativos();
+    }catch(e){ alert('ERRO ao restaurar:\n'+e); }
+  };
+
+  // ---- Apagar definitivo (irreversível; só admin) ----
+  window.rhHardDeleteColab=async function(id){
+    var nome=(window._rhInativosMap&&window._rhInativosMap[id])|| (document.getElementById('rh-c-nome')||{}).value ||'este registo';
+    if(!confirm('APAGAR DEFINITIVAMENTE "'+nome+'"?\n\nEsta ação é IRREVERSÍVEL — o registo é removido para sempre da base de dados.\nUsa isto apenas para registos de teste.')) return;
+    if(!confirm('Confirma mesmo apagar "'+nome+'" para sempre?')) return;
+    var c=sb(); if(!c){ alert('Sem ligação ao Supabase.'); return; }
+    try{
+      var res=await c.from(TABLE).delete().eq('id', id).select();
+      if(res.error){ alert('ERRO ao apagar:\n'+(res.error.message||res.error)); return; }
+      closeModal(); await rhLoadColabsFromSB(); rhRenderInativos();
+    }catch(e){ alert('ERRO ao apagar:\n'+e); }
+  };
+
+  // Injeta botão "Apagar definitivo" no modal de edição, ao lado de Desativar
+  var _origEdit=window.rhEditColab;
+  window.rhEditColab=function(id){
+    try{ if(typeof _origEdit==='function') _origEdit.apply(this, arguments); }catch(e){}
+    try{
+      var del=document.getElementById('rh-c-del'); if(del){ del.textContent='Desativar';
+        if(!document.getElementById('rh-c-harddel')){
+          var b=document.createElement('button'); b.id='rh-c-harddel'; b.type='button'; b.textContent='Apagar definitivo';
+          b.style.cssText='cursor:pointer;background:transparent;border:1px solid var(--r);color:var(--r);border-radius:6px;padding:6px 12px;margin-left:8px';
+          b.onclick=function(){ if(window.rhEditColabId) rhHardDeleteColab(window.rhEditColabId); };
+          del.parentNode.insertBefore(b, del.nextSibling);
+        } else { document.getElementById('rh-c-harddel').style.display=''; }
+      }
+    }catch(e){}
+  };
+  var _origOpen=window.rhOpenColab;
+  window.rhOpenColab=function(){ try{ if(typeof _origOpen==='function') _origOpen.apply(this, arguments); }catch(e){}
+    try{ var hd=document.getElementById('rh-c-harddel'); if(hd) hd.style.display='none'; }catch(e){} };
 })();
 </script>
 
