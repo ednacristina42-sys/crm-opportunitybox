@@ -26718,9 +26718,27 @@ async function obSbMesclarRemotoAntesDoBackup(){
   // 'ob-leads' já é enviado no wrapper de saveCrmLeads (secção 3)
 })();
 
+// Subscreve alterações em tempo real na tabela ob_crm_dados (leads/clientes/
+// atividades) — mesmo padrão já usado e comprovado em finIniciarRealtime()
+// para as Despesas. Sempre que a Leonor (ou outro dispositivo) gravar um
+// lead novo/atualizado no Supabase, este browser recebe o evento e volta a
+// mesclar+desenhar o board sem precisar de F5.
+var _obSbRealtimeCh = null;
+function obSbIniciarRealtimeLeads(){
+  var sb = (typeof crmSBClient==='function') ? crmSBClient() : null;
+  if(!sb || _obSbRealtimeCh) return;
+  try{
+    _obSbRealtimeCh = sb.channel('ob_crm_dados_rt')
+      .on('postgres_changes', { event:'*', schema:'public', table:'ob_crm_dados', filter:'chave=eq.ob-leads' }, function(){ obSbMesclarRemotoAntesDoBackup(); })
+      .on('postgres_changes', { event:'*', schema:'public', table:'ob_crm_dados', filter:'chave=eq.ob-crm-atividades' }, function(){ obSbMesclarRemotoAntesDoBackup(); })
+      .subscribe();
+  }catch(e){ console.warn('[SB-CRM] Realtime indisponível:', e.message||e); }
+}
+
 // ══ ARRANQUE ════════════════════════════════════════════════════════
 obGarantirChecklistsProducao();
 obSbBoot();
+obSbIniciarRealtimeLeads();
 setTimeout(obAtualizarPendencias,800);
 setInterval(obAtualizarPendencias,5*60*1000); // refresca a cada 5 minutos
 
