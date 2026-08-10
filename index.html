@@ -5555,6 +5555,18 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--txt);min-he
   .mv-drawer-hdr{padding:16px 46px 16px 16px}
 }
 
+/* ADD: Histórico de Faturação — cards clicáveis + cabeçalhos ordenáveis (isolado, reaproveita .mn/.tw/.mv-drawer já existentes) */
+#page-historico-faturacao .hf-kpi-card{transition:border-color .15s,transform .1s}
+#page-historico-faturacao .hf-kpi-card:hover{transform:translateY(-1px)}
+#page-historico-faturacao .hf-kpi-card.hf-active{border-color:var(--y)!important;box-shadow:0 0 0 1px var(--y) inset}
+#page-historico-faturacao .hf-rank-row{cursor:pointer;border-radius:8px;padding:4px 6px;margin:-4px -6px;transition:background .15s}
+#page-historico-faturacao .hf-rank-row:hover{background:rgba(255,255,255,.04)}
+#page-historico-faturacao .hf-rank-row.hf-active{background:rgba(250,204,21,.08)}
+#page-historico-faturacao th[data-sort]{cursor:pointer;user-select:none;white-space:nowrap}
+#page-historico-faturacao th[data-sort]:hover{color:var(--txt2)}
+#page-historico-faturacao th[data-sort] .hf-sort-ic{opacity:.5;font-size:10px;margin-left:3px}
+#page-historico-faturacao th[data-sort].hf-sort-active .hf-sort-ic{opacity:1;color:var(--y)}
+
 /* ADD: Meu Painel — action-cards (Centro de Comando): breakdown + botão
    de ação, em vez de um número isolado. Continua a reaproveitar .kpi. */
 .mp-action{display:flex;flex-direction:column}
@@ -8607,49 +8619,74 @@ tbody tr:hover{background:rgba(255,203,45,.05)}
     <div class="pg-hdr-top">
       <div class="pg-space-icon" style="background:var(--y)">📜</div>
       <div class="pg-title">Histórico de Faturação</div>
+      <div class="pg-actions">
+        <button class="tbtn" id="hf-sync-btn" onclick="hfSyncClick()" title="Ver o que é necessário para automatizar">🔄 Atualizar dados financeiros</button>
+      </div>
     </div>
   </div>
   <div class="admin-page">
-    <div style="font-size:12.5px;color:var(--muted);background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:8px 12px;margin-bottom:16px">
-      📖 Só leitura. Fonte: Google Sheet "Vendas 2026" (reconciliada com a Tesouraria). Não gera PDF, não envia para TOConline, não altera faturas emitidas pelo CRM (essas continuam em "Faturas").
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;font-size:12.5px;color:var(--muted);background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:8px 12px;margin-bottom:16px">
+      <span>📖 Só leitura. Fonte: Google Sheet "Vendas 2026" (reconciliada com a Tesouraria). Não gera PDF, não envia para TOConline, não altera faturas emitidas pelo CRM (essas continuam em "Faturas").</span>
+      <span id="hf-last-update" style="white-space:nowrap">&nbsp;</span>
     </div>
 
-    <div class="g4" style="margin-bottom:18px" id="hf-kpis">
-      <div class="mn">
+    <div class="g4" style="margin-bottom:14px" id="hf-kpis">
+      <div class="mn hf-kpi-card" id="hf-card-total" onclick="hfSetEstadoFilter('')" style="cursor:pointer">
         <div class="mnl">Total Faturado</div>
         <div class="mnv" id="hf-kpi-total">—</div>
         <div class="mns" id="hf-kpi-total-sub">&nbsp;</div>
       </div>
-      <div class="mn" style="border-color:rgba(63,207,142,.2)">
+      <div class="mn hf-kpi-card" id="hf-card-recebido" onclick="hfSetEstadoFilter('Recebido')" style="border-color:rgba(63,207,142,.2);cursor:pointer">
         <div class="mnl">Total Recebido</div>
         <div class="mnv" style="color:var(--g)" id="hf-kpi-recebido">—</div>
         <div class="mns" id="hf-kpi-recebido-sub">&nbsp;</div>
       </div>
-      <div class="mn" style="border-color:rgba(224,85,85,.3)">
+      <div class="mn hf-kpi-card" id="hf-card-naorecebido" onclick="hfSetEstadoFilter('Não Recebido')" style="border-color:rgba(224,85,85,.3);cursor:pointer">
         <div class="mnl">Total por Receber</div>
         <div class="mnv" style="color:var(--r)" id="hf-kpi-naorecebido">—</div>
         <div class="mns" id="hf-kpi-naorecebido-sub">&nbsp;</div>
       </div>
-      <div class="mn" style="border-color:rgba(245,196,0,.3)">
+      <div class="mn hf-kpi-card" id="hf-card-parcial" onclick="hfSetEstadoFilter('Recebido Parcial')" style="border-color:rgba(245,196,0,.3);cursor:pointer">
         <div class="mnl">Parcial</div>
         <div class="mnv" style="color:var(--y)" id="hf-kpi-parcial">—</div>
         <div class="mns" id="hf-kpi-parcial-sub">&nbsp;</div>
       </div>
     </div>
 
+    <div class="g4" style="margin-bottom:16px" id="hf-indicadores">
+      <div class="mn">
+        <div class="mnl">Nº Faturas</div>
+        <div class="mnv" id="hf-ind-n">—</div>
+      </div>
+      <div class="mn">
+        <div class="mnl">Ticket Médio</div>
+        <div class="mnv" id="hf-ind-ticket">—</div>
+      </div>
+      <div class="mn">
+        <div class="mnl">% Recebido</div>
+        <div class="mnv" style="color:var(--g)" id="hf-ind-pctrecebido">—</div>
+      </div>
+      <div class="mn">
+        <div class="mnl">Valor Vencido</div>
+        <div class="mnv" style="color:var(--r)" id="hf-ind-vencido">—</div>
+        <div class="mns" id="hf-ind-vencido-sub">&nbsp;</div>
+      </div>
+    </div>
+
     <div class="cc" style="margin-bottom:16px">
-      <div class="sh"><h2>Faturação por Comercial</h2></div>
+      <div class="sh"><h2>🏆 Ranking de Faturação</h2></div>
+      <div style="font-size:11.5px;color:var(--muted);margin-top:-8px;margin-bottom:10px">Separado do Ranking Comercial (esse continua a usar ob_orcamentos). Clique num comercial para filtrar a tabela.</div>
       <div id="hf-por-comercial" style="display:flex;flex-direction:column;gap:8px">—</div>
     </div>
 
     <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:14px">
       <div>
         <label style="display:block;font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:4px">Pesquisa</label>
-        <input id="hf-search" class="form-input" placeholder="🔍 Nº fatura ou cliente…" style="padding:6px 10px;font-size:13px;min-width:200px" oninput="hfRenderTable()">
+        <input id="hf-search" class="form-input" placeholder="🔍 Nº fatura ou cliente…" style="padding:6px 10px;font-size:13px;min-width:200px" oninput="hfPage(0)">
       </div>
       <div>
         <label style="display:block;font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:4px">Estado</label>
-        <select id="hf-f-estado" onchange="hfRenderTable()" style="background:var(--bg3);border:1px solid var(--border);color:var(--txt2);border-radius:7px;padding:6px 10px;font-size:13px">
+        <select id="hf-f-estado" onchange="hfPage(0)" style="background:var(--bg3);border:1px solid var(--border);color:var(--txt2);border-radius:7px;padding:6px 10px;font-size:13px">
           <option value="">Todos</option>
           <option value="Recebido">Recebido</option>
           <option value="Não Recebido">Não Recebido</option>
@@ -8658,16 +8695,49 @@ tbody tr:hover{background:rgba(255,203,45,.05)}
       </div>
       <div>
         <label style="display:block;font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:4px">Comercial</label>
-        <select id="hf-f-comercial" onchange="hfRenderTable()" style="background:var(--bg3);border:1px solid var(--border);color:var(--txt2);border-radius:7px;padding:6px 10px;font-size:13px">
+        <select id="hf-f-comercial" onchange="hfPage(0)" style="background:var(--bg3);border:1px solid var(--border);color:var(--txt2);border-radius:7px;padding:6px 10px;font-size:13px">
           <option value="">Todos</option>
         </select>
       </div>
+      <div>
+        <label style="display:block;font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:4px">Ano</label>
+        <select id="hf-f-ano" onchange="hfPage(0)" style="background:var(--bg3);border:1px solid var(--border);color:var(--txt2);border-radius:7px;padding:6px 10px;font-size:13px">
+          <option value="">Todos</option>
+        </select>
+      </div>
+      <div>
+        <label style="display:block;font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:4px">Mês</label>
+        <select id="hf-f-mes" onchange="hfPage(0)" style="background:var(--bg3);border:1px solid var(--border);color:var(--txt2);border-radius:7px;padding:6px 10px;font-size:13px">
+          <option value="">Todos</option>
+          <option value="01">Janeiro</option><option value="02">Fevereiro</option><option value="03">Março</option>
+          <option value="04">Abril</option><option value="05">Maio</option><option value="06">Junho</option>
+          <option value="07">Julho</option><option value="08">Agosto</option><option value="09">Setembro</option>
+          <option value="10">Outubro</option><option value="11">Novembro</option><option value="12">Dezembro</option>
+        </select>
+      </div>
+      <div>
+        <label style="display:block;font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:4px">De</label>
+        <input id="hf-f-de" type="date" onchange="hfPage(0)" style="background:var(--bg3);border:1px solid var(--border);color:var(--txt2);border-radius:7px;padding:5px 8px;font-size:13px">
+      </div>
+      <div>
+        <label style="display:block;font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:4px">Até</label>
+        <input id="hf-f-ate" type="date" onchange="hfPage(0)" style="background:var(--bg3);border:1px solid var(--border);color:var(--txt2);border-radius:7px;padding:5px 8px;font-size:13px">
+      </div>
+      <div>
+        <label style="display:block;font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:4px">Valor mín.</label>
+        <input id="hf-f-valmin" type="number" placeholder="€" onchange="hfPage(0)" style="background:var(--bg3);border:1px solid var(--border);color:var(--txt2);border-radius:7px;padding:5px 8px;font-size:13px;width:90px">
+      </div>
+      <div>
+        <label style="display:block;font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:4px">Valor máx.</label>
+        <input id="hf-f-valmax" type="number" placeholder="€" onchange="hfPage(0)" style="background:var(--bg3);border:1px solid var(--border);color:var(--txt2);border-radius:7px;padding:5px 8px;font-size:13px;width:90px">
+      </div>
+      <button class="tbtn" style="color:#f87171" onclick="hfClearFilters()">Limpar filtros</button>
     </div>
 
     <div class="tw">
       <table>
         <thead>
-          <tr><th>Nº Fatura</th><th>Data</th><th>Cliente</th><th>Comercial</th><th>Valor Líq.</th><th>IVA</th><th>Total c/IVA</th><th>Vencimento</th><th>Data Receb.</th><th>Estado</th></tr>
+          <tr id="hf-thead-row"></tr>
         </thead>
         <tbody id="hf-tbody">
           <tr><td colspan="10" style="text-align:center;color:var(--muted);padding:20px">A carregar…</td></tr>
@@ -8683,6 +8753,16 @@ tbody tr:hover{background:rgba(255,203,45,.05)}
       </span>
     </div>
   </div>
+</div>
+
+<div class="mv-drawer-overlay" id="hf-drawer-overlay" onclick="hfCloseDrawer()"></div>
+<div class="mv-drawer" id="hf-drawer">
+  <div class="mv-drawer-hdr">
+    <button class="mv-drawer-close" id="hf-drawer-close" onclick="hfCloseDrawer()">✕</button>
+    <div id="hf-drawer-num" style="font-size:12px;color:var(--mv-y,#facc15);font-weight:700"></div>
+    <div id="hf-drawer-cliente" style="font-size:17px;font-weight:700;margin-top:2px"></div>
+  </div>
+  <div class="mv-drawer-body" id="hf-drawer-body"></div>
 </div>
 
 <div id="page-financeiro" class="app-page">
@@ -25450,6 +25530,9 @@ var MV_META_CONFIG = {
   porComercial: { 'Rui Mota': 500000, 'Paulo Faria': 450000, 'Humberto Estrelinha': 350000 }
 };
 
+// Deprecado: _mvRenderRecebimentos já não usa esta config — lê ao vivo o mesmo
+// blob 'ob-tes-receber' (Tesouraria/Histórico de Faturação) via _mvEnsureTesData().
+// Mantido só como referência histórica do valor que existia antes da ligação real.
 var MV_RECEBIMENTOS_CONFIG = {
   global: { recebido: 694420.61, naoRecebido: 162065.85, parcial: 6431.67 },
   porComercial: {
@@ -25465,6 +25548,7 @@ var MV_ESTADO_DOT   = { 'Pendente':'#3b82f6', 'Aprovado':'#facc15', 'Faturado':'
 var MV_PIE_PALETTE  = ['#facc15','#3b82f6','#22c55e','#f97316','#a855f7','#64748b','#ec4899','#14b8a6'];
 
 var _mvData = null, _mvLoading = false;
+var _mvTesData = null, _mvTesLoading = false;
 var _mvFilters = { periodo:'', comercial:'', estado:'', origem:'', tipoProd:'', cliente:'', busca:'' };
 var _mvSort = { campo:'data', dir:'desc' };
 var _mvPage = 1;
@@ -25531,6 +25615,24 @@ async function _mvEnsureData(){
   }catch(e){ console.warn('[MV] load exception:', e); _mvData = []; }
   _mvLoading = false;
   return _mvData;
+}
+
+// Recebimentos: mesma fonte real (blob 'ob-tes-receber') que alimenta Financeiro >
+// Histórico de Faturação — leitura independente própria, não depende do TES_RECEBER
+// em memória nem de _hfData da outra página.
+async function _mvEnsureTesData(){
+  if(_mvTesData) return _mvTesData;
+  if(_mvTesLoading) return null;
+  _mvTesLoading = true;
+  try{
+    var sb = (typeof crmSBClient==='function') ? crmSBClient() : null;
+    if(!sb){ _mvTesData = []; _mvTesLoading=false; return _mvTesData; }
+    var res = await sb.from('ob_crm_dados').select('dados').eq('chave','ob-tes-receber').maybeSingle();
+    if(res.error){ console.warn('[MV] load recebimentos falhou:', res.error); _mvTesData = []; }
+    else { _mvTesData = (res.data && res.data.dados) || []; }
+  }catch(e){ console.warn('[MV] load recebimentos exception:', e); _mvTesData = []; }
+  _mvTesLoading = false;
+  return _mvTesData;
 }
 
 function _mvMinhasLinhas(rows){
@@ -25745,11 +25847,19 @@ function _mvRenderMetaComercial(view){
 function _mvRenderRecebimentos(view){
   var wrap = document.getElementById('mv-recebimentos-card');
   if(!wrap) return;
-  var src = view.isAdmin ? MV_RECEBIMENTOS_CONFIG.global : (MV_RECEBIMENTOS_CONFIG.porComercial[CU&&CU.name] || {recebido:0,naoRecebido:0,parcial:0});
+  if(_mvTesData===null){
+    wrap.innerHTML = '<div class="mv-card-title">🏦 Recebimentos</div><div class="mv-card-sub">A carregar dados reais da Tesouraria…</div>';
+    _mvEnsureTesData().then(function(){ _mvRenderRecebimentos(view); });
+    return;
+  }
+  var rows = _mvTesData || [];
+  var scoped = view.isAdmin ? rows : rows.filter(function(r){ return r.vendedor === (CU&&CU.name); });
+  var sum = function(estado){ return scoped.filter(function(r){return r.estado===estado;}).reduce(function(s,r){return s+(parseFloat(r.total)||0);},0); };
+  var src = { recebido: sum('Recebido'), naoRecebido: sum('Não Recebido'), parcial: sum('Recebido Parcial') };
   var total = src.recebido+src.naoRecebido+src.parcial;
   var pctRec = total>0 ? (src.recebido/total*100) : 0;
   wrap.innerHTML = '<div class="mv-card-title">🏦 Recebimentos</div>'
-    + '<div class="mv-card-sub">'+(view.isAdmin?'Indicador agregado global':'Indicador agregado — '+(CU?CU.name:''))+'</div>'
+    + '<div class="mv-card-sub">'+(view.isAdmin?'Dados reais (Tesouraria) — agregado global':'Dados reais (Tesouraria) — '+(CU?CU.name:''))+'</div>'
     + '<div style="display:flex;align-items:center;gap:16px;margin-top:8px">'
     + '<div style="position:relative;width:88px;height:88px;border-radius:50%;background:conic-gradient(#22c55e 0% '+pctRec+'%, #ef4444 '+pctRec+'% 100%);display:flex;align-items:center;justify-content:center;flex-shrink:0">'
       + '<div style="width:60px;height:60px;border-radius:50%;background:var(--mv-card);display:flex;flex-direction:column;align-items:center;justify-content:center">'
@@ -25760,7 +25870,7 @@ function _mvRenderRecebimentos(view){
       + '<div class="mv-mini" style="border-color:rgba(34,197,94,.2);background:rgba(34,197,94,.05)"><div class="mv-mini-lbl">Recebido</div><div class="mv-mini-val" style="color:#4ade80">'+_mvFmtEURFull(src.recebido)+'</div></div>'
       + '<div class="mv-mini" style="border-color:rgba(239,68,68,.2);background:rgba(239,68,68,.05)"><div class="mv-mini-lbl">Não Recebido</div><div class="mv-mini-val" style="color:#f87171">'+_mvFmtEURFull(src.naoRecebido)+'</div></div>'
     + '</div></div>'
-    + '<div style="font-size:10px;color:var(--mv-muted);margin-top:10px">⚠ Não existe ligação fatura↔orçamento — indicador agregado (MV_RECEBIMENTOS_CONFIG), não por linha.</div>';
+    + '<div style="font-size:10px;color:var(--mv-muted);margin-top:10px">⚠ Não existe ligação fatura↔orçamento — indicador agregado a partir da Tesouraria (Financeiro → Histórico de Faturação), não por linha de orçamento.</div>';
 }
 
 function _mvChart(id, cfg){
@@ -27513,10 +27623,26 @@ if(typeof window.goPage==='function'){
 
 var _hfData = null;
 var _hfLoading = false;
+var _hfLastUpdate = null;
 var _hfPage = 1;
 var HF_PAGE_SIZE = 15;
+var _hfFilters = { busca:'', estado:'', comercial:'', ano:'', mes:'', de:'', ate:'', valMin:'', valMax:'' };
+var _hfSort = { campo:'dataEmissao', dir:'desc' };
+var HF_COLS = [
+  { key:'_sheetId',    lbl:'Nº Fatura',    sort:true  },
+  { key:'dataEmissao', lbl:'Data',         sort:true  },
+  { key:'cliente',     lbl:'Cliente',      sort:true  },
+  { key:'vendedor',    lbl:'Comercial',    sort:true  },
+  { key:'valorLiq',    lbl:'Valor Líq.',   sort:false },
+  { key:'ivaPct',      lbl:'IVA',          sort:false },
+  { key:'total',       lbl:'Total c/IVA',  sort:true  },
+  { key:'vencimento',  lbl:'Vencimento',   sort:false },
+  { key:'dataRec',     lbl:'Data Receb.',  sort:false },
+  { key:'estado',      lbl:'Estado',       sort:true  },
+];
 
 function _hfFmtEUR(v){ return (v||0).toLocaleString('pt-PT', {style:'currency', currency:'EUR'}); }
+function _hfFmtPct(v){ return (v||0).toLocaleString('pt-PT', {minimumFractionDigits:1, maximumFractionDigits:1})+'%'; }
 function _hfParseData(str){
   if(!str) return null;
   var m = String(str).trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
@@ -27532,9 +27658,9 @@ async function _hfEnsureData(){
   try{
     var sb = (typeof crmSBClient==='function') ? crmSBClient() : null;
     if(!sb){ _hfData = []; _hfLoading=false; return _hfData; }
-    var res = await sb.from('ob_crm_dados').select('dados').eq('chave','ob-tes-receber').maybeSingle();
+    var res = await sb.from('ob_crm_dados').select('dados,updated_at').eq('chave','ob-tes-receber').maybeSingle();
     if(res.error){ console.warn('[HF] load falhou:', res.error); _hfData = []; }
-    else { _hfData = (res.data && res.data.dados) || []; }
+    else { _hfData = (res.data && res.data.dados) || []; _hfLastUpdate = res.data && res.data.updated_at; }
   }catch(e){ console.warn('[HF] load exception:', e); _hfData = []; }
   _hfLoading = false;
   return _hfData;
@@ -27549,39 +27675,126 @@ function renderHistoricoFaturacao(){
     _hfEnsureData().then(function(){ renderHistoricoFaturacao(); });
     return;
   }
-  _hfRenderKpis();
-  _hfRenderPorComercial();
-  _hfBuildComercialFilter();
-  hfRenderTable();
+  _hfBuildFilters();
+  _hfRenderTableHeader();
+  _hfRenderLastUpdate();
+  _hfRenderAll();
 }
 window.renderHistoricoFaturacao = renderHistoricoFaturacao;
 
-function _hfRenderKpis(){
+function _hfRenderLastUpdate(){
+  var el = document.getElementById('hf-last-update');
+  if(!el) return;
+  if(!_hfLastUpdate){ el.textContent=''; return; }
+  var d = new Date(_hfLastUpdate);
+  el.textContent = 'Última atualização: '+d.toLocaleDateString('pt-PT')+' '+d.toLocaleTimeString('pt-PT',{hour:'2-digit',minute:'2-digit'});
+}
+
+function _hfBuildFilters(){
+  var selCom = document.getElementById('hf-f-comercial');
+  var selAno = document.getElementById('hf-f-ano');
+  if(selCom && !selCom.dataset.built){
+    var rows = _hfData || [];
+    var nomes = Array.from(new Set(rows.map(function(r){return r.vendedor;}).filter(Boolean))).sort();
+    selCom.innerHTML = '<option value="">Todos</option>' + nomes.map(function(n){ return '<option value="'+n.replace(/"/g,'&quot;')+'">'+n+'</option>'; }).join('');
+    selCom.dataset.built = '1';
+  }
+  if(selAno && !selAno.dataset.built){
+    var anos = Array.from(new Set((_hfData||[]).map(function(r){ var d=_hfParseData(r.dataEmissao||r.data); return d?d.getFullYear():null; }).filter(Boolean))).sort(function(a,b){return b-a;});
+    selAno.innerHTML = '<option value="">Todos</option>' + anos.map(function(a){ return '<option value="'+a+'">'+a+'</option>'; }).join('');
+    selAno.dataset.built = '1';
+  }
+}
+
+// opts.skipEstado / opts.skipComercial permitem calcular vistas "e se" para os
+// cards de KPI e o ranking, sem que o próprio filtro que eles disparam se auto-exclua.
+function _hfApplyFilters(rows, opts){
+  opts = opts || {};
+  var f = _hfFilters;
+  return rows.filter(function(r){
+    if(!opts.skipEstado && f.estado && r.estado!==f.estado) return false;
+    if(!opts.skipComercial && f.comercial && r.vendedor!==f.comercial) return false;
+    if(f.busca){
+      var hay = ((r._sheetId||'')+' '+(r.cliente||'')+' '+(r.nif||'')).toLowerCase();
+      if(hay.indexOf(f.busca)===-1) return false;
+    }
+    var d = _hfParseData(r.dataEmissao||r.data);
+    if(f.ano && (!d || String(d.getFullYear())!==f.ano)) return false;
+    if(f.mes && (!d || String(d.getMonth()+1).padStart(2,'0')!==f.mes)) return false;
+    if(f.de){ var dd=new Date(f.de+'T00:00:00'); if(!d || d<dd) return false; }
+    if(f.ate){ var da=new Date(f.ate+'T23:59:59'); if(!d || d>da) return false; }
+    var val = parseFloat(r.total)||0;
+    if(f.valMin!=='' && f.valMin!=null && val < parseFloat(f.valMin)) return false;
+    if(f.valMax!=='' && f.valMax!=null && val > parseFloat(f.valMax)) return false;
+    return true;
+  });
+}
+
+function _hfSyncFiltersFromDOM(){
+  var val = function(id){ var e=document.getElementById(id); return e ? e.value : ''; };
+  _hfFilters.busca = val('hf-search').toLowerCase();
+  _hfFilters.estado = val('hf-f-estado');
+  _hfFilters.comercial = val('hf-f-comercial');
+  _hfFilters.ano = val('hf-f-ano');
+  _hfFilters.mes = val('hf-f-mes');
+  _hfFilters.de = val('hf-f-de');
+  _hfFilters.ate = val('hf-f-ate');
+  _hfFilters.valMin = val('hf-f-valmin');
+  _hfFilters.valMax = val('hf-f-valmax');
+}
+
+function _hfRenderAll(){
   var rows = _hfData || [];
-  var recebido = rows.filter(function(r){return r.estado==='Recebido';});
-  var naoRecebido = rows.filter(function(r){return r.estado==='Não Recebido';});
-  var parcial = rows.filter(function(r){return r.estado==='Recebido Parcial';});
+  _hfRenderKpis(rows);
+  _hfRenderIndicadores(rows);
+  _hfRenderPorComercial(rows);
+  _hfUpdateActiveStyles();
+  hfRenderTable();
+}
+
+function _hfRenderKpis(rows){
+  var view = _hfApplyFilters(rows, {skipEstado:true});
+  var recebido = view.filter(function(r){return r.estado==='Recebido';});
+  var naoRecebido = view.filter(function(r){return r.estado==='Não Recebido';});
+  var parcial = view.filter(function(r){return r.estado==='Recebido Parcial';});
   var sum = function(arr){ return arr.reduce(function(s,r){return s+(parseFloat(r.total)||0);},0); };
-  var totalFaturado = sum(rows);
-  var totalRecebido = sum(recebido);
-  var totalNaoRecebido = sum(naoRecebido);
-  var totalParcial = sum(parcial);
   var set = function(id, val){ var e=document.getElementById(id); if(e) e.textContent = val; };
-  set('hf-kpi-total', _hfFmtEUR(totalFaturado));
-  set('hf-kpi-total-sub', rows.length+' faturas');
-  set('hf-kpi-recebido', _hfFmtEUR(totalRecebido));
+  set('hf-kpi-total', _hfFmtEUR(sum(view)));
+  set('hf-kpi-total-sub', view.length+' faturas');
+  set('hf-kpi-recebido', _hfFmtEUR(sum(recebido)));
   set('hf-kpi-recebido-sub', recebido.length+' faturas');
-  set('hf-kpi-naorecebido', _hfFmtEUR(totalNaoRecebido));
+  set('hf-kpi-naorecebido', _hfFmtEUR(sum(naoRecebido)));
   set('hf-kpi-naorecebido-sub', naoRecebido.length+' faturas');
-  set('hf-kpi-parcial', _hfFmtEUR(totalParcial));
+  set('hf-kpi-parcial', _hfFmtEUR(sum(parcial)));
   set('hf-kpi-parcial-sub', parcial.length+' faturas');
 }
 
-function _hfRenderPorComercial(){
-  var rows = _hfData || [];
+function _hfRenderIndicadores(rows){
+  var view = _hfApplyFilters(rows);
+  var sum = function(arr){ return arr.reduce(function(s,r){return s+(parseFloat(r.total)||0);},0); };
+  var totalFaturado = sum(view);
+  var recebido = view.filter(function(r){return r.estado==='Recebido';});
+  var totalRecebido = sum(recebido);
+  var set = function(id, val){ var e=document.getElementById(id); if(e) e.textContent = val; };
+  set('hf-ind-n', view.length);
+  set('hf-ind-ticket', view.length ? _hfFmtEUR(totalFaturado/view.length) : '—');
+  set('hf-ind-pctrecebido', totalFaturado>0 ? _hfFmtPct(totalRecebido/totalFaturado*100) : '—');
+
+  // Valor vencido: só soma o que tem vencimento válido e não recebido, para não inventar dados.
+  var hoje = new Date();
+  var comVencimento = view.filter(function(r){ return r.estado!=='Recebido' && _hfParseData(r.vencimento); });
+  var vencidos = comVencimento.filter(function(r){ return _hfParseData(r.vencimento) < hoje; });
+  var totalVencido = sum(vencidos);
+  set('hf-ind-vencido', _hfFmtEUR(totalVencido));
+  var sub = document.getElementById('hf-ind-vencido-sub');
+  if(sub) sub.textContent = vencidos.length+' faturas vencidas ('+comVencimento.length+'/'+view.filter(function(r){return r.estado!=='Recebido';}).length+' com vencimento conhecido)';
+}
+
+function _hfRenderPorComercial(rows){
+  var view = _hfApplyFilters(rows, {skipComercial:true});
   var porCom = {};
-  rows.forEach(function(r){
-    var v = r.vendedor || '—';
+  view.forEach(function(r){
+    var v = r.vendedor || 'Sem comercial';
     if(!porCom[v]) porCom[v] = {total:0, n:0};
     porCom[v].total += (parseFloat(r.total)||0);
     porCom[v].n++;
@@ -27593,40 +27806,69 @@ function _hfRenderPorComercial(){
   if(!el) return;
   el.innerHTML = lista.map(function(c){
     var pct = maxV>0 ? (c.total/maxV*100) : 0;
-    return '<div>'
+    var isActive = _hfFilters.comercial===c.nome;
+    var clickable = c.nome!=='Sem comercial';
+    var nomeEsc = c.nome.replace(/'/g,"\\'");
+    return '<div class="hf-rank-row'+(isActive?' hf-active':'')+'"'+(clickable?" onclick=\"hfSetComercialFilter('"+nomeEsc+"')\"":'')+'>'
       + '<div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px"><span>'+c.nome+'</span><strong>'+_hfFmtEUR(c.total)+' <span style="color:var(--muted);font-weight:400">('+c.n+')</span></strong></div>'
       + '<div style="height:8px;border-radius:999px;background:var(--bg3);overflow:hidden"><div style="height:100%;border-radius:999px;background:var(--y);width:'+pct+'%"></div></div>'
       + '</div>';
   }).join('') || '<div style="color:var(--muted);font-size:13px">Sem dados.</div>';
 }
 
-function _hfBuildComercialFilter(){
-  var sel = document.getElementById('hf-f-comercial');
-  if(!sel || sel.dataset.built) return;
-  var rows = _hfData || [];
-  var nomes = Array.from(new Set(rows.map(function(r){return r.vendedor;}).filter(Boolean))).sort();
-  sel.innerHTML = '<option value="">Todos</option>' + nomes.map(function(n){ return '<option value="'+n.replace(/"/g,'&quot;')+'">'+n+'</option>'; }).join('');
-  sel.dataset.built = '1';
+function _hfUpdateActiveStyles(){
+  var map = { '':'hf-card-total', 'Recebido':'hf-card-recebido', 'Não Recebido':'hf-card-naorecebido', 'Recebido Parcial':'hf-card-parcial' };
+  Object.keys(map).forEach(function(k){
+    var el = document.getElementById(map[k]);
+    if(el) el.classList.toggle('hf-active', _hfFilters.estado===k && k!=='');
+  });
+  var totalCard = document.getElementById('hf-card-total');
+  if(totalCard) totalCard.classList.toggle('hf-active', _hfFilters.estado==='');
 }
 
+function _hfRenderTableHeader(){
+  var tr = document.getElementById('hf-thead-row');
+  if(!tr || tr.dataset.built) return;
+  tr.innerHTML = HF_COLS.map(function(c){
+    if(!c.sort) return '<th>'+c.lbl+'</th>';
+    return '<th data-sort="'+c.key+'" onclick="hfSortBy(\''+c.key+'\')">'+c.lbl+' <span class="hf-sort-ic">▾</span></th>';
+  }).join('');
+  tr.dataset.built = '1';
+}
+
+function _hfUpdateSortHeaderStyles(){
+  document.querySelectorAll('#hf-thead-row th[data-sort]').forEach(function(th){
+    var active = th.dataset.sort === _hfSort.campo;
+    th.classList.toggle('hf-sort-active', active);
+    var ic = th.querySelector('.hf-sort-ic');
+    if(ic) ic.textContent = active ? (_hfSort.dir==='asc' ? '▴' : '▾') : '▾';
+  });
+}
+
+function hfSortBy(campo){
+  if(_hfSort.campo===campo){ _hfSort.dir = (_hfSort.dir==='asc') ? 'desc' : 'asc'; }
+  else { _hfSort.campo = campo; _hfSort.dir = 'desc'; }
+  hfRenderTable();
+}
+window.hfSortBy = hfSortBy;
+
 function hfRenderTable(){
+  _hfSyncFiltersFromDOM();
   var rows = _hfData || [];
-  var busca = ((document.getElementById('hf-search')||{}).value||'').toLowerCase();
-  var fEstado = ((document.getElementById('hf-f-estado')||{}).value||'');
-  var fComercial = ((document.getElementById('hf-f-comercial')||{}).value||'');
-  var filtered = rows.filter(function(r){
-    if(fEstado && r.estado!==fEstado) return false;
-    if(fComercial && r.vendedor!==fComercial) return false;
-    if(busca){
-      var hay = ((r._sheetId||'')+' '+(r.cliente||'')).toLowerCase();
-      if(hay.indexOf(busca)===-1) return false;
-    }
-    return true;
-  });
+  var filtered = _hfApplyFilters(rows);
+
+  var campo = _hfSort.campo, dir = _hfSort.dir;
   filtered.sort(function(a,b){
-    var da = _hfParseData(a.dataEmissao||a.data), db = _hfParseData(b.dataEmissao||b.data);
-    return (db?db.getTime():0) - (da?da.getTime():0);
+    var va, vb;
+    if(campo==='dataEmissao'){ va=_hfParseData(a.dataEmissao||a.data); vb=_hfParseData(b.dataEmissao||b.data); va=va?va.getTime():0; vb=vb?vb.getTime():0; }
+    else if(campo==='total'){ va=parseFloat(a.total)||0; vb=parseFloat(b.total)||0; }
+    else if(campo==='_sheetId'){ va=parseFloat(a._sheetId)||0; vb=parseFloat(b._sheetId)||0; if(isNaN(va)) va=0; if(isNaN(vb)) vb=0; }
+    else { va=(a[campo]||'').toString().toLowerCase(); vb=(b[campo]||'').toString().toLowerCase(); }
+    if(va<vb) return dir==='asc' ? -1 : 1;
+    if(va>vb) return dir==='asc' ? 1 : -1;
+    return 0;
   });
+  _hfUpdateSortHeaderStyles();
 
   var totalPages = Math.max(1, Math.ceil(filtered.length/HF_PAGE_SIZE));
   if(_hfPage>totalPages) _hfPage = totalPages;
@@ -27638,11 +27880,12 @@ function hfRenderTable(){
   if(tbody){
     tbody.innerHTML = pageRows.length ? pageRows.map(function(r){
       var cor = estadoCor[r.estado] || 'var(--muted)';
-      return '<tr>'
+      var rid = String(r._sheetId||'').replace(/"/g,'&quot;');
+      return '<tr data-id="'+rid+'" style="cursor:pointer" onclick="hfOpenDrawer(\''+rid.replace(/'/g,"\\'")+'\')">'
         + '<td style="font-family:DM Mono,monospace;font-size:13px;color:var(--y)">'+(r._sheetId||'—')+'</td>'
         + '<td style="font-size:13px">'+(r.dataEmissao||r.data||'—')+'</td>'
         + '<td>'+(r.cliente||'—')+'</td>'
-        + '<td style="font-size:13px">'+(r.vendedor||'—')+'</td>'
+        + '<td style="font-size:13px">'+(r.vendedor||'Sem comercial')+'</td>'
         + '<td style="font-size:13px">'+_hfFmtEUR(parseFloat(r.valorLiq)||0)+'</td>'
         + '<td style="font-size:13px">'+(r.ivaPct||0)+'%</td>'
         + '<td style="font-weight:700">'+_hfFmtEUR(parseFloat(r.total)||0)+'</td>'
@@ -27658,10 +27901,99 @@ function hfRenderTable(){
 window.hfRenderTable = hfRenderTable;
 
 function hfPage(delta){
-  _hfPage += delta;
-  hfRenderTable();
+  _hfSyncFiltersFromDOM();
+  if(delta===0){ _hfPage = 1; }
+  else { _hfPage += delta; }
+  _hfRenderAll();
 }
 window.hfPage = hfPage;
+
+function hfSetEstadoFilter(estado){
+  var next = (_hfFilters.estado===estado) ? '' : estado;
+  _hfFilters.estado = next;
+  var sel = document.getElementById('hf-f-estado'); if(sel) sel.value = next;
+  _hfPage = 1;
+  _hfRenderAll();
+}
+window.hfSetEstadoFilter = hfSetEstadoFilter;
+
+function hfSetComercialFilter(nome){
+  var next = (_hfFilters.comercial===nome) ? '' : nome;
+  _hfFilters.comercial = next;
+  var sel = document.getElementById('hf-f-comercial'); if(sel) sel.value = next;
+  _hfPage = 1;
+  _hfRenderAll();
+}
+window.hfSetComercialFilter = hfSetComercialFilter;
+
+function hfClearFilters(){
+  _hfFilters = { busca:'', estado:'', comercial:'', ano:'', mes:'', de:'', ate:'', valMin:'', valMax:'' };
+  ['hf-search','hf-f-estado','hf-f-comercial','hf-f-ano','hf-f-mes','hf-f-de','hf-f-ate','hf-f-valmin','hf-f-valmax'].forEach(function(id){
+    var e = document.getElementById(id); if(e) e.value = '';
+  });
+  _hfPage = 1;
+  _hfRenderAll();
+}
+window.hfClearFilters = hfClearFilters;
+
+function hfOpenDrawer(sheetId){
+  var r = (_hfData||[]).find(function(x){ return String(x._sheetId)===String(sheetId); });
+  if(!r) return;
+  var estadoCor = { 'Recebido':'#4ade80', 'Não Recebido':'#f87171', 'Recebido Parcial':'#fde047' };
+  document.getElementById('hf-drawer-num').textContent = r._sheetId || '—';
+  document.getElementById('hf-drawer-cliente').textContent = r.cliente || '—';
+  var field = function(ic, lbl, val){
+    return '<div class="mv-field"><div class="mv-field-ic">'+ic+'</div><div><div class="mv-field-lbl">'+lbl+'</div><div class="mv-field-val">'+(val||'—')+'</div></div></div>';
+  };
+  var body = ''
+    + '<div style="margin-bottom:14px"><span style="font-size:12px;font-weight:700;color:'+(estadoCor[r.estado]||'#94a3b8')+'">'+(r.estado||'—')+'</span></div>'
+    + field('📅','DATA', r.dataEmissao||r.data)
+    + field('👤','COMERCIAL', r.vendedor||'Sem comercial (a reconciliar)')
+    + field('🏢','CLIENTE', r.cliente)
+    + field('🪪','NIF', r.nif)
+    + '<div class="mv-sep"></div>'
+    + field('💶','VALOR LÍQUIDO', _hfFmtEUR(parseFloat(r.valorLiq)||0))
+    + field('🧾','IVA', (r.ivaPct||0)+'%')
+    + field('💰','TOTAL COM IVA', _hfFmtEUR(parseFloat(r.total)||0))
+    + '<div class="mv-sep"></div>'
+    + field('⏰','VENCIMENTO', r.vencimento)
+    + field('✅','DATA DE RECEBIMENTO', r.dataRec)
+    + field('📁','PROJETO', r.projeto)
+    + field('📝','DESCRIÇÃO', r.descricao);
+  document.getElementById('hf-drawer-body').innerHTML = body;
+  document.getElementById('hf-drawer').classList.add('mv-open');
+  document.getElementById('hf-drawer-overlay').classList.add('mv-open');
+}
+window.hfOpenDrawer = hfOpenDrawer;
+
+function hfCloseDrawer(){
+  document.getElementById('hf-drawer').classList.remove('mv-open');
+  document.getElementById('hf-drawer-overlay').classList.remove('mv-open');
+}
+window.hfCloseDrawer = hfCloseDrawer;
+
+// Botão preparado, NÃO funcional em V1: sincronizar a Google Sheet a partir do
+// browser exigiria expor credenciais Google e/ou a service key do Supabase no
+// frontend — inseguro. A automação real tem de correr num backend (cenário
+// Make.com, reaproveitando a ligação Google Sheets já configurada nesta conta,
+// ou uma Supabase Edge Function) que faça o mesmo UPSERT seguro por _sheetId já
+// usado nesta reconciliação, sem apagar órfãos, e devolva um resumo.
+function hfSyncClick(){
+  alert(
+    '🔄 Atualização automática ainda não está ligada.\n\n' +
+    'Por segurança, isto não pode correr diretamente no browser (exigiria expor ' +
+    'credenciais da Google Sheet e/ou a chave do Supabase no frontend).\n\n' +
+    'Para automatizar sem depender de pedir a alguém para o fazer manualmente, é ' +
+    'preciso um cenário Make.com (a conta já tem uma ligação Google Sheets ativa ' +
+    'noutros cenários) ou uma Supabase Edge Function, correndo num horário ' +
+    'definido ou por webhook, que:\n' +
+    ' • lê "Vendas 2026";\n' +
+    ' • faz UPSERT por Nº de fatura em ob-tes-receber (nunca apaga o que não está na sheet);\n' +
+    ' • devolve adicionados / atualizados / preservados / erros.\n\n' +
+    'Os dados atuais foram sincronizados manualmente em '+ (_hfLastUpdate ? new Date(_hfLastUpdate).toLocaleString('pt-PT') : '—') +'.'
+  );
+}
+window.hfSyncClick = hfSyncClick;
 </script>
 
 </body>
