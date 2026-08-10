@@ -5555,6 +5555,18 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--txt);min-he
   .mv-drawer-hdr{padding:16px 46px 16px 16px}
 }
 
+/* ADD: Histórico de Faturação — cards clicáveis + cabeçalhos ordenáveis (isolado, reaproveita .mn/.tw/.mv-drawer já existentes) */
+#page-historico-faturacao .hf-kpi-card{transition:border-color .15s,transform .1s}
+#page-historico-faturacao .hf-kpi-card:hover{transform:translateY(-1px)}
+#page-historico-faturacao .hf-kpi-card.hf-active{border-color:var(--y)!important;box-shadow:0 0 0 1px var(--y) inset}
+#page-historico-faturacao .hf-rank-row{cursor:pointer;border-radius:8px;padding:4px 6px;margin:-4px -6px;transition:background .15s}
+#page-historico-faturacao .hf-rank-row:hover{background:rgba(255,255,255,.04)}
+#page-historico-faturacao .hf-rank-row.hf-active{background:rgba(250,204,21,.08)}
+#page-historico-faturacao th[data-sort]{cursor:pointer;user-select:none;white-space:nowrap}
+#page-historico-faturacao th[data-sort]:hover{color:var(--txt2)}
+#page-historico-faturacao th[data-sort] .hf-sort-ic{opacity:.5;font-size:10px;margin-left:3px}
+#page-historico-faturacao th[data-sort].hf-sort-active .hf-sort-ic{opacity:1;color:var(--y)}
+
 /* ADD: Meu Painel — action-cards (Centro de Comando): breakdown + botão
    de ação, em vez de um número isolado. Continua a reaproveitar .kpi. */
 .mp-action{display:flex;flex-direction:column}
@@ -5604,6 +5616,24 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--txt);min-he
 .fu-card-acoes{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px;padding-top:8px;border-top:1px solid var(--border)}
 .fu-card-acoes select,.fu-card-acoes .tbtn{font-size:11px;padding:4px 6px;background:var(--bg2);color:var(--txt2);border:1px solid var(--border);border-radius:6px;font-family:'Inter',sans-serif;cursor:pointer}
 .fu-cards-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px}
+
+/* ADD: Agente de Follow-up (Etapa 6) — reaproveita .fu-card, só acrescenta a
+   barra de cor por prioridade e o resumo admin por comercial. */
+.ag-card{border-left:3px solid var(--muted)}
+.ag-card.ag-urgente{border-left-color:var(--r)}
+.ag-card.ag-alta{border-left-color:var(--a)}
+.ag-card.ag-media{border-left-color:var(--y)}
+.ag-card.ag-baixa{border-left-color:var(--b)}
+.ag-card-badge{display:inline-block;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;padding:2px 7px;border-radius:5px;margin-bottom:5px}
+.ag-card-badge.ag-urgente{background:rgba(239,68,68,.15);color:var(--r)}
+.ag-card-badge.ag-alta{background:rgba(245,158,11,.15);color:var(--a)}
+.ag-card-badge.ag-media{background:rgba(250,204,21,.12);color:var(--y)}
+.ag-card-badge.ag-baixa{background:rgba(59,130,246,.12);color:var(--b)}
+.ag-card-motivo{font-size:12px;color:var(--txt2);margin-bottom:4px}
+.ag-card-acao{font-size:11.5px;color:var(--muted);font-style:italic;margin-bottom:6px}
+.ag-resumo-table{width:100%;border-collapse:collapse;font-size:12.5px}
+.ag-resumo-table th{padding:6px 10px;font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;text-align:left;border-bottom:1px solid var(--border)}
+.ag-resumo-table td{padding:6px 10px;border-bottom:1px solid var(--border);color:var(--txt2)}
 
 /* Tables */
 .tw{background:var(--bg2);border:1px solid var(--border);border-radius:8px;overflow:hidden}
@@ -6940,6 +6970,7 @@ tbody tr:hover{background:rgba(255,203,45,.05)}
       <button class="sl-item" id="ni-dashboard" data-action="goPage" data-page="dashboard"><span class="mk-ic">◈</span>Dashboard CFO</button>
       <button class="sl-item" id="ni-financeiro" data-action="goPage" data-page="financeiro"><span class="mk-ic">💶</span>Financeiro</button>
       <button class="sl-item" id="ni-tesouraria" data-action="goPage" data-page="tesouraria"><span class="mk-ic">🏦</span>Tesouraria</button>
+      <button class="sl-item" id="ni-historico-faturacao" data-action="goPage" data-page="historico-faturacao"><span class="mk-ic">📜</span>Histórico de Faturação</button>
       <button class="sl-item" data-action="goPage" data-page="admin-analise-vendas"><span class="mk-ic">📊</span>Análise de Vendas</button>
       <button class="sl-item" id="ni-relatorios" data-action="goPage" data-page="relatorios"><span class="mk-ic">📑</span>Relatórios</button>
       <button class="sl-item" onclick="goFaturasAdmin()"><span class="mk-ic">🧾</span>Faturas</button>
@@ -7128,6 +7159,13 @@ tbody tr:hover{background:rgba(255,203,45,.05)}
   </div>
   <div class="admin-page">
 
+    <!-- ADD: 🎯 Prioridades de Hoje (Etapa 7B) — Top 10 fixo do dia, gerado
+         e persistido por agObterTopHoje() (crmAtividades tipo:'TopHojeItem',
+         sem tabela nova). Populado por agRenderTopHoje(). -->
+    <div class="sh"><h2>🎯 Prioridades de Hoje</h2></div>
+    <div id="ag-tophoje-progresso" style="margin-bottom:10px"></div>
+    <div class="fu-cards-grid" id="ag-tophoje-cards" style="margin-bottom:20px"></div>
+
     <div class="sh"><h2>Prioridades de hoje</h2></div>
     <div class="g3">
       <div class="kpi kA mp-action">
@@ -7162,6 +7200,17 @@ tbody tr:hover{background:rgba(255,203,45,.05)}
         <tbody id="mp-lembretes-hoje"></tbody>
       </table>
     </div>
+
+    <!-- ADD: Centro de Prioridades Comerciais (Etapas 7/7B) — unifica Leads
+         parados, Orçamentos ativos, ações agendadas em atraso e Clientes (motor
+         da Etapa 6) num único feed deduplicado por nome normalizado, excluindo
+         o que já está no Top 10 de hoje de alguém. Sem tabela nova, sem IA a
+         inventar prioridades. Populado por agRenderCentroUnificado(), chamado
+         de dentro de renderMeuPainel(). Respeita "Ver como comercial". -->
+    <div class="sh"><h2>📋 Próximas Prioridades</h2></div>
+    <div id="ag-admin-resumo" style="display:none;margin-bottom:14px"></div>
+    <div id="ag-filtros-bar" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px"></div>
+    <div class="fu-cards-grid" id="ag-prioridades-cards"></div>
 
     <div class="sh"><h2>Resumo comercial</h2></div>
     <div class="g3">
@@ -8601,6 +8650,156 @@ tbody tr:hover{background:rgba(255,203,45,.05)}
 
 </div>
 
+<div id="page-historico-faturacao" class="app-page">
+  <div class="pg-hdr">
+    <div class="pg-hdr-top">
+      <div class="pg-space-icon" style="background:var(--y)">📜</div>
+      <div class="pg-title">Histórico de Faturação</div>
+      <div class="pg-actions">
+        <button class="tbtn" id="hf-sync-btn" onclick="hfSyncClick()" title="Ver o que é necessário para automatizar">🔄 Atualizar dados financeiros</button>
+      </div>
+    </div>
+  </div>
+  <div class="admin-page">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;font-size:12.5px;color:var(--muted);background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:8px 12px;margin-bottom:16px">
+      <span>📖 Só leitura. Fonte: Google Sheet "Vendas 2026" (reconciliada com a Tesouraria). Não gera PDF, não envia para TOConline, não altera faturas emitidas pelo CRM (essas continuam em "Faturas").</span>
+      <span id="hf-last-update" style="white-space:nowrap">&nbsp;</span>
+    </div>
+
+    <div class="g4" style="margin-bottom:14px" id="hf-kpis">
+      <div class="mn hf-kpi-card" id="hf-card-total" onclick="hfSetEstadoFilter('')" style="cursor:pointer">
+        <div class="mnl">Total Faturado</div>
+        <div class="mnv" id="hf-kpi-total">—</div>
+        <div class="mns" id="hf-kpi-total-sub">&nbsp;</div>
+      </div>
+      <div class="mn hf-kpi-card" id="hf-card-recebido" onclick="hfSetEstadoFilter('Recebido')" style="border-color:rgba(63,207,142,.2);cursor:pointer">
+        <div class="mnl">Total Recebido</div>
+        <div class="mnv" style="color:var(--g)" id="hf-kpi-recebido">—</div>
+        <div class="mns" id="hf-kpi-recebido-sub">&nbsp;</div>
+      </div>
+      <div class="mn hf-kpi-card" id="hf-card-naorecebido" onclick="hfSetEstadoFilter('Não Recebido')" style="border-color:rgba(224,85,85,.3);cursor:pointer">
+        <div class="mnl">Total por Receber</div>
+        <div class="mnv" style="color:var(--r)" id="hf-kpi-naorecebido">—</div>
+        <div class="mns" id="hf-kpi-naorecebido-sub">&nbsp;</div>
+      </div>
+      <div class="mn hf-kpi-card" id="hf-card-parcial" onclick="hfSetEstadoFilter('Recebido Parcial')" style="border-color:rgba(245,196,0,.3);cursor:pointer">
+        <div class="mnl">Parcial</div>
+        <div class="mnv" style="color:var(--y)" id="hf-kpi-parcial">—</div>
+        <div class="mns" id="hf-kpi-parcial-sub">&nbsp;</div>
+      </div>
+    </div>
+
+    <div class="g4" style="margin-bottom:16px" id="hf-indicadores">
+      <div class="mn">
+        <div class="mnl">Nº Faturas</div>
+        <div class="mnv" id="hf-ind-n">—</div>
+      </div>
+      <div class="mn">
+        <div class="mnl">Ticket Médio</div>
+        <div class="mnv" id="hf-ind-ticket">—</div>
+      </div>
+      <div class="mn">
+        <div class="mnl">% Recebido</div>
+        <div class="mnv" style="color:var(--g)" id="hf-ind-pctrecebido">—</div>
+      </div>
+      <div class="mn">
+        <div class="mnl">Valor Vencido</div>
+        <div class="mnv" style="color:var(--r)" id="hf-ind-vencido">—</div>
+        <div class="mns" id="hf-ind-vencido-sub">&nbsp;</div>
+      </div>
+    </div>
+
+    <div class="cc" style="margin-bottom:16px">
+      <div class="sh"><h2>🏆 Ranking de Faturação</h2></div>
+      <div style="font-size:11.5px;color:var(--muted);margin-top:-8px;margin-bottom:10px">Separado do Ranking Comercial (esse continua a usar ob_orcamentos). Clique num comercial para filtrar a tabela.</div>
+      <div id="hf-por-comercial" style="display:flex;flex-direction:column;gap:8px">—</div>
+    </div>
+
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:14px">
+      <div>
+        <label style="display:block;font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:4px">Pesquisa</label>
+        <input id="hf-search" class="form-input" placeholder="🔍 Nº fatura ou cliente…" style="padding:6px 10px;font-size:13px;min-width:200px" oninput="hfPage(0)">
+      </div>
+      <div>
+        <label style="display:block;font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:4px">Estado</label>
+        <select id="hf-f-estado" onchange="hfPage(0)" style="background:var(--bg3);border:1px solid var(--border);color:var(--txt2);border-radius:7px;padding:6px 10px;font-size:13px">
+          <option value="">Todos</option>
+          <option value="Recebido">Recebido</option>
+          <option value="Não Recebido">Não Recebido</option>
+          <option value="Recebido Parcial">Recebido Parcial</option>
+        </select>
+      </div>
+      <div>
+        <label style="display:block;font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:4px">Comercial</label>
+        <select id="hf-f-comercial" onchange="hfPage(0)" style="background:var(--bg3);border:1px solid var(--border);color:var(--txt2);border-radius:7px;padding:6px 10px;font-size:13px">
+          <option value="">Todos</option>
+        </select>
+      </div>
+      <div>
+        <label style="display:block;font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:4px">Ano</label>
+        <select id="hf-f-ano" onchange="hfPage(0)" style="background:var(--bg3);border:1px solid var(--border);color:var(--txt2);border-radius:7px;padding:6px 10px;font-size:13px">
+          <option value="">Todos</option>
+        </select>
+      </div>
+      <div>
+        <label style="display:block;font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:4px">Mês</label>
+        <select id="hf-f-mes" onchange="hfPage(0)" style="background:var(--bg3);border:1px solid var(--border);color:var(--txt2);border-radius:7px;padding:6px 10px;font-size:13px">
+          <option value="">Todos</option>
+          <option value="01">Janeiro</option><option value="02">Fevereiro</option><option value="03">Março</option>
+          <option value="04">Abril</option><option value="05">Maio</option><option value="06">Junho</option>
+          <option value="07">Julho</option><option value="08">Agosto</option><option value="09">Setembro</option>
+          <option value="10">Outubro</option><option value="11">Novembro</option><option value="12">Dezembro</option>
+        </select>
+      </div>
+      <div>
+        <label style="display:block;font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:4px">De</label>
+        <input id="hf-f-de" type="date" onchange="hfPage(0)" style="background:var(--bg3);border:1px solid var(--border);color:var(--txt2);border-radius:7px;padding:5px 8px;font-size:13px">
+      </div>
+      <div>
+        <label style="display:block;font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:4px">Até</label>
+        <input id="hf-f-ate" type="date" onchange="hfPage(0)" style="background:var(--bg3);border:1px solid var(--border);color:var(--txt2);border-radius:7px;padding:5px 8px;font-size:13px">
+      </div>
+      <div>
+        <label style="display:block;font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:4px">Valor mín.</label>
+        <input id="hf-f-valmin" type="number" placeholder="€" onchange="hfPage(0)" style="background:var(--bg3);border:1px solid var(--border);color:var(--txt2);border-radius:7px;padding:5px 8px;font-size:13px;width:90px">
+      </div>
+      <div>
+        <label style="display:block;font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:4px">Valor máx.</label>
+        <input id="hf-f-valmax" type="number" placeholder="€" onchange="hfPage(0)" style="background:var(--bg3);border:1px solid var(--border);color:var(--txt2);border-radius:7px;padding:5px 8px;font-size:13px;width:90px">
+      </div>
+      <button class="tbtn" style="color:#f87171" onclick="hfClearFilters()">Limpar filtros</button>
+    </div>
+
+    <div class="tw">
+      <table>
+        <thead>
+          <tr id="hf-thead-row"></tr>
+        </thead>
+        <tbody id="hf-tbody">
+          <tr><td colspan="10" style="text-align:center;color:var(--muted);padding:20px">A carregar…</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 2px 2px;font-size:12px;color:var(--muted)">
+      <span id="hf-count">—</span>
+      <span>
+        <button class="tbtn" style="font-size:12px;padding:3px 10px" onclick="hfPage(-1)">‹</button>
+        <span id="hf-pageinfo" style="margin:0 8px">—</span>
+        <button class="tbtn" style="font-size:12px;padding:3px 10px" onclick="hfPage(1)">›</button>
+      </span>
+    </div>
+  </div>
+</div>
+
+<div class="mv-drawer-overlay" id="hf-drawer-overlay" onclick="hfCloseDrawer()"></div>
+<div class="mv-drawer" id="hf-drawer">
+  <div class="mv-drawer-hdr">
+    <button class="mv-drawer-close" id="hf-drawer-close" onclick="hfCloseDrawer()">✕</button>
+    <div id="hf-drawer-num" style="font-size:12px;color:var(--mv-y,#facc15);font-weight:700"></div>
+    <div id="hf-drawer-cliente" style="font-size:17px;font-weight:700;margin-top:2px"></div>
+  </div>
+  <div class="mv-drawer-body" id="hf-drawer-body"></div>
+</div>
 
 <div id="page-financeiro" class="app-page">
   <div class="pg-hdr">
@@ -11275,6 +11474,7 @@ window.goPage=function goPage(id){
   if(id==='comercial-pipeline'&&typeof crmInit==='function')crmInit();
   if(id==='meu-painel'&&typeof renderMeuPainel==='function')renderMeuPainel();
   if(id==='mapa-vendas'&&typeof renderMapaVendas==='function')renderMapaVendas();
+  if(id==='historico-faturacao'&&typeof renderHistoricoFaturacao==='function')renderHistoricoFaturacao();
   if(id==='comercial-followup'&&typeof fuInitPage==='function')fuInitPage();
   if(id==='crm'){ try{ renderCRMKanban('crm-kanban-admin'); }catch(e){} }
   if(id==='equipa-campo'&&typeof loadEquipaCampoData==='function')loadEquipaCampoData();
@@ -12904,7 +13104,11 @@ function crmAddAtividade(leadId, tipo, texto, autor, opts){
     clienteId: opts.clienteId || null, due: opts.due || null,
     canal: opts.canal || null, prioridade: opts.prioridade || null,
     tags: Array.isArray(opts.tags) ? opts.tags : [], data: opts.data || null,
-    origem: opts.origem || null, acao: opts.acao || null
+    origem: opts.origem || null, acao: opts.acao || null,
+    // Passthrough genérico opcional — usado pelo Centro de Prioridades (Etapa 7B)
+    // para gravar metadados do item (itemKey/categoria/valor/etc) sem precisar
+    // de mais um campo fixo por funcionalidade nova.
+    extra: opts.extra || null
   });
   saveCrmAtividades();
 }
@@ -15272,9 +15476,9 @@ function _cliDynModal(titulo, corpoHTML, onOK, okLabel){
   ov.querySelector('#_cdm-ok').onclick=function(){ var r=true; try{ r=onOK(ov); }catch(e){ console.warn('[cli-acao]',e); } if(r!==false) close(); };
   return ov;
 }
-function cliRegistarContacto(){
+function cliRegistarContacto(tipoPreSel){
   var c=_cliAtual(); if(!c){ return; }
-  _cliDynModal('📇 Registar contacto',
+  var ovRef=_cliDynModal('📇 Registar contacto',
     '<div class="form-row"><div class="form-group"><label class="form-label">Tipo</label><select class="form-select" id="cli-ct-tipo"><option>Nota</option><option>Chamada</option><option>Email</option><option>Visita</option><option>WhatsApp</option></select></div>'
    +'<div class="form-group"><label class="form-label">Resultado</label><select class="form-select" id="cli-ct-res"><option value="">Selecione…</option><option>Interessado</option><option>Muito interessado</option><option>Proposta enviada</option><option>Aguardando decisão</option><option>Cliente ocupado</option><option>Ligar novamente</option><option>Sem resposta</option><option>Sem interesse</option></select></div></div>'
    +'<div class="form-group"><label class="form-label">Nota</label><textarea class="form-input" id="cli-ct-nota" rows="3" placeholder="O que aconteceu neste contacto…"></textarea></div>',
@@ -15289,6 +15493,7 @@ function cliRegistarContacto(){
       if(typeof showToast==='function') showToast('✓ Contacto registado');
       return true;
     }, 'Registar');
+  if(tipoPreSel && ovRef){ var tsel=ovRef.querySelector('#cli-ct-tipo'); if(tsel) tsel.value=tipoPreSel; }
 }
 function cliCriarLembrete(){
   var c=_cliAtual(); if(!c){ return; }
@@ -15334,8 +15539,30 @@ function cliEnviarWhatsApp(){
     }, 'Abrir WhatsApp');
   var ta=ov.querySelector('#cli-wa-msg'); if(ta) ta.value=sugestao;
 }
+// Mesmo padrão de cliEnviarWhatsApp() (mailto: em vez de wa.me) — usado pela
+// ação rápida "✉️ Email" do Agente de Follow-up (Etapa 6) e disponível na
+// própria ficha de cliente.
+function cliAbrirEmail(){
+  var c=_cliAtual(); if(!c){ return; }
+  var emailRaw=c.email||c.finEmail||'';
+  if(!emailRaw){ alert('Este cliente não tem email — não é possível abrir o cliente de email.'); return; }
+  var assuntoSug='OpportunityBox — '+(c.n||'contacto');
+  var ov=_cliDynModal('✉️ Enviar Email',
+    '<div style="font-size:12px;color:var(--muted);margin-bottom:8px;line-height:1.5">Para: <b style="color:var(--txt2)">'+emailRaw+'</b> · o assunto é <b>sugerido e editável</b>. Nada é enviado automaticamente — abre o teu cliente de email para confirmares o envio.</div>'
+   +'<div class="form-group"><label class="form-label">Assunto</label><input class="form-input" id="cli-em-assunto" type="text"></div>',
+    function(ov){
+      var assunto=(ov.querySelector('#cli-em-assunto')||{}).value||'';
+      window.open('mailto:'+encodeURIComponent(emailRaw)+'?subject='+encodeURIComponent(assunto),'_blank');
+      crmAddAtividade(c.leadId||null, 'Email', 'Email iniciado — '+(c.n||'cliente')+' | Assunto: '+assunto, (typeof CU!=='undefined'&&CU&&CU.name)?CU.name:'Sistema',
+        {clienteId:c.id, canal:'email', origem:'CRM', tags:['email']});
+      if(typeof showToast==='function') showToast('✓ Email aberto (registado)');
+      return true;
+    }, 'Abrir Email');
+  var inp=ov.querySelector('#cli-em-assunto'); if(inp) inp.value=assuntoSug;
+}
 window.cliRegistarContacto=cliRegistarContacto;
 window.cliCriarLembrete=cliCriarLembrete;
+window.cliAbrirEmail=cliAbrirEmail;
 window.cliEnviarWhatsApp=cliEnviarWhatsApp;
 
 function cliToggleIvaIsento(){
@@ -18423,6 +18650,7 @@ function renderAll(){
   safe(renderDashboardCFO,'dashboard-cfo');
   safe(renderMeuPainel,'meu-painel');
   safe(renderMapaVendas,'mapa-vendas');
+  safe(renderHistoricoFaturacao,'historico-faturacao');
   safe(renderFinanceiro,'financeiro');
   safe(renderRelatorios,'relatorios');
   safe(()=>uniInitAll(),'uni');
@@ -25049,7 +25277,11 @@ function obDiasEntre(data){
 function obLeadUltimaAtividade(l){
   var ts=null;
   try{
-    var a=(crmAtividades||[]).find(function(x){ return x.leadId===l.id; }); // unshift → mais recente primeiro
+    // tipo==='TopHojeItem' é bookkeeping interno do Centro de Prioridades
+    // (Etapa 7B/7C) — nunca conta como contacto real, senão gerar o Top 10
+    // "resetava" a contagem de dias-sem-contacto do próprio lead que acabou
+    // de entrar nele.
+    var a=(crmAtividades||[]).find(function(x){ return x.leadId===l.id && x.tipo!=='TopHojeItem'; }); // unshift → mais recente primeiro
     if(a) ts=new Date(a.ts);
   }catch(e){}
   var dtLead=null;
@@ -25322,7 +25554,10 @@ function renderMeuPainel(){
   // para o mais antigo — crmAddAtividade usa unshift())
   var ativEl=document.getElementById('mp-atividades-list');
   if(ativEl){
-    var todasAtiv=(typeof crmAtividades!=='undefined'&&crmAtividades)?crmAtividades:[];
+    // tipo==='TopHojeItem' é bookkeeping interno do Centro de Prioridades
+    // (Etapa 7B), não uma actividade real do comercial — não deve poluir
+    // este feed de "Últimas actividades".
+    var todasAtiv=((typeof crmAtividades!=='undefined'&&crmAtividades)?crmAtividades:[]).filter(function(a){ return a && a.tipo!=='TopHojeItem'; });
     var minhasAtiv= (isAdmin||!nome) ? todasAtiv : todasAtiv.filter(function(a){ return a.autor===nome; });
     var ultimas=minhasAtiv.slice(0,5);
     if(!ultimas.length){
@@ -25344,6 +25579,13 @@ function renderMeuPainel(){
   }
   // ADD: card "Lembretes de Hoje" — só leitura de crmAtividades + cliData.
   try{ mpRenderLembretesHoje(); }catch(e){}
+  // ADD: 🎯 Prioridades de Hoje (Etapa 7B) — Top 10 fixo do dia por comercial.
+  try{ agRenderTopHoje(); }catch(e){}
+  // ADD: Centro de Prioridades Comerciais (Etapa 7) — unifica Leads/Orçamentos/
+  // Clientes num único feed sem duplicar (substitui visualmente a Etapa 6
+  // "🤖 Prioridades do Agente"; agRenderPrioridades() continua definida e
+  // utilizável, só deixou de ser chamada aqui).
+  try{ agRenderCentroUnificado(); }catch(e){}
 }
 window.renderMeuPainel=renderMeuPainel;
 
@@ -25365,6 +25607,9 @@ var MV_META_CONFIG = {
   porComercial: { 'Rui Mota': 500000, 'Paulo Faria': 450000, 'Humberto Estrelinha': 350000 }
 };
 
+// Deprecado: _mvRenderRecebimentos já não usa esta config — lê ao vivo o mesmo
+// blob 'ob-tes-receber' (Tesouraria/Histórico de Faturação) via _mvEnsureTesData().
+// Mantido só como referência histórica do valor que existia antes da ligação real.
 var MV_RECEBIMENTOS_CONFIG = {
   global: { recebido: 694420.61, naoRecebido: 162065.85, parcial: 6431.67 },
   porComercial: {
@@ -25380,6 +25625,7 @@ var MV_ESTADO_DOT   = { 'Pendente':'#3b82f6', 'Aprovado':'#facc15', 'Faturado':'
 var MV_PIE_PALETTE  = ['#facc15','#3b82f6','#22c55e','#f97316','#a855f7','#64748b','#ec4899','#14b8a6'];
 
 var _mvData = null, _mvLoading = false;
+var _mvTesData = null, _mvTesLoading = false;
 var _mvFilters = { periodo:'', comercial:'', estado:'', origem:'', tipoProd:'', cliente:'', busca:'' };
 var _mvSort = { campo:'data', dir:'desc' };
 var _mvPage = 1;
@@ -25446,6 +25692,24 @@ async function _mvEnsureData(){
   }catch(e){ console.warn('[MV] load exception:', e); _mvData = []; }
   _mvLoading = false;
   return _mvData;
+}
+
+// Recebimentos: mesma fonte real (blob 'ob-tes-receber') que alimenta Financeiro >
+// Histórico de Faturação — leitura independente própria, não depende do TES_RECEBER
+// em memória nem de _hfData da outra página.
+async function _mvEnsureTesData(){
+  if(_mvTesData) return _mvTesData;
+  if(_mvTesLoading) return null;
+  _mvTesLoading = true;
+  try{
+    var sb = (typeof crmSBClient==='function') ? crmSBClient() : null;
+    if(!sb){ _mvTesData = []; _mvTesLoading=false; return _mvTesData; }
+    var res = await sb.from('ob_crm_dados').select('dados').eq('chave','ob-tes-receber').maybeSingle();
+    if(res.error){ console.warn('[MV] load recebimentos falhou:', res.error); _mvTesData = []; }
+    else { _mvTesData = (res.data && res.data.dados) || []; }
+  }catch(e){ console.warn('[MV] load recebimentos exception:', e); _mvTesData = []; }
+  _mvTesLoading = false;
+  return _mvTesData;
 }
 
 function _mvMinhasLinhas(rows){
@@ -25660,11 +25924,19 @@ function _mvRenderMetaComercial(view){
 function _mvRenderRecebimentos(view){
   var wrap = document.getElementById('mv-recebimentos-card');
   if(!wrap) return;
-  var src = view.isAdmin ? MV_RECEBIMENTOS_CONFIG.global : (MV_RECEBIMENTOS_CONFIG.porComercial[CU&&CU.name] || {recebido:0,naoRecebido:0,parcial:0});
+  if(_mvTesData===null){
+    wrap.innerHTML = '<div class="mv-card-title">🏦 Recebimentos</div><div class="mv-card-sub">A carregar dados reais da Tesouraria…</div>';
+    _mvEnsureTesData().then(function(){ _mvRenderRecebimentos(view); });
+    return;
+  }
+  var rows = _mvTesData || [];
+  var scoped = view.isAdmin ? rows : rows.filter(function(r){ return r.vendedor === (CU&&CU.name); });
+  var sum = function(estado){ return scoped.filter(function(r){return r.estado===estado;}).reduce(function(s,r){return s+(parseFloat(r.total)||0);},0); };
+  var src = { recebido: sum('Recebido'), naoRecebido: sum('Não Recebido'), parcial: sum('Recebido Parcial') };
   var total = src.recebido+src.naoRecebido+src.parcial;
   var pctRec = total>0 ? (src.recebido/total*100) : 0;
   wrap.innerHTML = '<div class="mv-card-title">🏦 Recebimentos</div>'
-    + '<div class="mv-card-sub">'+(view.isAdmin?'Indicador agregado global':'Indicador agregado — '+(CU?CU.name:''))+'</div>'
+    + '<div class="mv-card-sub">'+(view.isAdmin?'Dados reais (Tesouraria) — agregado global':'Dados reais (Tesouraria) — '+(CU?CU.name:''))+'</div>'
     + '<div style="display:flex;align-items:center;gap:16px;margin-top:8px">'
     + '<div style="position:relative;width:88px;height:88px;border-radius:50%;background:conic-gradient(#22c55e 0% '+pctRec+'%, #ef4444 '+pctRec+'% 100%);display:flex;align-items:center;justify-content:center;flex-shrink:0">'
       + '<div style="width:60px;height:60px;border-radius:50%;background:var(--mv-card);display:flex;flex-direction:column;align-items:center;justify-content:center">'
@@ -25675,7 +25947,7 @@ function _mvRenderRecebimentos(view){
       + '<div class="mv-mini" style="border-color:rgba(34,197,94,.2);background:rgba(34,197,94,.05)"><div class="mv-mini-lbl">Recebido</div><div class="mv-mini-val" style="color:#4ade80">'+_mvFmtEURFull(src.recebido)+'</div></div>'
       + '<div class="mv-mini" style="border-color:rgba(239,68,68,.2);background:rgba(239,68,68,.05)"><div class="mv-mini-lbl">Não Recebido</div><div class="mv-mini-val" style="color:#f87171">'+_mvFmtEURFull(src.naoRecebido)+'</div></div>'
     + '</div></div>'
-    + '<div style="font-size:10px;color:var(--mv-muted);margin-top:10px">⚠ Não existe ligação fatura↔orçamento — indicador agregado (MV_RECEBIMENTOS_CONFIG), não por linha.</div>';
+    + '<div style="font-size:10px;color:var(--mv-muted);margin-top:10px">⚠ Não existe ligação fatura↔orçamento — indicador agregado a partir da Tesouraria (Financeiro → Histórico de Faturação), não por linha de orçamento.</div>';
 }
 
 function _mvChart(id, cfg){
@@ -25964,6 +26236,824 @@ function mpRenderLembretesHoje(){
 }
 window.mpRenderLembretesHoje=mpRenderLembretesHoje;
 
+// ══ AGENTE COMERCIAL DE FOLLOW-UP (Etapa 6) ═════════════════════════
+// Motor determinístico de prioridades por CLIENTE (cliData), distinto do
+// motor de Follow-up de ORÇAMENTOS/LEADS já existente (fu*, mais abaixo) —
+// não o substitui nem duplica, cobre uma granularidade que ainda não
+// existia (carteira de clientes). Reutiliza sempre estruturas já existentes:
+// crmAtividades (tipo/resultado/due já usados por Registar Contacto e
+// Criar Lembrete), cliData (comercialResp/ultimaRelacao/totalFaturadoHist
+// vindos da importação Etapa 5), orcData (valor em negociação real).
+// Prioridade é puramente calculada, nunca persistida — não introduz estado
+// novo nem tabela nova. Regras v1 (ajustáveis nestas constantes):
+var AG_LIMITE_PROPOSTA_URGENTE = 14;      // dias sem retorno após "Proposta enviada" -> URGENTE (antes disso, ALTA)
+var AG_LIMITE_RELEVANTE_SEM_CONTACTO = 45; // dias sem contacto p/ cliente relevante (com faturação) -> MÉDIA
+var AG_LIMITE_REATIVACAO = 180;            // dias sem contacto p/ cliente antigo (qualquer faturação) -> BAIXA
+var AG_VALOR_RELEVANTE = 5000;             // €, separa "cliente relevante" (MÉDIA) de "reativação" (BAIXA)
+
+// "vendedor histórico" (c.comercialResp, quem realmente vendeu — nunca
+// alterado) vs "comercial ativo" (c.comercialAtivo, a quem a carteira
+// pertence hoje) — campos gravados na importação/reclassificação, nunca
+// recalculados aqui. Clientes com c.statusComercial==='reatribuir'
+// (ex-colaboradores como Andreia/Victor Horta) não geram prioridade para
+// nenhum comercial ativo; aparecem só na lista "a reatribuir" do admin.
+
+var AG_PRIORIDADES = {
+  urgente: {key:'urgente', label:'Urgente', ordem:0},
+  alta:    {key:'alta',    label:'Alta',    ordem:1},
+  media:   {key:'media',   label:'Média',   ordem:2},
+  baixa:   {key:'baixa',   label:'Baixa',   ordem:3}
+};
+
+function _agParseDue(d){
+  if(!d) return null;
+  var m=String(d).match(/^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2}))?/);
+  if(!m) return null;
+  return new Date(+m[1], +m[2]-1, +m[3], m[4]?+m[4]:23, m[5]?+m[5]:59);
+}
+function _agParseDataPT(d){
+  if(!d) return null;
+  var p=String(d).split('/'); if(p.length!==3) return null;
+  var dt=new Date(+p[2], +p[1]-1, +p[0]);
+  return isNaN(dt) ? null : dt;
+}
+
+// Avalia UM cliente e devolve {prioridade, motivo, proximaAcao, dias, ts} ou
+// null se não houver sinal nenhum que justifique aparecer na lista — evitar
+// gerar "prioridade" para os ~1700 clientes importados sem qualquer sinal
+// real seria puro ruído.
+function agAvaliarCliente(c, atividadesDoCliente){
+  var agora=new Date();
+  var lembreteAberto=atividadesDoCliente.find(function(a){ return a.tipo==='Lembrete' && !a.resultado; });
+  if(lembreteAberto){
+    var due=_agParseDue(lembreteAberto.due||lembreteAberto.data);
+    if(due && due<agora){
+      var diasVenc=Math.floor((agora-due)/86400000);
+      return {prioridade:'urgente', motivo:'Lembrete vencido há '+diasVenc+' dia'+(diasVenc===1?'':'s')+' ('+(lembreteAberto.acao||'Lembrete')+')',
+        proximaAcao:lembreteAberto.acao||'Cumprir o lembrete em atraso', dias:diasVenc, ativId:lembreteAberto.leadId, ts:lembreteAberto.ts, ref:lembreteAberto};
+    }
+    // lembrete aberto mas ainda não vencido (hoje/futuro) — já coberto pelo card "Lembretes de Hoje"; não gera prioridade aqui.
+  }
+
+  var ultimaComResultado=atividadesDoCliente.find(function(a){ return !!a.resultado; });
+  if(ultimaComResultado){
+    var dias=obDiasEntre(new Date(ultimaComResultado.ts));
+    var res=ultimaComResultado.resultado;
+    var houveAcaoDepois = atividadesDoCliente[0] && atividadesDoCliente[0].ts!==ultimaComResultado.ts;
+    if(res==='Sem interesse') return null; // cliente já disse que não quer — não perseguir
+    if(res==='Proposta enviada'){
+      if(dias>=AG_LIMITE_PROPOSTA_URGENTE) return {prioridade:'urgente', motivo:'Proposta enviada há '+dias+' dias sem resposta', proximaAcao:'Fazer follow-up urgente da proposta', dias:dias, ts:ultimaComResultado.ts, ref:ultimaComResultado};
+      return {prioridade:'alta', motivo:'Proposta enviada há '+dias+' dia'+(dias===1?'':'s')+' sem retorno', proximaAcao:'Confirmar receção e disponibilidade para avançar', dias:dias, ts:ultimaComResultado.ts, ref:ultimaComResultado};
+    }
+    if(res==='Aguardando decisão') return {prioridade:'alta', motivo:'Aguardando decisão do cliente há '+dias+' dia'+(dias===1?'':'s'), proximaAcao:'Confirmar decisão com o cliente', dias:dias, ts:ultimaComResultado.ts, ref:ultimaComResultado};
+    if(res==='Muito interessado' && !houveAcaoDepois) return {prioridade:'alta', motivo:'"Muito interessado" sem ação seguinte há '+dias+' dia'+(dias===1?'':'s'), proximaAcao:'Avançar negociação / enviar proposta', dias:dias, ts:ultimaComResultado.ts, ref:ultimaComResultado};
+    if(res==='Ligar novamente') return {prioridade:'alta', motivo:'Cliente pediu para ligar novamente', proximaAcao:'Ligar conforme pedido', dias:dias, ts:ultimaComResultado.ts, ref:ultimaComResultado};
+    if(res==='Interessado' || res==='Cliente ocupado' || res==='Sem resposta') return {prioridade:'media', motivo:'"'+res+'" há '+dias+' dia'+(dias===1?'':'s')+' sem novo contacto', proximaAcao:'Tentar novo contacto', dias:dias, ts:ultimaComResultado.ts, ref:ultimaComResultado};
+    return null;
+  }
+
+  // Sem nenhuma atividade registada com resultado — usar sinal financeiro real
+  // (vindo da importação Etapa 5), nunca inventado.
+  var ultimaRel=_agParseDataPT(c.ultimaRelacao);
+  var diasRel=ultimaRel ? obDiasEntre(ultimaRel) : null;
+  if(diasRel===null) return null; // sem qualquer sinal — não gerar ruído
+  var faturado=parseFloat(c.totalFaturadoHist||0);
+  if(faturado>=AG_VALOR_RELEVANTE && diasRel>=AG_LIMITE_RELEVANTE_SEM_CONTACTO){
+    return {prioridade:'media', motivo:'Cliente relevante ('+fmt(Math.round(faturado))+' faturados) sem contacto há '+diasRel+' dias', proximaAcao:'Retomar contacto — cliente de valor', dias:diasRel, ts:null, ref:null};
+  }
+  if(faturado>0 && diasRel>=AG_LIMITE_REATIVACAO){
+    return {prioridade:'baixa', motivo:'Cliente antigo sem atividade há '+diasRel+' dias — oportunidade de reativação', proximaAcao:'Avaliar reativação', dias:diasRel, ts:null, ref:null};
+  }
+  return null;
+}
+window.agAvaliarCliente = agAvaliarCliente;
+
+// Lista completa, já filtrada por "Ver como comercial" (mesmo padrão isAdmin/
+// minhas() usado em renderMeuPainel/mpRenderLembretesHoje) e ordenada por
+// prioridade e depois por dias (mais antigo primeiro).
+function agListaPrioridades(opts){
+  opts=opts||{};
+  var isAdmin=!!(typeof CU!=='undefined'&&CU&&CU.admin);
+  var nome=(typeof CU!=='undefined'&&CU)?CU.name:null;
+  var minhas=function(v){ return opts.todos||isAdmin||!nome||v===nome; };
+  var cli=(typeof cliData!=='undefined'&&cliData)?cliData:[];
+  var ativ=(typeof crmAtividades!=='undefined'&&crmAtividades)?crmAtividades:[];
+  var orcAll=(typeof orcData!=='undefined'&&orcData)?orcData:[];
+
+  // tipo==='TopHojeItem' é bookkeeping do Centro de Prioridades — excluído
+  // aqui pela mesma razão de obLeadUltimaAtividade/obOrcUltimaAtividade.
+  var porCliente={};
+  ativ.forEach(function(a){ if(a && a.clienteId!=null && a.tipo!=='TopHojeItem'){ (porCliente[a.clienteId]=porCliente[a.clienteId]||[]).push(a); } });
+
+  var out=[];
+  cli.forEach(function(c){
+    if(!c) return;
+    // Clientes de ex-colaboradores (statusComercial==='reatribuir') não geram
+    // prioridade para ninguém aqui — ficam só na lista "a reatribuir" do
+    // admin (agClientesAReatribuir), até serem distribuídos manualmente.
+    if(c.statusComercial==='reatribuir') return;
+    var comercialAtivo = (c.comercialAtivo!=null && c.comercialAtivo!=='') ? c.comercialAtivo : c.comercialResp;
+    if(!minhas(comercialAtivo)) return;
+    var av=agAvaliarCliente(c, porCliente[c.id]||[]);
+    if(!av) return;
+    var negociacao=orcAll.filter(function(o){ return o.cli===c.n && FU_ESTADOS_ORC_TERMINAIS.indexOf(o.st)===-1; })
+      .reduce(function(s,o){ return s+((typeof orcGetValorTotal==='function')?orcGetValorTotal(o):(o.val||0)); },0);
+    out.push({cliente:c, prioridade:av.prioridade, motivo:av.motivo, proximaAcao:av.proximaAcao, dias:av.dias, ultimaAtividadeTs:av.ts, valorNegociacao:negociacao, comercialAtivo:comercialAtivo});
+  });
+  out.sort(function(a,b){
+    var oa=AG_PRIORIDADES[a.prioridade].ordem, ob=AG_PRIORIDADES[b.prioridade].ordem;
+    if(oa!==ob) return oa-ob;
+    return (b.dias||0)-(a.dias||0);
+  });
+  return out;
+}
+window.agListaPrioridades = agListaPrioridades;
+
+function _agEsc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(ch){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]; }); }
+function _agFmtUltimaAtiv(item){
+  if(item.ultimaAtividadeTs){
+    var d=new Date(item.ultimaAtividadeTs);
+    return isNaN(d) ? '—' : d.toLocaleDateString('pt-PT',{day:'2-digit',month:'2-digit',year:'2-digit'});
+  }
+  return item.cliente.ultimaRelacao || '—';
+}
+
+function agRenderPrioridades(){
+  var wrap=document.getElementById('ag-prioridades-cards');
+  if(!wrap) return;
+  var lista=agListaPrioridades();
+
+  if(!lista.length){
+    wrap.innerHTML='<div style="text-align:center;color:var(--muted);padding:22px;grid-column:1/-1">Sem prioridades pendentes — carteira em dia.</div>';
+  } else {
+    wrap.innerHTML=lista.map(function(item){
+      var c=item.cliente, p=AG_PRIORIDADES[item.prioridade];
+      var idAttr=_agEsc(JSON.stringify(c.id));
+      var valorLinha=item.valorNegociacao>0 ? ('<div class="fu-card-linha"><span>Em negociação:</span> '+fmt(Math.round(item.valorNegociacao))+'</div>') : '';
+      return '<div class="fu-card ag-card ag-'+p.key+'">'
+        +'<span class="ag-card-badge ag-'+p.key+'">'+p.label+'</span>'
+        +'<div class="fu-card-cliente">'+_agEsc(c.n)+'</div>'
+        +'<div class="ag-card-motivo">'+_agEsc(item.motivo)+'</div>'
+        +'<div class="ag-card-acao">→ '+_agEsc(item.proximaAcao)+'</div>'
+        +'<div class="fu-card-linha"><span>Comercial:</span> '+_agEsc(item.comercialAtivo||'—')+'</div>'
+        +'<div class="fu-card-linha"><span>Última atividade:</span> '+_agEsc(_agFmtUltimaAtiv(item))+'</div>'
+        +valorLinha
+        +'<div class="fu-card-acoes">'
+          +'<button class="tbtn" onclick="agLigar('+idAttr+')" title="Ligar">📞 Ligar</button>'
+          +'<button class="tbtn" onclick="agWhatsApp('+idAttr+')" title="WhatsApp">💬 WhatsApp</button>'
+          +'<button class="tbtn" onclick="agEmail('+idAttr+')" title="Email">✉️ Email</button>'
+          +'<button class="tbtn" onclick="agAdiar('+idAttr+')" title="Adiar">📅 Adiar</button>'
+          +'<button class="tbtn" onclick="agConcluir('+idAttr+')" title="Concluir">✅ Concluir</button>'
+          +'<button class="tbtn" onclick="agRegistarResultado('+idAttr+')" title="Registar resultado">📝 Registar</button>'
+        +'</div>'
+      +'</div>';
+    }).join('');
+  }
+
+  // Resumo admin — só visível para admin, agregado por comercial (nunca
+  // filtra dados por si só, só conta o que agListaPrioridades() já calculou
+  // com isAdmin=true, i.e. a carteira completa).
+  var resumoEl=document.getElementById('ag-admin-resumo');
+  if(!resumoEl) return;
+  var isAdmin=!!(typeof CU!=='undefined'&&CU&&CU.admin);
+  if(!isAdmin){ resumoEl.style.display='none'; resumoEl.innerHTML=''; return; }
+
+  var porComercial={};
+  var semFollowup=0, propostasAguardando=0;
+  var cli=(typeof cliData!=='undefined'&&cliData)?cliData:[];
+  var ativ=(typeof crmAtividades!=='undefined'&&crmAtividades)?crmAtividades:[];
+  var temAtividade={};
+  ativ.forEach(function(a){ if(a && a.clienteId!=null) temAtividade[a.clienteId]=true; });
+  cli.forEach(function(c){
+    if(c && c.statusComercial!=='reatribuir' && c.comercialAtivo && !temAtividade[c.id]) semFollowup++;
+  });
+  lista.forEach(function(item){
+    var com=item.comercialAtivo||'Sem comercial';
+    if(!porComercial[com]) porComercial[com]={urgente:0,alta:0,media:0,baixa:0,total:0};
+    porComercial[com][item.prioridade]++;
+    porComercial[com].total++;
+    if(/proposta enviada/i.test(item.motivo)) propostasAguardando++;
+  });
+  var nomes=Object.keys(porComercial).sort(function(a,b){ return porComercial[b].total-porComercial[a].total; });
+  var linhas=nomes.map(function(n){
+    var v=porComercial[n];
+    return '<tr><td>'+_agEsc(n)+'</td><td style="color:var(--r)">'+v.urgente+'</td><td style="color:var(--a)">'+v.alta+'</td><td style="color:var(--y)">'+v.media+'</td><td style="color:var(--b)">'+v.baixa+'</td><td><b>'+v.total+'</b></td></tr>';
+  }).join('');
+
+  // "A reatribuir" — clientes de ex-colaboradores (Andreia/Victor Horta),
+  // histórico preservado (c.comercialResp continua a mostrar quem vendeu),
+  // sem comercial ativo atribuído até decisão manual (não reatribuído aqui).
+  var reatribuir=agClientesAReatribuir();
+  var porHistorico={};
+  reatribuir.forEach(function(c){ var h=c.comercialResp||'—'; porHistorico[h]=(porHistorico[h]||0)+1; });
+  var reatribuirResumo=Object.keys(porHistorico).map(function(h){ return _agEsc(h)+': <b>'+porHistorico[h]+'</b>'; }).join(' · ');
+  // Lista clicável dos 41 clientes -- cada linha abre a ficha real (cliOpenEdit),
+  // para o admin poder chegar a cada um sem redistribuir nada automaticamente.
+  var reatribuirLinhas=reatribuir.slice().sort(function(a,b){ return (b.totalFaturadoHist||0)-(a.totalFaturadoHist||0); }).map(function(c){
+    var idAttr=_agEsc(JSON.stringify(c.id));
+    return '<tr style="cursor:pointer" onclick="cliOpenEdit('+idAttr+')">'
+      +'<td>'+_agEsc(c.n)+'</td>'
+      +'<td style="color:var(--muted)">'+_agEsc(c.comercialResp||'—')+'</td>'
+      +'<td style="font-family:\'DM Mono\',monospace;color:var(--y)">'+(c.totalFaturadoHist?fmt(Math.round(c.totalFaturadoHist)):'—')+'</td>'
+      +'<td><button class="tbtn" style="padding:3px 9px;font-size:11px" onclick="event.stopPropagation();cliOpenEdit('+idAttr+')">Abrir ficha</button></td>'
+    +'</tr>';
+  }).join('');
+
+  resumoEl.style.display='block';
+  resumoEl.innerHTML='<div class="tw"><table class="ag-resumo-table">'
+    +'<thead><tr><th>Comercial</th><th>Urgente</th><th>Alta</th><th>Média</th><th>Baixa</th><th>Total</th></tr></thead>'
+    +'<tbody>'+(linhas||'<tr><td colspan="6" style="text-align:center;color:var(--muted);font-style:italic">Sem prioridades geradas.</td></tr>')+'</tbody>'
+    +'</table></div>'
+    +'<div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:8px;font-size:12px;color:var(--muted)">'
+    +'<span><b style="color:var(--txt2)">'+semFollowup+'</b> clientes com comercial atribuído e nunca contactados</span>'
+    +'<span><b style="color:var(--txt2)">'+propostasAguardando+'</b> propostas a aguardar resposta</span>'
+    +'</div>'
+    +(reatribuir.length ? (
+      '<div style="margin-top:12px;padding:10px 14px;border-radius:8px;background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.25)">'
+      +'<div style="font-size:12.5px;font-weight:700;color:var(--a)">⚠ '+reatribuir.length+' cliente'+(reatribuir.length===1?'':'s')+' sem comercial ativo — necessita'+(reatribuir.length===1?'':'m')+' reatribuição</div>'
+      +'<div style="font-size:11.5px;color:var(--muted);margin:4px 0 10px">Vendedor histórico (preservado, já não está na empresa): '+reatribuirResumo+'. Distribuir manualmente entre Paulo Faria, Rui Mota, Humberto Estrelinha ou André Nolasco quando decidido — não é feito automaticamente.</div>'
+      +'<div class="tw" style="max-height:280px;overflow-y:auto"><table class="ag-resumo-table">'
+        +'<thead><tr><th>Cliente</th><th>Vendedor histórico</th><th>Faturado</th><th></th></tr></thead>'
+        +'<tbody>'+reatribuirLinhas+'</tbody>'
+      +'</table></div>'
+      +'</div>'
+    ) : '');
+}
+window.agRenderPrioridades = agRenderPrioridades;
+
+// Clientes cujo vendedor histórico já não está na empresa (statusComercial
+// ==='reatribuir', gravado na reclassificação — nunca calculado aqui).
+// Só usado no resumo admin; nunca é combinado com agListaPrioridades().
+function agClientesAReatribuir(){
+  var cli=(typeof cliData!=='undefined'&&cliData)?cliData:[];
+  return cli.filter(function(c){ return c && c.statusComercial==='reatribuir'; });
+}
+window.agClientesAReatribuir = agClientesAReatribuir;
+
+// ══ ETAPA 7 — CENTRO DE PRIORIDADES COMERCIAIS (unificação) ═══════
+// Junta 3 fontes já existentes num único feed, sem duplicar a mesma
+// oportunidade quando ela aparece em mais do que uma (Lead + Orçamento
+// ligado + Cliente com o mesmo nome):
+//   1) Leads parados + orçamentos ativos -> reaproveita fuDiasSemContacto/
+//      fuPrioridade/fuOrcamentosAtivos (motor de Follow-up já existente,
+//      NÃO reimplementado) + obAcoesAgendadas().atraso (ações agendadas
+//      vencidas, sinal que fuListaItens() não usa para a prioridade).
+//   2) Clientes -> agListaPrioridades({todos:true}) (motor da Etapa 6,
+//      inalterado, só chamado sem o filtro "minhas" para poder desduplicar
+//      antes de filtrar por comercial).
+//   3) Lembretes de hoje -> mpRenderLembretesHoje() já trata isso à parte
+//      (tabela própria, já existente) — não duplicado aqui.
+// Não substitui fuListaItens()/agListaPrioridades() nem os apaga — ambos
+// continuam a existir e utilizáveis; só deixam de ser renderizados em
+// duplicado no ecrã (Etapa 6 "🤖 Prioridades do Agente" foi substituída
+// visualmente por este Centro único).
+var AG_TIER_DE_FU = {perdido_sugerido:'urgente', critica:'urgente', alta:'alta', normal:'media', lembrete:'baixa', em_dia:null, sem_dados:null};
+
+function _agNormNome(v){
+  if(!v) return '';
+  var s=String(v).trim().toUpperCase();
+  try{ s=s.normalize('NFD').replace(/[̀-ͯ]/g,''); }catch(e){}
+  return s.replace(/[.,]/g,'').replace(/\s+/g,' ');
+}
+
+// Itens brutos de Leads + Orçamentos (sem desduplicar ainda) — reaproveita
+// fuDiasSemContacto/fuPrioridade/fuOrcamentosAtivos/obAcoesAgendadas.
+function agItensLeadsOrcamentos(){
+  var itens=[];
+  (crmLeads||[]).forEach(function(l){
+    if(FU_ESTADOS_LEAD_TERMINAIS.indexOf(l.st)!==-1) return;
+    var dias=fuDiasSemContacto({tipo:'lead', obj:l});
+    var prio=fuPrioridade(dias);
+    var tier=AG_TIER_DE_FU[prio.key];
+    if(!tier) return;
+    itens.push({tipo:'lead', nome:l.emp||l.n||'—', comercial:l.ass||'—', valor:l.val||0, dias:dias,
+      tier:tier, motivo:'Lead parado há '+dias+' dia'+(dias===1?'':'s')+' sem contacto',
+      proximaAcao:'Retomar contacto com o lead', origId:l.id, leadId:l.id});
+  });
+  (typeof fuOrcamentosAtivos==='function'?fuOrcamentosAtivos():[]).forEach(function(o){
+    var dias=fuDiasSemContacto({tipo:'orc', obj:o});
+    var prio=fuPrioridade(dias);
+    var tier=AG_TIER_DE_FU[prio.key];
+    if(!tier) return;
+    itens.push({tipo:'orc', nome:o.cli||'—', comercial:o.vendedor||'—',
+      valor:(typeof orcGetValorTotal==='function')?orcGetValorTotal(o):(o.val||0), dias:dias,
+      tier:tier, motivo:'Orçamento "'+(o.cli||'—')+'" sem resposta há '+dias+' dia'+(dias===1?'':'s'),
+      proximaAcao:'Fazer follow-up do orçamento', origId:o.num, leadId:o.leadId||null});
+  });
+  // Ações agendadas em atraso (sinal próprio, não coberto por fuPrioridade) -> URGENTE
+  var atraso=(typeof obAcoesAgendadas==='function')?obAcoesAgendadas().atraso:[];
+  atraso.forEach(function(x){
+    var l=x.lead, pa=x.pa;
+    if(FU_ESTADOS_LEAD_TERMINAIS.indexOf(l.st)!==-1) return;
+    var diasAtraso=obDiasEntre(new Date(pa.data));
+    itens.push({tipo:'lead', nome:l.emp||l.n||'—', comercial:l.ass||'—', valor:l.val||0, dias:(diasAtraso||0)+30,
+      tier:'urgente', motivo:'Ação agendada em atraso: '+(pa.tipo||'Ação')+' ('+pa.data.split('-').reverse().join('/')+')',
+      proximaAcao:pa.desc||pa.tipo||'Cumprir ação agendada', origId:l.id, leadId:l.id});
+  });
+  return itens;
+}
+window.agItensLeadsOrcamentos = agItensLeadsOrcamentos;
+
+var AG_TIER_ORDEM={urgente:0, alta:1, media:2, baixa:3};
+function _agTierDeCategoria(catIdx){
+  return catIdx<=1 ? 'urgente' : (catIdx<=3 ? 'alta' : (catIdx<=5 ? 'media' : 'baixa'));
+}
+
+// ── IDENTIDADE CANÓNICA ÚNICA (Etapa 7C) ────────────────────────────
+// Fonte ÚNICA de deduplicação para TODO o motor de prioridades — Centro de
+// Prioridades e Top Hoje passam a ler exatamente a mesma lista já
+// deduplicada, em vez de cada um fazer a sua própria passagem de dedup
+// (essa divergência era a causa da inconsistência "Restante da fila" vs
+// Top Hoje reportada). Junta os 3 domínios (Lead+Orçamento via
+// agItensLeadsOrcamentos, Cliente via agListaPrioridades, "hoje" via
+// agItensHoje) numa ÚNICA passagem de agrupamento por nome normalizado —
+// o vencedor de cada grupo (a categoria mais urgente, com maior dias/valor
+// em caso de empate) é O MESMO objeto reutilizado por qualquer chamador,
+// garantindo o mesmo tipo+origId (→ o mesmo _agItemKey) em toda a app.
+// Não altera nenhum dado original (cliData/crmLeads/orcData/crmAtividades)
+// — é só uma vista de leitura calculada a cada render.
+function agListaCanonica(){
+  var itensLO=agItensLeadsOrcamentos().map(function(it){
+    return Object.assign({}, it, {categoriaIdx: agClassificarCategoria(it.motivo)});
+  });
+  var itensCli=agListaPrioridades({todos:true}).map(function(x){
+    return {tipo:'cliente', nome:x.cliente.n, comercial:x.comercialAtivo||'—', valor:x.valorNegociacao||0,
+      dias:x.dias||0, tier:x.prioridade, motivo:x.motivo, proximaAcao:x.proximaAcao, origId:x.cliente.id,
+      ultimaAtividadeTs:x.ultimaAtividadeTs, ultimaRelacao:x.cliente.ultimaRelacao,
+      categoriaIdx: agClassificarCategoria(x.motivo)};
+  });
+  var itensHoje=agItensHoje(); // já vem com categoriaIdx:1 (ver definição mais abaixo)
+  var todos=itensLO.concat(itensCli).concat(itensHoje);
+  var totalBrutos=todos.length;
+
+  var grupos={};
+  todos.forEach(function(it){
+    var chave=_agNormNome(it.nome);
+    if(!chave || it.categoriaIdx==null) return;
+    var atual=grupos[chave];
+    if(!atual || it.categoriaIdx<atual.categoriaIdx || (it.categoriaIdx===atual.categoriaIdx && (it.dias||0)+(it.valor||0)>(atual.dias||0)+(atual.valor||0))){
+      grupos[chave]=it;
+    }
+  });
+  var lista=Object.keys(grupos).map(function(k){ return grupos[k]; });
+  lista.forEach(function(it){ if(!it.tier) it.tier=_agTierDeCategoria(it.categoriaIdx); });
+  return {lista:lista, duplicadosEliminados:totalBrutos-lista.length, totalBrutos:totalBrutos};
+}
+window.agListaCanonica = agListaCanonica;
+
+// Centro de Prioridades: vista sobre a lista canónica, filtrada por "minhas"
+// (carteira do comercial atual) e sem a categoria "hoje" (essa já tem o seu
+// próprio card "Lembretes de Hoje" — mostrá-la aqui também seria duplicar
+// no ecrã, não na identidade).
+function agListaUnificada(){
+  var isAdmin=!!(typeof CU!=='undefined'&&CU&&CU.admin);
+  var nomeCU=(typeof CU!=='undefined'&&CU)?CU.name:null;
+  var minhas=function(v){ return isAdmin||!nomeCU||v===nomeCU; };
+
+  var canon=agListaCanonica();
+  var lista=canon.lista
+    .filter(function(it){ return it.categoriaIdx!==1; })
+    .filter(function(it){ return minhas(it.comercial); });
+  lista.sort(function(a,b){
+    var oa=AG_TIER_ORDEM[a.tier], ob=AG_TIER_ORDEM[b.tier];
+    if(oa!==ob) return oa-ob;
+    return (b.dias||0)-(a.dias||0);
+  });
+  return {lista:lista, duplicadosEliminados:canon.duplicadosEliminados, totalBrutos:canon.totalBrutos};
+}
+window.agListaUnificada = agListaUnificada;
+
+var AG_TIPO_ICONE = {lead:'🔴', orc:'🟠', cliente:'🟡'};
+var AG_TIER_LABEL = {urgente:'Urgente', alta:'Alta', media:'Média', baixa:'Baixa'};
+
+// Abre a origem real do item (ficha de cliente, ou o lead/orçamento no
+// Pipeline/Orçamentos) — reaproveita cliOpenEdit/obAbrirLead/goPage já
+// existentes. Para leads/orçamentos ainda não há, no CRM, o mesmo conjunto
+// de 6 ações rápidas que a ficha de cliente tem (Ligar/WhatsApp/Email
+// dedicados) — em vez de inventar esse conjunto agora, os 6 botões dos
+// cards de Lead/Orçamento abrem a origem, onde as ferramentas já existentes
+// do Pipeline/Orçamentos ficam disponíveis. Fica documentado no relatório
+// como simplificação da v1 desta unificação.
+function agAbrirOrigem(item){
+  if(item.tipo==='cliente'){ cliOpenEdit(item.origId); return; }
+  if(item.leadId!=null){ obAbrirLead(item.leadId); return; }
+  goPage('comercial-orcamentos');
+}
+window.agAbrirOrigem = agAbrirOrigem;
+
+function _agFmtDias(item){
+  if(item.dias==null) return '—';
+  return item.dias+' dia'+(item.dias===1?'':'s');
+}
+
+// Todos os itemKey já promovidos ao Top 10 de HOJE, de qualquer comercial —
+// usado só para não repetir o mesmo item nas "Próximas Prioridades"
+// enquanto ele já está a ser trabalhado no Top 10 de alguém.
+function _agChavesTopHojeHoje(){
+  var hoje=_agHojeStr();
+  var s={};
+  (crmAtividades||[]).forEach(function(a){
+    if(a&&a.tipo==='TopHojeItem'&&a.data===hoje&&a.extra&&a.extra.itemKey) s[a.extra.itemKey]=true;
+  });
+  return s;
+}
+
+var _agFiltroAtivo='todas';
+var AG_FILTROS=[
+  {key:'todas',     label:'Todas'},
+  {key:'urgentes',  label:'Urgentes',  test:function(it){ return it.tier==='urgente'; }},
+  {key:'propostas', label:'Propostas', test:function(it){ return /Orçamento|Proposta enviada|Aguardando decisão/i.test(it.motivo); }},
+  {key:'leads',     label:'Leads',     test:function(it){ return it.tipo==='lead'; }},
+  {key:'clientes',  label:'Clientes',  test:function(it){ return it.tipo==='cliente'; }},
+  {key:'reativacao',label:'Reativação',test:function(it){ return /reativação/i.test(it.motivo); }}
+];
+function agFiltrarProximas(key){
+  _agFiltroAtivo=key;
+  try{ agRenderCentroUnificado(); }catch(e){}
+}
+window.agFiltrarProximas = agFiltrarProximas;
+function _agRenderFiltrosBar(){
+  var bar=document.getElementById('ag-filtros-bar');
+  if(!bar) return;
+  bar.innerHTML=AG_FILTROS.map(function(f){
+    var ativo=(f.key===_agFiltroAtivo);
+    return '<button class="tbtn'+(ativo?' y':'')+'" style="font-size:12px;padding:4px 11px" onclick="agFiltrarProximas(\''+f.key+'\')">'+f.label+'</button>';
+  }).join('');
+}
+
+function agRenderCentroUnificado(){
+  var wrap=document.getElementById('ag-prioridades-cards');
+  if(!wrap) return;
+  _agRenderFiltrosBar();
+  var res=agListaUnificada();
+  var jaNoTopHoje=_agChavesTopHojeHoje();
+  var lista=res.lista.filter(function(it){ return !jaNoTopHoje[_agItemKey(it)]; });
+  var filtro=AG_FILTROS.find(function(f){ return f.key===_agFiltroAtivo; });
+  if(filtro && filtro.test) lista=lista.filter(filtro.test);
+
+  if(!lista.length){
+    wrap.innerHTML='<div style="text-align:center;color:var(--muted);padding:22px;grid-column:1/-1">Sem prioridades pendentes — carteira em dia.</div>';
+  } else {
+    wrap.innerHTML=lista.map(function(item){
+      var idAttr=_agEsc(JSON.stringify(item.origId));
+      var valorLinha=item.valor>0 ? ('<div class="fu-card-linha"><span>Valor:</span> '+fmt(Math.round(item.valor))+'</div>') : '';
+      var acoes;
+      if(item.tipo==='cliente'){
+        acoes='<button class="tbtn" onclick="agLigar('+idAttr+')" title="Ligar">📞 Ligar</button>'
+          +'<button class="tbtn" onclick="agWhatsApp('+idAttr+')" title="WhatsApp">💬 WhatsApp</button>'
+          +'<button class="tbtn" onclick="agEmail('+idAttr+')" title="Email">✉️ Email</button>'
+          +'<button class="tbtn" onclick="agAdiar('+idAttr+')" title="Adiar">📅 Adiar</button>'
+          +'<button class="tbtn" onclick="agConcluir('+idAttr+')" title="Concluir">✅ Concluir</button>'
+          +'<button class="tbtn" onclick="agRegistarResultado('+idAttr+')" title="Registar resultado">📝 Registar</button>';
+      } else {
+        var itemJson=_agEsc(JSON.stringify(item));
+        acoes='<button class="tbtn" onclick="agAbrirOrigem('+itemJson+')" title="Abrir">↗ Abrir '+(item.tipo==='lead'?'lead':'orçamento')+'</button>';
+      }
+      return '<div class="fu-card ag-card ag-'+item.tier+'">'
+        +'<span class="ag-card-badge ag-'+item.tier+'">'+AG_TIER_LABEL[item.tier]+'</span>'
+        +'<div class="fu-card-cliente">'+(AG_TIPO_ICONE[item.tipo]||'')+' '+_agEsc(item.nome)+'</div>'
+        +'<div class="ag-card-motivo">'+_agEsc(item.motivo)+'</div>'
+        +'<div class="ag-card-acao">→ '+_agEsc(item.proximaAcao)+'</div>'
+        +'<div class="fu-card-linha"><span>Comercial:</span> '+_agEsc(item.comercial||'—')+'</div>'
+        +'<div class="fu-card-linha"><span>Há quanto tempo:</span> '+_agFmtDias(item)+'</div>'
+        +valorLinha
+        +'<div class="fu-card-acoes">'+acoes+'</div>'
+      +'</div>';
+    }).join('');
+  }
+
+  var resumoEl=document.getElementById('ag-admin-resumo');
+  if(!resumoEl) return;
+  var isAdmin=!!(typeof CU!=='undefined'&&CU&&CU.admin);
+  if(!isAdmin){ resumoEl.style.display='none'; resumoEl.innerHTML=''; return; }
+
+  var todosAdmin=agListaUnificada(); // já é "todos" quando CU é admin (minhas() sempre true)
+  var porComercial={}, porTipo={lead:0,orc:0,cliente:0};
+  todosAdmin.lista.forEach(function(item){
+    var com=item.comercial||'Sem comercial';
+    if(!porComercial[com]) porComercial[com]={urgente:0,alta:0,media:0,baixa:0,total:0};
+    porComercial[com][item.tier]++;
+    porComercial[com].total++;
+    porTipo[item.tipo]=(porTipo[item.tipo]||0)+1;
+  });
+  var nomes=Object.keys(porComercial).sort(function(a,b){ return porComercial[b].total-porComercial[a].total; });
+  var linhas=nomes.map(function(n){
+    var v=porComercial[n];
+    return '<tr><td>'+_agEsc(n)+'</td><td style="color:var(--r)">'+v.urgente+'</td><td style="color:var(--a)">'+v.alta+'</td><td style="color:var(--y)">'+v.media+'</td><td style="color:var(--b)">'+v.baixa+'</td><td><b>'+v.total+'</b></td></tr>';
+  }).join('');
+
+  var reatribuir=agClientesAReatribuir();
+  var porHistorico={};
+  reatribuir.forEach(function(c){ var h=c.comercialResp||'—'; porHistorico[h]=(porHistorico[h]||0)+1; });
+  var reatribuirResumo=Object.keys(porHistorico).map(function(h){ return _agEsc(h)+': <b>'+porHistorico[h]+'</b>'; }).join(' · ');
+  var reatribuirLinhas=reatribuir.slice().sort(function(a,b){ return (b.totalFaturadoHist||0)-(a.totalFaturadoHist||0); }).map(function(c){
+    var idAttr=_agEsc(JSON.stringify(c.id));
+    return '<tr style="cursor:pointer" onclick="cliOpenEdit('+idAttr+')">'
+      +'<td>'+_agEsc(c.n)+'</td>'
+      +'<td style="color:var(--muted)">'+_agEsc(c.comercialResp||'—')+'</td>'
+      +'<td style="font-family:\'DM Mono\',monospace;color:var(--y)">'+(c.totalFaturadoHist?fmt(Math.round(c.totalFaturadoHist)):'—')+'</td>'
+      +'<td><button class="tbtn" style="padding:3px 9px;font-size:11px" onclick="event.stopPropagation();cliOpenEdit('+idAttr+')">Abrir ficha</button></td>'
+    +'</tr>';
+  }).join('');
+
+  var resumoTop=agResumoTopHojeAdmin();
+  var topHojeLinha=resumoTop.map(function(r){
+    var texto=r.total ? (r.concluidas+'/'+r.total+' concluídas hoje') : 'sem prioridades';
+    var nomeVerComo="'"+r.nome.replace(/'/g,"\\'")+"'";
+    return '<div style="cursor:pointer" onclick="if(typeof obVerComoComerciais===\'function\'){var alvo=obVerComoComerciais().find(function(c){return c.name==='+nomeVerComo+';}); if(alvo&&typeof switchUser===\'function\') switchUser(alvo.id);}" title="Ver como '+_agEsc(r.nome)+'">'
+      +'<b style="color:var(--txt2)">'+_agEsc(r.nome.split(' ')[0])+'</b> — '+texto+'</div>';
+  }).join('');
+
+  resumoEl.style.display='block';
+  resumoEl.innerHTML='<div style="display:flex;gap:18px;flex-wrap:wrap;margin-bottom:12px;font-size:12.5px;padding:10px 14px;border-radius:8px;background:var(--bg2);border:1px solid var(--border)">'+topHojeLinha+'</div>'
+    +'<div class="tw"><table class="ag-resumo-table">'
+    +'<thead><tr><th>Comercial</th><th>Urgente</th><th>Alta</th><th>Média</th><th>Baixa</th><th>Total</th></tr></thead>'
+    +'<tbody>'+(linhas||'<tr><td colspan="6" style="text-align:center;color:var(--muted);font-style:italic">Sem prioridades geradas.</td></tr>')+'</tbody>'
+    +'</table></div>'
+    +'<div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:8px;font-size:12px;color:var(--muted)">'
+    +'<span>🔴 Leads/Orçamentos: <b style="color:var(--txt2)">'+(porTipo.lead+porTipo.orc)+'</b></span>'
+    +'<span>🟡 Clientes: <b style="color:var(--txt2)">'+porTipo.cliente+'</b></span>'
+    +'<span>Duplicados eliminados: <b style="color:var(--txt2)">'+todosAdmin.duplicadosEliminados+'</b></span>'
+    +'</div>'
+    +(reatribuir.length ? (
+      '<div style="margin-top:12px;padding:10px 14px;border-radius:8px;background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.25)">'
+      +'<div style="font-size:12.5px;font-weight:700;color:var(--a)">⚠ '+reatribuir.length+' cliente'+(reatribuir.length===1?'':'s')+' sem comercial ativo — necessita'+(reatribuir.length===1?'':'m')+' reatribuição</div>'
+      +'<div style="font-size:11.5px;color:var(--muted);margin:4px 0 10px">Vendedor histórico (preservado, já não está na empresa): '+reatribuirResumo+'. Distribuir manualmente entre Paulo Faria, Rui Mota, Humberto Estrelinha ou André Nolasco quando decidido — não é feito automaticamente.</div>'
+      +'<div class="tw" style="max-height:280px;overflow-y:auto"><table class="ag-resumo-table">'
+        +'<thead><tr><th>Cliente</th><th>Vendedor histórico</th><th>Faturado</th><th></th></tr></thead>'
+        +'<tbody>'+reatribuirLinhas+'</tbody>'
+      +'</table></div>'
+      +'</div>'
+    ) : '');
+}
+window.agRenderCentroUnificado = agRenderCentroUnificado;
+
+// ══ ETAPA 7B — AGENDA DIÁRIA (Top 10 de Hoje) ══════════════════════
+// Persistência: reaproveita ob-crm-atividades (chave já permitida por RLS
+// para o role 'comercial' e já sincronizada automaticamente — ver o wrap()
+// de saveCrmAtividades mais abaixo neste ficheiro). A seleção do Top 10 de
+// cada comercial em cada dia fica gravada como registos tipo:'TopHojeItem'
+// nesse mesmo array (ver crmAddAtividade opts.extra); NÃO é uma tabela nova
+// nem exige alteração de RLS. Uma vez gerado o Top 10 do dia, fica fixo —
+// concluir/adiar só muda o resultado desse registo, nunca gera outro para
+// o substituir (ver agObterTopHoje).
+var AG_CATEGORIAS=[
+  {key:'vencido',     label:'Follow-up/lembrete vencido',            match:/Lembrete vencido|Ação agendada em atraso/i},
+  {key:'hoje',        label:'Follow-up previsto para hoje',          match:null},
+  {key:'lead_urgente',label:'Lead parado urgente',                   match:/Lead parado/i},
+  {key:'proposta',    label:'Proposta aguardando resposta',          match:/Orçamento|Proposta enviada|Aguardando decisão/i},
+  {key:'compromisso', label:'Cliente com compromisso de contacto',   match:/Ligar novamente/i},
+  {key:'relevante',   label:'Cliente relevante sem contacto recente',match:/Cliente relevante|Muito interessado|Interessado|Cliente ocupado|Sem resposta/i},
+  {key:'reativacao',  label:'Reativação',                            match:/reativação/i}
+];
+function agClassificarCategoria(motivo){
+  for(var i=0;i<AG_CATEGORIAS.length;i++){
+    var c=AG_CATEGORIAS[i];
+    if(c.match && c.match.test(motivo)) return i;
+  }
+  return null;
+}
+function _agHojeStr(){
+  var pad=function(n){ return (n<10?'0':'')+n; };
+  var hj=new Date();
+  return hj.getFullYear()+'-'+pad(hj.getMonth()+1)+'-'+pad(hj.getDate());
+}
+function _agItemKey(it){ return it.tipo+':'+it.origId; }
+
+// Sinal "previsto para hoje" (categoria 1) — cliente com lembrete aberto
+// devido hoje (crmAtividades tipo=Lembrete) + lead com proximaAcao.data de
+// hoje (obAcoesAgendadas já separa isto para o card "hoje", mas aqui
+// precisamos da forma unificada, para poderem competir no Top 10).
+function agItensHoje(){
+  var hoje=_agHojeStr();
+  var out=[];
+  var cli=(typeof cliData!=='undefined'&&cliData)?cliData:[];
+  (crmAtividades||[]).forEach(function(a){
+    if(!a||a.tipo!=='Lembrete'||a.resultado) return;
+    var due=_agParseDue(a.due||a.data);
+    if(!due) return;
+    var pad=function(n){ return (n<10?'0':'')+n; };
+    var dueStr=due.getFullYear()+'-'+pad(due.getMonth()+1)+'-'+pad(due.getDate());
+    if(dueStr!==hoje) return;
+    var c=(a.clienteId!=null)?cli.find(function(x){ return x&&x.id===a.clienteId; }):null;
+    if(!c||c.statusComercial==='reatribuir') return;
+    var comercialAtivo=(c.comercialAtivo!=null&&c.comercialAtivo!=='')?c.comercialAtivo:c.comercialResp;
+    out.push({tipo:'cliente', nome:c.n, comercial:comercialAtivo||'—', valor:0, dias:0,
+      motivo:'Lembrete previsto para hoje: '+(a.acao||'Lembrete'), proximaAcao:a.acao||'Cumprir o lembrete de hoje',
+      origId:c.id, categoriaIdx:1});
+  });
+  (crmLeads||[]).forEach(function(l){
+    if(FU_ESTADOS_LEAD_TERMINAIS.indexOf(l.st)!==-1) return;
+    var pa=l.proximaAcao;
+    if(!pa||pa.data!==hoje) return;
+    out.push({tipo:'lead', nome:l.emp||l.n||'—', comercial:l.ass||'—', valor:l.val||0, dias:0,
+      motivo:'Ação agendada para hoje: '+(pa.tipo||'Ação'), proximaAcao:pa.desc||pa.tipo||'Cumprir ação agendada',
+      origId:l.id, leadId:l.id, categoriaIdx:1});
+  });
+  return out;
+}
+
+// Lista candidata completa (ordenada, NÃO cortada em 10) para UM comercial
+// específico — funciona tanto para o próprio comercial como para o admin a
+// consultar a carteira de outro (nunca "todos" ao mesmo tempo; o Top 10 é
+// sempre por pessoa). Lê a MESMA lista canónica que agListaUnificada() usa
+// (agListaCanonica) — mesma identidade/desduplicação em ambos, incluindo a
+// categoria "hoje" que o Centro esconde mas o Top Hoje precisa de considerar.
+function agCandidatosTopHoje(comercialAlvo){
+  var lista=agListaCanonica().lista.filter(function(it){ return it.comercial===comercialAlvo; });
+  lista=lista.slice();
+  lista.sort(function(a,b){
+    if(a.categoriaIdx!==b.categoriaIdx) return a.categoriaIdx-b.categoriaIdx;
+    if((b.dias||0)!==(a.dias||0)) return (b.dias||0)-(a.dias||0);
+    return (b.valor||0)-(a.valor||0);
+  });
+  return lista;
+}
+window.agCandidatosTopHoje = agCandidatosTopHoje;
+
+// Registos TopHojeItem já gravados hoje para este comercial (crmAtividades),
+// na ordem original de seleção (extra.ordem) — é a fonte de verdade fixa do
+// dia, não recalculada a cada render.
+function _agTopHojeArmazenado(comercialAlvo){
+  var hoje=_agHojeStr();
+  return (crmAtividades||[])
+    .filter(function(a){ return a&&a.tipo==='TopHojeItem'&&a.autor===comercialAlvo&&a.data===hoje&&a.extra; })
+    .sort(function(a,b){ return (a.extra.ordem||0)-(b.extra.ordem||0); });
+}
+
+// Gera (grava) o Top 10 do dia para este comercial, a partir dos candidatos
+// atuais — só deve ser chamado quando ainda não existe nenhum registo de
+// hoje para ele (ver agObterTopHoje). Grava no máximo 10, podendo gravar
+// menos se não houver 10 sinais reais (não preenche artificialmente).
+function agGerarTopHoje(comercialAlvo){
+  var candidatos=agCandidatosTopHoje(comercialAlvo).slice(0,10);
+  candidatos.forEach(function(it,i){
+    crmAddAtividade(it.leadId||null, 'TopHojeItem', 'Selecionado p/ Top 10 de hoje: '+it.nome+' — '+it.motivo, comercialAlvo, {
+      clienteId: it.tipo==='cliente'?it.origId:null,
+      orcId: it.tipo==='orc'?it.origId:null,
+      data: _agHojeStr(), tags:['top-hoje'], origem:'centro-prioridades',
+      extra:{itemKey:_agItemKey(it), ordem:i, tipoOrigem:it.tipo, origId:it.origId, leadId:it.leadId||null,
+        nome:it.nome, motivo:it.motivo, proximaAcao:it.proximaAcao, valor:it.valor||0, dias:it.dias||0,
+        categoriaIdx:it.categoriaIdx, categoriaLabel:AG_CATEGORIAS[it.categoriaIdx].label}
+    });
+  });
+}
+
+// Orquestrador: devolve o Top 10 (fixo) de hoje para um comercial, gerando-o
+// na primeira vez que for pedido hoje. Cada item já traz .estado
+// ('pendente'|'concluida'|'adiada') lido do próprio registo persistido.
+function agObterTopHoje(comercialAlvo){
+  var existentes=_agTopHojeArmazenado(comercialAlvo);
+  if(!existentes.length){
+    agGerarTopHoje(comercialAlvo);
+    existentes=_agTopHojeArmazenado(comercialAlvo);
+  }
+  return existentes.map(function(a){
+    var estado='pendente';
+    if(a.resultado==='Concluída') estado='concluida';
+    else if(a.resultado==='Adiada') estado='adiada';
+    return Object.assign({}, a.extra, {estado:estado, atividadeTs:a.ts});
+  });
+}
+window.agObterTopHoje = agObterTopHoje;
+
+function _agFindTopHojeAtiv(comercialAlvo, itemKey){
+  var hoje=_agHojeStr();
+  return (crmAtividades||[]).find(function(a){
+    return a&&a.tipo==='TopHojeItem'&&a.autor===comercialAlvo&&a.data===hoje&&a.extra&&a.extra.itemKey===itemKey;
+  });
+}
+function agConcluirTopHoje(itemKey){
+  var comercial=(typeof CU!=='undefined'&&CU)?CU.name:null;
+  var a=_agFindTopHojeAtiv(comercial, itemKey);
+  if(!a) return;
+  a.resultado='Concluída';
+  saveCrmAtividades();
+  if(typeof showToast==='function') showToast('✓ Prioridade concluída');
+  try{ agRenderTopHoje(); }catch(e){}
+  try{ agRenderCentroUnificado(); }catch(e){}
+}
+window.agConcluirTopHoje = agConcluirTopHoje;
+function agAdiarTopHoje(itemKey){
+  var comercial=(typeof CU!=='undefined'&&CU)?CU.name:null;
+  var a=_agFindTopHojeAtiv(comercial, itemKey);
+  if(!a) return;
+  a.resultado='Adiada';
+  saveCrmAtividades();
+  if(typeof showToast==='function') showToast('📅 Adiada — sai do Top 10 de hoje, sem entrar outra automaticamente');
+  try{ agRenderTopHoje(); }catch(e){}
+  try{ agRenderCentroUnificado(); }catch(e){}
+}
+window.agAdiarTopHoje = agAdiarTopHoje;
+
+// Resumo admin: X/10 concluídas hoje por cada comercial ativo nomeado.
+// Chamar agObterTopHoje() aqui pode gerar o Top 10 de um comercial que
+// ainda não abriu o Meu Painel hoje — sem problema: a seleção é puramente
+// determinística (mesmos dados reais + mesma data), por isso o resultado
+// é sempre o mesmo independentemente de quem a despoletou primeiro.
+function agResumoTopHojeAdmin(){
+  var nomes=['Paulo Faria','Rui Mota','Humberto Estrelinha','André Nolasco'];
+  return nomes.map(function(n){
+    var top=agObterTopHoje(n);
+    var concluidas=top.filter(function(x){ return x.estado==='concluida'; }).length;
+    return {nome:n, total:top.length, concluidas:concluidas};
+  });
+}
+window.agResumoTopHojeAdmin = agResumoTopHojeAdmin;
+
+function agRenderTopHoje(){
+  var wrap=document.getElementById('ag-tophoje-cards');
+  if(!wrap) return;
+  var nome=(typeof CU!=='undefined'&&CU)?CU.name:null;
+  if(!nome){ wrap.innerHTML=''; return; }
+  var top=agObterTopHoje(nome);
+  var pendentes=top.filter(function(x){ return x.estado==='pendente'; });
+  var concluidas=top.filter(function(x){ return x.estado==='concluida'; });
+  var adiadas=top.filter(function(x){ return x.estado==='adiada'; });
+
+  var progEl=document.getElementById('ag-tophoje-progresso');
+  if(progEl){
+    if(!top.length){
+      progEl.innerHTML='<div style="font-size:12.5px;color:var(--muted)">Sem prioridades para hoje — carteira em dia.</div>';
+    } else {
+      var pct=Math.round(100*concluidas.length/top.length);
+      progEl.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center;font-size:12.5px;color:var(--txt2);margin-bottom:5px">'
+        +'<span>Hoje: <b>'+concluidas.length+'/'+top.length+'</b> concluídas</span>'
+        +'<span style="color:var(--muted)">'+pendentes.length+' restante'+(pendentes.length===1?'':'s')+(adiadas.length?' · '+adiadas.length+' adiada'+(adiadas.length===1?'':'s'):'')+'</span>'
+        +'</div>'
+        +'<div style="height:6px;border-radius:4px;background:var(--bg3);overflow:hidden"><div style="height:100%;width:'+pct+'%;background:var(--g);transition:width .3s"></div></div>';
+    }
+  }
+
+  var visiveis=top.filter(function(x){ return x.estado==='pendente'; });
+  if(!visiveis.length){
+    wrap.innerHTML=top.length
+      ? '<div style="text-align:center;color:var(--g);padding:18px;grid-column:1/-1">✓ Todas as prioridades de hoje foram concluídas ou adiadas.</div>'
+      : '<div style="text-align:center;color:var(--muted);padding:18px;grid-column:1/-1">Sem prioridades para hoje.</div>';
+    return;
+  }
+  wrap.innerHTML=visiveis.map(function(item){
+    var idAttr=_agEsc(JSON.stringify(item.origId));
+    var keyAttr=_agEsc(JSON.stringify(item.itemKey));
+    var valorLinha=item.valor>0 ? (' · €'+Math.round(item.valor).toLocaleString('pt-PT')) : '';
+    var acoes;
+    if(item.tipoOrigem==='cliente'){
+      acoes='<button class="tbtn" onclick="agLigar('+idAttr+')" title="Ligar">📞</button>'
+        +'<button class="tbtn" onclick="agWhatsApp('+idAttr+')" title="WhatsApp">💬</button>'
+        +'<button class="tbtn" onclick="agEmail('+idAttr+')" title="Email">✉️</button>'
+        +'<button class="tbtn" onclick="agRegistarResultado('+idAttr+')" title="Registar resultado">📝</button>'
+        +'<button class="tbtn" onclick="agAdiarTopHoje('+keyAttr+')" title="Adiar">📅</button>'
+        +'<button class="tbtn" onclick="agConcluirTopHoje('+keyAttr+')" title="Concluir">✅</button>';
+    } else {
+      var origemJson=_agEsc(JSON.stringify({tipo:item.tipoOrigem, origId:item.origId, leadId:item.leadId}));
+      acoes='<button class="tbtn" onclick="agAbrirOrigem('+origemJson+')" title="Abrir">↗ Abrir</button>'
+        +'<button class="tbtn" onclick="agAdiarTopHoje('+keyAttr+')" title="Adiar">📅 Adiar</button>'
+        +'<button class="tbtn" onclick="agConcluirTopHoje('+keyAttr+')" title="Concluir">✅ Concluir</button>';
+    }
+    return '<div class="fu-card ag-card ag-tophoje-card">'
+      +'<div class="fu-card-cliente">'+_agEsc(item.nome)+'</div>'
+      +'<div class="ag-card-motivo">'+_agEsc(item.motivo)+'</div>'
+      +'<div class="ag-card-acao" style="color:var(--muted);font-style:normal">'+(item.dias?'há '+item.dias+' dia'+(item.dias===1?'':'s'):'hoje')+valorLinha+'</div>'
+      +'<div class="fu-card-acoes">'+acoes+'</div>'
+    +'</div>';
+  }).join('');
+}
+window.agRenderTopHoje = agRenderTopHoje;
+
+// Ações rápidas dos cards — todas reutilizam funções já existentes da ficha
+// de cliente (cliOpenEdit/cliRegistarContacto/cliEnviarWhatsApp/
+// cliCriarLembrete); nenhuma escreve diretamente em crmAtividades por si só.
+function agLigar(clienteId){ cliOpenEdit(clienteId); cliRegistarContacto('Chamada'); }
+window.agLigar = agLigar;
+function agWhatsApp(clienteId){ cliOpenEdit(clienteId); cliEnviarWhatsApp(); }
+window.agWhatsApp = agWhatsApp;
+function agEmail(clienteId){ cliOpenEdit(clienteId); cliAbrirEmail(); }
+window.agEmail = agEmail;
+function agRegistarResultado(clienteId){ cliOpenEdit(clienteId); cliRegistarContacto(); }
+window.agRegistarResultado = agRegistarResultado;
+function agAdiar(clienteId){
+  cliOpenEdit(clienteId);
+  cliCriarLembrete();
+  setTimeout(function(){
+    var d=document.getElementById('cli-lb-data');
+    if(d && !d.value){ var dt=new Date(); dt.setDate(dt.getDate()+3); d.value=dt.toISOString().slice(0,10); }
+  }, 30);
+}
+window.agAdiar = agAdiar;
+// "Concluir" marca o lembrete aberto deste cliente como feito (resultado),
+// exatamente o mesmo campo/convenção já usado por mpRenderLembretesHoje()
+// para distinguir Pendente/Concluído — não introduz estado novo.
+function agConcluir(clienteId){
+  var a=(crmAtividades||[]).find(function(x){ return x && x.clienteId===clienteId && x.tipo==='Lembrete' && !x.resultado; });
+  if(!a){ if(typeof showToast==='function') showToast('Sem lembrete em aberto para este cliente.'); return; }
+  a.resultado='Concluído';
+  if(typeof saveCrmAtividades==='function') saveCrmAtividades();
+  if(typeof showToast==='function') showToast('✓ Lembrete concluído');
+  try{ agRenderCentroUnificado(); }catch(e){}
+  try{ mpRenderLembretesHoje(); }catch(e){}
+}
+window.agConcluir = agConcluir;
+
 function obAbrirLead(id){
   try{ goPage('comercial-pipeline'); }catch(e){}
   setTimeout(function(){ try{ crmOpenEdit(id); }catch(e){} },250);
@@ -26097,8 +27187,9 @@ window.obAtualizarPendencias=obAtualizarPendencias;
 function obOrcUltimaAtividade(orc){
   var ts=null;
   try{
+    // idem obLeadUltimaAtividade: TopHojeItem nunca conta como contacto real.
     var a=(crmAtividades||[]).find(function(x){
-      return x.orcId===orc.num || (orc.leadId && x.leadId===orc.leadId);
+      return x.tipo!=='TopHojeItem' && (x.orcId===orc.num || (orc.leadId && x.leadId===orc.leadId));
     });
     if(a) ts=new Date(a.ts);
   }catch(e){}
@@ -26269,7 +27360,7 @@ function fuColunaDoOrc(o){
   var classificacao=triagem&&triagem.classificacao;
   if(classificacao==='contactar_novamente') return 'contactar_novamente';
   if(classificacao==='ainda_em_negociacao') return 'em_negociacao';
-  var temAtividade=(crmAtividades||[]).some(function(x){ return x.orcId===o.num || (o.leadId&&x.leadId===o.leadId); });
+  var temAtividade=(crmAtividades||[]).some(function(x){ return x.tipo!=='TopHojeItem' && (x.orcId===o.num || (o.leadId&&x.leadId===o.leadId)); });
   if(classificacao||temAtividade) return 'contactado';
   return 'a_contactar';
 }
@@ -27432,6 +28523,391 @@ if(typeof window.goPage==='function'){
   window.rhOpenColab=function(){ try{ if(typeof _origOpen==='function') _origOpen.apply(this, arguments); }catch(e){}
     try{ var hd=document.getElementById('rh-c-harddel'); if(hd) hd.style.display='none'; }catch(e){} };
 })();
+</script>
+
+<script>
+// ══════════════════════════════════════════════════════════════════
+// HISTÓRICO DE FATURAÇÃO — Financeiro > Histórico de Faturação.
+// SÓ LEITURA. Lê diretamente o blob 'ob-tes-receber' (ob_crm_dados) via
+// crmSBClient() — leitura independente, não depende do TES_RECEBER
+// carregado em memória (que só é adotado do Supabase se o localStorage
+// do browser estiver vazio). Não gera PDF, não envia TOConline, não
+// altera 'ob-faturas' nem o workflow de emissão do CRM.
+// ══════════════════════════════════════════════════════════════════
+
+var _hfData = null;
+var _hfLoading = false;
+var _hfLastUpdate = null;
+var _hfPage = 1;
+var HF_PAGE_SIZE = 15;
+var _hfFilters = { busca:'', estado:'', comercial:'', ano:'', mes:'', de:'', ate:'', valMin:'', valMax:'' };
+var _hfSort = { campo:'dataEmissao', dir:'desc' };
+var HF_COLS = [
+  { key:'_sheetId',    lbl:'Nº Fatura',    sort:true  },
+  { key:'dataEmissao', lbl:'Data',         sort:true  },
+  { key:'cliente',     lbl:'Cliente',      sort:true  },
+  { key:'vendedor',    lbl:'Comercial',    sort:true  },
+  { key:'valorLiq',    lbl:'Valor Líq.',   sort:false },
+  { key:'ivaPct',      lbl:'IVA',          sort:false },
+  { key:'total',       lbl:'Total c/IVA',  sort:true  },
+  { key:'vencimento',  lbl:'Vencimento',   sort:false },
+  { key:'dataRec',     lbl:'Data Receb.',  sort:false },
+  { key:'estado',      lbl:'Estado',       sort:true  },
+];
+
+function _hfFmtEUR(v){ return (v||0).toLocaleString('pt-PT', {style:'currency', currency:'EUR'}); }
+function _hfFmtPct(v){ return (v||0).toLocaleString('pt-PT', {minimumFractionDigits:1, maximumFractionDigits:1})+'%'; }
+function _hfParseData(str){
+  if(!str) return null;
+  var m = String(str).trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if(m) return new Date(+m[3], +m[2]-1, +m[1]);
+  var d = new Date(str);
+  return isNaN(d) ? null : d;
+}
+
+async function _hfEnsureData(){
+  if(_hfData) return _hfData;
+  if(_hfLoading) return null;
+  _hfLoading = true;
+  try{
+    var sb = (typeof crmSBClient==='function') ? crmSBClient() : null;
+    if(!sb){ _hfData = []; _hfLoading=false; return _hfData; }
+    var res = await sb.from('ob_crm_dados').select('dados,updated_at').eq('chave','ob-tes-receber').maybeSingle();
+    if(res.error){ console.warn('[HF] load falhou:', res.error); _hfData = []; }
+    else { _hfData = (res.data && res.data.dados) || []; _hfLastUpdate = res.data && res.data.updated_at; }
+  }catch(e){ console.warn('[HF] load exception:', e); _hfData = []; }
+  _hfLoading = false;
+  return _hfData;
+}
+
+function renderHistoricoFaturacao(){
+  var el = document.getElementById('page-historico-faturacao');
+  if(!el) return;
+  if(_hfData===null){
+    var tbody = document.getElementById('hf-tbody');
+    if(tbody) tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--muted);padding:20px">A carregar…</td></tr>';
+    _hfEnsureData().then(function(){ renderHistoricoFaturacao(); });
+    return;
+  }
+  _hfBuildFilters();
+  _hfRenderTableHeader();
+  _hfRenderLastUpdate();
+  _hfRenderAll();
+}
+window.renderHistoricoFaturacao = renderHistoricoFaturacao;
+
+function _hfRenderLastUpdate(){
+  var el = document.getElementById('hf-last-update');
+  if(!el) return;
+  if(!_hfLastUpdate){ el.textContent=''; return; }
+  var d = new Date(_hfLastUpdate);
+  el.textContent = 'Última atualização: '+d.toLocaleDateString('pt-PT')+' '+d.toLocaleTimeString('pt-PT',{hour:'2-digit',minute:'2-digit'});
+}
+
+function _hfBuildFilters(){
+  var selCom = document.getElementById('hf-f-comercial');
+  var selAno = document.getElementById('hf-f-ano');
+  if(selCom && !selCom.dataset.built){
+    var rows = _hfData || [];
+    var nomes = Array.from(new Set(rows.map(function(r){return r.vendedor;}).filter(Boolean))).sort();
+    selCom.innerHTML = '<option value="">Todos</option>' + nomes.map(function(n){ return '<option value="'+n.replace(/"/g,'&quot;')+'">'+n+'</option>'; }).join('');
+    selCom.dataset.built = '1';
+  }
+  if(selAno && !selAno.dataset.built){
+    var anos = Array.from(new Set((_hfData||[]).map(function(r){ var d=_hfParseData(r.dataEmissao||r.data); return d?d.getFullYear():null; }).filter(Boolean))).sort(function(a,b){return b-a;});
+    selAno.innerHTML = '<option value="">Todos</option>' + anos.map(function(a){ return '<option value="'+a+'">'+a+'</option>'; }).join('');
+    selAno.dataset.built = '1';
+  }
+}
+
+// opts.skipEstado / opts.skipComercial permitem calcular vistas "e se" para os
+// cards de KPI e o ranking, sem que o próprio filtro que eles disparam se auto-exclua.
+function _hfApplyFilters(rows, opts){
+  opts = opts || {};
+  var f = _hfFilters;
+  return rows.filter(function(r){
+    if(!opts.skipEstado && f.estado && r.estado!==f.estado) return false;
+    if(!opts.skipComercial && f.comercial && r.vendedor!==f.comercial) return false;
+    if(f.busca){
+      var hay = ((r._sheetId||'')+' '+(r.cliente||'')+' '+(r.nif||'')).toLowerCase();
+      if(hay.indexOf(f.busca)===-1) return false;
+    }
+    var d = _hfParseData(r.dataEmissao||r.data);
+    if(f.ano && (!d || String(d.getFullYear())!==f.ano)) return false;
+    if(f.mes && (!d || String(d.getMonth()+1).padStart(2,'0')!==f.mes)) return false;
+    if(f.de){ var dd=new Date(f.de+'T00:00:00'); if(!d || d<dd) return false; }
+    if(f.ate){ var da=new Date(f.ate+'T23:59:59'); if(!d || d>da) return false; }
+    var val = parseFloat(r.total)||0;
+    if(f.valMin!=='' && f.valMin!=null && val < parseFloat(f.valMin)) return false;
+    if(f.valMax!=='' && f.valMax!=null && val > parseFloat(f.valMax)) return false;
+    return true;
+  });
+}
+
+function _hfSyncFiltersFromDOM(){
+  var val = function(id){ var e=document.getElementById(id); return e ? e.value : ''; };
+  _hfFilters.busca = val('hf-search').toLowerCase();
+  _hfFilters.estado = val('hf-f-estado');
+  _hfFilters.comercial = val('hf-f-comercial');
+  _hfFilters.ano = val('hf-f-ano');
+  _hfFilters.mes = val('hf-f-mes');
+  _hfFilters.de = val('hf-f-de');
+  _hfFilters.ate = val('hf-f-ate');
+  _hfFilters.valMin = val('hf-f-valmin');
+  _hfFilters.valMax = val('hf-f-valmax');
+}
+
+function _hfRenderAll(){
+  var rows = _hfData || [];
+  _hfRenderKpis(rows);
+  _hfRenderIndicadores(rows);
+  _hfRenderPorComercial(rows);
+  _hfUpdateActiveStyles();
+  hfRenderTable();
+}
+
+function _hfRenderKpis(rows){
+  var view = _hfApplyFilters(rows, {skipEstado:true});
+  var recebido = view.filter(function(r){return r.estado==='Recebido';});
+  var naoRecebido = view.filter(function(r){return r.estado==='Não Recebido';});
+  var parcial = view.filter(function(r){return r.estado==='Recebido Parcial';});
+  var sum = function(arr){ return arr.reduce(function(s,r){return s+(parseFloat(r.total)||0);},0); };
+  var set = function(id, val){ var e=document.getElementById(id); if(e) e.textContent = val; };
+  set('hf-kpi-total', _hfFmtEUR(sum(view)));
+  set('hf-kpi-total-sub', view.length+' faturas');
+  set('hf-kpi-recebido', _hfFmtEUR(sum(recebido)));
+  set('hf-kpi-recebido-sub', recebido.length+' faturas');
+  set('hf-kpi-naorecebido', _hfFmtEUR(sum(naoRecebido)));
+  set('hf-kpi-naorecebido-sub', naoRecebido.length+' faturas');
+  set('hf-kpi-parcial', _hfFmtEUR(sum(parcial)));
+  set('hf-kpi-parcial-sub', parcial.length+' faturas');
+}
+
+function _hfRenderIndicadores(rows){
+  var view = _hfApplyFilters(rows);
+  var sum = function(arr){ return arr.reduce(function(s,r){return s+(parseFloat(r.total)||0);},0); };
+  var totalFaturado = sum(view);
+  var recebido = view.filter(function(r){return r.estado==='Recebido';});
+  var totalRecebido = sum(recebido);
+  var set = function(id, val){ var e=document.getElementById(id); if(e) e.textContent = val; };
+  set('hf-ind-n', view.length);
+  set('hf-ind-ticket', view.length ? _hfFmtEUR(totalFaturado/view.length) : '—');
+  set('hf-ind-pctrecebido', totalFaturado>0 ? _hfFmtPct(totalRecebido/totalFaturado*100) : '—');
+
+  // Valor vencido: só soma o que tem vencimento válido e não recebido, para não inventar dados.
+  var hoje = new Date();
+  var comVencimento = view.filter(function(r){ return r.estado!=='Recebido' && _hfParseData(r.vencimento); });
+  var vencidos = comVencimento.filter(function(r){ return _hfParseData(r.vencimento) < hoje; });
+  var totalVencido = sum(vencidos);
+  set('hf-ind-vencido', _hfFmtEUR(totalVencido));
+  var sub = document.getElementById('hf-ind-vencido-sub');
+  if(sub) sub.textContent = vencidos.length+' faturas vencidas ('+comVencimento.length+'/'+view.filter(function(r){return r.estado!=='Recebido';}).length+' com vencimento conhecido)';
+}
+
+function _hfRenderPorComercial(rows){
+  var view = _hfApplyFilters(rows, {skipComercial:true});
+  var porCom = {};
+  view.forEach(function(r){
+    var v = r.vendedor || 'Sem comercial';
+    if(!porCom[v]) porCom[v] = {total:0, n:0};
+    porCom[v].total += (parseFloat(r.total)||0);
+    porCom[v].n++;
+  });
+  var lista = Object.keys(porCom).map(function(k){ return {nome:k, total:porCom[k].total, n:porCom[k].n}; });
+  lista.sort(function(a,b){ return b.total-a.total; });
+  var maxV = lista.length ? lista[0].total : 1;
+  var el = document.getElementById('hf-por-comercial');
+  if(!el) return;
+  el.innerHTML = lista.map(function(c){
+    var pct = maxV>0 ? (c.total/maxV*100) : 0;
+    var isActive = _hfFilters.comercial===c.nome;
+    var clickable = c.nome!=='Sem comercial';
+    var nomeEsc = c.nome.replace(/'/g,"\\'");
+    return '<div class="hf-rank-row'+(isActive?' hf-active':'')+'"'+(clickable?" onclick=\"hfSetComercialFilter('"+nomeEsc+"')\"":'')+'>'
+      + '<div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px"><span>'+c.nome+'</span><strong>'+_hfFmtEUR(c.total)+' <span style="color:var(--muted);font-weight:400">('+c.n+')</span></strong></div>'
+      + '<div style="height:8px;border-radius:999px;background:var(--bg3);overflow:hidden"><div style="height:100%;border-radius:999px;background:var(--y);width:'+pct+'%"></div></div>'
+      + '</div>';
+  }).join('') || '<div style="color:var(--muted);font-size:13px">Sem dados.</div>';
+}
+
+function _hfUpdateActiveStyles(){
+  var map = { '':'hf-card-total', 'Recebido':'hf-card-recebido', 'Não Recebido':'hf-card-naorecebido', 'Recebido Parcial':'hf-card-parcial' };
+  Object.keys(map).forEach(function(k){
+    var el = document.getElementById(map[k]);
+    if(el) el.classList.toggle('hf-active', _hfFilters.estado===k && k!=='');
+  });
+  var totalCard = document.getElementById('hf-card-total');
+  if(totalCard) totalCard.classList.toggle('hf-active', _hfFilters.estado==='');
+}
+
+function _hfRenderTableHeader(){
+  var tr = document.getElementById('hf-thead-row');
+  if(!tr || tr.dataset.built) return;
+  tr.innerHTML = HF_COLS.map(function(c){
+    if(!c.sort) return '<th>'+c.lbl+'</th>';
+    return '<th data-sort="'+c.key+'" onclick="hfSortBy(\''+c.key+'\')">'+c.lbl+' <span class="hf-sort-ic">▾</span></th>';
+  }).join('');
+  tr.dataset.built = '1';
+}
+
+function _hfUpdateSortHeaderStyles(){
+  document.querySelectorAll('#hf-thead-row th[data-sort]').forEach(function(th){
+    var active = th.dataset.sort === _hfSort.campo;
+    th.classList.toggle('hf-sort-active', active);
+    var ic = th.querySelector('.hf-sort-ic');
+    if(ic) ic.textContent = active ? (_hfSort.dir==='asc' ? '▴' : '▾') : '▾';
+  });
+}
+
+function hfSortBy(campo){
+  if(_hfSort.campo===campo){ _hfSort.dir = (_hfSort.dir==='asc') ? 'desc' : 'asc'; }
+  else { _hfSort.campo = campo; _hfSort.dir = 'desc'; }
+  hfRenderTable();
+}
+window.hfSortBy = hfSortBy;
+
+function hfRenderTable(){
+  _hfSyncFiltersFromDOM();
+  var rows = _hfData || [];
+  var filtered = _hfApplyFilters(rows);
+
+  var campo = _hfSort.campo, dir = _hfSort.dir;
+  filtered.sort(function(a,b){
+    var va, vb;
+    if(campo==='dataEmissao'){ va=_hfParseData(a.dataEmissao||a.data); vb=_hfParseData(b.dataEmissao||b.data); va=va?va.getTime():0; vb=vb?vb.getTime():0; }
+    else if(campo==='total'){ va=parseFloat(a.total)||0; vb=parseFloat(b.total)||0; }
+    else if(campo==='_sheetId'){ va=parseFloat(a._sheetId)||0; vb=parseFloat(b._sheetId)||0; if(isNaN(va)) va=0; if(isNaN(vb)) vb=0; }
+    else { va=(a[campo]||'').toString().toLowerCase(); vb=(b[campo]||'').toString().toLowerCase(); }
+    if(va<vb) return dir==='asc' ? -1 : 1;
+    if(va>vb) return dir==='asc' ? 1 : -1;
+    return 0;
+  });
+  _hfUpdateSortHeaderStyles();
+
+  var totalPages = Math.max(1, Math.ceil(filtered.length/HF_PAGE_SIZE));
+  if(_hfPage>totalPages) _hfPage = totalPages;
+  if(_hfPage<1) _hfPage = 1;
+  var pageRows = filtered.slice((_hfPage-1)*HF_PAGE_SIZE, _hfPage*HF_PAGE_SIZE);
+
+  var estadoCor = { 'Recebido':'var(--g)', 'Não Recebido':'var(--r)', 'Recebido Parcial':'var(--y)' };
+  var tbody = document.getElementById('hf-tbody');
+  if(tbody){
+    tbody.innerHTML = pageRows.length ? pageRows.map(function(r){
+      var cor = estadoCor[r.estado] || 'var(--muted)';
+      var rid = String(r._sheetId||'').replace(/"/g,'&quot;');
+      return '<tr data-id="'+rid+'" style="cursor:pointer" onclick="hfOpenDrawer(\''+rid.replace(/'/g,"\\'")+'\')">'
+        + '<td style="font-family:DM Mono,monospace;font-size:13px;color:var(--y)">'+(r._sheetId||'—')+'</td>'
+        + '<td style="font-size:13px">'+(r.dataEmissao||r.data||'—')+'</td>'
+        + '<td>'+(r.cliente||'—')+'</td>'
+        + '<td style="font-size:13px">'+(r.vendedor||'Sem comercial')+'</td>'
+        + '<td style="font-size:13px">'+_hfFmtEUR(parseFloat(r.valorLiq)||0)+'</td>'
+        + '<td style="font-size:13px">'+(r.ivaPct||0)+'%</td>'
+        + '<td style="font-weight:700">'+_hfFmtEUR(parseFloat(r.total)||0)+'</td>'
+        + '<td style="font-size:13px">'+(r.vencimento||'—')+'</td>'
+        + '<td style="font-size:13px">'+(r.dataRec||'—')+'</td>'
+        + '<td><span style="font-size:12px;font-weight:600;color:'+cor+'">'+(r.estado||'—')+'</span></td>'
+        + '</tr>';
+    }).join('') : '<tr><td colspan="10" style="text-align:center;color:var(--muted);padding:20px">Sem faturas para este filtro.</td></tr>';
+  }
+  var count = document.getElementById('hf-count'); if(count) count.textContent = filtered.length+' faturas · só leitura';
+  var pi = document.getElementById('hf-pageinfo'); if(pi) pi.textContent = 'Página '+_hfPage+' de '+totalPages;
+}
+window.hfRenderTable = hfRenderTable;
+
+function hfPage(delta){
+  _hfSyncFiltersFromDOM();
+  if(delta===0){ _hfPage = 1; }
+  else { _hfPage += delta; }
+  _hfRenderAll();
+}
+window.hfPage = hfPage;
+
+function hfSetEstadoFilter(estado){
+  var next = (_hfFilters.estado===estado) ? '' : estado;
+  _hfFilters.estado = next;
+  var sel = document.getElementById('hf-f-estado'); if(sel) sel.value = next;
+  _hfPage = 1;
+  _hfRenderAll();
+}
+window.hfSetEstadoFilter = hfSetEstadoFilter;
+
+function hfSetComercialFilter(nome){
+  var next = (_hfFilters.comercial===nome) ? '' : nome;
+  _hfFilters.comercial = next;
+  var sel = document.getElementById('hf-f-comercial'); if(sel) sel.value = next;
+  _hfPage = 1;
+  _hfRenderAll();
+}
+window.hfSetComercialFilter = hfSetComercialFilter;
+
+function hfClearFilters(){
+  _hfFilters = { busca:'', estado:'', comercial:'', ano:'', mes:'', de:'', ate:'', valMin:'', valMax:'' };
+  ['hf-search','hf-f-estado','hf-f-comercial','hf-f-ano','hf-f-mes','hf-f-de','hf-f-ate','hf-f-valmin','hf-f-valmax'].forEach(function(id){
+    var e = document.getElementById(id); if(e) e.value = '';
+  });
+  _hfPage = 1;
+  _hfRenderAll();
+}
+window.hfClearFilters = hfClearFilters;
+
+function hfOpenDrawer(sheetId){
+  var r = (_hfData||[]).find(function(x){ return String(x._sheetId)===String(sheetId); });
+  if(!r) return;
+  var estadoCor = { 'Recebido':'#4ade80', 'Não Recebido':'#f87171', 'Recebido Parcial':'#fde047' };
+  document.getElementById('hf-drawer-num').textContent = r._sheetId || '—';
+  document.getElementById('hf-drawer-cliente').textContent = r.cliente || '—';
+  var field = function(ic, lbl, val){
+    return '<div class="mv-field"><div class="mv-field-ic">'+ic+'</div><div><div class="mv-field-lbl">'+lbl+'</div><div class="mv-field-val">'+(val||'—')+'</div></div></div>';
+  };
+  var body = ''
+    + '<div style="margin-bottom:14px"><span style="font-size:12px;font-weight:700;color:'+(estadoCor[r.estado]||'#94a3b8')+'">'+(r.estado||'—')+'</span></div>'
+    + field('📅','DATA', r.dataEmissao||r.data)
+    + field('👤','COMERCIAL', r.vendedor||'Sem comercial (a reconciliar)')
+    + field('🏢','CLIENTE', r.cliente)
+    + field('🪪','NIF', r.nif)
+    + '<div class="mv-sep"></div>'
+    + field('💶','VALOR LÍQUIDO', _hfFmtEUR(parseFloat(r.valorLiq)||0))
+    + field('🧾','IVA', (r.ivaPct||0)+'%')
+    + field('💰','TOTAL COM IVA', _hfFmtEUR(parseFloat(r.total)||0))
+    + '<div class="mv-sep"></div>'
+    + field('⏰','VENCIMENTO', r.vencimento)
+    + field('✅','DATA DE RECEBIMENTO', r.dataRec)
+    + field('📁','PROJETO', r.projeto)
+    + field('📝','DESCRIÇÃO', r.descricao);
+  document.getElementById('hf-drawer-body').innerHTML = body;
+  document.getElementById('hf-drawer').classList.add('mv-open');
+  document.getElementById('hf-drawer-overlay').classList.add('mv-open');
+}
+window.hfOpenDrawer = hfOpenDrawer;
+
+function hfCloseDrawer(){
+  document.getElementById('hf-drawer').classList.remove('mv-open');
+  document.getElementById('hf-drawer-overlay').classList.remove('mv-open');
+}
+window.hfCloseDrawer = hfCloseDrawer;
+
+// Botão preparado, NÃO funcional em V1: sincronizar a Google Sheet a partir do
+// browser exigiria expor credenciais Google e/ou a service key do Supabase no
+// frontend — inseguro. A automação real tem de correr num backend (cenário
+// Make.com, reaproveitando a ligação Google Sheets já configurada nesta conta,
+// ou uma Supabase Edge Function) que faça o mesmo UPSERT seguro por _sheetId já
+// usado nesta reconciliação, sem apagar órfãos, e devolva um resumo.
+function hfSyncClick(){
+  alert(
+    '🔄 Atualização automática ainda não está ligada.\n\n' +
+    'Por segurança, isto não pode correr diretamente no browser (exigiria expor ' +
+    'credenciais da Google Sheet e/ou a chave do Supabase no frontend).\n\n' +
+    'Para automatizar sem depender de pedir a alguém para o fazer manualmente, é ' +
+    'preciso um cenário Make.com (a conta já tem uma ligação Google Sheets ativa ' +
+    'noutros cenários) ou uma Supabase Edge Function, correndo num horário ' +
+    'definido ou por webhook, que:\n' +
+    ' • lê "Vendas 2026";\n' +
+    ' • faz UPSERT por Nº de fatura em ob-tes-receber (nunca apaga o que não está na sheet);\n' +
+    ' • devolve adicionados / atualizados / preservados / erros.\n\n' +
+    'Os dados atuais foram sincronizados manualmente em '+ (_hfLastUpdate ? new Date(_hfLastUpdate).toLocaleString('pt-PT') : '—') +'.'
+  );
+}
+window.hfSyncClick = hfSyncClick;
 </script>
 
 </body>
