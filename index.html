@@ -6940,6 +6940,7 @@ tbody tr:hover{background:rgba(255,203,45,.05)}
       <button class="sl-item" id="ni-dashboard" data-action="goPage" data-page="dashboard"><span class="mk-ic">◈</span>Dashboard CFO</button>
       <button class="sl-item" id="ni-financeiro" data-action="goPage" data-page="financeiro"><span class="mk-ic">💶</span>Financeiro</button>
       <button class="sl-item" id="ni-tesouraria" data-action="goPage" data-page="tesouraria"><span class="mk-ic">🏦</span>Tesouraria</button>
+      <button class="sl-item" id="ni-historico-faturacao" data-action="goPage" data-page="historico-faturacao"><span class="mk-ic">📜</span>Histórico de Faturação</button>
       <button class="sl-item" data-action="goPage" data-page="admin-analise-vendas"><span class="mk-ic">📊</span>Análise de Vendas</button>
       <button class="sl-item" id="ni-relatorios" data-action="goPage" data-page="relatorios"><span class="mk-ic">📑</span>Relatórios</button>
       <button class="sl-item" onclick="goFaturasAdmin()"><span class="mk-ic">🧾</span>Faturas</button>
@@ -8601,6 +8602,88 @@ tbody tr:hover{background:rgba(255,203,45,.05)}
 
 </div>
 
+<div id="page-historico-faturacao" class="app-page">
+  <div class="pg-hdr">
+    <div class="pg-hdr-top">
+      <div class="pg-space-icon" style="background:var(--y)">📜</div>
+      <div class="pg-title">Histórico de Faturação</div>
+    </div>
+  </div>
+  <div class="admin-page">
+    <div style="font-size:12.5px;color:var(--muted);background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:8px 12px;margin-bottom:16px">
+      📖 Só leitura. Fonte: Google Sheet "Vendas 2026" (reconciliada com a Tesouraria). Não gera PDF, não envia para TOConline, não altera faturas emitidas pelo CRM (essas continuam em "Faturas").
+    </div>
+
+    <div class="g4" style="margin-bottom:18px" id="hf-kpis">
+      <div class="mn">
+        <div class="mnl">Total Faturado</div>
+        <div class="mnv" id="hf-kpi-total">—</div>
+        <div class="mns" id="hf-kpi-total-sub">&nbsp;</div>
+      </div>
+      <div class="mn" style="border-color:rgba(63,207,142,.2)">
+        <div class="mnl">Total Recebido</div>
+        <div class="mnv" style="color:var(--g)" id="hf-kpi-recebido">—</div>
+        <div class="mns" id="hf-kpi-recebido-sub">&nbsp;</div>
+      </div>
+      <div class="mn" style="border-color:rgba(224,85,85,.3)">
+        <div class="mnl">Total por Receber</div>
+        <div class="mnv" style="color:var(--r)" id="hf-kpi-naorecebido">—</div>
+        <div class="mns" id="hf-kpi-naorecebido-sub">&nbsp;</div>
+      </div>
+      <div class="mn" style="border-color:rgba(245,196,0,.3)">
+        <div class="mnl">Parcial</div>
+        <div class="mnv" style="color:var(--y)" id="hf-kpi-parcial">—</div>
+        <div class="mns" id="hf-kpi-parcial-sub">&nbsp;</div>
+      </div>
+    </div>
+
+    <div class="cc" style="margin-bottom:16px">
+      <div class="sh"><h2>Faturação por Comercial</h2></div>
+      <div id="hf-por-comercial" style="display:flex;flex-direction:column;gap:8px">—</div>
+    </div>
+
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:14px">
+      <div>
+        <label style="display:block;font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:4px">Pesquisa</label>
+        <input id="hf-search" class="form-input" placeholder="🔍 Nº fatura ou cliente…" style="padding:6px 10px;font-size:13px;min-width:200px" oninput="hfRenderTable()">
+      </div>
+      <div>
+        <label style="display:block;font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:4px">Estado</label>
+        <select id="hf-f-estado" onchange="hfRenderTable()" style="background:var(--bg3);border:1px solid var(--border);color:var(--txt2);border-radius:7px;padding:6px 10px;font-size:13px">
+          <option value="">Todos</option>
+          <option value="Recebido">Recebido</option>
+          <option value="Não Recebido">Não Recebido</option>
+          <option value="Recebido Parcial">Recebido Parcial</option>
+        </select>
+      </div>
+      <div>
+        <label style="display:block;font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:4px">Comercial</label>
+        <select id="hf-f-comercial" onchange="hfRenderTable()" style="background:var(--bg3);border:1px solid var(--border);color:var(--txt2);border-radius:7px;padding:6px 10px;font-size:13px">
+          <option value="">Todos</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="tw">
+      <table>
+        <thead>
+          <tr><th>Nº Fatura</th><th>Data</th><th>Cliente</th><th>Comercial</th><th>Valor Líq.</th><th>IVA</th><th>Total c/IVA</th><th>Vencimento</th><th>Data Receb.</th><th>Estado</th></tr>
+        </thead>
+        <tbody id="hf-tbody">
+          <tr><td colspan="10" style="text-align:center;color:var(--muted);padding:20px">A carregar…</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 2px 2px;font-size:12px;color:var(--muted)">
+      <span id="hf-count">—</span>
+      <span>
+        <button class="tbtn" style="font-size:12px;padding:3px 10px" onclick="hfPage(-1)">‹</button>
+        <span id="hf-pageinfo" style="margin:0 8px">—</span>
+        <button class="tbtn" style="font-size:12px;padding:3px 10px" onclick="hfPage(1)">›</button>
+      </span>
+    </div>
+  </div>
+</div>
 
 <div id="page-financeiro" class="app-page">
   <div class="pg-hdr">
@@ -11275,6 +11358,7 @@ window.goPage=function goPage(id){
   if(id==='comercial-pipeline'&&typeof crmInit==='function')crmInit();
   if(id==='meu-painel'&&typeof renderMeuPainel==='function')renderMeuPainel();
   if(id==='mapa-vendas'&&typeof renderMapaVendas==='function')renderMapaVendas();
+  if(id==='historico-faturacao'&&typeof renderHistoricoFaturacao==='function')renderHistoricoFaturacao();
   if(id==='comercial-followup'&&typeof fuInitPage==='function')fuInitPage();
   if(id==='crm'){ try{ renderCRMKanban('crm-kanban-admin'); }catch(e){} }
   if(id==='equipa-campo'&&typeof loadEquipaCampoData==='function')loadEquipaCampoData();
@@ -18423,6 +18507,7 @@ function renderAll(){
   safe(renderDashboardCFO,'dashboard-cfo');
   safe(renderMeuPainel,'meu-painel');
   safe(renderMapaVendas,'mapa-vendas');
+  safe(renderHistoricoFaturacao,'historico-faturacao');
   safe(renderFinanceiro,'financeiro');
   safe(renderRelatorios,'relatorios');
   safe(()=>uniInitAll(),'uni');
@@ -27414,6 +27499,169 @@ if(typeof window.goPage==='function'){
   window.rhOpenColab=function(){ try{ if(typeof _origOpen==='function') _origOpen.apply(this, arguments); }catch(e){}
     try{ var hd=document.getElementById('rh-c-harddel'); if(hd) hd.style.display='none'; }catch(e){} };
 })();
+</script>
+
+<script>
+// ══════════════════════════════════════════════════════════════════
+// HISTÓRICO DE FATURAÇÃO — Financeiro > Histórico de Faturação.
+// SÓ LEITURA. Lê diretamente o blob 'ob-tes-receber' (ob_crm_dados) via
+// crmSBClient() — leitura independente, não depende do TES_RECEBER
+// carregado em memória (que só é adotado do Supabase se o localStorage
+// do browser estiver vazio). Não gera PDF, não envia TOConline, não
+// altera 'ob-faturas' nem o workflow de emissão do CRM.
+// ══════════════════════════════════════════════════════════════════
+
+var _hfData = null;
+var _hfLoading = false;
+var _hfPage = 1;
+var HF_PAGE_SIZE = 15;
+
+function _hfFmtEUR(v){ return (v||0).toLocaleString('pt-PT', {style:'currency', currency:'EUR'}); }
+function _hfParseData(str){
+  if(!str) return null;
+  var m = String(str).trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if(m) return new Date(+m[3], +m[2]-1, +m[1]);
+  var d = new Date(str);
+  return isNaN(d) ? null : d;
+}
+
+async function _hfEnsureData(){
+  if(_hfData) return _hfData;
+  if(_hfLoading) return null;
+  _hfLoading = true;
+  try{
+    var sb = (typeof crmSBClient==='function') ? crmSBClient() : null;
+    if(!sb){ _hfData = []; _hfLoading=false; return _hfData; }
+    var res = await sb.from('ob_crm_dados').select('dados').eq('chave','ob-tes-receber').maybeSingle();
+    if(res.error){ console.warn('[HF] load falhou:', res.error); _hfData = []; }
+    else { _hfData = (res.data && res.data.dados) || []; }
+  }catch(e){ console.warn('[HF] load exception:', e); _hfData = []; }
+  _hfLoading = false;
+  return _hfData;
+}
+
+function renderHistoricoFaturacao(){
+  var el = document.getElementById('page-historico-faturacao');
+  if(!el) return;
+  if(_hfData===null){
+    var tbody = document.getElementById('hf-tbody');
+    if(tbody) tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--muted);padding:20px">A carregar…</td></tr>';
+    _hfEnsureData().then(function(){ renderHistoricoFaturacao(); });
+    return;
+  }
+  _hfRenderKpis();
+  _hfRenderPorComercial();
+  _hfBuildComercialFilter();
+  hfRenderTable();
+}
+window.renderHistoricoFaturacao = renderHistoricoFaturacao;
+
+function _hfRenderKpis(){
+  var rows = _hfData || [];
+  var recebido = rows.filter(function(r){return r.estado==='Recebido';});
+  var naoRecebido = rows.filter(function(r){return r.estado==='Não Recebido';});
+  var parcial = rows.filter(function(r){return r.estado==='Recebido Parcial';});
+  var sum = function(arr){ return arr.reduce(function(s,r){return s+(parseFloat(r.total)||0);},0); };
+  var totalFaturado = sum(rows);
+  var totalRecebido = sum(recebido);
+  var totalNaoRecebido = sum(naoRecebido);
+  var totalParcial = sum(parcial);
+  var set = function(id, val){ var e=document.getElementById(id); if(e) e.textContent = val; };
+  set('hf-kpi-total', _hfFmtEUR(totalFaturado));
+  set('hf-kpi-total-sub', rows.length+' faturas');
+  set('hf-kpi-recebido', _hfFmtEUR(totalRecebido));
+  set('hf-kpi-recebido-sub', recebido.length+' faturas');
+  set('hf-kpi-naorecebido', _hfFmtEUR(totalNaoRecebido));
+  set('hf-kpi-naorecebido-sub', naoRecebido.length+' faturas');
+  set('hf-kpi-parcial', _hfFmtEUR(totalParcial));
+  set('hf-kpi-parcial-sub', parcial.length+' faturas');
+}
+
+function _hfRenderPorComercial(){
+  var rows = _hfData || [];
+  var porCom = {};
+  rows.forEach(function(r){
+    var v = r.vendedor || '—';
+    if(!porCom[v]) porCom[v] = {total:0, n:0};
+    porCom[v].total += (parseFloat(r.total)||0);
+    porCom[v].n++;
+  });
+  var lista = Object.keys(porCom).map(function(k){ return {nome:k, total:porCom[k].total, n:porCom[k].n}; });
+  lista.sort(function(a,b){ return b.total-a.total; });
+  var maxV = lista.length ? lista[0].total : 1;
+  var el = document.getElementById('hf-por-comercial');
+  if(!el) return;
+  el.innerHTML = lista.map(function(c){
+    var pct = maxV>0 ? (c.total/maxV*100) : 0;
+    return '<div>'
+      + '<div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px"><span>'+c.nome+'</span><strong>'+_hfFmtEUR(c.total)+' <span style="color:var(--muted);font-weight:400">('+c.n+')</span></strong></div>'
+      + '<div style="height:8px;border-radius:999px;background:var(--bg3);overflow:hidden"><div style="height:100%;border-radius:999px;background:var(--y);width:'+pct+'%"></div></div>'
+      + '</div>';
+  }).join('') || '<div style="color:var(--muted);font-size:13px">Sem dados.</div>';
+}
+
+function _hfBuildComercialFilter(){
+  var sel = document.getElementById('hf-f-comercial');
+  if(!sel || sel.dataset.built) return;
+  var rows = _hfData || [];
+  var nomes = Array.from(new Set(rows.map(function(r){return r.vendedor;}).filter(Boolean))).sort();
+  sel.innerHTML = '<option value="">Todos</option>' + nomes.map(function(n){ return '<option value="'+n.replace(/"/g,'&quot;')+'">'+n+'</option>'; }).join('');
+  sel.dataset.built = '1';
+}
+
+function hfRenderTable(){
+  var rows = _hfData || [];
+  var busca = ((document.getElementById('hf-search')||{}).value||'').toLowerCase();
+  var fEstado = ((document.getElementById('hf-f-estado')||{}).value||'');
+  var fComercial = ((document.getElementById('hf-f-comercial')||{}).value||'');
+  var filtered = rows.filter(function(r){
+    if(fEstado && r.estado!==fEstado) return false;
+    if(fComercial && r.vendedor!==fComercial) return false;
+    if(busca){
+      var hay = ((r._sheetId||'')+' '+(r.cliente||'')).toLowerCase();
+      if(hay.indexOf(busca)===-1) return false;
+    }
+    return true;
+  });
+  filtered.sort(function(a,b){
+    var da = _hfParseData(a.dataEmissao||a.data), db = _hfParseData(b.dataEmissao||b.data);
+    return (db?db.getTime():0) - (da?da.getTime():0);
+  });
+
+  var totalPages = Math.max(1, Math.ceil(filtered.length/HF_PAGE_SIZE));
+  if(_hfPage>totalPages) _hfPage = totalPages;
+  if(_hfPage<1) _hfPage = 1;
+  var pageRows = filtered.slice((_hfPage-1)*HF_PAGE_SIZE, _hfPage*HF_PAGE_SIZE);
+
+  var estadoCor = { 'Recebido':'var(--g)', 'Não Recebido':'var(--r)', 'Recebido Parcial':'var(--y)' };
+  var tbody = document.getElementById('hf-tbody');
+  if(tbody){
+    tbody.innerHTML = pageRows.length ? pageRows.map(function(r){
+      var cor = estadoCor[r.estado] || 'var(--muted)';
+      return '<tr>'
+        + '<td style="font-family:DM Mono,monospace;font-size:13px;color:var(--y)">'+(r._sheetId||'—')+'</td>'
+        + '<td style="font-size:13px">'+(r.dataEmissao||r.data||'—')+'</td>'
+        + '<td>'+(r.cliente||'—')+'</td>'
+        + '<td style="font-size:13px">'+(r.vendedor||'—')+'</td>'
+        + '<td style="font-size:13px">'+_hfFmtEUR(parseFloat(r.valorLiq)||0)+'</td>'
+        + '<td style="font-size:13px">'+(r.ivaPct||0)+'%</td>'
+        + '<td style="font-weight:700">'+_hfFmtEUR(parseFloat(r.total)||0)+'</td>'
+        + '<td style="font-size:13px">'+(r.vencimento||'—')+'</td>'
+        + '<td style="font-size:13px">'+(r.dataRec||'—')+'</td>'
+        + '<td><span style="font-size:12px;font-weight:600;color:'+cor+'">'+(r.estado||'—')+'</span></td>'
+        + '</tr>';
+    }).join('') : '<tr><td colspan="10" style="text-align:center;color:var(--muted);padding:20px">Sem faturas para este filtro.</td></tr>';
+  }
+  var count = document.getElementById('hf-count'); if(count) count.textContent = filtered.length+' faturas · só leitura';
+  var pi = document.getElementById('hf-pageinfo'); if(pi) pi.textContent = 'Página '+_hfPage+' de '+totalPages;
+}
+window.hfRenderTable = hfRenderTable;
+
+function hfPage(delta){
+  _hfPage += delta;
+  hfRenderTable();
+}
+window.hfPage = hfPage;
 </script>
 
 </body>
