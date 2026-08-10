@@ -7159,6 +7159,13 @@ tbody tr:hover{background:rgba(255,203,45,.05)}
   </div>
   <div class="admin-page">
 
+    <!-- ADD: 🎯 Prioridades de Hoje (Etapa 7B) — Top 10 fixo do dia, gerado
+         e persistido por agObterTopHoje() (crmAtividades tipo:'TopHojeItem',
+         sem tabela nova). Populado por agRenderTopHoje(). -->
+    <div class="sh"><h2>🎯 Prioridades de Hoje</h2></div>
+    <div id="ag-tophoje-progresso" style="margin-bottom:10px"></div>
+    <div class="fu-cards-grid" id="ag-tophoje-cards" style="margin-bottom:20px"></div>
+
     <div class="sh"><h2>Prioridades de hoje</h2></div>
     <div class="g3">
       <div class="kpi kA mp-action">
@@ -7194,13 +7201,15 @@ tbody tr:hover{background:rgba(255,203,45,.05)}
       </table>
     </div>
 
-    <!-- ADD: Agente Comercial de Follow-up (Etapa 6) — motor determinístico de
-         prioridades sobre cliData/crmAtividades/orcData já existentes. Sem tabela
-         nova, sem IA a inventar prioridades. Populado por agRenderPrioridades(),
-         chamado de dentro de renderMeuPainel(). Respeita "Ver como comercial"
-         (mesmo padrão isAdmin/minhas() dos cards acima). -->
-    <div class="sh"><h2>🤖 Prioridades do Agente</h2></div>
+    <!-- ADD: Centro de Prioridades Comerciais (Etapas 7/7B) — unifica Leads
+         parados, Orçamentos ativos, ações agendadas em atraso e Clientes (motor
+         da Etapa 6) num único feed deduplicado por nome normalizado, excluindo
+         o que já está no Top 10 de hoje de alguém. Sem tabela nova, sem IA a
+         inventar prioridades. Populado por agRenderCentroUnificado(), chamado
+         de dentro de renderMeuPainel(). Respeita "Ver como comercial". -->
+    <div class="sh"><h2>📋 Próximas Prioridades</h2></div>
     <div id="ag-admin-resumo" style="display:none;margin-bottom:14px"></div>
+    <div id="ag-filtros-bar" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px"></div>
     <div class="fu-cards-grid" id="ag-prioridades-cards"></div>
 
     <div class="sh"><h2>Resumo comercial</h2></div>
@@ -13095,7 +13104,11 @@ function crmAddAtividade(leadId, tipo, texto, autor, opts){
     clienteId: opts.clienteId || null, due: opts.due || null,
     canal: opts.canal || null, prioridade: opts.prioridade || null,
     tags: Array.isArray(opts.tags) ? opts.tags : [], data: opts.data || null,
-    origem: opts.origem || null, acao: opts.acao || null
+    origem: opts.origem || null, acao: opts.acao || null,
+    // Passthrough genérico opcional — usado pelo Centro de Prioridades (Etapa 7B)
+    // para gravar metadados do item (itemKey/categoria/valor/etc) sem precisar
+    // de mais um campo fixo por funcionalidade nova.
+    extra: opts.extra || null
   });
   saveCrmAtividades();
 }
@@ -25264,7 +25277,11 @@ function obDiasEntre(data){
 function obLeadUltimaAtividade(l){
   var ts=null;
   try{
-    var a=(crmAtividades||[]).find(function(x){ return x.leadId===l.id; }); // unshift → mais recente primeiro
+    // tipo==='TopHojeItem' é bookkeeping interno do Centro de Prioridades
+    // (Etapa 7B/7C) — nunca conta como contacto real, senão gerar o Top 10
+    // "resetava" a contagem de dias-sem-contacto do próprio lead que acabou
+    // de entrar nele.
+    var a=(crmAtividades||[]).find(function(x){ return x.leadId===l.id && x.tipo!=='TopHojeItem'; }); // unshift → mais recente primeiro
     if(a) ts=new Date(a.ts);
   }catch(e){}
   var dtLead=null;
@@ -25537,7 +25554,10 @@ function renderMeuPainel(){
   // para o mais antigo — crmAddAtividade usa unshift())
   var ativEl=document.getElementById('mp-atividades-list');
   if(ativEl){
-    var todasAtiv=(typeof crmAtividades!=='undefined'&&crmAtividades)?crmAtividades:[];
+    // tipo==='TopHojeItem' é bookkeeping interno do Centro de Prioridades
+    // (Etapa 7B), não uma actividade real do comercial — não deve poluir
+    // este feed de "Últimas actividades".
+    var todasAtiv=((typeof crmAtividades!=='undefined'&&crmAtividades)?crmAtividades:[]).filter(function(a){ return a && a.tipo!=='TopHojeItem'; });
     var minhasAtiv= (isAdmin||!nome) ? todasAtiv : todasAtiv.filter(function(a){ return a.autor===nome; });
     var ultimas=minhasAtiv.slice(0,5);
     if(!ultimas.length){
@@ -25559,8 +25579,13 @@ function renderMeuPainel(){
   }
   // ADD: card "Lembretes de Hoje" — só leitura de crmAtividades + cliData.
   try{ mpRenderLembretesHoje(); }catch(e){}
-  // ADD: Agente Comercial de Follow-up (Etapa 6) — motor de prioridades por cliente.
-  try{ agRenderPrioridades(); }catch(e){}
+  // ADD: 🎯 Prioridades de Hoje (Etapa 7B) — Top 10 fixo do dia por comercial.
+  try{ agRenderTopHoje(); }catch(e){}
+  // ADD: Centro de Prioridades Comerciais (Etapa 7) — unifica Leads/Orçamentos/
+  // Clientes num único feed sem duplicar (substitui visualmente a Etapa 6
+  // "🤖 Prioridades do Agente"; agRenderPrioridades() continua definida e
+  // utilizável, só deixou de ser chamada aqui).
+  try{ agRenderCentroUnificado(); }catch(e){}
 }
 window.renderMeuPainel=renderMeuPainel;
 
@@ -26306,16 +26331,19 @@ window.agAvaliarCliente = agAvaliarCliente;
 // Lista completa, já filtrada por "Ver como comercial" (mesmo padrão isAdmin/
 // minhas() usado em renderMeuPainel/mpRenderLembretesHoje) e ordenada por
 // prioridade e depois por dias (mais antigo primeiro).
-function agListaPrioridades(){
+function agListaPrioridades(opts){
+  opts=opts||{};
   var isAdmin=!!(typeof CU!=='undefined'&&CU&&CU.admin);
   var nome=(typeof CU!=='undefined'&&CU)?CU.name:null;
-  var minhas=function(v){ return isAdmin||!nome||v===nome; };
+  var minhas=function(v){ return opts.todos||isAdmin||!nome||v===nome; };
   var cli=(typeof cliData!=='undefined'&&cliData)?cliData:[];
   var ativ=(typeof crmAtividades!=='undefined'&&crmAtividades)?crmAtividades:[];
   var orcAll=(typeof orcData!=='undefined'&&orcData)?orcData:[];
 
+  // tipo==='TopHojeItem' é bookkeeping do Centro de Prioridades — excluído
+  // aqui pela mesma razão de obLeadUltimaAtividade/obOrcUltimaAtividade.
   var porCliente={};
-  ativ.forEach(function(a){ if(a && a.clienteId!=null){ (porCliente[a.clienteId]=porCliente[a.clienteId]||[]).push(a); } });
+  ativ.forEach(function(a){ if(a && a.clienteId!=null && a.tipo!=='TopHojeItem'){ (porCliente[a.clienteId]=porCliente[a.clienteId]||[]).push(a); } });
 
   var out=[];
   cli.forEach(function(c){
@@ -26462,6 +26490,536 @@ function agClientesAReatribuir(){
 }
 window.agClientesAReatribuir = agClientesAReatribuir;
 
+// ══ ETAPA 7 — CENTRO DE PRIORIDADES COMERCIAIS (unificação) ═══════
+// Junta 3 fontes já existentes num único feed, sem duplicar a mesma
+// oportunidade quando ela aparece em mais do que uma (Lead + Orçamento
+// ligado + Cliente com o mesmo nome):
+//   1) Leads parados + orçamentos ativos -> reaproveita fuDiasSemContacto/
+//      fuPrioridade/fuOrcamentosAtivos (motor de Follow-up já existente,
+//      NÃO reimplementado) + obAcoesAgendadas().atraso (ações agendadas
+//      vencidas, sinal que fuListaItens() não usa para a prioridade).
+//   2) Clientes -> agListaPrioridades({todos:true}) (motor da Etapa 6,
+//      inalterado, só chamado sem o filtro "minhas" para poder desduplicar
+//      antes de filtrar por comercial).
+//   3) Lembretes de hoje -> mpRenderLembretesHoje() já trata isso à parte
+//      (tabela própria, já existente) — não duplicado aqui.
+// Não substitui fuListaItens()/agListaPrioridades() nem os apaga — ambos
+// continuam a existir e utilizáveis; só deixam de ser renderizados em
+// duplicado no ecrã (Etapa 6 "🤖 Prioridades do Agente" foi substituída
+// visualmente por este Centro único).
+var AG_TIER_DE_FU = {perdido_sugerido:'urgente', critica:'urgente', alta:'alta', normal:'media', lembrete:'baixa', em_dia:null, sem_dados:null};
+
+function _agNormNome(v){
+  if(!v) return '';
+  var s=String(v).trim().toUpperCase();
+  try{ s=s.normalize('NFD').replace(/[̀-ͯ]/g,''); }catch(e){}
+  return s.replace(/[.,]/g,'').replace(/\s+/g,' ');
+}
+
+// Itens brutos de Leads + Orçamentos (sem desduplicar ainda) — reaproveita
+// fuDiasSemContacto/fuPrioridade/fuOrcamentosAtivos/obAcoesAgendadas.
+function agItensLeadsOrcamentos(){
+  var itens=[];
+  (crmLeads||[]).forEach(function(l){
+    if(FU_ESTADOS_LEAD_TERMINAIS.indexOf(l.st)!==-1) return;
+    var dias=fuDiasSemContacto({tipo:'lead', obj:l});
+    var prio=fuPrioridade(dias);
+    var tier=AG_TIER_DE_FU[prio.key];
+    if(!tier) return;
+    itens.push({tipo:'lead', nome:l.emp||l.n||'—', comercial:l.ass||'—', valor:l.val||0, dias:dias,
+      tier:tier, motivo:'Lead parado há '+dias+' dia'+(dias===1?'':'s')+' sem contacto',
+      proximaAcao:'Retomar contacto com o lead', origId:l.id, leadId:l.id});
+  });
+  (typeof fuOrcamentosAtivos==='function'?fuOrcamentosAtivos():[]).forEach(function(o){
+    var dias=fuDiasSemContacto({tipo:'orc', obj:o});
+    var prio=fuPrioridade(dias);
+    var tier=AG_TIER_DE_FU[prio.key];
+    if(!tier) return;
+    itens.push({tipo:'orc', nome:o.cli||'—', comercial:o.vendedor||'—',
+      valor:(typeof orcGetValorTotal==='function')?orcGetValorTotal(o):(o.val||0), dias:dias,
+      tier:tier, motivo:'Orçamento "'+(o.cli||'—')+'" sem resposta há '+dias+' dia'+(dias===1?'':'s'),
+      proximaAcao:'Fazer follow-up do orçamento', origId:o.num, leadId:o.leadId||null});
+  });
+  // Ações agendadas em atraso (sinal próprio, não coberto por fuPrioridade) -> URGENTE
+  var atraso=(typeof obAcoesAgendadas==='function')?obAcoesAgendadas().atraso:[];
+  atraso.forEach(function(x){
+    var l=x.lead, pa=x.pa;
+    if(FU_ESTADOS_LEAD_TERMINAIS.indexOf(l.st)!==-1) return;
+    var diasAtraso=obDiasEntre(new Date(pa.data));
+    itens.push({tipo:'lead', nome:l.emp||l.n||'—', comercial:l.ass||'—', valor:l.val||0, dias:(diasAtraso||0)+30,
+      tier:'urgente', motivo:'Ação agendada em atraso: '+(pa.tipo||'Ação')+' ('+pa.data.split('-').reverse().join('/')+')',
+      proximaAcao:pa.desc||pa.tipo||'Cumprir ação agendada', origId:l.id, leadId:l.id});
+  });
+  return itens;
+}
+window.agItensLeadsOrcamentos = agItensLeadsOrcamentos;
+
+var AG_TIER_ORDEM={urgente:0, alta:1, media:2, baixa:3};
+function _agTierDeCategoria(catIdx){
+  return catIdx<=1 ? 'urgente' : (catIdx<=3 ? 'alta' : (catIdx<=5 ? 'media' : 'baixa'));
+}
+
+// ── IDENTIDADE CANÓNICA ÚNICA (Etapa 7C) ────────────────────────────
+// Fonte ÚNICA de deduplicação para TODO o motor de prioridades — Centro de
+// Prioridades e Top Hoje passam a ler exatamente a mesma lista já
+// deduplicada, em vez de cada um fazer a sua própria passagem de dedup
+// (essa divergência era a causa da inconsistência "Restante da fila" vs
+// Top Hoje reportada). Junta os 3 domínios (Lead+Orçamento via
+// agItensLeadsOrcamentos, Cliente via agListaPrioridades, "hoje" via
+// agItensHoje) numa ÚNICA passagem de agrupamento por nome normalizado —
+// o vencedor de cada grupo (a categoria mais urgente, com maior dias/valor
+// em caso de empate) é O MESMO objeto reutilizado por qualquer chamador,
+// garantindo o mesmo tipo+origId (→ o mesmo _agItemKey) em toda a app.
+// Não altera nenhum dado original (cliData/crmLeads/orcData/crmAtividades)
+// — é só uma vista de leitura calculada a cada render.
+function agListaCanonica(){
+  var itensLO=agItensLeadsOrcamentos().map(function(it){
+    return Object.assign({}, it, {categoriaIdx: agClassificarCategoria(it.motivo)});
+  });
+  var itensCli=agListaPrioridades({todos:true}).map(function(x){
+    return {tipo:'cliente', nome:x.cliente.n, comercial:x.comercialAtivo||'—', valor:x.valorNegociacao||0,
+      dias:x.dias||0, tier:x.prioridade, motivo:x.motivo, proximaAcao:x.proximaAcao, origId:x.cliente.id,
+      ultimaAtividadeTs:x.ultimaAtividadeTs, ultimaRelacao:x.cliente.ultimaRelacao,
+      categoriaIdx: agClassificarCategoria(x.motivo)};
+  });
+  var itensHoje=agItensHoje(); // já vem com categoriaIdx:1 (ver definição mais abaixo)
+  var todos=itensLO.concat(itensCli).concat(itensHoje);
+  var totalBrutos=todos.length;
+
+  var grupos={};
+  todos.forEach(function(it){
+    var chave=_agNormNome(it.nome);
+    if(!chave || it.categoriaIdx==null) return;
+    var atual=grupos[chave];
+    if(!atual || it.categoriaIdx<atual.categoriaIdx || (it.categoriaIdx===atual.categoriaIdx && (it.dias||0)+(it.valor||0)>(atual.dias||0)+(atual.valor||0))){
+      grupos[chave]=it;
+    }
+  });
+  var lista=Object.keys(grupos).map(function(k){ return grupos[k]; });
+  lista.forEach(function(it){ if(!it.tier) it.tier=_agTierDeCategoria(it.categoriaIdx); });
+  return {lista:lista, duplicadosEliminados:totalBrutos-lista.length, totalBrutos:totalBrutos};
+}
+window.agListaCanonica = agListaCanonica;
+
+// Centro de Prioridades: vista sobre a lista canónica, filtrada por "minhas"
+// (carteira do comercial atual) e sem a categoria "hoje" (essa já tem o seu
+// próprio card "Lembretes de Hoje" — mostrá-la aqui também seria duplicar
+// no ecrã, não na identidade).
+function agListaUnificada(){
+  var isAdmin=!!(typeof CU!=='undefined'&&CU&&CU.admin);
+  var nomeCU=(typeof CU!=='undefined'&&CU)?CU.name:null;
+  var minhas=function(v){ return isAdmin||!nomeCU||v===nomeCU; };
+
+  var canon=agListaCanonica();
+  var lista=canon.lista
+    .filter(function(it){ return it.categoriaIdx!==1; })
+    .filter(function(it){ return minhas(it.comercial); });
+  lista.sort(function(a,b){
+    var oa=AG_TIER_ORDEM[a.tier], ob=AG_TIER_ORDEM[b.tier];
+    if(oa!==ob) return oa-ob;
+    return (b.dias||0)-(a.dias||0);
+  });
+  return {lista:lista, duplicadosEliminados:canon.duplicadosEliminados, totalBrutos:canon.totalBrutos};
+}
+window.agListaUnificada = agListaUnificada;
+
+var AG_TIPO_ICONE = {lead:'🔴', orc:'🟠', cliente:'🟡'};
+var AG_TIER_LABEL = {urgente:'Urgente', alta:'Alta', media:'Média', baixa:'Baixa'};
+
+// Abre a origem real do item (ficha de cliente, ou o lead/orçamento no
+// Pipeline/Orçamentos) — reaproveita cliOpenEdit/obAbrirLead/goPage já
+// existentes. Para leads/orçamentos ainda não há, no CRM, o mesmo conjunto
+// de 6 ações rápidas que a ficha de cliente tem (Ligar/WhatsApp/Email
+// dedicados) — em vez de inventar esse conjunto agora, os 6 botões dos
+// cards de Lead/Orçamento abrem a origem, onde as ferramentas já existentes
+// do Pipeline/Orçamentos ficam disponíveis. Fica documentado no relatório
+// como simplificação da v1 desta unificação.
+function agAbrirOrigem(item){
+  if(item.tipo==='cliente'){ cliOpenEdit(item.origId); return; }
+  if(item.leadId!=null){ obAbrirLead(item.leadId); return; }
+  goPage('comercial-orcamentos');
+}
+window.agAbrirOrigem = agAbrirOrigem;
+
+function _agFmtDias(item){
+  if(item.dias==null) return '—';
+  return item.dias+' dia'+(item.dias===1?'':'s');
+}
+
+// Todos os itemKey já promovidos ao Top 10 de HOJE, de qualquer comercial —
+// usado só para não repetir o mesmo item nas "Próximas Prioridades"
+// enquanto ele já está a ser trabalhado no Top 10 de alguém.
+function _agChavesTopHojeHoje(){
+  var hoje=_agHojeStr();
+  var s={};
+  (crmAtividades||[]).forEach(function(a){
+    if(a&&a.tipo==='TopHojeItem'&&a.data===hoje&&a.extra&&a.extra.itemKey) s[a.extra.itemKey]=true;
+  });
+  return s;
+}
+
+var _agFiltroAtivo='todas';
+var AG_FILTROS=[
+  {key:'todas',     label:'Todas'},
+  {key:'urgentes',  label:'Urgentes',  test:function(it){ return it.tier==='urgente'; }},
+  {key:'propostas', label:'Propostas', test:function(it){ return /Orçamento|Proposta enviada|Aguardando decisão/i.test(it.motivo); }},
+  {key:'leads',     label:'Leads',     test:function(it){ return it.tipo==='lead'; }},
+  {key:'clientes',  label:'Clientes',  test:function(it){ return it.tipo==='cliente'; }},
+  {key:'reativacao',label:'Reativação',test:function(it){ return /reativação/i.test(it.motivo); }}
+];
+function agFiltrarProximas(key){
+  _agFiltroAtivo=key;
+  try{ agRenderCentroUnificado(); }catch(e){}
+}
+window.agFiltrarProximas = agFiltrarProximas;
+function _agRenderFiltrosBar(){
+  var bar=document.getElementById('ag-filtros-bar');
+  if(!bar) return;
+  bar.innerHTML=AG_FILTROS.map(function(f){
+    var ativo=(f.key===_agFiltroAtivo);
+    return '<button class="tbtn'+(ativo?' y':'')+'" style="font-size:12px;padding:4px 11px" onclick="agFiltrarProximas(\''+f.key+'\')">'+f.label+'</button>';
+  }).join('');
+}
+
+function agRenderCentroUnificado(){
+  var wrap=document.getElementById('ag-prioridades-cards');
+  if(!wrap) return;
+  _agRenderFiltrosBar();
+  var res=agListaUnificada();
+  var jaNoTopHoje=_agChavesTopHojeHoje();
+  var lista=res.lista.filter(function(it){ return !jaNoTopHoje[_agItemKey(it)]; });
+  var filtro=AG_FILTROS.find(function(f){ return f.key===_agFiltroAtivo; });
+  if(filtro && filtro.test) lista=lista.filter(filtro.test);
+
+  if(!lista.length){
+    wrap.innerHTML='<div style="text-align:center;color:var(--muted);padding:22px;grid-column:1/-1">Sem prioridades pendentes — carteira em dia.</div>';
+  } else {
+    wrap.innerHTML=lista.map(function(item){
+      var idAttr=_agEsc(JSON.stringify(item.origId));
+      var valorLinha=item.valor>0 ? ('<div class="fu-card-linha"><span>Valor:</span> '+fmt(Math.round(item.valor))+'</div>') : '';
+      var acoes;
+      if(item.tipo==='cliente'){
+        acoes='<button class="tbtn" onclick="agLigar('+idAttr+')" title="Ligar">📞 Ligar</button>'
+          +'<button class="tbtn" onclick="agWhatsApp('+idAttr+')" title="WhatsApp">💬 WhatsApp</button>'
+          +'<button class="tbtn" onclick="agEmail('+idAttr+')" title="Email">✉️ Email</button>'
+          +'<button class="tbtn" onclick="agAdiar('+idAttr+')" title="Adiar">📅 Adiar</button>'
+          +'<button class="tbtn" onclick="agConcluir('+idAttr+')" title="Concluir">✅ Concluir</button>'
+          +'<button class="tbtn" onclick="agRegistarResultado('+idAttr+')" title="Registar resultado">📝 Registar</button>';
+      } else {
+        var itemJson=_agEsc(JSON.stringify(item));
+        acoes='<button class="tbtn" onclick="agAbrirOrigem('+itemJson+')" title="Abrir">↗ Abrir '+(item.tipo==='lead'?'lead':'orçamento')+'</button>';
+      }
+      return '<div class="fu-card ag-card ag-'+item.tier+'">'
+        +'<span class="ag-card-badge ag-'+item.tier+'">'+AG_TIER_LABEL[item.tier]+'</span>'
+        +'<div class="fu-card-cliente">'+(AG_TIPO_ICONE[item.tipo]||'')+' '+_agEsc(item.nome)+'</div>'
+        +'<div class="ag-card-motivo">'+_agEsc(item.motivo)+'</div>'
+        +'<div class="ag-card-acao">→ '+_agEsc(item.proximaAcao)+'</div>'
+        +'<div class="fu-card-linha"><span>Comercial:</span> '+_agEsc(item.comercial||'—')+'</div>'
+        +'<div class="fu-card-linha"><span>Há quanto tempo:</span> '+_agFmtDias(item)+'</div>'
+        +valorLinha
+        +'<div class="fu-card-acoes">'+acoes+'</div>'
+      +'</div>';
+    }).join('');
+  }
+
+  var resumoEl=document.getElementById('ag-admin-resumo');
+  if(!resumoEl) return;
+  var isAdmin=!!(typeof CU!=='undefined'&&CU&&CU.admin);
+  if(!isAdmin){ resumoEl.style.display='none'; resumoEl.innerHTML=''; return; }
+
+  var todosAdmin=agListaUnificada(); // já é "todos" quando CU é admin (minhas() sempre true)
+  var porComercial={}, porTipo={lead:0,orc:0,cliente:0};
+  todosAdmin.lista.forEach(function(item){
+    var com=item.comercial||'Sem comercial';
+    if(!porComercial[com]) porComercial[com]={urgente:0,alta:0,media:0,baixa:0,total:0};
+    porComercial[com][item.tier]++;
+    porComercial[com].total++;
+    porTipo[item.tipo]=(porTipo[item.tipo]||0)+1;
+  });
+  var nomes=Object.keys(porComercial).sort(function(a,b){ return porComercial[b].total-porComercial[a].total; });
+  var linhas=nomes.map(function(n){
+    var v=porComercial[n];
+    return '<tr><td>'+_agEsc(n)+'</td><td style="color:var(--r)">'+v.urgente+'</td><td style="color:var(--a)">'+v.alta+'</td><td style="color:var(--y)">'+v.media+'</td><td style="color:var(--b)">'+v.baixa+'</td><td><b>'+v.total+'</b></td></tr>';
+  }).join('');
+
+  var reatribuir=agClientesAReatribuir();
+  var porHistorico={};
+  reatribuir.forEach(function(c){ var h=c.comercialResp||'—'; porHistorico[h]=(porHistorico[h]||0)+1; });
+  var reatribuirResumo=Object.keys(porHistorico).map(function(h){ return _agEsc(h)+': <b>'+porHistorico[h]+'</b>'; }).join(' · ');
+  var reatribuirLinhas=reatribuir.slice().sort(function(a,b){ return (b.totalFaturadoHist||0)-(a.totalFaturadoHist||0); }).map(function(c){
+    var idAttr=_agEsc(JSON.stringify(c.id));
+    return '<tr style="cursor:pointer" onclick="cliOpenEdit('+idAttr+')">'
+      +'<td>'+_agEsc(c.n)+'</td>'
+      +'<td style="color:var(--muted)">'+_agEsc(c.comercialResp||'—')+'</td>'
+      +'<td style="font-family:\'DM Mono\',monospace;color:var(--y)">'+(c.totalFaturadoHist?fmt(Math.round(c.totalFaturadoHist)):'—')+'</td>'
+      +'<td><button class="tbtn" style="padding:3px 9px;font-size:11px" onclick="event.stopPropagation();cliOpenEdit('+idAttr+')">Abrir ficha</button></td>'
+    +'</tr>';
+  }).join('');
+
+  var resumoTop=agResumoTopHojeAdmin();
+  var topHojeLinha=resumoTop.map(function(r){
+    var texto=r.total ? (r.concluidas+'/'+r.total+' concluídas hoje') : 'sem prioridades';
+    var nomeVerComo="'"+r.nome.replace(/'/g,"\\'")+"'";
+    return '<div style="cursor:pointer" onclick="if(typeof obVerComoComerciais===\'function\'){var alvo=obVerComoComerciais().find(function(c){return c.name==='+nomeVerComo+';}); if(alvo&&typeof switchUser===\'function\') switchUser(alvo.id);}" title="Ver como '+_agEsc(r.nome)+'">'
+      +'<b style="color:var(--txt2)">'+_agEsc(r.nome.split(' ')[0])+'</b> — '+texto+'</div>';
+  }).join('');
+
+  resumoEl.style.display='block';
+  resumoEl.innerHTML='<div style="display:flex;gap:18px;flex-wrap:wrap;margin-bottom:12px;font-size:12.5px;padding:10px 14px;border-radius:8px;background:var(--bg2);border:1px solid var(--border)">'+topHojeLinha+'</div>'
+    +'<div class="tw"><table class="ag-resumo-table">'
+    +'<thead><tr><th>Comercial</th><th>Urgente</th><th>Alta</th><th>Média</th><th>Baixa</th><th>Total</th></tr></thead>'
+    +'<tbody>'+(linhas||'<tr><td colspan="6" style="text-align:center;color:var(--muted);font-style:italic">Sem prioridades geradas.</td></tr>')+'</tbody>'
+    +'</table></div>'
+    +'<div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:8px;font-size:12px;color:var(--muted)">'
+    +'<span>🔴 Leads/Orçamentos: <b style="color:var(--txt2)">'+(porTipo.lead+porTipo.orc)+'</b></span>'
+    +'<span>🟡 Clientes: <b style="color:var(--txt2)">'+porTipo.cliente+'</b></span>'
+    +'<span>Duplicados eliminados: <b style="color:var(--txt2)">'+todosAdmin.duplicadosEliminados+'</b></span>'
+    +'</div>'
+    +(reatribuir.length ? (
+      '<div style="margin-top:12px;padding:10px 14px;border-radius:8px;background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.25)">'
+      +'<div style="font-size:12.5px;font-weight:700;color:var(--a)">⚠ '+reatribuir.length+' cliente'+(reatribuir.length===1?'':'s')+' sem comercial ativo — necessita'+(reatribuir.length===1?'':'m')+' reatribuição</div>'
+      +'<div style="font-size:11.5px;color:var(--muted);margin:4px 0 10px">Vendedor histórico (preservado, já não está na empresa): '+reatribuirResumo+'. Distribuir manualmente entre Paulo Faria, Rui Mota, Humberto Estrelinha ou André Nolasco quando decidido — não é feito automaticamente.</div>'
+      +'<div class="tw" style="max-height:280px;overflow-y:auto"><table class="ag-resumo-table">'
+        +'<thead><tr><th>Cliente</th><th>Vendedor histórico</th><th>Faturado</th><th></th></tr></thead>'
+        +'<tbody>'+reatribuirLinhas+'</tbody>'
+      +'</table></div>'
+      +'</div>'
+    ) : '');
+}
+window.agRenderCentroUnificado = agRenderCentroUnificado;
+
+// ══ ETAPA 7B — AGENDA DIÁRIA (Top 10 de Hoje) ══════════════════════
+// Persistência: reaproveita ob-crm-atividades (chave já permitida por RLS
+// para o role 'comercial' e já sincronizada automaticamente — ver o wrap()
+// de saveCrmAtividades mais abaixo neste ficheiro). A seleção do Top 10 de
+// cada comercial em cada dia fica gravada como registos tipo:'TopHojeItem'
+// nesse mesmo array (ver crmAddAtividade opts.extra); NÃO é uma tabela nova
+// nem exige alteração de RLS. Uma vez gerado o Top 10 do dia, fica fixo —
+// concluir/adiar só muda o resultado desse registo, nunca gera outro para
+// o substituir (ver agObterTopHoje).
+var AG_CATEGORIAS=[
+  {key:'vencido',     label:'Follow-up/lembrete vencido',            match:/Lembrete vencido|Ação agendada em atraso/i},
+  {key:'hoje',        label:'Follow-up previsto para hoje',          match:null},
+  {key:'lead_urgente',label:'Lead parado urgente',                   match:/Lead parado/i},
+  {key:'proposta',    label:'Proposta aguardando resposta',          match:/Orçamento|Proposta enviada|Aguardando decisão/i},
+  {key:'compromisso', label:'Cliente com compromisso de contacto',   match:/Ligar novamente/i},
+  {key:'relevante',   label:'Cliente relevante sem contacto recente',match:/Cliente relevante|Muito interessado|Interessado|Cliente ocupado|Sem resposta/i},
+  {key:'reativacao',  label:'Reativação',                            match:/reativação/i}
+];
+function agClassificarCategoria(motivo){
+  for(var i=0;i<AG_CATEGORIAS.length;i++){
+    var c=AG_CATEGORIAS[i];
+    if(c.match && c.match.test(motivo)) return i;
+  }
+  return null;
+}
+function _agHojeStr(){
+  var pad=function(n){ return (n<10?'0':'')+n; };
+  var hj=new Date();
+  return hj.getFullYear()+'-'+pad(hj.getMonth()+1)+'-'+pad(hj.getDate());
+}
+function _agItemKey(it){ return it.tipo+':'+it.origId; }
+
+// Sinal "previsto para hoje" (categoria 1) — cliente com lembrete aberto
+// devido hoje (crmAtividades tipo=Lembrete) + lead com proximaAcao.data de
+// hoje (obAcoesAgendadas já separa isto para o card "hoje", mas aqui
+// precisamos da forma unificada, para poderem competir no Top 10).
+function agItensHoje(){
+  var hoje=_agHojeStr();
+  var out=[];
+  var cli=(typeof cliData!=='undefined'&&cliData)?cliData:[];
+  (crmAtividades||[]).forEach(function(a){
+    if(!a||a.tipo!=='Lembrete'||a.resultado) return;
+    var due=_agParseDue(a.due||a.data);
+    if(!due) return;
+    var pad=function(n){ return (n<10?'0':'')+n; };
+    var dueStr=due.getFullYear()+'-'+pad(due.getMonth()+1)+'-'+pad(due.getDate());
+    if(dueStr!==hoje) return;
+    var c=(a.clienteId!=null)?cli.find(function(x){ return x&&x.id===a.clienteId; }):null;
+    if(!c||c.statusComercial==='reatribuir') return;
+    var comercialAtivo=(c.comercialAtivo!=null&&c.comercialAtivo!=='')?c.comercialAtivo:c.comercialResp;
+    out.push({tipo:'cliente', nome:c.n, comercial:comercialAtivo||'—', valor:0, dias:0,
+      motivo:'Lembrete previsto para hoje: '+(a.acao||'Lembrete'), proximaAcao:a.acao||'Cumprir o lembrete de hoje',
+      origId:c.id, categoriaIdx:1});
+  });
+  (crmLeads||[]).forEach(function(l){
+    if(FU_ESTADOS_LEAD_TERMINAIS.indexOf(l.st)!==-1) return;
+    var pa=l.proximaAcao;
+    if(!pa||pa.data!==hoje) return;
+    out.push({tipo:'lead', nome:l.emp||l.n||'—', comercial:l.ass||'—', valor:l.val||0, dias:0,
+      motivo:'Ação agendada para hoje: '+(pa.tipo||'Ação'), proximaAcao:pa.desc||pa.tipo||'Cumprir ação agendada',
+      origId:l.id, leadId:l.id, categoriaIdx:1});
+  });
+  return out;
+}
+
+// Lista candidata completa (ordenada, NÃO cortada em 10) para UM comercial
+// específico — funciona tanto para o próprio comercial como para o admin a
+// consultar a carteira de outro (nunca "todos" ao mesmo tempo; o Top 10 é
+// sempre por pessoa). Lê a MESMA lista canónica que agListaUnificada() usa
+// (agListaCanonica) — mesma identidade/desduplicação em ambos, incluindo a
+// categoria "hoje" que o Centro esconde mas o Top Hoje precisa de considerar.
+function agCandidatosTopHoje(comercialAlvo){
+  var lista=agListaCanonica().lista.filter(function(it){ return it.comercial===comercialAlvo; });
+  lista=lista.slice();
+  lista.sort(function(a,b){
+    if(a.categoriaIdx!==b.categoriaIdx) return a.categoriaIdx-b.categoriaIdx;
+    if((b.dias||0)!==(a.dias||0)) return (b.dias||0)-(a.dias||0);
+    return (b.valor||0)-(a.valor||0);
+  });
+  return lista;
+}
+window.agCandidatosTopHoje = agCandidatosTopHoje;
+
+// Registos TopHojeItem já gravados hoje para este comercial (crmAtividades),
+// na ordem original de seleção (extra.ordem) — é a fonte de verdade fixa do
+// dia, não recalculada a cada render.
+function _agTopHojeArmazenado(comercialAlvo){
+  var hoje=_agHojeStr();
+  return (crmAtividades||[])
+    .filter(function(a){ return a&&a.tipo==='TopHojeItem'&&a.autor===comercialAlvo&&a.data===hoje&&a.extra; })
+    .sort(function(a,b){ return (a.extra.ordem||0)-(b.extra.ordem||0); });
+}
+
+// Gera (grava) o Top 10 do dia para este comercial, a partir dos candidatos
+// atuais — só deve ser chamado quando ainda não existe nenhum registo de
+// hoje para ele (ver agObterTopHoje). Grava no máximo 10, podendo gravar
+// menos se não houver 10 sinais reais (não preenche artificialmente).
+function agGerarTopHoje(comercialAlvo){
+  var candidatos=agCandidatosTopHoje(comercialAlvo).slice(0,10);
+  candidatos.forEach(function(it,i){
+    crmAddAtividade(it.leadId||null, 'TopHojeItem', 'Selecionado p/ Top 10 de hoje: '+it.nome+' — '+it.motivo, comercialAlvo, {
+      clienteId: it.tipo==='cliente'?it.origId:null,
+      orcId: it.tipo==='orc'?it.origId:null,
+      data: _agHojeStr(), tags:['top-hoje'], origem:'centro-prioridades',
+      extra:{itemKey:_agItemKey(it), ordem:i, tipoOrigem:it.tipo, origId:it.origId, leadId:it.leadId||null,
+        nome:it.nome, motivo:it.motivo, proximaAcao:it.proximaAcao, valor:it.valor||0, dias:it.dias||0,
+        categoriaIdx:it.categoriaIdx, categoriaLabel:AG_CATEGORIAS[it.categoriaIdx].label}
+    });
+  });
+}
+
+// Orquestrador: devolve o Top 10 (fixo) de hoje para um comercial, gerando-o
+// na primeira vez que for pedido hoje. Cada item já traz .estado
+// ('pendente'|'concluida'|'adiada') lido do próprio registo persistido.
+function agObterTopHoje(comercialAlvo){
+  var existentes=_agTopHojeArmazenado(comercialAlvo);
+  if(!existentes.length){
+    agGerarTopHoje(comercialAlvo);
+    existentes=_agTopHojeArmazenado(comercialAlvo);
+  }
+  return existentes.map(function(a){
+    var estado='pendente';
+    if(a.resultado==='Concluída') estado='concluida';
+    else if(a.resultado==='Adiada') estado='adiada';
+    return Object.assign({}, a.extra, {estado:estado, atividadeTs:a.ts});
+  });
+}
+window.agObterTopHoje = agObterTopHoje;
+
+function _agFindTopHojeAtiv(comercialAlvo, itemKey){
+  var hoje=_agHojeStr();
+  return (crmAtividades||[]).find(function(a){
+    return a&&a.tipo==='TopHojeItem'&&a.autor===comercialAlvo&&a.data===hoje&&a.extra&&a.extra.itemKey===itemKey;
+  });
+}
+function agConcluirTopHoje(itemKey){
+  var comercial=(typeof CU!=='undefined'&&CU)?CU.name:null;
+  var a=_agFindTopHojeAtiv(comercial, itemKey);
+  if(!a) return;
+  a.resultado='Concluída';
+  saveCrmAtividades();
+  if(typeof showToast==='function') showToast('✓ Prioridade concluída');
+  try{ agRenderTopHoje(); }catch(e){}
+  try{ agRenderCentroUnificado(); }catch(e){}
+}
+window.agConcluirTopHoje = agConcluirTopHoje;
+function agAdiarTopHoje(itemKey){
+  var comercial=(typeof CU!=='undefined'&&CU)?CU.name:null;
+  var a=_agFindTopHojeAtiv(comercial, itemKey);
+  if(!a) return;
+  a.resultado='Adiada';
+  saveCrmAtividades();
+  if(typeof showToast==='function') showToast('📅 Adiada — sai do Top 10 de hoje, sem entrar outra automaticamente');
+  try{ agRenderTopHoje(); }catch(e){}
+  try{ agRenderCentroUnificado(); }catch(e){}
+}
+window.agAdiarTopHoje = agAdiarTopHoje;
+
+// Resumo admin: X/10 concluídas hoje por cada comercial ativo nomeado.
+// Chamar agObterTopHoje() aqui pode gerar o Top 10 de um comercial que
+// ainda não abriu o Meu Painel hoje — sem problema: a seleção é puramente
+// determinística (mesmos dados reais + mesma data), por isso o resultado
+// é sempre o mesmo independentemente de quem a despoletou primeiro.
+function agResumoTopHojeAdmin(){
+  var nomes=['Paulo Faria','Rui Mota','Humberto Estrelinha','André Nolasco'];
+  return nomes.map(function(n){
+    var top=agObterTopHoje(n);
+    var concluidas=top.filter(function(x){ return x.estado==='concluida'; }).length;
+    return {nome:n, total:top.length, concluidas:concluidas};
+  });
+}
+window.agResumoTopHojeAdmin = agResumoTopHojeAdmin;
+
+function agRenderTopHoje(){
+  var wrap=document.getElementById('ag-tophoje-cards');
+  if(!wrap) return;
+  var nome=(typeof CU!=='undefined'&&CU)?CU.name:null;
+  if(!nome){ wrap.innerHTML=''; return; }
+  var top=agObterTopHoje(nome);
+  var pendentes=top.filter(function(x){ return x.estado==='pendente'; });
+  var concluidas=top.filter(function(x){ return x.estado==='concluida'; });
+  var adiadas=top.filter(function(x){ return x.estado==='adiada'; });
+
+  var progEl=document.getElementById('ag-tophoje-progresso');
+  if(progEl){
+    if(!top.length){
+      progEl.innerHTML='<div style="font-size:12.5px;color:var(--muted)">Sem prioridades para hoje — carteira em dia.</div>';
+    } else {
+      var pct=Math.round(100*concluidas.length/top.length);
+      progEl.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center;font-size:12.5px;color:var(--txt2);margin-bottom:5px">'
+        +'<span>Hoje: <b>'+concluidas.length+'/'+top.length+'</b> concluídas</span>'
+        +'<span style="color:var(--muted)">'+pendentes.length+' restante'+(pendentes.length===1?'':'s')+(adiadas.length?' · '+adiadas.length+' adiada'+(adiadas.length===1?'':'s'):'')+'</span>'
+        +'</div>'
+        +'<div style="height:6px;border-radius:4px;background:var(--bg3);overflow:hidden"><div style="height:100%;width:'+pct+'%;background:var(--g);transition:width .3s"></div></div>';
+    }
+  }
+
+  var visiveis=top.filter(function(x){ return x.estado==='pendente'; });
+  if(!visiveis.length){
+    wrap.innerHTML=top.length
+      ? '<div style="text-align:center;color:var(--g);padding:18px;grid-column:1/-1">✓ Todas as prioridades de hoje foram concluídas ou adiadas.</div>'
+      : '<div style="text-align:center;color:var(--muted);padding:18px;grid-column:1/-1">Sem prioridades para hoje.</div>';
+    return;
+  }
+  wrap.innerHTML=visiveis.map(function(item){
+    var idAttr=_agEsc(JSON.stringify(item.origId));
+    var keyAttr=_agEsc(JSON.stringify(item.itemKey));
+    var valorLinha=item.valor>0 ? (' · €'+Math.round(item.valor).toLocaleString('pt-PT')) : '';
+    var acoes;
+    if(item.tipoOrigem==='cliente'){
+      acoes='<button class="tbtn" onclick="agLigar('+idAttr+')" title="Ligar">📞</button>'
+        +'<button class="tbtn" onclick="agWhatsApp('+idAttr+')" title="WhatsApp">💬</button>'
+        +'<button class="tbtn" onclick="agEmail('+idAttr+')" title="Email">✉️</button>'
+        +'<button class="tbtn" onclick="agRegistarResultado('+idAttr+')" title="Registar resultado">📝</button>'
+        +'<button class="tbtn" onclick="agAdiarTopHoje('+keyAttr+')" title="Adiar">📅</button>'
+        +'<button class="tbtn" onclick="agConcluirTopHoje('+keyAttr+')" title="Concluir">✅</button>';
+    } else {
+      var origemJson=_agEsc(JSON.stringify({tipo:item.tipoOrigem, origId:item.origId, leadId:item.leadId}));
+      acoes='<button class="tbtn" onclick="agAbrirOrigem('+origemJson+')" title="Abrir">↗ Abrir</button>'
+        +'<button class="tbtn" onclick="agAdiarTopHoje('+keyAttr+')" title="Adiar">📅 Adiar</button>'
+        +'<button class="tbtn" onclick="agConcluirTopHoje('+keyAttr+')" title="Concluir">✅ Concluir</button>';
+    }
+    return '<div class="fu-card ag-card ag-tophoje-card">'
+      +'<div class="fu-card-cliente">'+_agEsc(item.nome)+'</div>'
+      +'<div class="ag-card-motivo">'+_agEsc(item.motivo)+'</div>'
+      +'<div class="ag-card-acao" style="color:var(--muted);font-style:normal">'+(item.dias?'há '+item.dias+' dia'+(item.dias===1?'':'s'):'hoje')+valorLinha+'</div>'
+      +'<div class="fu-card-acoes">'+acoes+'</div>'
+    +'</div>';
+  }).join('');
+}
+window.agRenderTopHoje = agRenderTopHoje;
+
 // Ações rápidas dos cards — todas reutilizam funções já existentes da ficha
 // de cliente (cliOpenEdit/cliRegistarContacto/cliEnviarWhatsApp/
 // cliCriarLembrete); nenhuma escreve diretamente em crmAtividades por si só.
@@ -26491,7 +27049,7 @@ function agConcluir(clienteId){
   a.resultado='Concluído';
   if(typeof saveCrmAtividades==='function') saveCrmAtividades();
   if(typeof showToast==='function') showToast('✓ Lembrete concluído');
-  try{ agRenderPrioridades(); }catch(e){}
+  try{ agRenderCentroUnificado(); }catch(e){}
   try{ mpRenderLembretesHoje(); }catch(e){}
 }
 window.agConcluir = agConcluir;
@@ -26629,8 +27187,9 @@ window.obAtualizarPendencias=obAtualizarPendencias;
 function obOrcUltimaAtividade(orc){
   var ts=null;
   try{
+    // idem obLeadUltimaAtividade: TopHojeItem nunca conta como contacto real.
     var a=(crmAtividades||[]).find(function(x){
-      return x.orcId===orc.num || (orc.leadId && x.leadId===orc.leadId);
+      return x.tipo!=='TopHojeItem' && (x.orcId===orc.num || (orc.leadId && x.leadId===orc.leadId));
     });
     if(a) ts=new Date(a.ts);
   }catch(e){}
@@ -26801,7 +27360,7 @@ function fuColunaDoOrc(o){
   var classificacao=triagem&&triagem.classificacao;
   if(classificacao==='contactar_novamente') return 'contactar_novamente';
   if(classificacao==='ainda_em_negociacao') return 'em_negociacao';
-  var temAtividade=(crmAtividades||[]).some(function(x){ return x.orcId===o.num || (o.leadId&&x.leadId===o.leadId); });
+  var temAtividade=(crmAtividades||[]).some(function(x){ return x.tipo!=='TopHojeItem' && (x.orcId===o.num || (o.leadId&&x.leadId===o.leadId)); });
   if(classificacao||temAtividade) return 'contactado';
   return 'a_contactar';
 }
