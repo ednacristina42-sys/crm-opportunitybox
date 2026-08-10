@@ -5617,6 +5617,24 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--txt);min-he
 .fu-card-acoes select,.fu-card-acoes .tbtn{font-size:11px;padding:4px 6px;background:var(--bg2);color:var(--txt2);border:1px solid var(--border);border-radius:6px;font-family:'Inter',sans-serif;cursor:pointer}
 .fu-cards-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px}
 
+/* ADD: Agente de Follow-up (Etapa 6) — reaproveita .fu-card, só acrescenta a
+   barra de cor por prioridade e o resumo admin por comercial. */
+.ag-card{border-left:3px solid var(--muted)}
+.ag-card.ag-urgente{border-left-color:var(--r)}
+.ag-card.ag-alta{border-left-color:var(--a)}
+.ag-card.ag-media{border-left-color:var(--y)}
+.ag-card.ag-baixa{border-left-color:var(--b)}
+.ag-card-badge{display:inline-block;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;padding:2px 7px;border-radius:5px;margin-bottom:5px}
+.ag-card-badge.ag-urgente{background:rgba(239,68,68,.15);color:var(--r)}
+.ag-card-badge.ag-alta{background:rgba(245,158,11,.15);color:var(--a)}
+.ag-card-badge.ag-media{background:rgba(250,204,21,.12);color:var(--y)}
+.ag-card-badge.ag-baixa{background:rgba(59,130,246,.12);color:var(--b)}
+.ag-card-motivo{font-size:12px;color:var(--txt2);margin-bottom:4px}
+.ag-card-acao{font-size:11.5px;color:var(--muted);font-style:italic;margin-bottom:6px}
+.ag-resumo-table{width:100%;border-collapse:collapse;font-size:12.5px}
+.ag-resumo-table th{padding:6px 10px;font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;text-align:left;border-bottom:1px solid var(--border)}
+.ag-resumo-table td{padding:6px 10px;border-bottom:1px solid var(--border);color:var(--txt2)}
+
 /* Tables */
 .tw{background:var(--bg2);border:1px solid var(--border);border-radius:8px;overflow:hidden}
 table{width:100%;border-collapse:collapse}
@@ -7175,6 +7193,15 @@ tbody tr:hover{background:rgba(255,203,45,.05)}
         <tbody id="mp-lembretes-hoje"></tbody>
       </table>
     </div>
+
+    <!-- ADD: Agente Comercial de Follow-up (Etapa 6) — motor determinístico de
+         prioridades sobre cliData/crmAtividades/orcData já existentes. Sem tabela
+         nova, sem IA a inventar prioridades. Populado por agRenderPrioridades(),
+         chamado de dentro de renderMeuPainel(). Respeita "Ver como comercial"
+         (mesmo padrão isAdmin/minhas() dos cards acima). -->
+    <div class="sh"><h2>🤖 Prioridades do Agente</h2></div>
+    <div id="ag-admin-resumo" style="display:none;margin-bottom:14px"></div>
+    <div class="fu-cards-grid" id="ag-prioridades-cards"></div>
 
     <div class="sh"><h2>Resumo comercial</h2></div>
     <div class="g3">
@@ -15436,9 +15463,9 @@ function _cliDynModal(titulo, corpoHTML, onOK, okLabel){
   ov.querySelector('#_cdm-ok').onclick=function(){ var r=true; try{ r=onOK(ov); }catch(e){ console.warn('[cli-acao]',e); } if(r!==false) close(); };
   return ov;
 }
-function cliRegistarContacto(){
+function cliRegistarContacto(tipoPreSel){
   var c=_cliAtual(); if(!c){ return; }
-  _cliDynModal('📇 Registar contacto',
+  var ovRef=_cliDynModal('📇 Registar contacto',
     '<div class="form-row"><div class="form-group"><label class="form-label">Tipo</label><select class="form-select" id="cli-ct-tipo"><option>Nota</option><option>Chamada</option><option>Email</option><option>Visita</option><option>WhatsApp</option></select></div>'
    +'<div class="form-group"><label class="form-label">Resultado</label><select class="form-select" id="cli-ct-res"><option value="">Selecione…</option><option>Interessado</option><option>Muito interessado</option><option>Proposta enviada</option><option>Aguardando decisão</option><option>Cliente ocupado</option><option>Ligar novamente</option><option>Sem resposta</option><option>Sem interesse</option></select></div></div>'
    +'<div class="form-group"><label class="form-label">Nota</label><textarea class="form-input" id="cli-ct-nota" rows="3" placeholder="O que aconteceu neste contacto…"></textarea></div>',
@@ -15453,6 +15480,7 @@ function cliRegistarContacto(){
       if(typeof showToast==='function') showToast('✓ Contacto registado');
       return true;
     }, 'Registar');
+  if(tipoPreSel && ovRef){ var tsel=ovRef.querySelector('#cli-ct-tipo'); if(tsel) tsel.value=tipoPreSel; }
 }
 function cliCriarLembrete(){
   var c=_cliAtual(); if(!c){ return; }
@@ -15498,8 +15526,30 @@ function cliEnviarWhatsApp(){
     }, 'Abrir WhatsApp');
   var ta=ov.querySelector('#cli-wa-msg'); if(ta) ta.value=sugestao;
 }
+// Mesmo padrão de cliEnviarWhatsApp() (mailto: em vez de wa.me) — usado pela
+// ação rápida "✉️ Email" do Agente de Follow-up (Etapa 6) e disponível na
+// própria ficha de cliente.
+function cliAbrirEmail(){
+  var c=_cliAtual(); if(!c){ return; }
+  var emailRaw=c.email||c.finEmail||'';
+  if(!emailRaw){ alert('Este cliente não tem email — não é possível abrir o cliente de email.'); return; }
+  var assuntoSug='OpportunityBox — '+(c.n||'contacto');
+  var ov=_cliDynModal('✉️ Enviar Email',
+    '<div style="font-size:12px;color:var(--muted);margin-bottom:8px;line-height:1.5">Para: <b style="color:var(--txt2)">'+emailRaw+'</b> · o assunto é <b>sugerido e editável</b>. Nada é enviado automaticamente — abre o teu cliente de email para confirmares o envio.</div>'
+   +'<div class="form-group"><label class="form-label">Assunto</label><input class="form-input" id="cli-em-assunto" type="text"></div>',
+    function(ov){
+      var assunto=(ov.querySelector('#cli-em-assunto')||{}).value||'';
+      window.open('mailto:'+encodeURIComponent(emailRaw)+'?subject='+encodeURIComponent(assunto),'_blank');
+      crmAddAtividade(c.leadId||null, 'Email', 'Email iniciado — '+(c.n||'cliente')+' | Assunto: '+assunto, (typeof CU!=='undefined'&&CU&&CU.name)?CU.name:'Sistema',
+        {clienteId:c.id, canal:'email', origem:'CRM', tags:['email']});
+      if(typeof showToast==='function') showToast('✓ Email aberto (registado)');
+      return true;
+    }, 'Abrir Email');
+  var inp=ov.querySelector('#cli-em-assunto'); if(inp) inp.value=assuntoSug;
+}
 window.cliRegistarContacto=cliRegistarContacto;
 window.cliCriarLembrete=cliCriarLembrete;
+window.cliAbrirEmail=cliAbrirEmail;
 window.cliEnviarWhatsApp=cliEnviarWhatsApp;
 
 function cliToggleIvaIsento(){
@@ -25509,6 +25559,8 @@ function renderMeuPainel(){
   }
   // ADD: card "Lembretes de Hoje" — só leitura de crmAtividades + cliData.
   try{ mpRenderLembretesHoje(); }catch(e){}
+  // ADD: Agente Comercial de Follow-up (Etapa 6) — motor de prioridades por cliente.
+  try{ agRenderPrioridades(); }catch(e){}
 }
 window.renderMeuPainel=renderMeuPainel;
 
@@ -26158,6 +26210,291 @@ function mpRenderLembretesHoje(){
   }).join('');
 }
 window.mpRenderLembretesHoje=mpRenderLembretesHoje;
+
+// ══ AGENTE COMERCIAL DE FOLLOW-UP (Etapa 6) ═════════════════════════
+// Motor determinístico de prioridades por CLIENTE (cliData), distinto do
+// motor de Follow-up de ORÇAMENTOS/LEADS já existente (fu*, mais abaixo) —
+// não o substitui nem duplica, cobre uma granularidade que ainda não
+// existia (carteira de clientes). Reutiliza sempre estruturas já existentes:
+// crmAtividades (tipo/resultado/due já usados por Registar Contacto e
+// Criar Lembrete), cliData (comercialResp/ultimaRelacao/totalFaturadoHist
+// vindos da importação Etapa 5), orcData (valor em negociação real).
+// Prioridade é puramente calculada, nunca persistida — não introduz estado
+// novo nem tabela nova. Regras v1 (ajustáveis nestas constantes):
+var AG_LIMITE_PROPOSTA_URGENTE = 14;      // dias sem retorno após "Proposta enviada" -> URGENTE (antes disso, ALTA)
+var AG_LIMITE_RELEVANTE_SEM_CONTACTO = 45; // dias sem contacto p/ cliente relevante (com faturação) -> MÉDIA
+var AG_LIMITE_REATIVACAO = 180;            // dias sem contacto p/ cliente antigo (qualquer faturação) -> BAIXA
+var AG_VALOR_RELEVANTE = 5000;             // €, separa "cliente relevante" (MÉDIA) de "reativação" (BAIXA)
+
+// "vendedor histórico" (c.comercialResp, quem realmente vendeu — nunca
+// alterado) vs "comercial ativo" (c.comercialAtivo, a quem a carteira
+// pertence hoje) — campos gravados na importação/reclassificação, nunca
+// recalculados aqui. Clientes com c.statusComercial==='reatribuir'
+// (ex-colaboradores como Andreia/Victor Horta) não geram prioridade para
+// nenhum comercial ativo; aparecem só na lista "a reatribuir" do admin.
+
+var AG_PRIORIDADES = {
+  urgente: {key:'urgente', label:'Urgente', ordem:0},
+  alta:    {key:'alta',    label:'Alta',    ordem:1},
+  media:   {key:'media',   label:'Média',   ordem:2},
+  baixa:   {key:'baixa',   label:'Baixa',   ordem:3}
+};
+
+function _agParseDue(d){
+  if(!d) return null;
+  var m=String(d).match(/^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2}))?/);
+  if(!m) return null;
+  return new Date(+m[1], +m[2]-1, +m[3], m[4]?+m[4]:23, m[5]?+m[5]:59);
+}
+function _agParseDataPT(d){
+  if(!d) return null;
+  var p=String(d).split('/'); if(p.length!==3) return null;
+  var dt=new Date(+p[2], +p[1]-1, +p[0]);
+  return isNaN(dt) ? null : dt;
+}
+
+// Avalia UM cliente e devolve {prioridade, motivo, proximaAcao, dias, ts} ou
+// null se não houver sinal nenhum que justifique aparecer na lista — evitar
+// gerar "prioridade" para os ~1700 clientes importados sem qualquer sinal
+// real seria puro ruído.
+function agAvaliarCliente(c, atividadesDoCliente){
+  var agora=new Date();
+  var lembreteAberto=atividadesDoCliente.find(function(a){ return a.tipo==='Lembrete' && !a.resultado; });
+  if(lembreteAberto){
+    var due=_agParseDue(lembreteAberto.due||lembreteAberto.data);
+    if(due && due<agora){
+      var diasVenc=Math.floor((agora-due)/86400000);
+      return {prioridade:'urgente', motivo:'Lembrete vencido há '+diasVenc+' dia'+(diasVenc===1?'':'s')+' ('+(lembreteAberto.acao||'Lembrete')+')',
+        proximaAcao:lembreteAberto.acao||'Cumprir o lembrete em atraso', dias:diasVenc, ativId:lembreteAberto.leadId, ts:lembreteAberto.ts, ref:lembreteAberto};
+    }
+    // lembrete aberto mas ainda não vencido (hoje/futuro) — já coberto pelo card "Lembretes de Hoje"; não gera prioridade aqui.
+  }
+
+  var ultimaComResultado=atividadesDoCliente.find(function(a){ return !!a.resultado; });
+  if(ultimaComResultado){
+    var dias=obDiasEntre(new Date(ultimaComResultado.ts));
+    var res=ultimaComResultado.resultado;
+    var houveAcaoDepois = atividadesDoCliente[0] && atividadesDoCliente[0].ts!==ultimaComResultado.ts;
+    if(res==='Sem interesse') return null; // cliente já disse que não quer — não perseguir
+    if(res==='Proposta enviada'){
+      if(dias>=AG_LIMITE_PROPOSTA_URGENTE) return {prioridade:'urgente', motivo:'Proposta enviada há '+dias+' dias sem resposta', proximaAcao:'Fazer follow-up urgente da proposta', dias:dias, ts:ultimaComResultado.ts, ref:ultimaComResultado};
+      return {prioridade:'alta', motivo:'Proposta enviada há '+dias+' dia'+(dias===1?'':'s')+' sem retorno', proximaAcao:'Confirmar receção e disponibilidade para avançar', dias:dias, ts:ultimaComResultado.ts, ref:ultimaComResultado};
+    }
+    if(res==='Aguardando decisão') return {prioridade:'alta', motivo:'Aguardando decisão do cliente há '+dias+' dia'+(dias===1?'':'s'), proximaAcao:'Confirmar decisão com o cliente', dias:dias, ts:ultimaComResultado.ts, ref:ultimaComResultado};
+    if(res==='Muito interessado' && !houveAcaoDepois) return {prioridade:'alta', motivo:'"Muito interessado" sem ação seguinte há '+dias+' dia'+(dias===1?'':'s'), proximaAcao:'Avançar negociação / enviar proposta', dias:dias, ts:ultimaComResultado.ts, ref:ultimaComResultado};
+    if(res==='Ligar novamente') return {prioridade:'alta', motivo:'Cliente pediu para ligar novamente', proximaAcao:'Ligar conforme pedido', dias:dias, ts:ultimaComResultado.ts, ref:ultimaComResultado};
+    if(res==='Interessado' || res==='Cliente ocupado' || res==='Sem resposta') return {prioridade:'media', motivo:'"'+res+'" há '+dias+' dia'+(dias===1?'':'s')+' sem novo contacto', proximaAcao:'Tentar novo contacto', dias:dias, ts:ultimaComResultado.ts, ref:ultimaComResultado};
+    return null;
+  }
+
+  // Sem nenhuma atividade registada com resultado — usar sinal financeiro real
+  // (vindo da importação Etapa 5), nunca inventado.
+  var ultimaRel=_agParseDataPT(c.ultimaRelacao);
+  var diasRel=ultimaRel ? obDiasEntre(ultimaRel) : null;
+  if(diasRel===null) return null; // sem qualquer sinal — não gerar ruído
+  var faturado=parseFloat(c.totalFaturadoHist||0);
+  if(faturado>=AG_VALOR_RELEVANTE && diasRel>=AG_LIMITE_RELEVANTE_SEM_CONTACTO){
+    return {prioridade:'media', motivo:'Cliente relevante ('+fmt(Math.round(faturado))+' faturados) sem contacto há '+diasRel+' dias', proximaAcao:'Retomar contacto — cliente de valor', dias:diasRel, ts:null, ref:null};
+  }
+  if(faturado>0 && diasRel>=AG_LIMITE_REATIVACAO){
+    return {prioridade:'baixa', motivo:'Cliente antigo sem atividade há '+diasRel+' dias — oportunidade de reativação', proximaAcao:'Avaliar reativação', dias:diasRel, ts:null, ref:null};
+  }
+  return null;
+}
+window.agAvaliarCliente = agAvaliarCliente;
+
+// Lista completa, já filtrada por "Ver como comercial" (mesmo padrão isAdmin/
+// minhas() usado em renderMeuPainel/mpRenderLembretesHoje) e ordenada por
+// prioridade e depois por dias (mais antigo primeiro).
+function agListaPrioridades(){
+  var isAdmin=!!(typeof CU!=='undefined'&&CU&&CU.admin);
+  var nome=(typeof CU!=='undefined'&&CU)?CU.name:null;
+  var minhas=function(v){ return isAdmin||!nome||v===nome; };
+  var cli=(typeof cliData!=='undefined'&&cliData)?cliData:[];
+  var ativ=(typeof crmAtividades!=='undefined'&&crmAtividades)?crmAtividades:[];
+  var orcAll=(typeof orcData!=='undefined'&&orcData)?orcData:[];
+
+  var porCliente={};
+  ativ.forEach(function(a){ if(a && a.clienteId!=null){ (porCliente[a.clienteId]=porCliente[a.clienteId]||[]).push(a); } });
+
+  var out=[];
+  cli.forEach(function(c){
+    if(!c) return;
+    // Clientes de ex-colaboradores (statusComercial==='reatribuir') não geram
+    // prioridade para ninguém aqui — ficam só na lista "a reatribuir" do
+    // admin (agClientesAReatribuir), até serem distribuídos manualmente.
+    if(c.statusComercial==='reatribuir') return;
+    var comercialAtivo = (c.comercialAtivo!=null && c.comercialAtivo!=='') ? c.comercialAtivo : c.comercialResp;
+    if(!minhas(comercialAtivo)) return;
+    var av=agAvaliarCliente(c, porCliente[c.id]||[]);
+    if(!av) return;
+    var negociacao=orcAll.filter(function(o){ return o.cli===c.n && FU_ESTADOS_ORC_TERMINAIS.indexOf(o.st)===-1; })
+      .reduce(function(s,o){ return s+((typeof orcGetValorTotal==='function')?orcGetValorTotal(o):(o.val||0)); },0);
+    out.push({cliente:c, prioridade:av.prioridade, motivo:av.motivo, proximaAcao:av.proximaAcao, dias:av.dias, ultimaAtividadeTs:av.ts, valorNegociacao:negociacao, comercialAtivo:comercialAtivo});
+  });
+  out.sort(function(a,b){
+    var oa=AG_PRIORIDADES[a.prioridade].ordem, ob=AG_PRIORIDADES[b.prioridade].ordem;
+    if(oa!==ob) return oa-ob;
+    return (b.dias||0)-(a.dias||0);
+  });
+  return out;
+}
+window.agListaPrioridades = agListaPrioridades;
+
+function _agEsc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(ch){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]; }); }
+function _agFmtUltimaAtiv(item){
+  if(item.ultimaAtividadeTs){
+    var d=new Date(item.ultimaAtividadeTs);
+    return isNaN(d) ? '—' : d.toLocaleDateString('pt-PT',{day:'2-digit',month:'2-digit',year:'2-digit'});
+  }
+  return item.cliente.ultimaRelacao || '—';
+}
+
+function agRenderPrioridades(){
+  var wrap=document.getElementById('ag-prioridades-cards');
+  if(!wrap) return;
+  var lista=agListaPrioridades();
+
+  if(!lista.length){
+    wrap.innerHTML='<div style="text-align:center;color:var(--muted);padding:22px;grid-column:1/-1">Sem prioridades pendentes — carteira em dia.</div>';
+  } else {
+    wrap.innerHTML=lista.map(function(item){
+      var c=item.cliente, p=AG_PRIORIDADES[item.prioridade];
+      var idAttr=_agEsc(JSON.stringify(c.id));
+      var valorLinha=item.valorNegociacao>0 ? ('<div class="fu-card-linha"><span>Em negociação:</span> '+fmt(Math.round(item.valorNegociacao))+'</div>') : '';
+      return '<div class="fu-card ag-card ag-'+p.key+'">'
+        +'<span class="ag-card-badge ag-'+p.key+'">'+p.label+'</span>'
+        +'<div class="fu-card-cliente">'+_agEsc(c.n)+'</div>'
+        +'<div class="ag-card-motivo">'+_agEsc(item.motivo)+'</div>'
+        +'<div class="ag-card-acao">→ '+_agEsc(item.proximaAcao)+'</div>'
+        +'<div class="fu-card-linha"><span>Comercial:</span> '+_agEsc(item.comercialAtivo||'—')+'</div>'
+        +'<div class="fu-card-linha"><span>Última atividade:</span> '+_agEsc(_agFmtUltimaAtiv(item))+'</div>'
+        +valorLinha
+        +'<div class="fu-card-acoes">'
+          +'<button class="tbtn" onclick="agLigar('+idAttr+')" title="Ligar">📞 Ligar</button>'
+          +'<button class="tbtn" onclick="agWhatsApp('+idAttr+')" title="WhatsApp">💬 WhatsApp</button>'
+          +'<button class="tbtn" onclick="agEmail('+idAttr+')" title="Email">✉️ Email</button>'
+          +'<button class="tbtn" onclick="agAdiar('+idAttr+')" title="Adiar">📅 Adiar</button>'
+          +'<button class="tbtn" onclick="agConcluir('+idAttr+')" title="Concluir">✅ Concluir</button>'
+          +'<button class="tbtn" onclick="agRegistarResultado('+idAttr+')" title="Registar resultado">📝 Registar</button>'
+        +'</div>'
+      +'</div>';
+    }).join('');
+  }
+
+  // Resumo admin — só visível para admin, agregado por comercial (nunca
+  // filtra dados por si só, só conta o que agListaPrioridades() já calculou
+  // com isAdmin=true, i.e. a carteira completa).
+  var resumoEl=document.getElementById('ag-admin-resumo');
+  if(!resumoEl) return;
+  var isAdmin=!!(typeof CU!=='undefined'&&CU&&CU.admin);
+  if(!isAdmin){ resumoEl.style.display='none'; resumoEl.innerHTML=''; return; }
+
+  var porComercial={};
+  var semFollowup=0, propostasAguardando=0;
+  var cli=(typeof cliData!=='undefined'&&cliData)?cliData:[];
+  var ativ=(typeof crmAtividades!=='undefined'&&crmAtividades)?crmAtividades:[];
+  var temAtividade={};
+  ativ.forEach(function(a){ if(a && a.clienteId!=null) temAtividade[a.clienteId]=true; });
+  cli.forEach(function(c){
+    if(c && c.statusComercial!=='reatribuir' && c.comercialAtivo && !temAtividade[c.id]) semFollowup++;
+  });
+  lista.forEach(function(item){
+    var com=item.comercialAtivo||'Sem comercial';
+    if(!porComercial[com]) porComercial[com]={urgente:0,alta:0,media:0,baixa:0,total:0};
+    porComercial[com][item.prioridade]++;
+    porComercial[com].total++;
+    if(/proposta enviada/i.test(item.motivo)) propostasAguardando++;
+  });
+  var nomes=Object.keys(porComercial).sort(function(a,b){ return porComercial[b].total-porComercial[a].total; });
+  var linhas=nomes.map(function(n){
+    var v=porComercial[n];
+    return '<tr><td>'+_agEsc(n)+'</td><td style="color:var(--r)">'+v.urgente+'</td><td style="color:var(--a)">'+v.alta+'</td><td style="color:var(--y)">'+v.media+'</td><td style="color:var(--b)">'+v.baixa+'</td><td><b>'+v.total+'</b></td></tr>';
+  }).join('');
+
+  // "A reatribuir" — clientes de ex-colaboradores (Andreia/Victor Horta),
+  // histórico preservado (c.comercialResp continua a mostrar quem vendeu),
+  // sem comercial ativo atribuído até decisão manual (não reatribuído aqui).
+  var reatribuir=agClientesAReatribuir();
+  var porHistorico={};
+  reatribuir.forEach(function(c){ var h=c.comercialResp||'—'; porHistorico[h]=(porHistorico[h]||0)+1; });
+  var reatribuirResumo=Object.keys(porHistorico).map(function(h){ return _agEsc(h)+': <b>'+porHistorico[h]+'</b>'; }).join(' · ');
+  // Lista clicável dos 41 clientes -- cada linha abre a ficha real (cliOpenEdit),
+  // para o admin poder chegar a cada um sem redistribuir nada automaticamente.
+  var reatribuirLinhas=reatribuir.slice().sort(function(a,b){ return (b.totalFaturadoHist||0)-(a.totalFaturadoHist||0); }).map(function(c){
+    var idAttr=_agEsc(JSON.stringify(c.id));
+    return '<tr style="cursor:pointer" onclick="cliOpenEdit('+idAttr+')">'
+      +'<td>'+_agEsc(c.n)+'</td>'
+      +'<td style="color:var(--muted)">'+_agEsc(c.comercialResp||'—')+'</td>'
+      +'<td style="font-family:\'DM Mono\',monospace;color:var(--y)">'+(c.totalFaturadoHist?fmt(Math.round(c.totalFaturadoHist)):'—')+'</td>'
+      +'<td><button class="tbtn" style="padding:3px 9px;font-size:11px" onclick="event.stopPropagation();cliOpenEdit('+idAttr+')">Abrir ficha</button></td>'
+    +'</tr>';
+  }).join('');
+
+  resumoEl.style.display='block';
+  resumoEl.innerHTML='<div class="tw"><table class="ag-resumo-table">'
+    +'<thead><tr><th>Comercial</th><th>Urgente</th><th>Alta</th><th>Média</th><th>Baixa</th><th>Total</th></tr></thead>'
+    +'<tbody>'+(linhas||'<tr><td colspan="6" style="text-align:center;color:var(--muted);font-style:italic">Sem prioridades geradas.</td></tr>')+'</tbody>'
+    +'</table></div>'
+    +'<div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:8px;font-size:12px;color:var(--muted)">'
+    +'<span><b style="color:var(--txt2)">'+semFollowup+'</b> clientes com comercial atribuído e nunca contactados</span>'
+    +'<span><b style="color:var(--txt2)">'+propostasAguardando+'</b> propostas a aguardar resposta</span>'
+    +'</div>'
+    +(reatribuir.length ? (
+      '<div style="margin-top:12px;padding:10px 14px;border-radius:8px;background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.25)">'
+      +'<div style="font-size:12.5px;font-weight:700;color:var(--a)">⚠ '+reatribuir.length+' cliente'+(reatribuir.length===1?'':'s')+' sem comercial ativo — necessita'+(reatribuir.length===1?'':'m')+' reatribuição</div>'
+      +'<div style="font-size:11.5px;color:var(--muted);margin:4px 0 10px">Vendedor histórico (preservado, já não está na empresa): '+reatribuirResumo+'. Distribuir manualmente entre Paulo Faria, Rui Mota, Humberto Estrelinha ou André Nolasco quando decidido — não é feito automaticamente.</div>'
+      +'<div class="tw" style="max-height:280px;overflow-y:auto"><table class="ag-resumo-table">'
+        +'<thead><tr><th>Cliente</th><th>Vendedor histórico</th><th>Faturado</th><th></th></tr></thead>'
+        +'<tbody>'+reatribuirLinhas+'</tbody>'
+      +'</table></div>'
+      +'</div>'
+    ) : '');
+}
+window.agRenderPrioridades = agRenderPrioridades;
+
+// Clientes cujo vendedor histórico já não está na empresa (statusComercial
+// ==='reatribuir', gravado na reclassificação — nunca calculado aqui).
+// Só usado no resumo admin; nunca é combinado com agListaPrioridades().
+function agClientesAReatribuir(){
+  var cli=(typeof cliData!=='undefined'&&cliData)?cliData:[];
+  return cli.filter(function(c){ return c && c.statusComercial==='reatribuir'; });
+}
+window.agClientesAReatribuir = agClientesAReatribuir;
+
+// Ações rápidas dos cards — todas reutilizam funções já existentes da ficha
+// de cliente (cliOpenEdit/cliRegistarContacto/cliEnviarWhatsApp/
+// cliCriarLembrete); nenhuma escreve diretamente em crmAtividades por si só.
+function agLigar(clienteId){ cliOpenEdit(clienteId); cliRegistarContacto('Chamada'); }
+window.agLigar = agLigar;
+function agWhatsApp(clienteId){ cliOpenEdit(clienteId); cliEnviarWhatsApp(); }
+window.agWhatsApp = agWhatsApp;
+function agEmail(clienteId){ cliOpenEdit(clienteId); cliAbrirEmail(); }
+window.agEmail = agEmail;
+function agRegistarResultado(clienteId){ cliOpenEdit(clienteId); cliRegistarContacto(); }
+window.agRegistarResultado = agRegistarResultado;
+function agAdiar(clienteId){
+  cliOpenEdit(clienteId);
+  cliCriarLembrete();
+  setTimeout(function(){
+    var d=document.getElementById('cli-lb-data');
+    if(d && !d.value){ var dt=new Date(); dt.setDate(dt.getDate()+3); d.value=dt.toISOString().slice(0,10); }
+  }, 30);
+}
+window.agAdiar = agAdiar;
+// "Concluir" marca o lembrete aberto deste cliente como feito (resultado),
+// exatamente o mesmo campo/convenção já usado por mpRenderLembretesHoje()
+// para distinguir Pendente/Concluído — não introduz estado novo.
+function agConcluir(clienteId){
+  var a=(crmAtividades||[]).find(function(x){ return x && x.clienteId===clienteId && x.tipo==='Lembrete' && !x.resultado; });
+  if(!a){ if(typeof showToast==='function') showToast('Sem lembrete em aberto para este cliente.'); return; }
+  a.resultado='Concluído';
+  if(typeof saveCrmAtividades==='function') saveCrmAtividades();
+  if(typeof showToast==='function') showToast('✓ Lembrete concluído');
+  try{ agRenderPrioridades(); }catch(e){}
+  try{ mpRenderLembretesHoje(); }catch(e){}
+}
+window.agConcluir = agConcluir;
 
 function obAbrirLead(id){
   try{ goPage('comercial-pipeline'); }catch(e){}
