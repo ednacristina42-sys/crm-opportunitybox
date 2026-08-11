@@ -26015,26 +26015,37 @@ function _mvRenderMetaAnual(view){
     + '<div style="font-size:10px;color:var(--mv-muted);margin-top:10px">⚠ Configuração provisória (MV_META_CONFIG) — substituir por dados reais quando autorizado.</div>';
 }
 
+// Realizado da meta = faturação real (mesma fonte/lógica do Financeiro →
+// Histórico de Faturação, ob_crm_dados/'ob-tes-receber' via _mvTesData/
+// _mvEnsureTesData — já partilhado com Recebimentos e o Ranking Comercial,
+// nenhuma cópia nova). Adjudicado/Faturado (pipeline de ob_orcamentos) já
+// não conta como realizado — só a meta em si (MV_META_CONFIG) continua
+// provisória, por decisão explícita de manter a configuração atual.
 function _mvRenderMetaComercial(view){
   var wrap = document.getElementById('mv-meta-comercial-wrap');
   if(!wrap) return;
   if(view.isAdmin || !CU || !CU.name){ wrap.innerHTML=''; return; }
+  if(_mvTesData===null){
+    wrap.innerHTML = '<div class="mv-card" style="margin-bottom:16px"><div class="mv-card-title">📈 A tua Meta</div><div class="mv-card-sub">A carregar faturação real…</div></div>';
+    _mvEnsureTesData().then(function(){ _mvRenderMetaComercial(view); });
+    return;
+  }
   var meta = MV_META_CONFIG.porComercial[CU.name] || 0;
-  var realizado = view.rows.filter(function(o){return o.st==='Aprovado'||o.st==='Faturado';}).reduce(function(s,o){return s+_mvValor(o);},0);
+  var realizado = (_mvTesData||[]).filter(function(r){return r.vendedor===CU.name;}).reduce(function(s,r){return s+(parseFloat(r.total)||0);},0);
   var falta = Math.max(0, meta-realizado);
   var pct = meta>0 ? Math.min(100, realizado/meta*100) : 0;
   wrap.innerHTML = '<div class="mv-card" style="margin-bottom:16px">'
     + '<div style="display:flex;justify-content:space-between;align-items:flex-start">'
-    + '<div><div class="mv-card-title">📈 A tua Meta</div><div class="mv-card-sub">'+CU.name+' — Adjudicado+Faturado</div></div>'
+    + '<div><div class="mv-card-title">📈 A tua Meta</div><div class="mv-card-sub">'+CU.name+' — Faturação real 2026</div></div>'
     + '<div style="text-align:right"><div style="font-size:22px;font-weight:700;color:'+(pct>=100?'#4ade80':'var(--mv-y)')+'">'+_mvFmtPct(pct)+'</div></div>'
     + '</div>'
     + '<div class="mv-progress-track" style="margin-top:12px"><div class="mv-progress-fill'+(pct>=100?' mv-done':'')+'" style="width:'+pct+'%"></div></div>'
     + '<div class="mv-mini-grid mv-mini3">'
-      + '<div class="mv-mini"><div class="mv-mini-lbl">Meta Individual</div><div class="mv-mini-val" style="color:var(--mv-y)">'+_mvFmtEUR(meta)+'</div></div>'
-      + '<div class="mv-mini"><div class="mv-mini-lbl">Realizado</div><div class="mv-mini-val" style="color:#4ade80">'+_mvFmtEUR(realizado)+'</div></div>'
-      + '<div class="mv-mini"><div class="mv-mini-lbl">Falta para Meta</div><div class="mv-mini-val" style="color:#fb923c">'+_mvFmtEUR(falta)+'</div></div>'
+      + '<div class="mv-mini"><div class="mv-mini-lbl">Meta Individual</div><div class="mv-mini-val" style="color:var(--mv-y)">'+_mvFmtEURFull(meta)+'</div></div>'
+      + '<div class="mv-mini"><div class="mv-mini-lbl">Realizado</div><div class="mv-mini-val" style="color:#4ade80">'+_mvFmtEURFull(realizado)+'</div></div>'
+      + '<div class="mv-mini"><div class="mv-mini-lbl">Falta para Meta</div><div class="mv-mini-val" style="color:#fb923c">'+_mvFmtEURFull(falta)+'</div></div>'
     + '</div>'
-    + '<div style="font-size:10px;color:var(--mv-muted);margin-top:10px">⚠ Configuração provisória — substituir por dados reais quando autorizado.</div>'
+    + '<div style="font-size:10px;color:var(--mv-muted);margin-top:10px">⚠ Meta individual: configuração provisória (MV_META_CONFIG). Realizado: faturação real (Histórico de Faturação) — não inclui Adjudicado.</div>'
     + '</div>';
 }
 
@@ -27411,7 +27422,7 @@ function fuListaItens(){
 // Fase 1.6. Só leitura, sem acções.
 function fuListaItensHistorico(){
   var itens=[];
-  (orcData||[]).forEach(function(o){
+  fuMinhasOrc(orcData||[]).forEach(function(o){
     if(o.st!=='Pendente') return;
     if(fuClassificarOrc(o)!=='historico') return;
     itens.push({orcId:o.num, cliente:o.cli||'—', comercial:o.vendedor||'—',
@@ -27495,12 +27506,26 @@ function fuOrcamentosAtivos(){
   return itens;
 }
 
-// Agrupa por comercial (o.vendedor) -> coluna -> lista de cards. Como
-// orcData já vem filtrado pela RLS da sessão actual, isto não decide
-// visibilidade nenhuma — só organiza o que a sessão já recebeu.
+// Escopo por comercial em vista (real ou "Ver como") -- mesmo padrão já
+// usado em _mvMinhasLinhas (Mapa de Vendas). orcData vem sempre com TUDO
+// que a sessão real (admin) tem acesso — "Ver como X" só troca CU no
+// browser, nunca volta a pedir ao Supabase com outra identidade — por
+// isso o corte por comercial tem de ser feito aqui, no cliente, e não
+// pode assumir que a RLS já tratou disto por "Ver como".
+function fuMinhasOrc(rows){
+  var isAdmin = !!(typeof CU!=='undefined' && CU && CU.admin);
+  var nome = (typeof CU!=='undefined' && CU) ? CU.name : null;
+  if(isAdmin || !nome) return rows;
+  return rows.filter(function(o){ return o.vendedor === nome; });
+}
+window.fuMinhasOrc = fuMinhasOrc;
+
+// Agrupa por comercial (o.vendedor) -> coluna -> lista de cards. Admin
+// real (sem "Ver como") vê todos os grupos; qualquer outra sessão (real
+// ou impersonada via fuMinhasOrc) só vê o próprio grupo.
 function fuAgruparKanban(){
   var grupos={};
-  fuOrcamentosAtivos().forEach(function(o){
+  fuMinhasOrc(fuOrcamentosAtivos()).forEach(function(o){
     var com=o.vendedor||'—';
     if(!grupos[com]) grupos[com]={a_contactar:[],contactado:[],em_negociacao:[],contactar_novamente:[]};
     var col=fuColunaDoOrc(o);
