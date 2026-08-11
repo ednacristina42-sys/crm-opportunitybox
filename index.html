@@ -18339,11 +18339,18 @@ function runImport(){
 // ── CHARTS ────────────────────────────────────────────────
 // Guarda contra falha de carregamento do CDN do Chart.js (rede lenta/firewall/ad-blocker):
 // sem isto, uma falha aqui interrompia TODO o resto deste bloco de script (doLogin, renderAll, goPage, etc).
-if(typeof Chart!=='undefined'){
-  Chart.defaults.color='#606068';
-  Chart.defaults.font.family="'Inter',sans-serif";
-  Chart.defaults.font.size=11;
-}
+// A guarda original só verificava "Chart existe" — nalgumas redes (proxy/firewall
+// corporativo, extensões de bloqueio) o pedido ao CDN não falha de forma limpa;
+// devolve uma resposta que ainda deixa `Chart` definido mas sem `.defaults`, e o
+// acesso a Chart.defaults.color lançava exactamente o mesmo erro que esta guarda
+// devia evitar. Reforçada para verificar Chart.defaults antes de o usar.
+try{
+  if(typeof Chart!=='undefined' && Chart.defaults){
+    Chart.defaults.color='#606068';
+    Chart.defaults.font.family="'Inter',sans-serif";
+    Chart.defaults.font.size=11;
+  }
+}catch(e){ console.warn('[OB] Chart.js carregado de forma incompleta — gráficos desativados.', e); }
 var YEL='rgba(245,196,0,0.8)';
 var GC='rgba(255,255,255,0.04)';
 
