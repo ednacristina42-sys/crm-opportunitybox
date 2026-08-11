@@ -13685,7 +13685,12 @@ var UNI_DEFAULTS = {
 
 function uniGetItems(page){
   const all = uniItems.filter(i=>i.page===page);
-  if(all.length===0 && UNI_DEFAULTS[page]){
+  // Correção pontual (Etapa 8A): a Agenda ('admin-agenda') já tem dados reais
+  // geridos por RLS/owner_id — 0 itens é um estado real e válido (ex.: um
+  // comercial sem eventos atribuídos), nunca "página nunca semeada". Semear
+  // UNI_DEFAULTS aqui mostrava 4 eventos fictícios em vez de uma agenda
+  // vazia. As restantes páginas uni* continuam a semear normalmente.
+  if(all.length===0 && page!=='admin-agenda' && UNI_DEFAULTS[page]){
     const defs = UNI_DEFAULTS[page].map((d,idx)=>({...d,id:Date.now()+idx,page,dt:new Date().toLocaleDateString('pt-PT',{day:'2-digit',month:'2-digit',year:'numeric'})}));
     uniItems = [...uniItems, ...defs];
     saveUniItems();
