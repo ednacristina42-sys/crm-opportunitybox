@@ -2585,6 +2585,9 @@ function crmEnterAppWithProfile(profile){
     // Fase 4, Etapa 6: só agora (sessão + perfil já validados) é que os
     // orçamentos são pedidos ao Supabase — nunca antes de existir CU.
     try{ if(typeof _orcInitFromSB === 'function') _orcInitFromSB(); } catch(e){}
+    // Etapa 8A: ob_uni_items (Agenda/Produção/Design/Instalações) agora exige
+    // sessão autenticada — recarrega só depois de CU estar definido.
+    try{ if(typeof _uniInitFromSB === 'function') _uniInitFromSB(); } catch(e){}
   }, 0);
 }
 
@@ -13576,6 +13579,18 @@ var UNI_CFG = {
 var PRIO_COLOR_U = {urgent:'#e74c3c',high:'#e67e22',normal:'#6b6b72',low:'#94a3b8'};
 var PRIO_LABEL_U = {urgent:'Urgente',high:'Alta',normal:'Normal',low:'Baixa'};
 
+// ETAPA 8A — mapa nome→ob_profiles.id dos 4 comerciais ativos reais, usado
+// só pela Agenda (page==='admin-agenda') para preencher owner_id (a fonte
+// real de segurança/RLS). As restantes páginas uni* (Produção/Design/
+// Instalações) continuam com assignees em texto livre, sem owner_id — não
+// têm contas reais em ob_profiles ainda (ver auditoria da Etapa 8).
+var AG_COMERCIAIS_REAIS_IDS = {
+  'Paulo Faria': 'cf4579a0-1e62-4567-9767-34f3b8f05ec2',
+  'Rui Mota': '14b818f0-c70f-483c-8719-42bd52732121',
+  'Humberto Estrelinha': '478a9ac4-9c6f-443f-8ca5-50d6dfa890bc',
+  'André Nolasco': 'ff281779-ffd4-49b7-80c2-8174042b0e6e'
+};
+
 // ── DADOS ──────────────────────────────────────────────────────────
 var uniItems; try{ uniItems=JSON.parse(localStorage.getItem('ob-uni-items')||'[]'); }catch(e){ uniItems=[]; }
 
@@ -13662,7 +13677,11 @@ function openUniModal(page){
   // Assignees
   var aSel=m.querySelector('#uni-assignee');
   var team=[];
-  if(page&&page.indexOf('design')>=0){
+  if(page==='admin-agenda'){
+    // ETAPA 8A — só comerciais reais (owner_id vem daqui, nunca de nomes
+    // fictícios); Produção/Design/Instalações mantêm a lista antiga.
+    team=Object.keys(AG_COMERCIAIS_REAIS_IDS);
+  } else if(page&&page.indexOf('design')>=0){
     team=(typeof designComerciais!=='undefined'?designComerciais:[]).filter(function(c){return c.ativo;}).map(function(c){return c.nome;});
     if(!team.length) team=['Sara Antunes','Tomás Figueiredo','João Lopes'];
   } else {
@@ -13721,7 +13740,9 @@ function uniOpen(page, itemId){
   // Assignees — designers para design, comerciais para o resto
   const aSel = document.getElementById('uni-assignee');
   let teamList = [];
-  if(page==='fabrica-producao' && typeof USERS!=='undefined' && USERS){
+  if(page==='admin-agenda'){
+    teamList = Object.keys(AG_COMERCIAIS_REAIS_IDS);
+  } else if(page==='fabrica-producao' && typeof USERS!=='undefined' && USERS){
     teamList = USERS.filter(u=>u.dept==='Chão da Fábrica').map(u=>u.name);
   } else if(page && page.startsWith('design')){
     teamList = typeof designComerciais!=='undefined' ? designComerciais.filter(c=>c.ativo).map(c=>c.nome) : ['Sara Antunes','Tomás Figueiredo','João Lopes'];
@@ -13816,6 +13837,19 @@ function uniSave(){
     equipa:uniCurrentPage==='fabrica-instalacoes'?[...document.querySelectorAll('.equipa-check:checked')].map(c=>c.value):(uniEditingId?(uniItems.find(i=>i.id===uniEditingId)||{}).equipa||[]:undefined),
     dt:new Date().toLocaleDateString('pt-PT',{day:'2-digit',month:'2-digit',year:'numeric'})
   };
+  // Etapa 8A — owner_id da Agenda vem sempre da sessão real, nunca do
+  // dropdown de assignee (esse fica só para exibição). Um comercial não
+  // autenticado como admin nunca consegue gravar um item com owner_id de
+  // outra pessoa, mesmo que force o valor do <select> no DOM.
+  if(uniCurrentPage==='admin-agenda'){
+    var _cu=(typeof CU!=='undefined')?CU:null;
+    if(_cu && _cu.admin){
+      data.owner_id = AG_COMERCIAIS_REAIS_IDS[data.assignee] || null;
+    } else if(_cu){
+      data.owner_id = _cu.id;
+      data.assignee = _cu.name;
+    }
+  }
   // Subtarefas de departamento (produção) — reflecte sempre os departamentos marcados,
   // tanto em novos itens como ao editar; preserva o estado "done" dos já existentes.
   // O estado (coluna) da ordem é controlado só pelo dropdown de estado, não por isto.
@@ -16130,59 +16164,75 @@ window._orcInitFromSB = _orcInitFromSB;
 // itens criados manualmente) só é garantidamente único DENTRO da mesma página — dois
 // itens de páginas diferentes podem colidir no mesmo id. Por isso a chave primária
 // em ob_uni_items é composta (id, page), nunca só id.
+// ETAPA 8A — trocado de fetch()+anon key para crmSBClient() autenticado (sem
+// fallback anon): a RLS de ob_uni_items/ob_uni_atividades (ob_can_see(owner_id)
+// para page='admin-agenda', autenticado-apenas para as restantes páginas
+// uni*) só é respeitada de verdade com uma sessão real — ver ETAPA 8/8A.
 async function _sbUniItemUpsert(item){
+  var sb = crmSBClient();
+  var cu = (typeof CU!=='undefined') ? CU : null;
+  if(!sb || !cu || !cu.id){ console.warn('[SB-UNI] upsert bloqueado: sem sessão autenticada.'); return; }
   try{
-    var row = { id:item.id, page:item.page, payload:item, updated_at:new Date().toISOString() };
-    await fetch(_ORC_SB_URL+'/rest/v1/ob_uni_items?on_conflict=id,page', {
-      method:'POST', headers:_sbOrcHeaders(), body:JSON.stringify(row)
-    });
+    var row = { id:item.id, page:item.page, payload:item, owner_id:item.owner_id||null, updated_at:new Date().toISOString() };
+    var res = await sb.from('ob_uni_items').upsert(row, { onConflict:'id,page' });
+    if(res.error) console.warn('[SB-UNI] upsert falhou:', res.error);
   }catch(e){ console.warn('[SB-UNI] upsert falhou:', e); }
 }
 async function _sbUniItemDelete(id, page){
+  var sb = crmSBClient();
+  var cu = (typeof CU!=='undefined') ? CU : null;
+  if(!sb || !cu || !cu.id){ console.warn('[SB-UNI] delete bloqueado: sem sessão autenticada.'); return; }
   try{
-    await fetch(_ORC_SB_URL+'/rest/v1/ob_uni_items?id=eq.'+id+'&page=eq.'+encodeURIComponent(page), {
-      method:'DELETE', headers:_sbOrcHeaders()
-    });
+    var res = await sb.from('ob_uni_items').delete().eq('id', id).eq('page', page);
+    if(res.error) console.warn('[SB-UNI] delete falhou:', res.error);
   }catch(e){ console.warn('[SB-UNI] delete falhou:', e); }
 }
 async function _sbUniItemsLoadAll(){
+  var sb = crmSBClient();
+  var cu = (typeof CU!=='undefined') ? CU : null;
+  if(!sb || !cu || !cu.id){ console.warn('[SB-UNI] load bloqueado: sem sessão autenticada.'); return null; }
   try{
-    var r = await fetch(_ORC_SB_URL+'/rest/v1/ob_uni_items?select=payload&order=updated_at.desc&limit=5000', {
-      headers:{ 'apikey':_ORC_SB_KEY, 'Authorization':'Bearer '+_ORC_SB_KEY }
-    });
-    if(!r.ok) return null;
-    var rows = await r.json();
-    return rows.map(function(row){ return row.payload; });
+    var res = await sb.from('ob_uni_items').select('payload, owner_id').order('updated_at', { ascending:false }).limit(5000);
+    if(res.error){ console.warn('[SB-UNI] load falhou:', res.error); return null; }
+    return (res.data||[]).map(function(row){ var p=row.payload||{}; p.owner_id=row.owner_id||null; return p; });
   }catch(e){ console.warn('[SB-UNI] load falhou:', e); return null; }
 }
 async function _sbUniAtividadeInsert(a){
+  var sb = crmSBClient();
+  var cu = (typeof CU!=='undefined') ? CU : null;
+  if(!sb || !cu || !cu.id){ console.warn('[SB-UNI-ATIV] insert bloqueado: sem sessão autenticada.'); return; }
   try{
     var row = { id:a.id, item_id:a.itemId, dept:a.dept, texto:a.texto, link:a.link, autor:a.autor, ts:a.ts };
-    await fetch(_ORC_SB_URL+'/rest/v1/ob_uni_atividades?on_conflict=id', {
-      method:'POST', headers:_sbOrcHeaders(), body:JSON.stringify(row)
-    });
+    var res = await sb.from('ob_uni_atividades').upsert(row, { onConflict:'id' });
+    if(res.error) console.warn('[SB-UNI-ATIV] insert falhou:', res.error);
   }catch(e){ console.warn('[SB-UNI-ATIV] insert falhou:', e); }
 }
 async function _sbUniAtividadesLoadAll(){
+  var sb = crmSBClient();
+  var cu = (typeof CU!=='undefined') ? CU : null;
+  if(!sb || !cu || !cu.id){ console.warn('[SB-UNI-ATIV] load bloqueado: sem sessão autenticada.'); return null; }
   try{
-    var r = await fetch(_ORC_SB_URL+'/rest/v1/ob_uni_atividades?select=*&order=ts.desc&limit=5000', {
-      headers:{ 'apikey':_ORC_SB_KEY, 'Authorization':'Bearer '+_ORC_SB_KEY }
-    });
-    if(!r.ok) return null;
-    var rows = await r.json();
-    return rows.map(function(row){
+    var res = await sb.from('ob_uni_atividades').select('*').order('ts', { ascending:false }).limit(5000);
+    if(res.error){ console.warn('[SB-UNI-ATIV] load falhou:', res.error); return null; }
+    return (res.data||[]).map(function(row){
       return { id:row.id, itemId:row.item_id, dept:row.dept, texto:row.texto, link:row.link, autor:row.autor, ts:row.ts };
     });
   }catch(e){ console.warn('[SB-UNI-ATIV] load falhou:', e); return null; }
 }
 
-(async function _uniInitFromSB(){
+// Etapa 8A: era uma IIFE anónima que só corria uma vez, ao carregar o
+// script — antes de existir sessão autenticada. Agora que _sbUniItemsLoadAll
+// exige sessão real (CU.id), essa 1ª chamada acontecia sempre sem sessão e
+// nunca carregava nada. Passa a função nomeada e exportada, chamada de novo
+// (tal como _orcInitFromSB) assim que o login real termina.
+async function _uniInitFromSB(){
   var sbItems = await _sbUniItemsLoadAll();
   if(sbItems && sbItems.length>0){
     uniItems = sbItems;
     saveUniItems();
     if(typeof fpRender==='function') fpRender();
     if(typeof uniInitAll==='function') uniInitAll();
+    if(typeof agendaRender==='function') { try{ agendaRender(); }catch(e){} }
   } else if(uniItems.length>0){
     for(var i=0;i<uniItems.length;i++){ await _sbUniItemUpsert(uniItems[i]); }
     console.log('[SB-UNI] '+uniItems.length+' itens da Produção migrados para Supabase.');
@@ -16195,7 +16245,9 @@ async function _sbUniAtividadesLoadAll(){
     for(var j=0;j<uniAtividades.length;j++){ await _sbUniAtividadeInsert(uniAtividades[j]); }
     console.log('[SB-UNI-ATIV] '+uniAtividades.length+' actividades migradas para Supabase.');
   }
-})();
+}
+window._uniInitFromSB = _uniInitFromSB;
+_uniInitFromSB();
 
 // ADD: limpeza única de dados de teste/fictícios já guardados no navegador (clientes, orçamentos, faturas)
 (function obLimparDadosTesteUmaVez(){
@@ -18641,7 +18693,10 @@ function renderAll(){
   safe(renderAlerts,'alerts');
   safe(renderChat,'chat');
   safe(renderWA,'wa');
-  safe(renderAgenda,'agenda');
+  // Etapa 8A: renderAgenda() é a versão antiga com dados fictícios e não usa
+  // ob_uni_items real — desativada aqui (função mantida, mas sem chamador) a
+  // favor de agendaRender(), a única que lê dados reais da Agenda.
+  // safe(renderAgenda,'agenda');
   safe(renderDespesas,'despesas');
   // Carregar App de Pontos automaticamente ao iniciar
   if(typeof despSyncApp==='function' && !_despAppSynced) despSyncApp();
@@ -18695,7 +18750,14 @@ window.openUniModal = function(page){
   var as=document.getElementById('uni-assignee');
   if(as){
     var team=[];
-    if(page==='fabrica-producao'&&typeof USERS!=='undefined'&&USERS){
+    if(page==='admin-agenda'){
+      // ETAPA 8A — esta é a implementação de openUniModal que fica
+      // efetivamente ligada em produção (window.openUniModal é reatribuído
+      // aqui, depois da declaração original em ~13666, e vence-a). Tem de
+      // ter a mesma restrição aos 4 comerciais reais, senão o Admin nunca
+      // consegue atribuir eventos a um deles através do modal.
+      team=Object.keys(AG_COMERCIAIS_REAIS_IDS);
+    } else if(page==='fabrica-producao'&&typeof USERS!=='undefined'&&USERS){
       team=USERS.filter(function(u){return u.dept==='Chão da Fábrica';}).map(function(u){return u.name;});
     }
     if(!team.length&&page.indexOf('design')>=0&&typeof designComerciais!=='undefined'&&designComerciais){
