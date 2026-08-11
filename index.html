@@ -7299,8 +7299,8 @@ tbody tr:hover{background:rgba(255,203,45,.05)}
     </div>
 
     <div class="mv-card" id="mv-ranking-card" style="display:none;margin-bottom:16px">
-      <div class="mv-card-title">🏆 Ranking de Comerciais</div>
-      <div class="mv-card-sub">Comparação de performance (Adjudicado + Faturado)</div>
+      <div class="mv-card-title">🏆 Ranking Comercial 2026</div>
+      <div class="mv-card-sub">Comparação por faturação real</div>
       <div id="mv-ranking-list"></div>
     </div>
 
@@ -26101,32 +26101,44 @@ function _mvPieOpts(){
   return { responsive:true, maintainAspectRatio:false, plugins:{ legend:{position:'bottom', labels:{color:'#94a3b8', font:{size:10.5}, boxWidth:10, padding:10}}, tooltip:{backgroundColor:'#141416', borderColor:'#28282d', borderWidth:1, titleColor:'#f8fafc', bodyColor:'#d4d4d8'} } };
 }
 
+// Ranking Comercial — faturação real 2026. Reutiliza exatamente a mesma
+// fonte e lógica do Financeiro → Histórico de Faturação (ob_crm_dados,
+// chave 'ob-tes-receber', sincronizada da Google Sheet "Vendas 2026"):
+// soma do campo 'total' e contagem de faturas por 'vendedor', sem
+// qualquer filtro por estado (recebido/não recebido/parcial contam
+// todos como faturação real). Não usa ob_orcamentos. `_mvTesData` já é
+// a cópia em memória desses mesmos dados, partilhada com o card de
+// Recebimentos logo acima — não se cria aqui nenhuma cópia nova.
 function _mvRenderRanking(view){
   var card = document.getElementById('mv-ranking-card');
   if(!card) return;
   if(!view.isAdmin){ card.style.display='none'; return; }
   card.style.display='';
+  var listEl = document.getElementById('mv-ranking-list');
+  if(_mvTesData===null){
+    if(listEl) listEl.innerHTML = '<div class="mv-empty">A carregar dados reais de faturação…</div>';
+    _mvEnsureTesData().then(function(){ _mvRenderRanking(view); });
+    return;
+  }
+  var rows = _mvTesData || [];
   var porComercial = {};
-  view.rows.forEach(function(o){
-    var v = o.vendedor; if(!v) return;
-    if(!porComercial[v]) porComercial[v] = { valor:0, negocios:0, decididos:0, ganhos:0 };
-    var pc = porComercial[v];
-    if(o.st==='Aprovado'||o.st==='Faturado'){ pc.valor += _mvValor(o); pc.negocios++; pc.ganhos++; pc.decididos++; }
-    else if(o.st==='Cancelado'){ pc.decididos++; }
+  rows.forEach(function(r){
+    var v = r.vendedor; if(!v) return; // sem comercial atribuído -- não entra no ranking
+    if(!porComercial[v]) porComercial[v] = { valor:0, n:0 };
+    porComercial[v].valor += (parseFloat(r.total)||0);
+    porComercial[v].n++;
   });
   var lista = Object.keys(porComercial).map(function(n){ return Object.assign({nome:n}, porComercial[n]); });
   lista.sort(function(a,b){ return b.valor-a.valor; });
   var maxValor = lista.length ? lista[0].valor : 1;
   var medalhas = ['#fde047','#cbd5e1','#d97706'];
-  var listEl = document.getElementById('mv-ranking-list');
   if(listEl) listEl.innerHTML = lista.map(function(c,i){
-    var conv = c.decididos>0 ? (c.ganhos/c.decididos*100) : 0;
     var pct = maxValor>0 ? (c.valor/maxValor*100) : 0;
     return '<div class="mv-rank-row"><div class="mv-rank-pos" style="color:'+(medalhas[i]||'#94a3b8')+'">'+(i+1)+'</div>'
-      + '<div class="mv-rank-body"><div class="mv-rank-top"><span>'+c.nome+'</span><span style="font-weight:700">'+_mvFmtEUR(c.valor)+'</span></div>'
+      + '<div class="mv-rank-body"><div class="mv-rank-top"><span>'+c.nome+'</span><span style="font-weight:700">'+_mvFmtEURFull(c.valor)+'</span></div>'
       + '<div class="mv-progress-track"><div class="mv-progress-fill" style="width:'+pct+'%"></div></div>'
-      + '<div class="mv-rank-sub">'+c.negocios+' negócio'+(c.negocios===1?'':'s')+' · Conversão: '+_mvFmtPct(conv)+'</div></div></div>';
-  }).join('') || '<div class="mv-empty">Sem dados no filtro atual.</div>';
+      + '<div class="mv-rank-sub">'+c.n+' fatura'+(c.n===1?'':'s')+'</div></div></div>';
+  }).join('') || '<div class="mv-empty">Sem dados de faturação no filtro atual.</div>';
 }
 
 function _mvRenderTable(view){
