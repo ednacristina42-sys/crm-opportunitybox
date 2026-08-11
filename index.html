@@ -12707,7 +12707,7 @@ function renderCRMKanban(elId){
           return `<div class="k-card${isSLA?' sla-alerta':''}" id="kcard-${l.id}" draggable="true"
             ondragstart="crmDragStart(event,${l.id})" ondragend="crmDragEnd(event)"
             onclick="crmOpenEdit(${l.id})">
-            <div class="k-card-title">${l.n}</div>
+            <div class="k-card-title">${l.numLead?`<span style="color:var(--muted);font-family:'DM Mono',monospace;font-weight:400">#${String(l.numLead).padStart(3,'0')}</span> `:''}${l.n}</div>
             <div class="k-card-sub">${l.emp}</div>
             <div style="margin-bottom:6px;display:flex;gap:4px;flex-wrap:wrap;align-items:center">
               <span class="b bm" style="font-size:11px">${l.prod}</span>
@@ -13081,6 +13081,8 @@ function crmSaveLead(){
     }
   } else {
     data.id = ++crmLeadIdCounter;
+    const _numLeadsExistentes = crmLeads.filter(l=>typeof l.numLead==='number').map(l=>l.numLead);
+    data.numLead = (_numLeadsExistentes.length ? Math.max(..._numLeadsExistentes) : 0) + 1;
     crmLeads.unshift(data);
     // Regista actividade de criação
     const autor = (typeof CU!=='undefined'&&CU&&CU.name)?CU.name:'Sistema';
