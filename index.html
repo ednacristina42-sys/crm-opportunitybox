@@ -2469,6 +2469,23 @@ async function crmAuthGetSession(){
   return (res && res.data && res.data.session) ? res.data.session : null;
 }
 
+// Correção pontual: crmAuthBootGate() ficava preso indefinidamente em
+// "A validar sessão…" se o pedido a sb.auth.getSession() nunca respondesse
+// (em vez de falhar rapidamente) — sem timeout, o ecrã de validação nunca
+// era escondido. Isto NÃO contorna a autenticação: um timeout nunca conta
+// como sessão válida, só faz crmAuthBootGate() desistir de esperar e voltar
+// a mostrar o login (com "Tentar novamente"), tal como já acontecia para
+// qualquer outra falha a validar a sessão.
+var CRM_AUTH_BOOT_TIMEOUT_MS = 10000;
+function crmAuthGetSessionComTimeout(ms){
+  return Promise.race([
+    crmAuthGetSession(),
+    new Promise(function(_, reject){
+      setTimeout(function(){ reject(new Error('AUTH_TIMEOUT')); }, ms);
+    })
+  ]);
+}
+
 // Vai buscar o perfil (ob_profiles) do utilizador autenticado. O id
 // usado é sempre o da sessão validada pelo Supabase Auth — nunca um
 // valor vindo do browser/localStorage.
@@ -2707,14 +2724,19 @@ async function crmAuthBootGate(){
   }
 
   crmShowAuthLoading('A validar sessão…');
+  crmAuthBootGateShowRetry(false);
 
   var session;
   try{
-    session = await crmAuthGetSession();
+    session = await crmAuthGetSessionComTimeout(CRM_AUTH_BOOT_TIMEOUT_MS);
   }catch(e){
-    console.warn('[crmAuthBootGate] falha ao validar sessão:', e && e.message);
     if(myGen !== _crmAuthGen) return;
-    crmShowLoginWithMessage('Não foi possível verificar a tua sessão. Tenta novamente dentro de momentos.');
+    var timedOut = e && e.message === 'AUTH_TIMEOUT';
+    console.warn('[crmAuthBootGate] falha ao validar sessão:', timedOut ? 'timeout' : (e && e.message));
+    crmShowLoginWithMessage(timedOut
+      ? 'Não foi possível validar a sessão. Verifique a ligação e tente novamente.'
+      : 'Não foi possível verificar a tua sessão. Tenta novamente dentro de momentos.');
+    crmAuthBootGateShowRetry(true);
     return;
   }
   if(myGen !== _crmAuthGen) return; // outra tentativa/logout já decidiu entretanto
@@ -2722,6 +2744,16 @@ async function crmAuthBootGate(){
   await crmValidateSessionAndEnter(session, myGen);
 }
 window.crmAuthBootGate = crmAuthBootGate;
+
+// Botão "Tentar novamente" — só é mostrado quando crmAuthBootGate() não
+// conseguiu sequer validar a sessão (timeout ou falha de rede); nunca
+// aparece nos fluxos normais (login inválido, sem sessão, etc., que já
+// têm o próprio formulário para tentar de novo).
+function crmAuthBootGateShowRetry(show){
+  var btn = document.getElementById('login-retry-btn');
+  if(btn) btn.style.display = show ? 'block' : 'none';
+}
+window.crmAuthBootGateShowRetry = crmAuthBootGateShowRetry;
 
 // ── Fase 4, Etapa 5 — login e logout reais ────────────────────────────
 // Impede duplo clique / pedidos simultâneos de login.
@@ -6826,6 +6858,13 @@ tbody tr:hover{background:rgba(255,203,45,.05)}
     <div id="login-erro" style="display:none;margin-top:12px;text-align:center;font-size:14px;color:var(--r);background:rgba(224,85,85,.08);border:1px solid rgba(224,85,85,.25);border-radius:8px;padding:8px">
       Senha incorrecta. Tenta novamente.
     </div>
+
+    <!-- Só visível quando crmAuthBootGate() não conseguiu validar a sessão
+         (timeout ou falha de rede) -- ver crmAuthBootGateShowRetry(). -->
+    <button id="login-retry-btn" type="button" onclick="crmAuthBootGate()"
+      style="display:none;width:100%;margin-top:12px;background:var(--bg3);border:1.5px solid var(--border);color:var(--txt2);border-radius:12px;padding:12px;font-size:14px;font-weight:600;cursor:pointer;font-family:Inter,sans-serif">
+      🔄 Tentar novamente
+    </button>
 
     <!-- Nota de acesso -->
     <div style="margin-top:20px;text-align:center;font-size:12px;color:var(--muted)">
