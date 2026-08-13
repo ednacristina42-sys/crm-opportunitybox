@@ -11130,7 +11130,14 @@ function obRenderComerciaisSidebar(){
     { re:/administrativ|gest[ãa]o\s*admin/i,   box:'sl-admin-colabs' }
   ];
   var isAdmin = !!(window.CU && window.CU.admin === true);
-  var colabs = (window.rhColabs||[]).filter(function(c){ return c && !c.deleted_at && c.ativo!==false; });
+  var colabs = (window.rhColabs||[]).filter(function(c){
+    if(!c || c.deleted_at || c.ativo===false) return false;
+    // Oculta o colaborador de demonstração do sidebar (a pedido do CEO, 13/08/2026).
+    // Continua intacto em ob_colaboradores/RH → Colaboradores, só não aparece aqui.
+    var nomeC = String(c.nome||c.name||'');
+    if(/^DEMO\b/i.test(nomeC) || /colaborador de teste/i.test(nomeC)) return false;
+    return true;
+  });
   MAP.forEach(function(m){ var b=document.getElementById(m.box); if(b) b.innerHTML=''; });
   MAP.forEach(function(m){
     var box = document.getElementById(m.box); if(!box) return;
