@@ -2469,23 +2469,6 @@ async function crmAuthGetSession(){
   return (res && res.data && res.data.session) ? res.data.session : null;
 }
 
-// Correção pontual: crmAuthBootGate() ficava preso indefinidamente em
-// "A validar sessão…" se o pedido a sb.auth.getSession() nunca respondesse
-// (em vez de falhar rapidamente) — sem timeout, o ecrã de validação nunca
-// era escondido. Isto NÃO contorna a autenticação: um timeout nunca conta
-// como sessão válida, só faz crmAuthBootGate() desistir de esperar e voltar
-// a mostrar o login (com "Tentar novamente"), tal como já acontecia para
-// qualquer outra falha a validar a sessão.
-var CRM_AUTH_BOOT_TIMEOUT_MS = 10000;
-function crmAuthGetSessionComTimeout(ms){
-  return Promise.race([
-    crmAuthGetSession(),
-    new Promise(function(_, reject){
-      setTimeout(function(){ reject(new Error('AUTH_TIMEOUT')); }, ms);
-    })
-  ]);
-}
-
 // Vai buscar o perfil (ob_profiles) do utilizador autenticado. O id
 // usado é sempre o da sessão validada pelo Supabase Auth — nunca um
 // valor vindo do browser/localStorage.
@@ -2724,19 +2707,14 @@ async function crmAuthBootGate(){
   }
 
   crmShowAuthLoading('A validar sessão…');
-  crmAuthBootGateShowRetry(false);
 
   var session;
   try{
-    session = await crmAuthGetSessionComTimeout(CRM_AUTH_BOOT_TIMEOUT_MS);
+    session = await crmAuthGetSession();
   }catch(e){
+    console.warn('[crmAuthBootGate] falha ao validar sessão:', e && e.message);
     if(myGen !== _crmAuthGen) return;
-    var timedOut = e && e.message === 'AUTH_TIMEOUT';
-    console.warn('[crmAuthBootGate] falha ao validar sessão:', timedOut ? 'timeout' : (e && e.message));
-    crmShowLoginWithMessage(timedOut
-      ? 'Não foi possível validar a sessão. Verifique a ligação e tente novamente.'
-      : 'Não foi possível verificar a tua sessão. Tenta novamente dentro de momentos.');
-    crmAuthBootGateShowRetry(true);
+    crmShowLoginWithMessage('Não foi possível verificar a tua sessão. Tenta novamente dentro de momentos.');
     return;
   }
   if(myGen !== _crmAuthGen) return; // outra tentativa/logout já decidiu entretanto
@@ -2744,16 +2722,6 @@ async function crmAuthBootGate(){
   await crmValidateSessionAndEnter(session, myGen);
 }
 window.crmAuthBootGate = crmAuthBootGate;
-
-// Botão "Tentar novamente" — só é mostrado quando crmAuthBootGate() não
-// conseguiu sequer validar a sessão (timeout ou falha de rede); nunca
-// aparece nos fluxos normais (login inválido, sem sessão, etc., que já
-// têm o próprio formulário para tentar de novo).
-function crmAuthBootGateShowRetry(show){
-  var btn = document.getElementById('login-retry-btn');
-  if(btn) btn.style.display = show ? 'block' : 'none';
-}
-window.crmAuthBootGateShowRetry = crmAuthBootGateShowRetry;
 
 // ── Fase 4, Etapa 5 — login e logout reais ────────────────────────────
 // Impede duplo clique / pedidos simultâneos de login.
@@ -6859,13 +6827,6 @@ tbody tr:hover{background:rgba(255,203,45,.05)}
       Senha incorrecta. Tenta novamente.
     </div>
 
-    <!-- Só visível quando crmAuthBootGate() não conseguiu validar a sessão
-         (timeout ou falha de rede) -- ver crmAuthBootGateShowRetry(). -->
-    <button id="login-retry-btn" type="button" onclick="crmAuthBootGate()"
-      style="display:none;width:100%;margin-top:12px;background:var(--bg3);border:1.5px solid var(--border);color:var(--txt2);border-radius:12px;padding:12px;font-size:14px;font-weight:600;cursor:pointer;font-family:Inter,sans-serif">
-      🔄 Tentar novamente
-    </button>
-
     <!-- Nota de acesso -->
     <div style="margin-top:20px;text-align:center;font-size:12px;color:var(--muted)">
       ★ Admins (Paulo e Edna) têm acesso total. Os restantes vêem apenas o seu departamento.
@@ -7338,8 +7299,8 @@ tbody tr:hover{background:rgba(255,203,45,.05)}
     </div>
 
     <div class="mv-card" id="mv-ranking-card" style="display:none;margin-bottom:16px">
-      <div class="mv-card-title">🏆 Ranking Comercial 2026</div>
-      <div class="mv-card-sub">Comparação por faturação real</div>
+      <div class="mv-card-title">🏆 Ranking de Comerciais</div>
+      <div class="mv-card-sub">Comparação de performance (Adjudicado + Faturado)</div>
       <div id="mv-ranking-list"></div>
     </div>
 
@@ -11096,7 +11057,7 @@ var USERS=[
 // continua a ser feita pelas permissoes quando cada pessoa entra com login.
 function obVerComoComerciais(){
   var src = (window.rhColabs||[]);
-  var lista = src.filter(function(c){
+  return src.filter(function(c){
     if(!c || c.deleted_at || c.ativo===false) return false;
     return /comercial/i.test(String(c.dept||c.departamento||''));
   }).map(function(c){
@@ -11104,16 +11065,6 @@ function obVerComoComerciais(){
              dept:'Comercial', color:(c.color||c.cor||'#3B82F6'), admin:false,
              preview:true, colabId:c.id };
   });
-  // Paulo Faria é Admin/Dono E comercial ativo — não está em ob_colaboradores,
-  // mas tem carteira própria (ranking/faturação/metas) e tem de aparecer em
-  // "Ver como" tal como Rui/Humberto/André. Entrada sintética, id combina com
-  // a usada em obRenderComerciaisSidebar() ('vc-'+'paulo-faria').
-  if(!lista.some(function(c){ return c.name==='Paulo Faria'; })){
-    lista.push({ id:'vc-paulo-faria', name:'Paulo Faria', role:'Comercial',
-                 dept:'Comercial', color:'#F5C400', admin:false,
-                 preview:true, colabId:'paulo-faria' });
-  }
-  return lista;
 }
 window.obVerComoComerciais = obVerComoComerciais;
 // Sidebar (Dep. Comercial): mostra os comerciais ativos vindos de ob_colaboradores,
@@ -11130,25 +11081,11 @@ function obRenderComerciaisSidebar(){
     { re:/administrativ|gest[ãa]o\s*admin/i,   box:'sl-admin-colabs' }
   ];
   var isAdmin = !!(window.CU && window.CU.admin === true);
-  var colabs = (window.rhColabs||[]).filter(function(c){
-    if(!c || c.deleted_at || c.ativo===false) return false;
-    // Oculta o colaborador de demonstração do sidebar (a pedido do CEO, 13/08/2026).
-    // Continua intacto em ob_colaboradores/RH → Colaboradores, só não aparece aqui.
-    var nomeC = String(c.nome||c.name||'');
-    if(/^DEMO\b/i.test(nomeC) || /colaborador de teste/i.test(nomeC)) return false;
-    return true;
-  });
+  var colabs = (window.rhColabs||[]).filter(function(c){ return c && !c.deleted_at && c.ativo!==false; });
   MAP.forEach(function(m){ var b=document.getElementById(m.box); if(b) b.innerHTML=''; });
   MAP.forEach(function(m){
     var box = document.getElementById(m.box); if(!box) return;
     var items = colabs.filter(function(c){ return m.re.test(String(c.dept||c.departamento||'')); });
-    // Paulo Faria é Admin/Dono E comercial ativo — não está em ob_colaboradores
-    // (essa tabela é a equipa gerida por RH, não o dono), mas tem carteira
-    // própria e tem de aparecer em "Ver como", tal como Rui/Humberto/André.
-    // Entrada sintética só aqui, sem tocar em ob_colaboradores/rhColabs.
-    if(m.verComo && !items.some(function(c){ return String(c.nome||c.name||'').trim()==='Paulo Faria'; })){
-      items = items.concat([{ id:'paulo-faria', nome:'Paulo Faria', departamento:'Dep. Comercial', ativo:true }]);
-    }
     if(!items.length) return;
     var sep = document.createElement('div');
     sep.style.cssText = 'height:1px;margin:5px 12px 4px;background:var(--border,rgba(255,255,255,.08))';
@@ -13700,12 +13637,7 @@ var UNI_DEFAULTS = {
 
 function uniGetItems(page){
   const all = uniItems.filter(i=>i.page===page);
-  // Correção pontual (Etapa 8A): a Agenda ('admin-agenda') já tem dados reais
-  // geridos por RLS/owner_id — 0 itens é um estado real e válido (ex.: um
-  // comercial sem eventos atribuídos), nunca "página nunca semeada". Semear
-  // UNI_DEFAULTS aqui mostrava 4 eventos fictícios em vez de uma agenda
-  // vazia. As restantes páginas uni* continuam a semear normalmente.
-  if(all.length===0 && page!=='admin-agenda' && UNI_DEFAULTS[page]){
+  if(all.length===0 && UNI_DEFAULTS[page]){
     const defs = UNI_DEFAULTS[page].map((d,idx)=>({...d,id:Date.now()+idx,page,dt:new Date().toLocaleDateString('pt-PT',{day:'2-digit',month:'2-digit',year:'numeric'})}));
     uniItems = [...uniItems, ...defs];
     saveUniItems();
@@ -18404,18 +18336,11 @@ function runImport(){
 // ── CHARTS ────────────────────────────────────────────────
 // Guarda contra falha de carregamento do CDN do Chart.js (rede lenta/firewall/ad-blocker):
 // sem isto, uma falha aqui interrompia TODO o resto deste bloco de script (doLogin, renderAll, goPage, etc).
-// A guarda original só verificava "Chart existe" — nalgumas redes (proxy/firewall
-// corporativo, extensões de bloqueio) o pedido ao CDN não falha de forma limpa;
-// devolve uma resposta que ainda deixa `Chart` definido mas sem `.defaults`, e o
-// acesso a Chart.defaults.color lançava exactamente o mesmo erro que esta guarda
-// devia evitar. Reforçada para verificar Chart.defaults antes de o usar.
-try{
-  if(typeof Chart!=='undefined' && Chart.defaults){
-    Chart.defaults.color='#606068';
-    Chart.defaults.font.family="'Inter',sans-serif";
-    Chart.defaults.font.size=11;
-  }
-}catch(e){ console.warn('[OB] Chart.js carregado de forma incompleta — gráficos desativados.', e); }
+if(typeof Chart!=='undefined'){
+  Chart.defaults.color='#606068';
+  Chart.defaults.font.family="'Inter',sans-serif";
+  Chart.defaults.font.size=11;
+}
 var YEL='rgba(245,196,0,0.8)';
 var GC='rgba(255,255,255,0.04)';
 
@@ -26037,37 +25962,26 @@ function _mvRenderMetaAnual(view){
     + '<div style="font-size:10px;color:var(--mv-muted);margin-top:10px">⚠ Configuração provisória (MV_META_CONFIG) — substituir por dados reais quando autorizado.</div>';
 }
 
-// Realizado da meta = faturação real (mesma fonte/lógica do Financeiro →
-// Histórico de Faturação, ob_crm_dados/'ob-tes-receber' via _mvTesData/
-// _mvEnsureTesData — já partilhado com Recebimentos e o Ranking Comercial,
-// nenhuma cópia nova). Adjudicado/Faturado (pipeline de ob_orcamentos) já
-// não conta como realizado — só a meta em si (MV_META_CONFIG) continua
-// provisória, por decisão explícita de manter a configuração atual.
 function _mvRenderMetaComercial(view){
   var wrap = document.getElementById('mv-meta-comercial-wrap');
   if(!wrap) return;
   if(view.isAdmin || !CU || !CU.name){ wrap.innerHTML=''; return; }
-  if(_mvTesData===null){
-    wrap.innerHTML = '<div class="mv-card" style="margin-bottom:16px"><div class="mv-card-title">📈 A tua Meta</div><div class="mv-card-sub">A carregar faturação real…</div></div>';
-    _mvEnsureTesData().then(function(){ _mvRenderMetaComercial(view); });
-    return;
-  }
   var meta = MV_META_CONFIG.porComercial[CU.name] || 0;
-  var realizado = (_mvTesData||[]).filter(function(r){return r.vendedor===CU.name;}).reduce(function(s,r){return s+(parseFloat(r.total)||0);},0);
+  var realizado = view.rows.filter(function(o){return o.st==='Aprovado'||o.st==='Faturado';}).reduce(function(s,o){return s+_mvValor(o);},0);
   var falta = Math.max(0, meta-realizado);
   var pct = meta>0 ? Math.min(100, realizado/meta*100) : 0;
   wrap.innerHTML = '<div class="mv-card" style="margin-bottom:16px">'
     + '<div style="display:flex;justify-content:space-between;align-items:flex-start">'
-    + '<div><div class="mv-card-title">📈 A tua Meta</div><div class="mv-card-sub">'+CU.name+' — Faturação real 2026</div></div>'
+    + '<div><div class="mv-card-title">📈 A tua Meta</div><div class="mv-card-sub">'+CU.name+' — Adjudicado+Faturado</div></div>'
     + '<div style="text-align:right"><div style="font-size:22px;font-weight:700;color:'+(pct>=100?'#4ade80':'var(--mv-y)')+'">'+_mvFmtPct(pct)+'</div></div>'
     + '</div>'
     + '<div class="mv-progress-track" style="margin-top:12px"><div class="mv-progress-fill'+(pct>=100?' mv-done':'')+'" style="width:'+pct+'%"></div></div>'
     + '<div class="mv-mini-grid mv-mini3">'
-      + '<div class="mv-mini"><div class="mv-mini-lbl">Meta Individual</div><div class="mv-mini-val" style="color:var(--mv-y)">'+_mvFmtEURFull(meta)+'</div></div>'
-      + '<div class="mv-mini"><div class="mv-mini-lbl">Realizado</div><div class="mv-mini-val" style="color:#4ade80">'+_mvFmtEURFull(realizado)+'</div></div>'
-      + '<div class="mv-mini"><div class="mv-mini-lbl">Falta para Meta</div><div class="mv-mini-val" style="color:#fb923c">'+_mvFmtEURFull(falta)+'</div></div>'
+      + '<div class="mv-mini"><div class="mv-mini-lbl">Meta Individual</div><div class="mv-mini-val" style="color:var(--mv-y)">'+_mvFmtEUR(meta)+'</div></div>'
+      + '<div class="mv-mini"><div class="mv-mini-lbl">Realizado</div><div class="mv-mini-val" style="color:#4ade80">'+_mvFmtEUR(realizado)+'</div></div>'
+      + '<div class="mv-mini"><div class="mv-mini-lbl">Falta para Meta</div><div class="mv-mini-val" style="color:#fb923c">'+_mvFmtEUR(falta)+'</div></div>'
     + '</div>'
-    + '<div style="font-size:10px;color:var(--mv-muted);margin-top:10px">⚠ Meta individual: configuração provisória (MV_META_CONFIG). Realizado: faturação real (Histórico de Faturação) — não inclui Adjudicado.</div>'
+    + '<div style="font-size:10px;color:var(--mv-muted);margin-top:10px">⚠ Configuração provisória — substituir por dados reais quando autorizado.</div>'
     + '</div>';
 }
 
@@ -26173,44 +26087,32 @@ function _mvPieOpts(){
   return { responsive:true, maintainAspectRatio:false, plugins:{ legend:{position:'bottom', labels:{color:'#94a3b8', font:{size:10.5}, boxWidth:10, padding:10}}, tooltip:{backgroundColor:'#141416', borderColor:'#28282d', borderWidth:1, titleColor:'#f8fafc', bodyColor:'#d4d4d8'} } };
 }
 
-// Ranking Comercial — faturação real 2026. Reutiliza exatamente a mesma
-// fonte e lógica do Financeiro → Histórico de Faturação (ob_crm_dados,
-// chave 'ob-tes-receber', sincronizada da Google Sheet "Vendas 2026"):
-// soma do campo 'total' e contagem de faturas por 'vendedor', sem
-// qualquer filtro por estado (recebido/não recebido/parcial contam
-// todos como faturação real). Não usa ob_orcamentos. `_mvTesData` já é
-// a cópia em memória desses mesmos dados, partilhada com o card de
-// Recebimentos logo acima — não se cria aqui nenhuma cópia nova.
 function _mvRenderRanking(view){
   var card = document.getElementById('mv-ranking-card');
   if(!card) return;
   if(!view.isAdmin){ card.style.display='none'; return; }
   card.style.display='';
-  var listEl = document.getElementById('mv-ranking-list');
-  if(_mvTesData===null){
-    if(listEl) listEl.innerHTML = '<div class="mv-empty">A carregar dados reais de faturação…</div>';
-    _mvEnsureTesData().then(function(){ _mvRenderRanking(view); });
-    return;
-  }
-  var rows = _mvTesData || [];
   var porComercial = {};
-  rows.forEach(function(r){
-    var v = r.vendedor; if(!v) return; // sem comercial atribuído -- não entra no ranking
-    if(!porComercial[v]) porComercial[v] = { valor:0, n:0 };
-    porComercial[v].valor += (parseFloat(r.total)||0);
-    porComercial[v].n++;
+  view.rows.forEach(function(o){
+    var v = o.vendedor; if(!v) return;
+    if(!porComercial[v]) porComercial[v] = { valor:0, negocios:0, decididos:0, ganhos:0 };
+    var pc = porComercial[v];
+    if(o.st==='Aprovado'||o.st==='Faturado'){ pc.valor += _mvValor(o); pc.negocios++; pc.ganhos++; pc.decididos++; }
+    else if(o.st==='Cancelado'){ pc.decididos++; }
   });
   var lista = Object.keys(porComercial).map(function(n){ return Object.assign({nome:n}, porComercial[n]); });
   lista.sort(function(a,b){ return b.valor-a.valor; });
   var maxValor = lista.length ? lista[0].valor : 1;
   var medalhas = ['#fde047','#cbd5e1','#d97706'];
+  var listEl = document.getElementById('mv-ranking-list');
   if(listEl) listEl.innerHTML = lista.map(function(c,i){
+    var conv = c.decididos>0 ? (c.ganhos/c.decididos*100) : 0;
     var pct = maxValor>0 ? (c.valor/maxValor*100) : 0;
     return '<div class="mv-rank-row"><div class="mv-rank-pos" style="color:'+(medalhas[i]||'#94a3b8')+'">'+(i+1)+'</div>'
-      + '<div class="mv-rank-body"><div class="mv-rank-top"><span>'+c.nome+'</span><span style="font-weight:700">'+_mvFmtEURFull(c.valor)+'</span></div>'
+      + '<div class="mv-rank-body"><div class="mv-rank-top"><span>'+c.nome+'</span><span style="font-weight:700">'+_mvFmtEUR(c.valor)+'</span></div>'
       + '<div class="mv-progress-track"><div class="mv-progress-fill" style="width:'+pct+'%"></div></div>'
-      + '<div class="mv-rank-sub">'+c.n+' fatura'+(c.n===1?'':'s')+'</div></div></div>';
-  }).join('') || '<div class="mv-empty">Sem dados de faturação no filtro atual.</div>';
+      + '<div class="mv-rank-sub">'+c.negocios+' negócio'+(c.negocios===1?'':'s')+' · Conversão: '+_mvFmtPct(conv)+'</div></div></div>';
+  }).join('') || '<div class="mv-empty">Sem dados no filtro atual.</div>';
 }
 
 function _mvRenderTable(view){
@@ -27456,7 +27358,7 @@ function fuListaItens(){
 // Fase 1.6. Só leitura, sem acções.
 function fuListaItensHistorico(){
   var itens=[];
-  fuMinhasOrc(orcData||[]).forEach(function(o){
+  (orcData||[]).forEach(function(o){
     if(o.st!=='Pendente') return;
     if(fuClassificarOrc(o)!=='historico') return;
     itens.push({orcId:o.num, cliente:o.cli||'—', comercial:o.vendedor||'—',
@@ -27540,26 +27442,12 @@ function fuOrcamentosAtivos(){
   return itens;
 }
 
-// Escopo por comercial em vista (real ou "Ver como") -- mesmo padrão já
-// usado em _mvMinhasLinhas (Mapa de Vendas). orcData vem sempre com TUDO
-// que a sessão real (admin) tem acesso — "Ver como X" só troca CU no
-// browser, nunca volta a pedir ao Supabase com outra identidade — por
-// isso o corte por comercial tem de ser feito aqui, no cliente, e não
-// pode assumir que a RLS já tratou disto por "Ver como".
-function fuMinhasOrc(rows){
-  var isAdmin = !!(typeof CU!=='undefined' && CU && CU.admin);
-  var nome = (typeof CU!=='undefined' && CU) ? CU.name : null;
-  if(isAdmin || !nome) return rows;
-  return rows.filter(function(o){ return o.vendedor === nome; });
-}
-window.fuMinhasOrc = fuMinhasOrc;
-
-// Agrupa por comercial (o.vendedor) -> coluna -> lista de cards. Admin
-// real (sem "Ver como") vê todos os grupos; qualquer outra sessão (real
-// ou impersonada via fuMinhasOrc) só vê o próprio grupo.
+// Agrupa por comercial (o.vendedor) -> coluna -> lista de cards. Como
+// orcData já vem filtrado pela RLS da sessão actual, isto não decide
+// visibilidade nenhuma — só organiza o que a sessão já recebeu.
 function fuAgruparKanban(){
   var grupos={};
-  fuMinhasOrc(fuOrcamentosAtivos()).forEach(function(o){
+  fuOrcamentosAtivos().forEach(function(o){
     var com=o.vendedor||'—';
     if(!grupos[com]) grupos[com]={a_contactar:[],contactado:[],em_negociacao:[],contactar_novamente:[]};
     var col=fuColunaDoOrc(o);
