@@ -11057,7 +11057,7 @@ var USERS=[
 // continua a ser feita pelas permissoes quando cada pessoa entra com login.
 function obVerComoComerciais(){
   var src = (window.rhColabs||[]);
-  return src.filter(function(c){
+  var lista = src.filter(function(c){
     if(!c || c.deleted_at || c.ativo===false) return false;
     return /comercial/i.test(String(c.dept||c.departamento||''));
   }).map(function(c){
@@ -11065,6 +11065,16 @@ function obVerComoComerciais(){
              dept:'Comercial', color:(c.color||c.cor||'#3B82F6'), admin:false,
              preview:true, colabId:c.id };
   });
+  // Paulo Faria é Admin/Dono E comercial ativo — não está em ob_colaboradores,
+  // mas tem carteira própria (ranking/faturação/metas) e tem de aparecer em
+  // "Ver como" tal como Rui/Humberto/André. Entrada sintética, id combina com
+  // a usada em obRenderComerciaisSidebar() ('vc-'+'paulo-faria').
+  if(!lista.some(function(c){ return c.name==='Paulo Faria'; })){
+    lista.push({ id:'vc-paulo-faria', name:'Paulo Faria', role:'Comercial',
+                 dept:'Comercial', color:'#F5C400', admin:false,
+                 preview:true, colabId:'paulo-faria' });
+  }
+  return lista;
 }
 window.obVerComoComerciais = obVerComoComerciais;
 // Sidebar (Dep. Comercial): mostra os comerciais ativos vindos de ob_colaboradores,
@@ -11081,11 +11091,25 @@ function obRenderComerciaisSidebar(){
     { re:/administrativ|gest[ãa]o\s*admin/i,   box:'sl-admin-colabs' }
   ];
   var isAdmin = !!(window.CU && window.CU.admin === true);
-  var colabs = (window.rhColabs||[]).filter(function(c){ return c && !c.deleted_at && c.ativo!==false; });
+  var colabs = (window.rhColabs||[]).filter(function(c){
+    if(!c || c.deleted_at || c.ativo===false) return false;
+    // Oculta o colaborador de demonstração do sidebar (a pedido do CEO, 13/08/2026).
+    // Continua intacto em ob_colaboradores/RH → Colaboradores, só não aparece aqui.
+    var nomeC = String(c.nome||c.name||'');
+    if(/^DEMO\b/i.test(nomeC) || /colaborador de teste/i.test(nomeC)) return false;
+    return true;
+  });
   MAP.forEach(function(m){ var b=document.getElementById(m.box); if(b) b.innerHTML=''; });
   MAP.forEach(function(m){
     var box = document.getElementById(m.box); if(!box) return;
     var items = colabs.filter(function(c){ return m.re.test(String(c.dept||c.departamento||'')); });
+    // Paulo Faria é Admin/Dono E comercial ativo — não está em ob_colaboradores
+    // (essa tabela é a equipa gerida por RH, não o dono), mas tem carteira
+    // própria e tem de aparecer em "Ver como", tal como Rui/Humberto/André.
+    // Entrada sintética só aqui, sem tocar em ob_colaboradores/rhColabs.
+    if(m.verComo && !items.some(function(c){ return String(c.nome||c.name||'').trim()==='Paulo Faria'; })){
+      items = items.concat([{ id:'paulo-faria', nome:'Paulo Faria', departamento:'Dep. Comercial', ativo:true }]);
+    }
     if(!items.length) return;
     var sep = document.createElement('div');
     sep.style.cssText = 'height:1px;margin:5px 12px 4px;background:var(--border,rgba(255,255,255,.08))';
