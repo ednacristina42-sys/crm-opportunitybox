@@ -6920,9 +6920,10 @@ tbody tr:hover{background:rgba(255,203,45,.05)}
     <span class="space-chevron">›</span>
   </button>
   <div class="space-lists" id="sl-comercial">
-    <button class="sl-item" data-action="goPage" data-page="comercial-pipeline"><span class="mk-ic">📈</span>Pipeline<span id="ob-badge-pendencias" style="display:none;background:var(--r);color:#fff;font-size:10.5px;font-weight:700;font-family:'DM Mono',monospace;padding:1px 6px;border-radius:8px;margin-left:auto;flex-shrink:0" title="Pendências: leads parados e acções em atraso">0</span></button>
-    <button class="sl-item" data-action="goPage" data-page="comercial-followup"><span class="mk-ic">📞</span>Follow-up</button>
-    <button class="sl-item" data-action="goPage" data-page="comercial-clientes"><span class="mk-ic">👤</span>Clientes</button>
+    <!-- Pipeline/Follow-up/Clientes: simplificação a pedido do CEO, 13/08/2026 — ocultos para não-admins (comercial real e admin em "Ver como comercial"), mantidos para Admin na própria visão. Reutiliza admin-only/toggleAdminSensitiveFields() já usados no resto do CRM: condição centralizada em CU.admin, nunca display:none fixo. Rotas/páginas continuam intactas (ver obIsComercialView() em goPage() para o bloqueio de acesso direto). -->
+    <button class="sl-item admin-only" data-action="goPage" data-page="comercial-pipeline"><span class="mk-ic">📈</span>Pipeline<span id="ob-badge-pendencias" style="display:none;background:var(--r);color:#fff;font-size:10.5px;font-weight:700;font-family:'DM Mono',monospace;padding:1px 6px;border-radius:8px;margin-left:auto;flex-shrink:0" title="Pendências: leads parados e acções em atraso">0</span></button>
+    <button class="sl-item admin-only" data-action="goPage" data-page="comercial-followup"><span class="mk-ic">📞</span>Follow-up</button>
+    <button class="sl-item admin-only" data-action="goPage" data-page="comercial-clientes"><span class="mk-ic">👤</span>Clientes</button>
     <button class="sl-item" data-action="goPage" data-page="comercial-orcamentos"><span class="mk-ic">📄</span>Orçamentos<span id="toco-vencidas-badge">!</span></button>
     <button class="sl-item" data-action="goPage" data-page="equipa-campo"><span class="mk-ic">🗺️</span>Equipa em Campo</button>
     <!-- Comerciais (dinâmico, vindo de ob_colaboradores · dep. Comercial · ativos). Geridos em RH → Colaboradores. -->
@@ -11193,6 +11194,21 @@ var CU=null; // current user
 var selectedUser=null;
 var _adminUser=null; // utilizador admin original, quando em modo "ver como"
 
+// Condição centralizada de "visão comercial" — verdadeira tanto para um
+// login real de comercial como para um admin em "Ver como <comercial>"
+// (a entrada sintética também tem admin:false, dept:'Comercial'). Usada
+// para ocultar Pipeline/Follow-up/Clientes no sidebar (classe admin-only,
+// ver toggleAdminSensitiveFields) e para bloquear acesso direto a essas
+// páginas em goPage(). Uma só implementação, nunca duas a divergirem.
+function obIsComercialView(){
+  return !!(CU && CU.admin !== true && CU.dept === 'Comercial');
+}
+window.obIsComercialView = obIsComercialView;
+// Páginas ocultas do sidebar para "visão comercial" (Orçamentos fica de
+// fora de propósito — continua acessível). Acesso direto (função, URL
+// guardada, estado antigo) é redirecionado para Meu Painel em goPage().
+var OB_COMERCIAL_MENU_ESCONDIDO = ['comercial-pipeline','comercial-followup','comercial-clientes'];
+
 // ── RENDER LOGIN ──────────────────────────────────────────
 
 // ════════════════════════════════════════════════════════════════
@@ -11479,6 +11495,14 @@ window.goPage=function goPage(id){
   if(id==='equipa-campo' && !(window.FEATURES&&window.FEATURES.equipaEmCampo)){ return; }
   // Access check for non-admins
   if(!CU)return;
+  // Pipeline/Follow-up/Clientes ocultos da "visão comercial" (real ou "Ver
+  // como") — acesso direto (função, URL, estado guardado) redireciona para
+  // Meu Painel em vez de mostrar erro ou ecrã vazio. Orçamentos não entra
+  // nesta lista, continua acessível normalmente.
+  if(id!=='meu-painel' && OB_COMERCIAL_MENU_ESCONDIDO.indexOf(id)!==-1 && obIsComercialView()){
+    goPage('meu-painel');
+    return;
+  }
   if(!CU.admin){
     const allowed=DEPT_PAGES[CU.dept]||[];
     if(!allowed.includes(id)){
