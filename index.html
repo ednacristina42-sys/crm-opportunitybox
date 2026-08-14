@@ -27782,6 +27782,101 @@ var _obSbTimers={};
 // conhecida, usada por obSbPush() para recusar reduções suspeitas.
 window._obClientsRemoteReady = false;
 window._obClientsRemoteCount = null;
+// Versão (updated_at) da última leitura remota confirmada de ob-clients —
+// base do controlo otimista de concorrência (14/08/2026 complemento):
+// duas gravações de dois browsers diferentes não podem substituir-se
+// silenciosamente uma à outra só porque a CONTAGEM de clientes bate certo.
+window._obClientsRemoteUpdatedAt = null;
+
+// Lê só {dados, updated_at} da linha ob-clients, sem tocar em mais nada —
+// usada imediatamente antes de qualquer gravação (nunca decide com uma
+// versão em cache). Devolve: {dados, updated_at} se a linha existe;
+// null se a linha ainda não existe remotamente (primeira gravação);
+// undefined se a leitura falhou (nunca tratar undefined como null).
+async function obClientsLerRemotoComVersao(){
+  if(typeof _ORC_SB_URL==='undefined'||typeof _ORC_SB_KEY==='undefined') return undefined;
+  try{
+    var r=await fetch(_ORC_SB_URL+'/rest/v1/ob_crm_dados?chave=eq.ob-clients&select=dados,updated_at',{
+      headers:{'apikey':_ORC_SB_KEY,'Authorization':'Bearer '+_ORC_SB_KEY}
+    });
+    if(!r.ok) return undefined;
+    var rows=await r.json();
+    if(!rows.length) return null;
+    return { dados: rows[0].dados, updated_at: rows[0].updated_at };
+  }catch(e){ return undefined; }
+}
+window.obClientsLerRemotoComVersao = obClientsLerRemotoComVersao;
+
+// Gravação de ob-clients com controlo otimista de concorrência: lê a
+// versão remota mesmo antes de escrever, recusa reduções suspeitas face à
+// contagem remota JÁ CONFIRMADA agora (não uma contagem em cache), recusa
+// se a versão mudou desde a última leitura conhecida deste browser, e só
+// grava com um PATCH condicional (updated_at=eq.<versão lida>) — uma
+// simples comparação por GET não fecha a janela em que outro browser
+// grava entre a leitura e a escrita deste.
+async function obSbPushClientesInterno(dados){
+  if(typeof _ORC_SB_URL==='undefined'||typeof _ORC_SB_KEY==='undefined') return;
+  var versao = await obClientsLerRemotoComVersao();
+  if(versao===undefined){
+    console.error('[SB-CRM] Push de ob-clients BLOQUEADO: não foi possível confirmar a versão remota atual antes de gravar. Nada foi enviado.');
+    try{ if(typeof showToast==='function') showToast('⚠ Não foi possível confirmar a versão atual de Clientes antes de gravar. Nada foi enviado — tenta novamente.'); }catch(e){}
+    return;
+  }
+  if(versao===null){
+    // Linha ainda não existe remotamente — primeira criação (POST/upsert).
+    try{
+      var rNovo=await fetch(_ORC_SB_URL+'/rest/v1/ob_crm_dados?on_conflict=chave',{
+        method:'POST',
+        headers:{'Content-Type':'application/json','apikey':_ORC_SB_KEY,'Authorization':'Bearer '+_ORC_SB_KEY,'Prefer':'resolution=merge-duplicates,return=representation'},
+        body:JSON.stringify({chave:'ob-clients',dados:dados,updated_at:new Date().toISOString()})
+      });
+      if(rNovo.ok){
+        var criadas=await rNovo.json();
+        if(criadas[0]){
+          window._obClientsRemoteCount=Array.isArray(criadas[0].dados)?criadas[0].dados.length:dados.length;
+          window._obClientsRemoteUpdatedAt=criadas[0].updated_at||null;
+        }
+      }
+    }catch(e){}
+    return;
+  }
+  var remotoN=Array.isArray(versao.dados)?versao.dados.length:0;
+  if(remotoN>=10 && Array.isArray(dados) && dados.length<remotoN*0.5){
+    console.error('[SB-CRM] Push de ob-clients BLOQUEADO: '+dados.length+' clientes locais vs '+remotoN+' remotos confirmados agora (redução suspeita >50%). Nada foi enviado. Se isto for uma limpeza intencional, usar obSbPushClientesForcar().');
+    try{ if(typeof showToast==='function') showToast('⚠ Sincronização de Clientes bloqueada: reduziria a base remota de '+remotoN+' para '+dados.length+'. Nada foi enviado.'); }catch(e){}
+    return;
+  }
+  if(window._obClientsRemoteUpdatedAt!=null && Date.parse(versao.updated_at)!==Date.parse(window._obClientsRemoteUpdatedAt)){
+    console.error('[SB-CRM] Push de ob-clients BLOQUEADO: a versão remota mudou desde a última leitura conhecida deste browser.');
+    try{ if(typeof showToast==='function') showToast('Outro usuário atualizou Clientes. Sua gravação foi bloqueada para não apagar dados. Atualize a página e repita a alteração.'); }catch(e){}
+    return;
+  }
+  try{
+    var rPatch=await fetch(_ORC_SB_URL+'/rest/v1/ob_crm_dados?chave=eq.ob-clients&updated_at=eq.'+encodeURIComponent(versao.updated_at),{
+      method:'PATCH',
+      headers:{'Content-Type':'application/json','apikey':_ORC_SB_KEY,'Authorization':'Bearer '+_ORC_SB_KEY,'Prefer':'return=representation'},
+      body:JSON.stringify({dados:dados,updated_at:new Date().toISOString()})
+    });
+    if(!rPatch.ok){
+      console.error('[SB-CRM] Push de ob-clients BLOQUEADO: PATCH condicional falhou (HTTP '+rPatch.status+'). Nada foi confirmado como gravado.');
+      return;
+    }
+    var linhas=await rPatch.json();
+    if(!linhas.length){
+      // Conflito real: outro browser gravou exatamente entre a nossa
+      // leitura e este PATCH — a condição updated_at=eq.<versão lida>
+      // deixou de bater certo, o Postgres não alterou nenhuma linha.
+      console.error('[SB-CRM] Push de ob-clients BLOQUEADO: outro browser gravou entre a leitura e a escrita (conflito de concorrência). Nada foi alterado.');
+      try{ if(typeof showToast==='function') showToast('Outro usuário atualizou Clientes. Sua gravação foi bloqueada para não apagar dados. Atualize a página e repita a alteração.'); }catch(e){}
+      return;
+    }
+    window._obClientsRemoteCount=Array.isArray(linhas[0].dados)?linhas[0].dados.length:dados.length;
+    window._obClientsRemoteUpdatedAt=linhas[0].updated_at||null;
+  }catch(e){
+    console.error('[SB-CRM] Push de ob-clients BLOQUEADO: erro de rede no PATCH condicional.',e);
+  }
+}
+window.obSbPushClientesInterno = obSbPushClientesInterno;
 
 function obSbPush(chave){
   if(typeof _ORC_SB_URL==='undefined'||typeof _ORC_SB_KEY==='undefined') return;
@@ -27797,18 +27892,9 @@ function obSbPush(chave){
   _obSbTimers[chave]=setTimeout(async function(){
     try{
       var dados=JSON.parse(localStorage.getItem(chave)||'[]');
-      // 'ob-clients': recusa reduções suspeitas (ex.: 1749 remotos ->
-      // poucas dezenas locais) em vez de sobrescrever silenciosamente.
-      // Não bloqueia eliminações legítimas de poucos clientes — só o
-      // padrão de "praticamente toda a base desapareceu". Para uma
-      // limpeza em massa genuína, usar obSbPushClientesForcar().
       if(chave==='ob-clients'){
-        var remotoConhecido=window._obClientsRemoteCount;
-        if(typeof remotoConhecido==='number' && remotoConhecido>=10 && Array.isArray(dados) && dados.length < remotoConhecido*0.5){
-          console.error('[SB-CRM] Push de ob-clients BLOQUEADO: '+dados.length+' clientes locais vs '+remotoConhecido+' remotos conhecidos (redução suspeita >50%). Nada foi enviado ao Supabase. Se isto for uma limpeza intencional, usar obSbPushClientesForcar().');
-          try{ if(typeof showToast==='function') showToast('⚠ Sincronização de Clientes bloqueada: reduziria a base remota de '+remotoConhecido+' para '+dados.length+'. Nada foi enviado.'); }catch(e){}
-          return;
-        }
+        await obSbPushClientesInterno(dados);
+        return;
       }
       // Leads: qualquer gravação local (mesmo sem relação nenhuma com o
       // WhatsApp) reenvia sempre a cópia inteira. Sem isto, uma foto/
@@ -27848,11 +27934,20 @@ function obSbPushClientesForcar(){
   }
   if(typeof _ORC_SB_URL==='undefined'||typeof _ORC_SB_KEY==='undefined') return;
   var dados=JSON.parse(localStorage.getItem('ob-clients')||'[]');
-  console.warn('[SB-CRM] obSbPushClientesForcar: a enviar '+dados.length+' clientes ao Supabase, IGNORANDO a proteção contra redução suspeita.');
+  var confirmado = confirm('Isto vai SUBSTITUIR TODA a base de Clientes no Supabase pelos '+dados.length+' clientes deste browser, ignorando a proteção contra redução suspeita e qualquer alteração feita por outro utilizador entretanto. Tem a certeza?');
+  if(!confirmado){ console.warn('[SB-CRM] obSbPushClientesForcar cancelado pelo utilizador.'); return; }
+  console.warn('[SB-CRM] obSbPushClientesForcar: a enviar '+dados.length+' clientes ao Supabase, IGNORANDO a proteção contra redução suspeita e concorrência.');
   fetch(_ORC_SB_URL+'/rest/v1/ob_crm_dados?on_conflict=chave',{
     method:'POST',
-    headers:{'Content-Type':'application/json','apikey':_ORC_SB_KEY,'Authorization':'Bearer '+_ORC_SB_KEY,'Prefer':'resolution=merge-duplicates'},
+    headers:{'Content-Type':'application/json','apikey':_ORC_SB_KEY,'Authorization':'Bearer '+_ORC_SB_KEY,'Prefer':'resolution=merge-duplicates,return=representation'},
     body:JSON.stringify({chave:'ob-clients',dados:dados,updated_at:new Date().toISOString()})
+  }).then(async function(r){
+    if(!r.ok) return;
+    var linhas=await r.json();
+    if(linhas[0]){
+      window._obClientsRemoteCount=Array.isArray(linhas[0].dados)?linhas[0].dados.length:dados.length;
+      window._obClientsRemoteUpdatedAt=linhas[0].updated_at||null;
+    }
   }).catch(function(){});
 }
 window.obSbPushClientesForcar=obSbPushClientesForcar;
@@ -27882,6 +27977,7 @@ async function obSbBoot(){
         if(row.chave==='ob-clients'){
           viuOBClients=true;
           window._obClientsRemoteCount=Array.isArray(row.dados)?row.dados.length:null;
+          window._obClientsRemoteUpdatedAt=row.updated_at||null;
           if(remotoTem){
             localStorage.setItem(row.chave,JSON.stringify(row.dados));
             try{ if(typeof cliData!=='undefined') cliData=row.dados; }catch(e){}
@@ -27913,7 +28009,7 @@ async function obSbBoot(){
       // resposta (Supabase sem registo ainda) — mesmo assim é uma leitura
       // bem-sucedida, tem de desbloquear o push (senão fica preso para
       // sempre num Supabase novo/vazio).
-      if(!viuOBClients){ window._obClientsRemoteReady=true; window._obClientsRemoteCount=0; }
+      if(!viuOBClients){ window._obClientsRemoteReady=true; window._obClientsRemoteCount=0; window._obClientsRemoteUpdatedAt=null; }
       if(adoptou){
         console.log('[SB-CRM] Dados carregados do Supabase (dispositivo novo).');
         try{ if(typeof crmRenderAll==='function') crmRenderAll(); }catch(e){}
