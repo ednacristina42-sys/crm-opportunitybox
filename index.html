@@ -27773,12 +27773,43 @@ var OB_SB_SYNC_KEYS=['ob-leads','ob-clients','ob-crm-atividades','ob-crm-histori
   'ob-tes-contas','ob-tes-receber','ob-tes-log','ob-tes-cartoes','ob-fin-despesas','ob-iva-dados','ob-faturas'];
 var _obSbTimers={};
 
+// ── Proteção específica de 'ob-clients' contra sobrescrita por dados locais
+// desatualizados (14/08/2026) — um browser com um localStorage antigo (ex.:
+// os 30 clientes de teste) não pode apagar a base remota mais completa.
+// _obClientsRemoteReady só fica true depois de obSbBoot() ter conseguido
+// mesmo ler o Supabase com sucesso (nunca por timeout/falha de rede — ver
+// obSbBoot()). _obClientsRemoteCount guarda a última contagem remota
+// conhecida, usada por obSbPush() para recusar reduções suspeitas.
+window._obClientsRemoteReady = false;
+window._obClientsRemoteCount = null;
+
 function obSbPush(chave){
   if(typeof _ORC_SB_URL==='undefined'||typeof _ORC_SB_KEY==='undefined') return;
+  // 'ob-clients': nunca envia antes de a leitura remota no arranque ter
+  // concluído com sucesso — sem isto, um browser com cópia local antiga
+  // podia sobrescrever a base remota completa segundos depois de abrir a
+  // página, antes de sequer saber que a remota era diferente.
+  if(chave==='ob-clients' && !window._obClientsRemoteReady){
+    console.warn('[SB-CRM] Push de ob-clients ignorado — leitura remota do arranque ainda não concluiu.');
+    return;
+  }
   clearTimeout(_obSbTimers[chave]);
   _obSbTimers[chave]=setTimeout(async function(){
     try{
       var dados=JSON.parse(localStorage.getItem(chave)||'[]');
+      // 'ob-clients': recusa reduções suspeitas (ex.: 1749 remotos ->
+      // poucas dezenas locais) em vez de sobrescrever silenciosamente.
+      // Não bloqueia eliminações legítimas de poucos clientes — só o
+      // padrão de "praticamente toda a base desapareceu". Para uma
+      // limpeza em massa genuína, usar obSbPushClientesForcar().
+      if(chave==='ob-clients'){
+        var remotoConhecido=window._obClientsRemoteCount;
+        if(typeof remotoConhecido==='number' && remotoConhecido>=10 && Array.isArray(dados) && dados.length < remotoConhecido*0.5){
+          console.error('[SB-CRM] Push de ob-clients BLOQUEADO: '+dados.length+' clientes locais vs '+remotoConhecido+' remotos conhecidos (redução suspeita >50%). Nada foi enviado ao Supabase. Se isto for uma limpeza intencional, usar obSbPushClientesForcar().');
+          try{ if(typeof showToast==='function') showToast('⚠ Sincronização de Clientes bloqueada: reduziria a base remota de '+remotoConhecido+' para '+dados.length+'. Nada foi enviado.'); }catch(e){}
+          return;
+        }
+      }
       // Leads: qualquer gravação local (mesmo sem relação nenhuma com o
       // WhatsApp) reenvia sempre a cópia inteira. Sem isto, uma foto/
       // conversa recebida da Leonor depois do arranque deste browser era
@@ -27805,6 +27836,27 @@ function obSbPush(chave){
 }
 window.obSbPush=obSbPush;
 
+// Escape hatch explícito para uma limpeza em massa GENUÍNA de clientes —
+// ignora a proteção contra redução suspeita de obSbPush('ob-clients').
+// Nunca é chamada automaticamente; só por ação humana deliberada (ex.:
+// consola). Continua a exigir _obClientsRemoteReady, para nunca escrever
+// por cima da base remota sem primeiro saber o que lá está.
+function obSbPushClientesForcar(){
+  if(!window._obClientsRemoteReady){
+    console.warn('[SB-CRM] obSbPushClientesForcar recusado — leitura remota do arranque ainda não concluiu.');
+    return;
+  }
+  if(typeof _ORC_SB_URL==='undefined'||typeof _ORC_SB_KEY==='undefined') return;
+  var dados=JSON.parse(localStorage.getItem('ob-clients')||'[]');
+  console.warn('[SB-CRM] obSbPushClientesForcar: a enviar '+dados.length+' clientes ao Supabase, IGNORANDO a proteção contra redução suspeita.');
+  fetch(_ORC_SB_URL+'/rest/v1/ob_crm_dados?on_conflict=chave',{
+    method:'POST',
+    headers:{'Content-Type':'application/json','apikey':_ORC_SB_KEY,'Authorization':'Bearer '+_ORC_SB_KEY,'Prefer':'resolution=merge-duplicates'},
+    body:JSON.stringify({chave:'ob-clients',dados:dados,updated_at:new Date().toISOString()})
+  }).catch(function(){});
+}
+window.obSbPushClientesForcar=obSbPushClientesForcar;
+
 async function obSbBoot(){
   if(typeof _ORC_SB_URL==='undefined'||typeof _ORC_SB_KEY==='undefined') return;
   try{
@@ -27814,6 +27866,7 @@ async function obSbBoot(){
     if(r.ok){
       var rows=await r.json();
       var adoptou=false;
+      var viuOBClients=false;
       rows.forEach(function(row){
         // 'ob-uni-items' tem agora a sua própria sincronização por item (ver
         // _sbUniItemUpsert/_uniInitFromSB) — ignorado aqui para não competir com ela.
@@ -27821,11 +27874,26 @@ async function obSbBoot(){
         var localRaw=localStorage.getItem(row.chave);
         var localVazio=!localRaw||localRaw==='[]'||localRaw==='{}'||localRaw==='null';
         var remotoTem=row.dados&&(row.dados.length||Object.keys(row.dados).length);
+        // 'ob-clients': a remota é sempre a fonte principal quando tem dados
+        // válidos — ao contrário das outras chaves, NÃO espera o local estar
+        // vazio (era exatamente essa condição que permitia a um browser com
+        // cópia antiga ficar "preso" nos dados antigos e depois reenviá-los
+        // no backup final, apagando a base remota mais completa).
+        if(row.chave==='ob-clients'){
+          viuOBClients=true;
+          window._obClientsRemoteCount=Array.isArray(row.dados)?row.dados.length:null;
+          if(remotoTem){
+            localStorage.setItem(row.chave,JSON.stringify(row.dados));
+            try{ if(typeof cliData!=='undefined') cliData=row.dados; }catch(e){}
+            adoptou=true;
+          }
+          window._obClientsRemoteReady=true;
+          return;
+        }
         if(localVazio&&remotoTem){
           localStorage.setItem(row.chave,JSON.stringify(row.dados));
           try{
             if(row.chave==='ob-leads'&&typeof crmLeads!=='undefined'){ crmLeads=row.dados; leads=crmLeads; }
-            if(row.chave==='ob-clients'&&typeof cliData!=='undefined'){ cliData=row.dados; }
             if(row.chave==='ob-crm-atividades'&&typeof crmAtividades!=='undefined'){ crmAtividades=row.dados; }
             if(row.chave==='ob-crm-historico'&&typeof crmHistorico!=='undefined'){ crmHistorico=row.dados; }
             if(row.chave==='ob-fo-ausencias'&&typeof FO_AUSENCIAS!=='undefined'){ FO_AUSENCIAS=row.dados; }
@@ -27841,6 +27909,11 @@ async function obSbBoot(){
           adoptou=true;
         }
       });
+      // A chave 'ob-clients' pode simplesmente não ter linha nenhuma na
+      // resposta (Supabase sem registo ainda) — mesmo assim é uma leitura
+      // bem-sucedida, tem de desbloquear o push (senão fica preso para
+      // sempre num Supabase novo/vazio).
+      if(!viuOBClients){ window._obClientsRemoteReady=true; window._obClientsRemoteCount=0; }
       if(adoptou){
         console.log('[SB-CRM] Dados carregados do Supabase (dispositivo novo).');
         try{ if(typeof crmRenderAll==='function') crmRenderAll(); }catch(e){}
@@ -27854,8 +27927,17 @@ async function obSbBoot(){
   // sem passar por este browser) — sem isto, o "backup" a seguir reenviava
   // sempre a cópia local (que não sabe deles) e apagava-os do Supabase.
   await obSbMesclarRemotoAntesDoBackup();
-  // Backup inicial de tudo o que existe localmente
-  OB_SB_SYNC_KEYS.forEach(obSbPush);
+  // Backup inicial de tudo o que existe localmente — 'ob-clients' fica de
+  // fora deste backup automático de propósito (14/08/2026). Diferente das
+  // outras chaves, o boot já decidiu acima qual é a versão certa de
+  // ob-clients (a remota, sempre que existir); reenviá-la aqui em cima
+  // era o próprio mecanismo que apagava a base completa quando o browser
+  // tinha uma cópia local antiga. Gravações reais de Clientes continuam a
+  // sincronizar normalmente via saveCliData() (ver wrap() mais abaixo).
+  OB_SB_SYNC_KEYS.forEach(function(chave){
+    if(chave==='ob-clients') return;
+    obSbPush(chave);
+  });
 }
 
 async function obSbLerRemoto(chave){
