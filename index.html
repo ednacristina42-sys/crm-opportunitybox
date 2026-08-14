@@ -6924,11 +6924,21 @@ tbody tr:hover{background:rgba(255,203,45,.05)}
     <button class="sl-item admin-only" data-action="goPage" data-page="comercial-pipeline"><span class="mk-ic">📈</span>Pipeline<span id="ob-badge-pendencias" style="display:none;background:var(--r);color:#fff;font-size:10.5px;font-weight:700;font-family:'DM Mono',monospace;padding:1px 6px;border-radius:8px;margin-left:auto;flex-shrink:0" title="Pendências: leads parados e acções em atraso">0</span></button>
     <button class="sl-item admin-only" data-action="goPage" data-page="comercial-followup"><span class="mk-ic">📞</span>Follow-up</button>
     <button class="sl-item admin-only" data-action="goPage" data-page="comercial-clientes"><span class="mk-ic">👤</span>Clientes</button>
-    <button class="sl-item" data-action="goPage" data-page="comercial-orcamentos"><span class="mk-ic">📄</span>Orçamentos<span id="toco-vencidas-badge">!</span></button>
+    <!-- Orçamentos (genérico): oculto na visão comercial a pedido do CEO,
+         14/08/2026 — o comercial usa "Meu Mapa de Vendas" para a sua carteira
+         pessoal. Reutiliza admin-only/toggleAdminSensitiveFields(), mesma
+         mecânica já usada acima em Pipeline/Follow-up/Clientes. -->
+    <button class="sl-item admin-only" data-action="goPage" data-page="comercial-orcamentos"><span class="mk-ic">📄</span>Orçamentos<span id="toco-vencidas-badge">!</span></button>
     <button class="sl-item" data-action="goPage" data-page="equipa-campo"><span class="mk-ic">🗺️</span>Equipa em Campo</button>
-    <!-- Comerciais (dinâmico, vindo de ob_colaboradores · dep. Comercial · ativos). Geridos em RH → Colaboradores. -->
+    <!-- Minhas Tarefas: atalho pessoal, visível só na visão comercial (login real de
+         Comercial ou admin em "Ver como"). Reutiliza homeFilterTasks() já existente,
+         sem criar novo sistema de permissões. Visibilidade controlada em
+         obAplicarVisaoComercialSidebar() (chamada por toggleAdminSensitiveFields()). -->
+    <button class="sl-item" id="sl-minhas-tarefas" data-action="goPage" data-page="home" onclick="try{homeFilterTasks('Dep. Comercial', window.CU&&window.CU.name);}catch(e){}" style="display:none"><span class="mk-ic">📋</span>Minhas Tarefas</button>
+    <!-- Comerciais (dinâmico, vindo de ob_colaboradores · dep. Comercial · ativos). Geridos em RH → Colaboradores.
+         Na visão comercial, obRenderComerciaisSidebar() restringe esta lista ao próprio nome. -->
     <div id="sl-comercial-colabs"></div>
-    <button class="sl-item" data-action="goPage" data-page="mapa-vendas"><div class="sl-dot" style="background:#facc15"></div>📊 Mapa de Vendas</button>
+    <button class="sl-item" data-action="goPage" data-page="mapa-vendas"><div class="sl-dot" style="background:#facc15"></div><span id="sl-mapa-vendas-label">📊 Mapa de Vendas</span></button>
   </div>
 
   <!-- Espaço "Equipa" (atalhos de pessoas Rui/Paulo/Humberto) removido — limpeza de sidebar.
@@ -11111,6 +11121,14 @@ function obRenderComerciaisSidebar(){
     if(m.verComo && !items.some(function(c){ return String(c.nome||c.name||'').trim()==='Paulo Faria'; })){
       items = items.concat([{ id:'paulo-faria', nome:'Paulo Faria', departamento:'Dep. Comercial', ativo:true }]);
     }
+    // Visão comercial (login real de Comercial ou admin em "Ver como"): mostrar
+    // só o próprio nome nesta lista, nunca os outros comerciais. Reutiliza a
+    // mesma condição centralizada obIsComercialView() já usada para
+    // Pipeline/Follow-up/Clientes — uma só implementação, nunca duas a divergirem.
+    if(m.box==='sl-comercial-colabs' && typeof obIsComercialView==='function' && obIsComercialView() && window.CU && window.CU.name){
+      var _meuNome = String(window.CU.name).trim().toLowerCase();
+      items = items.filter(function(c){ return String(c.nome||c.name||'').trim().toLowerCase()===_meuNome; });
+    }
     if(!items.length) return;
     var sep = document.createElement('div');
     sep.style.cssText = 'height:1px;margin:5px 12px 4px;background:var(--border,rgba(255,255,255,.08))';
@@ -11486,8 +11504,23 @@ function toggleAdminSensitiveFields(){
   document.querySelectorAll('.admin-only').forEach(function(el){
     el.classList.toggle('admin-hidden', !isAdmin);
   });
+  obAplicarVisaoComercialSidebar();
 }
 window.toggleAdminSensitiveFields = toggleAdminSensitiveFields;
+
+// Ajusta os atalhos pessoais do sidebar Comercial para a visão comercial
+// (login real de Comercial ou admin em "Ver como"): mostra "📋 Minhas Tarefas"
+// e troca o rótulo de "Mapa de Vendas" para "Meu Mapa de Vendas". Reutiliza
+// obIsComercialView() — mesma condição central usada em toda a visão comercial.
+// Chamada em toggleAdminSensitiveFields(), que já corre em todo goPage().
+function obAplicarVisaoComercialSidebar(){
+  var comercial = !!(typeof obIsComercialView==='function' && obIsComercialView());
+  var btnMinhas = document.getElementById('sl-minhas-tarefas');
+  if(btnMinhas) btnMinhas.style.display = comercial ? '' : 'none';
+  var lbl = document.getElementById('sl-mapa-vendas-label');
+  if(lbl) lbl.textContent = comercial ? '📊 Meu Mapa de Vendas' : '📊 Mapa de Vendas';
+}
+window.obAplicarVisaoComercialSidebar = obAplicarVisaoComercialSidebar;
 
 // ── NAV ──────────────────────────────────────────────────
 window.goPage=function goPage(id){
