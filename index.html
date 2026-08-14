@@ -26330,6 +26330,11 @@ function _mvPieOpts(){
   return { responsive:true, maintainAspectRatio:false, plugins:{ legend:{position:'bottom', labels:{color:'#94a3b8', font:{size:10.5}, boxWidth:10, padding:10}}, tooltip:{backgroundColor:'#141416', borderColor:'#28282d', borderWidth:1, titleColor:'#f8fafc', bodyColor:'#d4d4d8'} } };
 }
 
+// Ranking = Aprovado + Faturado (Orçamentos/view.rows) — validado contra a
+// Google Sheet oficial (Mapa Individual por comercial), 14/08/2026. Cada
+// estado é somado e contado separadamente para o valor e a contagem
+// exibidos serem auditáveis; "Em Produção" (fora do st de Orçamentos) nunca
+// entra aqui. Sem dependência de _mvTesData — só view.rows, como antes.
 function _mvRenderRanking(view){
   var card = document.getElementById('mv-ranking-card');
   if(!card) return;
@@ -26338,23 +26343,25 @@ function _mvRenderRanking(view){
   var porComercial = {};
   view.rows.forEach(function(o){
     var v = o.vendedor; if(!v) return;
-    if(!porComercial[v]) porComercial[v] = { valor:0, negocios:0, decididos:0, ganhos:0 };
+    if(!porComercial[v]) porComercial[v] = { aprovadoValor:0, aprovadoQtd:0, faturadoValor:0, faturadoQtd:0 };
     var pc = porComercial[v];
-    if(o.st==='Aprovado'||o.st==='Faturado'){ pc.valor += _mvValor(o); pc.negocios++; pc.ganhos++; pc.decididos++; }
-    else if(o.st==='Cancelado'){ pc.decididos++; }
+    if(o.st==='Aprovado'){ pc.aprovadoValor += _mvValor(o); pc.aprovadoQtd++; }
+    else if(o.st==='Faturado'){ pc.faturadoValor += _mvValor(o); pc.faturadoQtd++; }
   });
-  var lista = Object.keys(porComercial).map(function(n){ return Object.assign({nome:n}, porComercial[n]); });
-  lista.sort(function(a,b){ return b.valor-a.valor; });
-  var maxValor = lista.length ? lista[0].valor : 1;
+  var lista = Object.keys(porComercial).map(function(n){
+    var pc = porComercial[n];
+    return { nome:n, aprovadoValor:pc.aprovadoValor, aprovadoQtd:pc.aprovadoQtd, faturadoValor:pc.faturadoValor, faturadoQtd:pc.faturadoQtd, total:pc.aprovadoValor+pc.faturadoValor };
+  });
+  lista.sort(function(a,b){ return b.total-a.total; });
+  var maxValor = lista.length ? lista[0].total : 1;
   var medalhas = ['#fde047','#cbd5e1','#d97706'];
   var listEl = document.getElementById('mv-ranking-list');
   if(listEl) listEl.innerHTML = lista.map(function(c,i){
-    var conv = c.decididos>0 ? (c.ganhos/c.decididos*100) : 0;
-    var pct = maxValor>0 ? (c.valor/maxValor*100) : 0;
+    var pct = maxValor>0 ? (c.total/maxValor*100) : 0;
     return '<div class="mv-rank-row"><div class="mv-rank-pos" style="color:'+(medalhas[i]||'#94a3b8')+'">'+(i+1)+'</div>'
-      + '<div class="mv-rank-body"><div class="mv-rank-top"><span>'+c.nome+'</span><span style="font-weight:700">'+_mvFmtEUR(c.valor)+'</span></div>'
+      + '<div class="mv-rank-body"><div class="mv-rank-top"><span>'+c.nome+'</span><span style="font-weight:700">'+_mvFmtEUR(c.total)+'</span></div>'
       + '<div class="mv-progress-track"><div class="mv-progress-fill" style="width:'+pct+'%"></div></div>'
-      + '<div class="mv-rank-sub">'+c.negocios+' negócio'+(c.negocios===1?'':'s')+' · Conversão: '+_mvFmtPct(conv)+'</div></div></div>';
+      + '<div class="mv-rank-sub">Aprovado: '+_mvFmtEUR(c.aprovadoValor)+' ('+c.aprovadoQtd+') + Faturado: '+_mvFmtEUR(c.faturadoValor)+' ('+c.faturadoQtd+') = Total '+_mvFmtEUR(c.total)+'</div></div></div>';
   }).join('') || '<div class="mv-empty">Sem dados no filtro atual.</div>';
 }
 
