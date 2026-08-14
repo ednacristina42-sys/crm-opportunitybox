@@ -7378,6 +7378,9 @@ tbody tr:hover{background:rgba(255,203,45,.05)}
     </div>
   </div>
   <div class="task-content">
+    <div style="position:relative;max-width:360px;margin-bottom:14px">
+      <input type="text" id="cli-busca-input" placeholder="🔍 Pesquisar cliente" oninput="cliBuscarInput(this.value)" class="form-input" style="width:100%"/>
+    </div>
     <div class="tw"><table><thead><tr><th>Cliente</th><th>Sector</th><th>Contacto</th><th>Email</th><th>Telefone</th><th>Projetos</th><th>Receita total</th><th>Último contacto</th><th>Estado</th></tr></thead><tbody id="clientes-tbody"></tbody></table></div>
   </div>
 </div>
@@ -10664,7 +10667,8 @@ tbody tr:hover{background:rgba(255,203,45,.05)}
       <div class="form-row">
         <div class="form-group">
           <label class="form-label">Nome / Empresa</label>
-          <input class="form-input" id="cli-nome" placeholder="Ex: Restaurante O Farol"/>
+          <input class="form-input" id="cli-nome" list="cli-nome-datalist" autocomplete="off" placeholder="Ex: Restaurante O Farol"/>
+          <datalist id="cli-nome-datalist"></datalist>
         </div>
         <div class="form-group">
           <label class="form-label">Sector</label>
@@ -15559,11 +15563,86 @@ var cliData; try{ cliData=JSON.parse(localStorage.getItem('ob-clients')||'null')
   return {id:i+1,n:nome,sec:'Outro',cont:'',email:'',tel:'',nif:'',morada:'',projs:0,rev:0,last:'—',st:'active'};
 });
 var cliEditId = null;
+// Id definido automaticamente pelo autocomplete de nome/NIF em cliOpenNew() (nunca
+// por cliOpenEdit()). Só quando cliEditId===_cliAutoMatchId é seguro limpar o match
+// se o nome/NIF deixar de corresponder — uma edição real (cliOpenEdit) nunca é tocada.
+var _cliAutoMatchId = null;
 function saveCliData(){ localStorage.setItem('ob-clients',JSON.stringify(cliData)); }
 
+// Normaliza um NIF só para efeitos de COMPARAÇÃO (remove espaços/pontuação,
+// maiúsculas) — nunca reformata o valor guardado no cliente.
+function cliNormalizarNif(nif){
+  return String(nif||'').replace(/[^0-9A-Za-z]/g,'').toUpperCase();
+}
+window.cliNormalizarNif = cliNormalizarNif;
+
+// Preenche o <datalist> de #cli-nome com os clientes existentes (cliData).
+function cliPopularAutocomplete(){
+  var dl=document.getElementById('cli-nome-datalist');
+  if(!dl) return;
+  dl.innerHTML=(cliData||[]).map(function(c){
+    return '<option value="'+String(c.n||'').replace(/"/g,'&quot;')+'">';
+  }).join('');
+}
+window.cliPopularAutocomplete = cliPopularAutocomplete;
+
+// Aplica um match exato (nome ou NIF) encontrado em cliData: reaproveita o id
+// existente, preenche os campos e avisa o utilizador — nunca cria duplicado.
+function cliAplicarAutoMatch(cliente){
+  if(!cliente) return;
+  cliEditId=cliente.id; _cliAutoMatchId=cliente.id;
+  var elN=document.getElementById('cli-nome'); if(elN) elN.value=cliente.n||'';
+  var elSec=document.getElementById('cli-sector'); if(elSec) elSec.value=cliente.sec||'Outro';
+  var elCont=document.getElementById('cli-contact'); if(elCont) elCont.value=cliente.cont||'';
+  var elEmail=document.getElementById('cli-email'); if(elEmail) elEmail.value=cliente.email||'';
+  var elTel=document.getElementById('cli-tel'); if(elTel) elTel.value=cliente.tel||'';
+  var elNif=document.getElementById('cli-nif'); if(elNif) elNif.value=cliente.nif||'';
+  var elMor=document.getElementById('cli-morada'); if(elMor) elMor.value=cliente.morada||'';
+  if(typeof showToast==='function') showToast('Cliente já existe na base. Dados preenchidos automaticamente.');
+}
+window.cliAplicarAutoMatch = cliAplicarAutoMatch;
+
+// Se o match atual foi definido pelo autocomplete (não por cliOpenEdit), limpa-o —
+// nunca deixa uma alteração de nome/NIF ir atualizar por engano um cliente errado.
+function cliLimparAutoMatchSeNecessario(){
+  if(_cliAutoMatchId!==null && cliEditId===_cliAutoMatchId){ cliEditId=null; _cliAutoMatchId=null; }
+}
+
+function cliNomeVerificarMatch(){
+  // Fora do fluxo "+ Novo Cliente" (ou seja, a editar um cliente real via
+  // cliOpenEdit) o autocomplete nunca interfere — permite sempre renomear.
+  if(cliEditId!==null && cliEditId!==_cliAutoMatchId) return;
+  var elN=document.getElementById('cli-nome'); if(!elN) return;
+  var valor=elN.value.trim();
+  if(!valor){ cliLimparAutoMatchSeNecessario(); return; }
+  var match=(cliData||[]).find(function(c){ return String(c.n||'').trim().toLowerCase()===valor.toLowerCase(); });
+  if(match) cliAplicarAutoMatch(match);
+  else cliLimparAutoMatchSeNecessario();
+}
+window.cliNomeVerificarMatch = cliNomeVerificarMatch;
+
+function cliNifVerificarMatch(){
+  if(cliEditId!==null && cliEditId!==_cliAutoMatchId) return;
+  var elNif=document.getElementById('cli-nif'); if(!elNif) return;
+  var valorNorm=cliNormalizarNif(elNif.value);
+  if(!valorNorm){ cliLimparAutoMatchSeNecessario(); return; }
+  var match=(cliData||[]).find(function(c){ return c.nif && cliNormalizarNif(c.nif)===valorNorm; });
+  if(match) cliAplicarAutoMatch(match);
+  else cliLimparAutoMatchSeNecessario();
+}
+window.cliNifVerificarMatch = cliNifVerificarMatch;
+
+document.addEventListener('DOMContentLoaded', function(){
+  var elNome=document.getElementById('cli-nome');
+  if(elNome && !elNome._obAutoMatchWired){ elNome.addEventListener('input', cliNomeVerificarMatch); elNome._obAutoMatchWired=true; }
+  var elNif=document.getElementById('cli-nif');
+  if(elNif && !elNif._obAutoMatchWired){ elNif.addEventListener('input', cliNifVerificarMatch); elNif._obAutoMatchWired=true; }
+});
+
 function cliOpenNew(){
-  cliEditId=null;
+  cliEditId=null; _cliAutoMatchId=null;
   ['cli-nome','cli-contact','cli-email','cli-tel','cli-nif','cli-morada','cli-prazo','cli-fin-nome','cli-fin-tel','cli-fin-email','cli-fin-nif','cli-iva-motivo'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';}); ['cli-iva-isento','cli-sujeito-passivo','cli-iva-caixa'].forEach(id=>{const el=document.getElementById(id);if(el)el.checked=false;}); cliToggleIvaIsento(); document.getElementById('cli-recebimentos-panel').style.display='none';
+  cliPopularAutocomplete();
   const cm=document.getElementById('cli-modal');
   if(!cm) return;
   document.getElementById('cli-modal-title').textContent='+ Novo Cliente';
@@ -15574,7 +15653,7 @@ function cliOpenNew(){
 
 function cliOpenEdit(id){
   const c=cliData.find(x=>x.id===id); if(!c) return;
-  cliEditId=id;
+  cliEditId=id; _cliAutoMatchId=null;
   document.getElementById('cli-nome').value=c.n||'';
   document.getElementById('cli-sector').value=c.sec||'Outro';
   document.getElementById('cli-contact').value=c.cont||'';
@@ -15798,7 +15877,22 @@ function cliSave(){
     const idx=cliData.findIndex(c=>c.id===cliEditId);
     if(idx>=0) cliData[idx]={...cliData[idx],...data};
   } else {
-    data.id=Date.now(); cliData.unshift(data);
+    // Última verificação anti-duplicidade antes de criar um cliente novo:
+    // NIF exato normalizado primeiro, depois nome exato normalizado — só
+    // correspondência exata (sem fuzzy matching). Se encontrar, converte a
+    // operação em atualização em vez de inserir um segundo cliente.
+    var _nifNorm = cliNormalizarNif(data.nif);
+    var _existente = _nifNorm ? cliData.find(c=>cliNormalizarNif(c.nif)===_nifNorm) : null;
+    if(!_existente){
+      var _nomeNorm = data.n.trim().toLowerCase();
+      _existente = cliData.find(c=>String(c.n||'').trim().toLowerCase()===_nomeNorm);
+    }
+    if(_existente){
+      const idx2=cliData.findIndex(c=>c.id===_existente.id);
+      if(idx2>=0) cliData[idx2]={...cliData[idx2],...data};
+    } else {
+      data.id=Date.now(); cliData.unshift(data);
+    }
   }
   saveCliData(); renderClientes();
   document.getElementById('cli-modal').classList.remove('open');
@@ -15865,11 +15959,44 @@ var clientes=[
   {n:'Transportes Alcopark',sec:'Logística',cont:'Vítor Alves',tel:'+351 219 000 010',projs:2,rev:5600,last:'há 2 meses',st:'at-risk'},
 ];
 
+// Pesquisa/ordenação da listagem de Clientes: só afeta a EXIBIÇÃO (não
+// regrava nem reordena cliData/ob-clients/Supabase). Filtra por nome, NIF,
+// telefone, e-mail e contacto; ordena A→Z por nome (localeCompare pt-BR,
+// ignora maiúsculas/acentos), clientes sem nome vão para o fim.
+var _cliBusca = '';
+function cliFiltrarBusca(data, termo){
+  var q = String(termo||'').trim().toLowerCase();
+  if(!q) return data;
+  return data.filter(function(c){
+    return [c.n, c.nif, c.tel, c.email, c.cont].some(function(v){
+      return v!=null && String(v).toLowerCase().indexOf(q)!==-1;
+    });
+  });
+}
+function cliOrdenarPorNome(a, b){
+  var na = String((a&&a.n)||'').trim();
+  var nb = String((b&&b.n)||'').trim();
+  if(!na && !nb) return 0;
+  if(!na) return 1;
+  if(!nb) return -1;
+  return na.localeCompare(nb, 'pt-BR', { sensitivity: 'base' });
+}
+function cliBuscarInput(valor){
+  _cliBusca = valor;
+  renderClientes();
+}
+window.cliBuscarInput = cliBuscarInput;
+
 function renderClientes(){
   const el=document.getElementById('clientes-tbody');if(!el)return;
   const data=(typeof cliData!=='undefined'&&cliData)?cliData:clientes;
   const isAdmin = !!(CU && CU.admin === true);
-  el.innerHTML=data.map(c=>`<tr style="cursor:pointer" onclick="cliOpenEdit(${c.id||0})">
+  const lista=cliFiltrarBusca(data, _cliBusca).slice().sort(cliOrdenarPorNome);
+  if(!lista.length){
+    el.innerHTML='<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:24px">Nenhum cliente encontrado.</td></tr>';
+    return;
+  }
+  el.innerHTML=lista.map(c=>`<tr style="cursor:pointer" onclick="cliOpenEdit(${c.id||0})">
     <td><strong style="color:var(--txt2)">${c.n}</strong><br><span style="font-size:12px;color:var(--muted)">${c.nif||''}</span></td>
     <td><span class="b bm">${c.sec||'—'}</span></td>
     <td>${c.cont||'—'}</td>
