@@ -11519,6 +11519,25 @@ function obAplicarVisaoComercialSidebar(){
   if(btnMinhas) btnMinhas.style.display = comercial ? '' : 'none';
   var lbl = document.getElementById('sl-mapa-vendas-label');
   if(lbl) lbl.textContent = comercial ? '📊 Meu Mapa de Vendas' : '📊 Mapa de Vendas';
+  // Correção explícita (14/08/2026): no teste real, a regra DEPT_ACCESS por si
+  // só não bastou para ocultar Design/Produção da visão comercial. Reforço
+  // mínimo e redundante aqui, só quando obIsComercialView() é verdadeiro —
+  // nunca afeta os logins reais de Dep. Design/Chão da Fábrica, que continuam
+  // a ver os seus próprios itens normalmente.
+  var siDesign = document.getElementById('si-design');
+  var siFabrica = document.getElementById('si-fabrica');
+  var itensComerciaisEsconde = ['#sl-design [data-page="design-tarefas"]','#sl-design [data-page="design-ficheiros"]','#sl-fabrica [data-page="fabrica-producao"]','#sl-fabrica [data-page="fabrica-instalacoes"]'];
+  if(comercial){
+    if(siDesign) siDesign.style.display = 'none';
+    if(siFabrica) siFabrica.style.display = 'none';
+    itensComerciaisEsconde.forEach(function(sel){ var el=document.querySelector(sel); if(el) el.style.display='none'; });
+  } else {
+    // Não força 'flex' aqui — si-design/si-fabrica continuam geridos por
+    // DEPT_ACCESS em setupApp(); só remove um eventual "none" que esta função
+    // tenha deixado numa sessão comercial anterior na mesma aba (ex.: admin a
+    // sair de "Ver como").
+    itensComerciaisEsconde.forEach(function(sel){ var el=document.querySelector(sel); if(el) el.style.display=''; });
+  }
 }
 window.obAplicarVisaoComercialSidebar = obAplicarVisaoComercialSidebar;
 
