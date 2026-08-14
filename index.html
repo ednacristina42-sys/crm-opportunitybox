@@ -6926,9 +6926,15 @@ tbody tr:hover{background:rgba(255,203,45,.05)}
     <button class="sl-item admin-only" data-action="goPage" data-page="comercial-clientes"><span class="mk-ic">👤</span>Clientes</button>
     <button class="sl-item" data-action="goPage" data-page="comercial-orcamentos"><span class="mk-ic">📄</span>Orçamentos<span id="toco-vencidas-badge">!</span></button>
     <button class="sl-item" data-action="goPage" data-page="equipa-campo"><span class="mk-ic">🗺️</span>Equipa em Campo</button>
-    <!-- Comerciais (dinâmico, vindo de ob_colaboradores · dep. Comercial · ativos). Geridos em RH → Colaboradores. -->
+    <!-- Minhas Tarefas: atalho pessoal, visível só na visão comercial (login real de
+         Comercial ou admin em "Ver como"). Reutiliza homeFilterTasks() já existente,
+         sem criar novo sistema de permissões. Visibilidade controlada em
+         obAplicarVisaoComercialSidebar() (chamada por toggleAdminSensitiveFields()). -->
+    <button class="sl-item" id="sl-minhas-tarefas" data-action="goPage" data-page="home" onclick="try{homeFilterTasks('Dep. Comercial', window.CU&&window.CU.name);}catch(e){}" style="display:none"><span class="mk-ic">📋</span>Minhas Tarefas</button>
+    <!-- Comerciais (dinâmico, vindo de ob_colaboradores · dep. Comercial · ativos). Geridos em RH → Colaboradores.
+         Na visão comercial, obRenderComerciaisSidebar() restringe esta lista ao próprio nome. -->
     <div id="sl-comercial-colabs"></div>
-    <button class="sl-item" data-action="goPage" data-page="mapa-vendas"><div class="sl-dot" style="background:#facc15"></div>📊 Mapa de Vendas</button>
+    <button class="sl-item" data-action="goPage" data-page="mapa-vendas"><div class="sl-dot" style="background:#facc15"></div><span id="sl-mapa-vendas-label">📊 Mapa de Vendas</span></button>
   </div>
 
   <!-- Espaço "Equipa" (atalhos de pessoas Rui/Paulo/Humberto) removido — limpeza de sidebar.
@@ -7279,6 +7285,8 @@ tbody tr:hover{background:rgba(255,203,45,.05)}
   <div class="admin-page">
     <div id="mv-comercial-banner" style="display:none;margin-bottom:14px;padding:10px 14px;border-radius:10px;background:rgba(250,204,21,.06);border:1px solid rgba(250,204,21,.2);font-size:12.5px;color:#fde047"></div>
 
+    <div id="mv-dashboard-individual" style="display:none"></div>
+
     <div id="mv-meta-comercial-wrap"></div>
 
     <div class="mv-kpi-row" id="mv-kpi-row"></div>
@@ -7301,7 +7309,7 @@ tbody tr:hover{background:rgba(255,203,45,.05)}
 
     <div class="mv-card" id="mv-ranking-card" style="display:none;margin-bottom:16px">
       <div class="mv-card-title">🏆 Ranking de Comerciais</div>
-      <div class="mv-card-sub">Comparação de performance (Adjudicado + Faturado)</div>
+      <div class="mv-card-sub">Propostas aprovadas (Orçamentos) + faturas emitidas (Vendas)</div>
       <div id="mv-ranking-list"></div>
     </div>
 
@@ -10654,7 +10662,8 @@ tbody tr:hover{background:rgba(255,203,45,.05)}
       <div class="form-row">
         <div class="form-group">
           <label class="form-label">Nome / Empresa</label>
-          <input class="form-input" id="cli-nome" placeholder="Ex: Restaurante O Farol"/>
+          <input class="form-input" id="cli-nome" list="cli-nome-datalist" autocomplete="off" placeholder="Ex: Restaurante O Farol"/>
+          <datalist id="cli-nome-datalist"></datalist>
         </div>
         <div class="form-group">
           <label class="form-label">Sector</label>
@@ -11111,6 +11120,14 @@ function obRenderComerciaisSidebar(){
     if(m.verComo && !items.some(function(c){ return String(c.nome||c.name||'').trim()==='Paulo Faria'; })){
       items = items.concat([{ id:'paulo-faria', nome:'Paulo Faria', departamento:'Dep. Comercial', ativo:true }]);
     }
+    // Visão comercial (login real de Comercial ou admin em "Ver como"): mostrar
+    // só o próprio nome nesta lista, nunca os outros comerciais. Reutiliza a
+    // mesma condição centralizada obIsComercialView() já usada para
+    // Pipeline/Follow-up/Clientes — uma só implementação, nunca duas a divergirem.
+    if(m.box==='sl-comercial-colabs' && typeof obIsComercialView==='function' && obIsComercialView() && window.CU && window.CU.name){
+      var _meuNome = String(window.CU.name).trim().toLowerCase();
+      items = items.filter(function(c){ return String(c.nome||c.name||'').trim().toLowerCase()===_meuNome; });
+    }
     if(!items.length) return;
     var sep = document.createElement('div');
     sep.style.cssText = 'height:1px;margin:5px 12px 4px;background:var(--border,rgba(255,255,255,.08))';
@@ -11486,8 +11503,23 @@ function toggleAdminSensitiveFields(){
   document.querySelectorAll('.admin-only').forEach(function(el){
     el.classList.toggle('admin-hidden', !isAdmin);
   });
+  obAplicarVisaoComercialSidebar();
 }
 window.toggleAdminSensitiveFields = toggleAdminSensitiveFields;
+
+// Ajusta os atalhos pessoais do sidebar Comercial para a visão comercial
+// (login real de Comercial ou admin em "Ver como"): mostra "📋 Minhas Tarefas"
+// e troca o rótulo de "Mapa de Vendas" para "Meu Mapa de Vendas". Reutiliza
+// obIsComercialView() — mesma condição central usada em toda a visão comercial.
+// Chamada em toggleAdminSensitiveFields(), que já corre em todo goPage().
+function obAplicarVisaoComercialSidebar(){
+  var comercial = !!(typeof obIsComercialView==='function' && obIsComercialView());
+  var btnMinhas = document.getElementById('sl-minhas-tarefas');
+  if(btnMinhas) btnMinhas.style.display = comercial ? '' : 'none';
+  var lbl = document.getElementById('sl-mapa-vendas-label');
+  if(lbl) lbl.textContent = comercial ? '📊 Meu Mapa de Vendas' : '📊 Mapa de Vendas';
+}
+window.obAplicarVisaoComercialSidebar = obAplicarVisaoComercialSidebar;
 
 // ── NAV ──────────────────────────────────────────────────
 window.goPage=function goPage(id){
@@ -15502,11 +15534,78 @@ var cliData; try{ cliData=JSON.parse(localStorage.getItem('ob-clients')||'null')
   return {id:i+1,n:nome,sec:'Outro',cont:'',email:'',tel:'',nif:'',morada:'',projs:0,rev:0,last:'—',st:'active'};
 });
 var cliEditId = null;
+// Id definido automaticamente pelo autocomplete de nome/NIF em cliOpenNew() (nunca
+// por cliOpenEdit()). Só quando cliEditId===_cliAutoMatchId é seguro limpar o match
+// se o nome deixar de corresponder — uma edição real (cliOpenEdit) nunca é tocada.
+var _cliAutoMatchId = null;
 function saveCliData(){ localStorage.setItem('ob-clients',JSON.stringify(cliData)); }
 
+// Preenche o <datalist> de #cli-nome com os clientes existentes (cliData).
+function cliPopularAutocomplete(){
+  var dl=document.getElementById('cli-nome-datalist');
+  if(!dl) return;
+  dl.innerHTML=(cliData||[]).map(function(c){
+    return '<option value="'+String(c.n||'').replace(/"/g,'&quot;')+'">';
+  }).join('');
+}
+window.cliPopularAutocomplete = cliPopularAutocomplete;
+
+// Aplica um match exato (nome ou NIF) encontrado em cliData: reaproveita o id
+// existente, preenche os campos e avisa o utilizador — nunca cria duplicado.
+function cliAplicarAutoMatch(cliente){
+  if(!cliente) return;
+  cliEditId=cliente.id; _cliAutoMatchId=cliente.id;
+  var elN=document.getElementById('cli-nome'); if(elN) elN.value=cliente.n||'';
+  var elSec=document.getElementById('cli-sector'); if(elSec) elSec.value=cliente.sec||'Outro';
+  var elCont=document.getElementById('cli-contact'); if(elCont) elCont.value=cliente.cont||'';
+  var elEmail=document.getElementById('cli-email'); if(elEmail) elEmail.value=cliente.email||'';
+  var elTel=document.getElementById('cli-tel'); if(elTel) elTel.value=cliente.tel||'';
+  var elNif=document.getElementById('cli-nif'); if(elNif) elNif.value=cliente.nif||'';
+  var elMor=document.getElementById('cli-morada'); if(elMor) elMor.value=cliente.morada||'';
+  if(typeof showToast==='function') showToast('Cliente já existe na base. Dados preenchidos automaticamente.');
+}
+window.cliAplicarAutoMatch = cliAplicarAutoMatch;
+
+// Se o match atual foi definido pelo autocomplete (não por cliOpenEdit), limpa-o —
+// nunca deixa uma alteração de nome ir atualizar por engano um cliente errado.
+function cliLimparAutoMatchSeNecessario(){
+  if(_cliAutoMatchId!==null && cliEditId===_cliAutoMatchId){ cliEditId=null; _cliAutoMatchId=null; }
+}
+
+function cliNomeVerificarMatch(){
+  // Fora do fluxo "+ Novo Cliente" (ou seja, a editar um cliente real via
+  // cliOpenEdit) o autocomplete nunca interfere — permite sempre renomear.
+  if(cliEditId!==null && cliEditId!==_cliAutoMatchId) return;
+  var elN=document.getElementById('cli-nome'); if(!elN) return;
+  var valor=elN.value.trim();
+  if(!valor){ cliLimparAutoMatchSeNecessario(); return; }
+  var match=(cliData||[]).find(function(c){ return String(c.n||'').trim().toLowerCase()===valor.toLowerCase(); });
+  if(match) cliAplicarAutoMatch(match);
+  else cliLimparAutoMatchSeNecessario();
+}
+window.cliNomeVerificarMatch = cliNomeVerificarMatch;
+
+function cliNifVerificarMatch(){
+  if(cliEditId!==null && cliEditId!==_cliAutoMatchId) return;
+  var elNif=document.getElementById('cli-nif'); if(!elNif) return;
+  var valor=elNif.value.trim();
+  if(!valor) return;
+  var match=(cliData||[]).find(function(c){ return c.nif && String(c.nif).trim()===valor; });
+  if(match) cliAplicarAutoMatch(match);
+}
+window.cliNifVerificarMatch = cliNifVerificarMatch;
+
+document.addEventListener('DOMContentLoaded', function(){
+  var elNome=document.getElementById('cli-nome');
+  if(elNome && !elNome._obAutoMatchWired){ elNome.addEventListener('input', cliNomeVerificarMatch); elNome._obAutoMatchWired=true; }
+  var elNif=document.getElementById('cli-nif');
+  if(elNif && !elNif._obAutoMatchWired){ elNif.addEventListener('input', cliNifVerificarMatch); elNif._obAutoMatchWired=true; }
+});
+
 function cliOpenNew(){
-  cliEditId=null;
+  cliEditId=null; _cliAutoMatchId=null;
   ['cli-nome','cli-contact','cli-email','cli-tel','cli-nif','cli-morada','cli-prazo','cli-fin-nome','cli-fin-tel','cli-fin-email','cli-fin-nif','cli-iva-motivo'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';}); ['cli-iva-isento','cli-sujeito-passivo','cli-iva-caixa'].forEach(id=>{const el=document.getElementById(id);if(el)el.checked=false;}); cliToggleIvaIsento(); document.getElementById('cli-recebimentos-panel').style.display='none';
+  cliPopularAutocomplete();
   const cm=document.getElementById('cli-modal');
   if(!cm) return;
   document.getElementById('cli-modal-title').textContent='+ Novo Cliente';
@@ -15517,7 +15616,7 @@ function cliOpenNew(){
 
 function cliOpenEdit(id){
   const c=cliData.find(x=>x.id===id); if(!c) return;
-  cliEditId=id;
+  cliEditId=id; _cliAutoMatchId=null;
   document.getElementById('cli-nome').value=c.n||'';
   document.getElementById('cli-sector').value=c.sec||'Outro';
   document.getElementById('cli-contact').value=c.cont||'';
@@ -25875,6 +25974,7 @@ function renderMapaVendas(){
   var syncBtn = document.getElementById('mv-sync-btn');
   if(syncBtn) syncBtn.style.display = view.isAdmin ? '' : 'none';
   _mvRenderBanner();
+  _mvRenderDashboardIndividual(view);
   _mvRenderFilters();
   _mvRenderKpis(view);
   _mvRenderMetaAnual(view);
@@ -26010,6 +26110,42 @@ function _mvRenderMetaAnual(view){
     + '<div style="font-size:10px;color:var(--mv-muted);margin-top:10px">⚠ Configuração provisória (MV_META_CONFIG) — substituir por dados reais quando autorizado.</div>';
 }
 
+// Dashboard Individual — só para comercial não-admin (login real ou "Ver como").
+// Reaproveita _mvTotaisComercial()/_mvFaturasPorVendedor() (mesmo cálculo do
+// Ranking, task 3) para nunca haver dois números diferentes para a mesma coisa.
+function _mvRenderDashboardIndividual(view){
+  var wrap = document.getElementById('mv-dashboard-individual');
+  if(!wrap) return;
+  if(view.isAdmin || !CU || !CU.name){ wrap.style.display='none'; wrap.innerHTML=''; return; }
+  wrap.style.display='block';
+  if(_mvTesData===null){
+    wrap.innerHTML = '<div class="mv-card"><div class="mv-card-title">📊 Dashboard Individual — '+CU.name+'</div><div class="mv-card-sub">A carregar faturação real…</div></div>';
+    _mvEnsureTesData().then(function(){ renderMapaVendas(); });
+    return;
+  }
+  var porFaturas = _mvFaturasPorVendedor();
+  var t = _mvTotaisComercial(CU.name, _mvData||[], porFaturas);
+  var tiles = [
+    {lbl:'Valor Propostas Aprovadas', val:_mvFmtEUR(t.valorAprovadas), color:'#fde047'},
+    {lbl:'Qtd. Propostas Aprovadas', val:String(t.qtdAprovadas), color:'#fde047'},
+    {lbl:'Valor Faturas Emitidas', val:_mvFmtEUR(t.valorFaturas), color:'#4ade80'},
+    {lbl:'Qtd. Faturas Emitidas', val:String(t.qtdFaturas), color:'#4ade80'},
+    {lbl:'Performance Total (Aprovadas + Faturas)', val:_mvFmtEUR(t.total), color:'var(--mv-y)'},
+    {lbl:'Propostas Pendentes', val:t.qtdPendentes+' · '+_mvFmtEUR(t.valorPendentes), color:'#3b82f6'},
+    {lbl:'Taxa de Conversão', val:_mvFmtPct(t.conversao), color:'#60a5fa'}
+  ];
+  wrap.innerHTML = '<div class="mv-card" style="margin-bottom:16px">'
+    + '<div class="mv-card-title">📊 Dashboard Individual — '+CU.name+'</div>'
+    + '<div class="mv-card-sub">Propostas aprovadas (Orçamentos) + faturas emitidas (Vendas)</div>'
+    + '<div class="mv-mini-grid">'
+      + tiles.map(function(tl){
+          return '<div class="mv-mini"><div class="mv-mini-lbl">'+tl.lbl+'</div><div class="mv-mini-val" style="color:'+tl.color+'">'+tl.val+'</div></div>';
+        }).join('')
+    + '</div>'
+    + '</div>';
+}
+window._mvRenderDashboardIndividual = _mvRenderDashboardIndividual;
+
 function _mvRenderMetaComercial(view){
   var wrap = document.getElementById('mv-meta-comercial-wrap');
   if(!wrap) return;
@@ -26135,31 +26271,80 @@ function _mvPieOpts(){
   return { responsive:true, maintainAspectRatio:false, plugins:{ legend:{position:'bottom', labels:{color:'#94a3b8', font:{size:10.5}, boxWidth:10, padding:10}}, tooltip:{backgroundColor:'#141416', borderColor:'#28282d', borderWidth:1, titleColor:'#f8fafc', bodyColor:'#d4d4d8'} } };
 }
 
+// Faturas reais (ob-tes-receber via _mvTesData) agrupadas por vendedor, dedupe por
+// _sheetId (Nº Fatura) — ou id/numero quando _sheetId faltar — para nunca contar a
+// mesma fatura duas vezes. Conta-se a fatura emitida independentemente de estar
+// Recebido, Não Recebido ou Recebido Parcial (é a emissão que importa aqui, não o
+// estado de cobrança). Partilhada pelo Ranking (task 3) e pelo Dashboard Individual
+// (task 4) para nunca haver duas implementações do mesmo cálculo a divergir.
+function _mvFaturasPorVendedor(){
+  var faturas = _mvTesData || [];
+  var vistos = {};
+  var porVendedor = {};
+  faturas.forEach(function(r){
+    var chave = r._sheetId || r.id || r.numero || r.num;
+    if(chave==null) chave = JSON.stringify(r);
+    chave = String(chave);
+    if(vistos[chave]) return;
+    vistos[chave] = 1;
+    var v = r.vendedor; if(!v) return;
+    if(!porVendedor[v]) porVendedor[v] = { valor:0, qtd:0 };
+    porVendedor[v].valor += (parseFloat(r.total)||0);
+    porVendedor[v].qtd += 1;
+  });
+  return porVendedor;
+}
+
+// TOTAL DO COMERCIAL = PROPOSTAS APROVADAS (Orçamentos, st==='Aprovado', sem contar
+// Faturado de novo) + FATURAS EMITIDAS (Vendas/Tesouraria, valor real já cobrado ou
+// a cobrar). Evita duplicar receita: um orçamento que já virou Faturado só entra
+// pela fatura real emitida, nunca pelas duas fontes ao mesmo tempo.
+function _mvTotaisComercial(nome, orcRows, porFaturas){
+  var meus = (orcRows||[]).filter(function(o){ return o.vendedor===nome; });
+  var aprovadas = meus.filter(function(o){ return o.st==='Aprovado'; });
+  var pendentes = meus.filter(function(o){ return o.st==='Pendente'; });
+  var faturadasOrc = meus.filter(function(o){ return o.st==='Faturado'; });
+  var canceladas = meus.filter(function(o){ return o.st==='Cancelado'; });
+  var valorAprovadas = aprovadas.reduce(function(s,o){ return s+_mvValor(o); },0);
+  var valorPendentes = pendentes.reduce(function(s,o){ return s+_mvValor(o); },0);
+  var f = (porFaturas && porFaturas[nome]) || { valor:0, qtd:0 };
+  var decididos = aprovadas.length+faturadasOrc.length+canceladas.length;
+  var conversao = decididos>0 ? ((aprovadas.length+faturadasOrc.length)/decididos*100) : 0;
+  return {
+    nome: nome,
+    valorAprovadas: valorAprovadas, qtdAprovadas: aprovadas.length,
+    valorFaturas: f.valor, qtdFaturas: f.qtd,
+    total: valorAprovadas+f.valor,
+    qtdPendentes: pendentes.length, valorPendentes: valorPendentes,
+    conversao: conversao
+  };
+}
+
 function _mvRenderRanking(view){
   var card = document.getElementById('mv-ranking-card');
   if(!card) return;
   if(!view.isAdmin){ card.style.display='none'; return; }
   card.style.display='';
-  var porComercial = {};
-  view.rows.forEach(function(o){
-    var v = o.vendedor; if(!v) return;
-    if(!porComercial[v]) porComercial[v] = { valor:0, negocios:0, decididos:0, ganhos:0 };
-    var pc = porComercial[v];
-    if(o.st==='Aprovado'||o.st==='Faturado'){ pc.valor += _mvValor(o); pc.negocios++; pc.ganhos++; pc.decididos++; }
-    else if(o.st==='Cancelado'){ pc.decididos++; }
-  });
-  var lista = Object.keys(porComercial).map(function(n){ return Object.assign({nome:n}, porComercial[n]); });
-  lista.sort(function(a,b){ return b.valor-a.valor; });
-  var maxValor = lista.length ? lista[0].valor : 1;
-  var medalhas = ['#fde047','#cbd5e1','#d97706'];
   var listEl = document.getElementById('mv-ranking-list');
+  if(_mvTesData===null){
+    if(listEl) listEl.innerHTML = '<div class="mv-empty">A carregar faturação real…</div>';
+    _mvEnsureTesData().then(function(){ _mvRenderRanking(view); });
+    return;
+  }
+  var porFaturas = _mvFaturasPorVendedor();
+  var nomes = {};
+  view.rows.forEach(function(o){ if(o.vendedor) nomes[o.vendedor]=1; });
+  Object.keys(porFaturas).forEach(function(v){ nomes[v]=1; });
+  var lista = Object.keys(nomes).map(function(n){ return _mvTotaisComercial(n, view.rows, porFaturas); });
+  lista.sort(function(a,b){ return b.total-a.total; });
+  var maxValor = lista.length ? lista[0].total : 1;
+  var medalhas = ['#fde047','#cbd5e1','#d97706'];
   if(listEl) listEl.innerHTML = lista.map(function(c,i){
-    var conv = c.decididos>0 ? (c.ganhos/c.decididos*100) : 0;
-    var pct = maxValor>0 ? (c.valor/maxValor*100) : 0;
+    var pct = maxValor>0 ? (c.total/maxValor*100) : 0;
     return '<div class="mv-rank-row"><div class="mv-rank-pos" style="color:'+(medalhas[i]||'#94a3b8')+'">'+(i+1)+'</div>'
-      + '<div class="mv-rank-body"><div class="mv-rank-top"><span>'+c.nome+'</span><span style="font-weight:700">'+_mvFmtEUR(c.valor)+'</span></div>'
+      + '<div class="mv-rank-body"><div class="mv-rank-top"><span>'+c.nome+'</span><span style="font-weight:700">'+_mvFmtEUR(c.total)+'</span></div>'
       + '<div class="mv-progress-track"><div class="mv-progress-fill" style="width:'+pct+'%"></div></div>'
-      + '<div class="mv-rank-sub">'+c.negocios+' negócio'+(c.negocios===1?'':'s')+' · Conversão: '+_mvFmtPct(conv)+'</div></div></div>';
+      + '<div class="mv-rank-sub">Propostas aprovadas: '+_mvFmtEUR(c.valorAprovadas)+' + Faturas emitidas: '+_mvFmtEUR(c.valorFaturas)+' = Total '+_mvFmtEUR(c.total)+'</div></div></div>';
   }).join('') || '<div class="mv-empty">Sem dados no filtro atual.</div>';
 }
 
