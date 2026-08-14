@@ -6924,11 +6924,21 @@ tbody tr:hover{background:rgba(255,203,45,.05)}
     <button class="sl-item admin-only" data-action="goPage" data-page="comercial-pipeline"><span class="mk-ic">📈</span>Pipeline<span id="ob-badge-pendencias" style="display:none;background:var(--r);color:#fff;font-size:10.5px;font-weight:700;font-family:'DM Mono',monospace;padding:1px 6px;border-radius:8px;margin-left:auto;flex-shrink:0" title="Pendências: leads parados e acções em atraso">0</span></button>
     <button class="sl-item admin-only" data-action="goPage" data-page="comercial-followup"><span class="mk-ic">📞</span>Follow-up</button>
     <button class="sl-item admin-only" data-action="goPage" data-page="comercial-clientes"><span class="mk-ic">👤</span>Clientes</button>
-    <button class="sl-item" data-action="goPage" data-page="comercial-orcamentos"><span class="mk-ic">📄</span>Orçamentos<span id="toco-vencidas-badge">!</span></button>
+    <!-- Orçamentos (genérico): oculto na visão comercial a pedido do CEO,
+         14/08/2026 — o comercial usa "Meu Mapa de Vendas" para a sua carteira
+         pessoal. Reutiliza admin-only/toggleAdminSensitiveFields(), mesma
+         mecânica já usada acima em Pipeline/Follow-up/Clientes. -->
+    <button class="sl-item admin-only" data-action="goPage" data-page="comercial-orcamentos"><span class="mk-ic">📄</span>Orçamentos<span id="toco-vencidas-badge">!</span></button>
     <button class="sl-item" data-action="goPage" data-page="equipa-campo"><span class="mk-ic">🗺️</span>Equipa em Campo</button>
-    <!-- Comerciais (dinâmico, vindo de ob_colaboradores · dep. Comercial · ativos). Geridos em RH → Colaboradores. -->
+    <!-- Minhas Tarefas: atalho pessoal, visível só na visão comercial (login real de
+         Comercial ou admin em "Ver como"). Reutiliza homeFilterTasks() já existente,
+         sem criar novo sistema de permissões. Visibilidade controlada em
+         obAplicarVisaoComercialSidebar() (chamada por toggleAdminSensitiveFields()). -->
+    <button class="sl-item" id="sl-minhas-tarefas" data-action="goPage" data-page="home" onclick="try{homeFilterTasks('Dep. Comercial', window.CU&&window.CU.name);}catch(e){}" style="display:none"><span class="mk-ic">📋</span>Minhas Tarefas</button>
+    <!-- Comerciais (dinâmico, vindo de ob_colaboradores · dep. Comercial · ativos). Geridos em RH → Colaboradores.
+         Na visão comercial, obRenderComerciaisSidebar() restringe esta lista ao próprio nome. -->
     <div id="sl-comercial-colabs"></div>
-    <button class="sl-item" data-action="goPage" data-page="mapa-vendas"><div class="sl-dot" style="background:#facc15"></div>📊 Mapa de Vendas</button>
+    <button class="sl-item" data-action="goPage" data-page="mapa-vendas"><div class="sl-dot" style="background:#facc15"></div><span id="sl-mapa-vendas-label">📊 Mapa de Vendas</span></button>
   </div>
 
   <!-- Espaço "Equipa" (atalhos de pessoas Rui/Paulo/Humberto) removido — limpeza de sidebar.
@@ -7368,6 +7378,9 @@ tbody tr:hover{background:rgba(255,203,45,.05)}
     </div>
   </div>
   <div class="task-content">
+    <div style="position:relative;max-width:360px;margin-bottom:14px">
+      <input type="text" id="cli-busca-input" placeholder="🔍 Pesquisar cliente" oninput="cliBuscarInput(this.value)" class="form-input" style="width:100%"/>
+    </div>
     <div class="tw"><table><thead><tr><th>Cliente</th><th>Sector</th><th>Contacto</th><th>Email</th><th>Telefone</th><th>Projetos</th><th>Receita total</th><th>Último contacto</th><th>Estado</th></tr></thead><tbody id="clientes-tbody"></tbody></table></div>
   </div>
 </div>
@@ -10654,7 +10667,8 @@ tbody tr:hover{background:rgba(255,203,45,.05)}
       <div class="form-row">
         <div class="form-group">
           <label class="form-label">Nome / Empresa</label>
-          <input class="form-input" id="cli-nome" placeholder="Ex: Restaurante O Farol"/>
+          <input class="form-input" id="cli-nome" list="cli-nome-datalist" autocomplete="off" placeholder="Ex: Restaurante O Farol"/>
+          <datalist id="cli-nome-datalist"></datalist>
         </div>
         <div class="form-group">
           <label class="form-label">Sector</label>
@@ -11111,6 +11125,14 @@ function obRenderComerciaisSidebar(){
     if(m.verComo && !items.some(function(c){ return String(c.nome||c.name||'').trim()==='Paulo Faria'; })){
       items = items.concat([{ id:'paulo-faria', nome:'Paulo Faria', departamento:'Dep. Comercial', ativo:true }]);
     }
+    // Visão comercial (login real de Comercial ou admin em "Ver como"): mostrar
+    // só o próprio nome nesta lista, nunca os outros comerciais. Reutiliza a
+    // mesma condição centralizada obIsComercialView() já usada para
+    // Pipeline/Follow-up/Clientes — uma só implementação, nunca duas a divergirem.
+    if(m.box==='sl-comercial-colabs' && typeof obIsComercialView==='function' && obIsComercialView() && window.CU && window.CU.name){
+      var _meuNome = String(window.CU.name).trim().toLowerCase();
+      items = items.filter(function(c){ return String(c.nome||c.name||'').trim().toLowerCase()===_meuNome; });
+    }
     if(!items.length) return;
     var sep = document.createElement('div');
     sep.style.cssText = 'height:1px;margin:5px 12px 4px;background:var(--border,rgba(255,255,255,.08))';
@@ -11486,8 +11508,42 @@ function toggleAdminSensitiveFields(){
   document.querySelectorAll('.admin-only').forEach(function(el){
     el.classList.toggle('admin-hidden', !isAdmin);
   });
+  obAplicarVisaoComercialSidebar();
 }
 window.toggleAdminSensitiveFields = toggleAdminSensitiveFields;
+
+// Ajusta os atalhos pessoais do sidebar Comercial para a visão comercial
+// (login real de Comercial ou admin em "Ver como"): mostra "📋 Minhas Tarefas"
+// e troca o rótulo de "Mapa de Vendas" para "Meu Mapa de Vendas". Reutiliza
+// obIsComercialView() — mesma condição central usada em toda a visão comercial.
+// Chamada em toggleAdminSensitiveFields(), que já corre em todo goPage().
+function obAplicarVisaoComercialSidebar(){
+  var comercial = !!(typeof obIsComercialView==='function' && obIsComercialView());
+  var btnMinhas = document.getElementById('sl-minhas-tarefas');
+  if(btnMinhas) btnMinhas.style.display = comercial ? '' : 'none';
+  var lbl = document.getElementById('sl-mapa-vendas-label');
+  if(lbl) lbl.textContent = comercial ? '📊 Meu Mapa de Vendas' : '📊 Mapa de Vendas';
+  // Correção explícita (14/08/2026): no teste real, a regra DEPT_ACCESS por si
+  // só não bastou para ocultar Design/Produção da visão comercial. Reforço
+  // mínimo e redundante aqui, só quando obIsComercialView() é verdadeiro —
+  // nunca afeta os logins reais de Dep. Design/Chão da Fábrica, que continuam
+  // a ver os seus próprios itens normalmente.
+  var siDesign = document.getElementById('si-design');
+  var siFabrica = document.getElementById('si-fabrica');
+  var itensComerciaisEsconde = ['#sl-design [data-page="design-tarefas"]','#sl-design [data-page="design-ficheiros"]','#sl-fabrica [data-page="fabrica-producao"]','#sl-fabrica [data-page="fabrica-instalacoes"]'];
+  if(comercial){
+    if(siDesign) siDesign.style.display = 'none';
+    if(siFabrica) siFabrica.style.display = 'none';
+    itensComerciaisEsconde.forEach(function(sel){ var el=document.querySelector(sel); if(el) el.style.display='none'; });
+  } else {
+    // Não força 'flex' aqui — si-design/si-fabrica continuam geridos por
+    // DEPT_ACCESS em setupApp(); só remove um eventual "none" que esta função
+    // tenha deixado numa sessão comercial anterior na mesma aba (ex.: admin a
+    // sair de "Ver como").
+    itensComerciaisEsconde.forEach(function(sel){ var el=document.querySelector(sel); if(el) el.style.display=''; });
+  }
+}
+window.obAplicarVisaoComercialSidebar = obAplicarVisaoComercialSidebar;
 
 // ── NAV ──────────────────────────────────────────────────
 window.goPage=function goPage(id){
@@ -13685,7 +13741,12 @@ var UNI_DEFAULTS = {
 
 function uniGetItems(page){
   const all = uniItems.filter(i=>i.page===page);
-  if(all.length===0 && UNI_DEFAULTS[page]){
+  // Correção pontual (Etapa 8A): a Agenda ('admin-agenda') já tem dados reais
+  // geridos por RLS/owner_id — 0 itens é um estado real e válido (ex.: um
+  // comercial sem eventos atribuídos), nunca "página nunca semeada". Semear
+  // UNI_DEFAULTS aqui mostrava 4 eventos fictícios em vez de uma agenda
+  // vazia. As restantes páginas uni* continuam a semear normalmente.
+  if(all.length===0 && page!=='admin-agenda' && UNI_DEFAULTS[page]){
     const defs = UNI_DEFAULTS[page].map((d,idx)=>({...d,id:Date.now()+idx,page,dt:new Date().toLocaleDateString('pt-PT',{day:'2-digit',month:'2-digit',year:'numeric'})}));
     uniItems = [...uniItems, ...defs];
     saveUniItems();
@@ -15502,11 +15563,86 @@ var cliData; try{ cliData=JSON.parse(localStorage.getItem('ob-clients')||'null')
   return {id:i+1,n:nome,sec:'Outro',cont:'',email:'',tel:'',nif:'',morada:'',projs:0,rev:0,last:'—',st:'active'};
 });
 var cliEditId = null;
+// Id definido automaticamente pelo autocomplete de nome/NIF em cliOpenNew() (nunca
+// por cliOpenEdit()). Só quando cliEditId===_cliAutoMatchId é seguro limpar o match
+// se o nome/NIF deixar de corresponder — uma edição real (cliOpenEdit) nunca é tocada.
+var _cliAutoMatchId = null;
 function saveCliData(){ localStorage.setItem('ob-clients',JSON.stringify(cliData)); }
 
+// Normaliza um NIF só para efeitos de COMPARAÇÃO (remove espaços/pontuação,
+// maiúsculas) — nunca reformata o valor guardado no cliente.
+function cliNormalizarNif(nif){
+  return String(nif||'').replace(/[^0-9A-Za-z]/g,'').toUpperCase();
+}
+window.cliNormalizarNif = cliNormalizarNif;
+
+// Preenche o <datalist> de #cli-nome com os clientes existentes (cliData).
+function cliPopularAutocomplete(){
+  var dl=document.getElementById('cli-nome-datalist');
+  if(!dl) return;
+  dl.innerHTML=(cliData||[]).map(function(c){
+    return '<option value="'+String(c.n||'').replace(/"/g,'&quot;')+'">';
+  }).join('');
+}
+window.cliPopularAutocomplete = cliPopularAutocomplete;
+
+// Aplica um match exato (nome ou NIF) encontrado em cliData: reaproveita o id
+// existente, preenche os campos e avisa o utilizador — nunca cria duplicado.
+function cliAplicarAutoMatch(cliente){
+  if(!cliente) return;
+  cliEditId=cliente.id; _cliAutoMatchId=cliente.id;
+  var elN=document.getElementById('cli-nome'); if(elN) elN.value=cliente.n||'';
+  var elSec=document.getElementById('cli-sector'); if(elSec) elSec.value=cliente.sec||'Outro';
+  var elCont=document.getElementById('cli-contact'); if(elCont) elCont.value=cliente.cont||'';
+  var elEmail=document.getElementById('cli-email'); if(elEmail) elEmail.value=cliente.email||'';
+  var elTel=document.getElementById('cli-tel'); if(elTel) elTel.value=cliente.tel||'';
+  var elNif=document.getElementById('cli-nif'); if(elNif) elNif.value=cliente.nif||'';
+  var elMor=document.getElementById('cli-morada'); if(elMor) elMor.value=cliente.morada||'';
+  if(typeof showToast==='function') showToast('Cliente já existe na base. Dados preenchidos automaticamente.');
+}
+window.cliAplicarAutoMatch = cliAplicarAutoMatch;
+
+// Se o match atual foi definido pelo autocomplete (não por cliOpenEdit), limpa-o —
+// nunca deixa uma alteração de nome/NIF ir atualizar por engano um cliente errado.
+function cliLimparAutoMatchSeNecessario(){
+  if(_cliAutoMatchId!==null && cliEditId===_cliAutoMatchId){ cliEditId=null; _cliAutoMatchId=null; }
+}
+
+function cliNomeVerificarMatch(){
+  // Fora do fluxo "+ Novo Cliente" (ou seja, a editar um cliente real via
+  // cliOpenEdit) o autocomplete nunca interfere — permite sempre renomear.
+  if(cliEditId!==null && cliEditId!==_cliAutoMatchId) return;
+  var elN=document.getElementById('cli-nome'); if(!elN) return;
+  var valor=elN.value.trim();
+  if(!valor){ cliLimparAutoMatchSeNecessario(); return; }
+  var match=(cliData||[]).find(function(c){ return String(c.n||'').trim().toLowerCase()===valor.toLowerCase(); });
+  if(match) cliAplicarAutoMatch(match);
+  else cliLimparAutoMatchSeNecessario();
+}
+window.cliNomeVerificarMatch = cliNomeVerificarMatch;
+
+function cliNifVerificarMatch(){
+  if(cliEditId!==null && cliEditId!==_cliAutoMatchId) return;
+  var elNif=document.getElementById('cli-nif'); if(!elNif) return;
+  var valorNorm=cliNormalizarNif(elNif.value);
+  if(!valorNorm){ cliLimparAutoMatchSeNecessario(); return; }
+  var match=(cliData||[]).find(function(c){ return c.nif && cliNormalizarNif(c.nif)===valorNorm; });
+  if(match) cliAplicarAutoMatch(match);
+  else cliLimparAutoMatchSeNecessario();
+}
+window.cliNifVerificarMatch = cliNifVerificarMatch;
+
+document.addEventListener('DOMContentLoaded', function(){
+  var elNome=document.getElementById('cli-nome');
+  if(elNome && !elNome._obAutoMatchWired){ elNome.addEventListener('input', cliNomeVerificarMatch); elNome._obAutoMatchWired=true; }
+  var elNif=document.getElementById('cli-nif');
+  if(elNif && !elNif._obAutoMatchWired){ elNif.addEventListener('input', cliNifVerificarMatch); elNif._obAutoMatchWired=true; }
+});
+
 function cliOpenNew(){
-  cliEditId=null;
+  cliEditId=null; _cliAutoMatchId=null;
   ['cli-nome','cli-contact','cli-email','cli-tel','cli-nif','cli-morada','cli-prazo','cli-fin-nome','cli-fin-tel','cli-fin-email','cli-fin-nif','cli-iva-motivo'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';}); ['cli-iva-isento','cli-sujeito-passivo','cli-iva-caixa'].forEach(id=>{const el=document.getElementById(id);if(el)el.checked=false;}); cliToggleIvaIsento(); document.getElementById('cli-recebimentos-panel').style.display='none';
+  cliPopularAutocomplete();
   const cm=document.getElementById('cli-modal');
   if(!cm) return;
   document.getElementById('cli-modal-title').textContent='+ Novo Cliente';
@@ -15517,7 +15653,7 @@ function cliOpenNew(){
 
 function cliOpenEdit(id){
   const c=cliData.find(x=>x.id===id); if(!c) return;
-  cliEditId=id;
+  cliEditId=id; _cliAutoMatchId=null;
   document.getElementById('cli-nome').value=c.n||'';
   document.getElementById('cli-sector').value=c.sec||'Outro';
   document.getElementById('cli-contact').value=c.cont||'';
@@ -15741,7 +15877,22 @@ function cliSave(){
     const idx=cliData.findIndex(c=>c.id===cliEditId);
     if(idx>=0) cliData[idx]={...cliData[idx],...data};
   } else {
-    data.id=Date.now(); cliData.unshift(data);
+    // Última verificação anti-duplicidade antes de criar um cliente novo:
+    // NIF exato normalizado primeiro, depois nome exato normalizado — só
+    // correspondência exata (sem fuzzy matching). Se encontrar, converte a
+    // operação em atualização em vez de inserir um segundo cliente.
+    var _nifNorm = cliNormalizarNif(data.nif);
+    var _existente = _nifNorm ? cliData.find(c=>cliNormalizarNif(c.nif)===_nifNorm) : null;
+    if(!_existente){
+      var _nomeNorm = data.n.trim().toLowerCase();
+      _existente = cliData.find(c=>String(c.n||'').trim().toLowerCase()===_nomeNorm);
+    }
+    if(_existente){
+      const idx2=cliData.findIndex(c=>c.id===_existente.id);
+      if(idx2>=0) cliData[idx2]={...cliData[idx2],...data};
+    } else {
+      data.id=Date.now(); cliData.unshift(data);
+    }
   }
   saveCliData(); renderClientes();
   document.getElementById('cli-modal').classList.remove('open');
@@ -15808,11 +15959,44 @@ var clientes=[
   {n:'Transportes Alcopark',sec:'Logística',cont:'Vítor Alves',tel:'+351 219 000 010',projs:2,rev:5600,last:'há 2 meses',st:'at-risk'},
 ];
 
+// Pesquisa/ordenação da listagem de Clientes: só afeta a EXIBIÇÃO (não
+// regrava nem reordena cliData/ob-clients/Supabase). Filtra por nome, NIF,
+// telefone, e-mail e contacto; ordena A→Z por nome (localeCompare pt-BR,
+// ignora maiúsculas/acentos), clientes sem nome vão para o fim.
+var _cliBusca = '';
+function cliFiltrarBusca(data, termo){
+  var q = String(termo||'').trim().toLowerCase();
+  if(!q) return data;
+  return data.filter(function(c){
+    return [c.n, c.nif, c.tel, c.email, c.cont].some(function(v){
+      return v!=null && String(v).toLowerCase().indexOf(q)!==-1;
+    });
+  });
+}
+function cliOrdenarPorNome(a, b){
+  var na = String((a&&a.n)||'').trim();
+  var nb = String((b&&b.n)||'').trim();
+  if(!na && !nb) return 0;
+  if(!na) return 1;
+  if(!nb) return -1;
+  return na.localeCompare(nb, 'pt-BR', { sensitivity: 'base' });
+}
+function cliBuscarInput(valor){
+  _cliBusca = valor;
+  renderClientes();
+}
+window.cliBuscarInput = cliBuscarInput;
+
 function renderClientes(){
   const el=document.getElementById('clientes-tbody');if(!el)return;
   const data=(typeof cliData!=='undefined'&&cliData)?cliData:clientes;
   const isAdmin = !!(CU && CU.admin === true);
-  el.innerHTML=data.map(c=>`<tr style="cursor:pointer" onclick="cliOpenEdit(${c.id||0})">
+  const lista=cliFiltrarBusca(data, _cliBusca).slice().sort(cliOrdenarPorNome);
+  if(!lista.length){
+    el.innerHTML='<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:24px">Nenhum cliente encontrado.</td></tr>';
+    return;
+  }
+  el.innerHTML=lista.map(c=>`<tr style="cursor:pointer" onclick="cliOpenEdit(${c.id||0})">
     <td><strong style="color:var(--txt2)">${c.n}</strong><br><span style="font-size:12px;color:var(--muted)">${c.nif||''}</span></td>
     <td><span class="b bm">${c.sec||'—'}</span></td>
     <td>${c.cont||'—'}</td>
@@ -25972,7 +26156,7 @@ function _mvRenderKpis(view){
 
   var cards = [
     {ic:'💼', lbl:'Total Orçamentado', val:_mvFmtEUR(totalOrc), color:'var(--mv-txt)'},
-    {ic:'✅', lbl:'Total Adjudicado', val:_mvFmtEUR(totalAdj), color:'#fde047'},
+    {ic:'✅', lbl:'Total Aguardando Adjudicação', val:_mvFmtEUR(totalAdj), color:'#fde047'},
     {ic:'🧾', lbl:'Total Faturado', val:_mvFmtEUR(totalFat), color:'#4ade80'},
     {ic:'❌', lbl:'Total Perdido', val:_mvFmtEUR(totalPerd), color:'#f87171'},
     {ic:'🎯', lbl:'Taxa de Conversão', val:_mvFmtPct(conversao), color:'#60a5fa'},
@@ -26010,26 +26194,37 @@ function _mvRenderMetaAnual(view){
     + '<div style="font-size:10px;color:var(--mv-muted);margin-top:10px">⚠ Configuração provisória (MV_META_CONFIG) — substituir por dados reais quando autorizado.</div>';
 }
 
+// Realizado da meta = faturação real (mesma fonte/lógica do Financeiro →
+// Histórico de Faturação, ob_crm_dados/'ob-tes-receber' via _mvTesData/
+// _mvEnsureTesData — já partilhado com Recebimentos e o Ranking Comercial,
+// nenhuma cópia nova). Adjudicado/Faturado (pipeline de ob_orcamentos) já
+// não conta como realizado — só a meta em si (MV_META_CONFIG) continua
+// provisória, por decisão explícita de manter a configuração atual.
 function _mvRenderMetaComercial(view){
   var wrap = document.getElementById('mv-meta-comercial-wrap');
   if(!wrap) return;
   if(view.isAdmin || !CU || !CU.name){ wrap.innerHTML=''; return; }
+  if(_mvTesData===null){
+    wrap.innerHTML = '<div class="mv-card" style="margin-bottom:16px"><div class="mv-card-title">📈 A tua Meta</div><div class="mv-card-sub">A carregar faturação real…</div></div>';
+    _mvEnsureTesData().then(function(){ _mvRenderMetaComercial(view); });
+    return;
+  }
   var meta = MV_META_CONFIG.porComercial[CU.name] || 0;
-  var realizado = view.rows.filter(function(o){return o.st==='Aprovado'||o.st==='Faturado';}).reduce(function(s,o){return s+_mvValor(o);},0);
+  var realizado = (_mvTesData||[]).filter(function(r){return r.vendedor===CU.name;}).reduce(function(s,r){return s+(parseFloat(r.total)||0);},0);
   var falta = Math.max(0, meta-realizado);
   var pct = meta>0 ? Math.min(100, realizado/meta*100) : 0;
   wrap.innerHTML = '<div class="mv-card" style="margin-bottom:16px">'
     + '<div style="display:flex;justify-content:space-between;align-items:flex-start">'
-    + '<div><div class="mv-card-title">📈 A tua Meta</div><div class="mv-card-sub">'+CU.name+' — Adjudicado+Faturado</div></div>'
+    + '<div><div class="mv-card-title">📈 A tua Meta</div><div class="mv-card-sub">'+CU.name+' — Faturação real 2026</div></div>'
     + '<div style="text-align:right"><div style="font-size:22px;font-weight:700;color:'+(pct>=100?'#4ade80':'var(--mv-y)')+'">'+_mvFmtPct(pct)+'</div></div>'
     + '</div>'
     + '<div class="mv-progress-track" style="margin-top:12px"><div class="mv-progress-fill'+(pct>=100?' mv-done':'')+'" style="width:'+pct+'%"></div></div>'
     + '<div class="mv-mini-grid mv-mini3">'
-      + '<div class="mv-mini"><div class="mv-mini-lbl">Meta Individual</div><div class="mv-mini-val" style="color:var(--mv-y)">'+_mvFmtEUR(meta)+'</div></div>'
-      + '<div class="mv-mini"><div class="mv-mini-lbl">Realizado</div><div class="mv-mini-val" style="color:#4ade80">'+_mvFmtEUR(realizado)+'</div></div>'
-      + '<div class="mv-mini"><div class="mv-mini-lbl">Falta para Meta</div><div class="mv-mini-val" style="color:#fb923c">'+_mvFmtEUR(falta)+'</div></div>'
+      + '<div class="mv-mini"><div class="mv-mini-lbl">Meta Individual</div><div class="mv-mini-val" style="color:var(--mv-y)">'+_mvFmtEURFull(meta)+'</div></div>'
+      + '<div class="mv-mini"><div class="mv-mini-lbl">Realizado</div><div class="mv-mini-val" style="color:#4ade80">'+_mvFmtEURFull(realizado)+'</div></div>'
+      + '<div class="mv-mini"><div class="mv-mini-lbl">Falta para Meta</div><div class="mv-mini-val" style="color:#fb923c">'+_mvFmtEURFull(falta)+'</div></div>'
     + '</div>'
-    + '<div style="font-size:10px;color:var(--mv-muted);margin-top:10px">⚠ Configuração provisória — substituir por dados reais quando autorizado.</div>'
+    + '<div style="font-size:10px;color:var(--mv-muted);margin-top:10px">⚠ Meta individual: configuração provisória (MV_META_CONFIG). Realizado: faturação real (Histórico de Faturação) — não inclui Adjudicado.</div>'
     + '</div>';
 }
 
@@ -27406,7 +27601,7 @@ function fuListaItens(){
 // Fase 1.6. Só leitura, sem acções.
 function fuListaItensHistorico(){
   var itens=[];
-  (orcData||[]).forEach(function(o){
+  fuMinhasOrc(orcData||[]).forEach(function(o){
     if(o.st!=='Pendente') return;
     if(fuClassificarOrc(o)!=='historico') return;
     itens.push({orcId:o.num, cliente:o.cli||'—', comercial:o.vendedor||'—',
@@ -27490,12 +27685,26 @@ function fuOrcamentosAtivos(){
   return itens;
 }
 
-// Agrupa por comercial (o.vendedor) -> coluna -> lista de cards. Como
-// orcData já vem filtrado pela RLS da sessão actual, isto não decide
-// visibilidade nenhuma — só organiza o que a sessão já recebeu.
+// Escopo por comercial em vista (real ou "Ver como") -- mesmo padrão já
+// usado em _mvMinhasLinhas (Mapa de Vendas). orcData vem sempre com TUDO
+// que a sessão real (admin) tem acesso — "Ver como X" só troca CU no
+// browser, nunca volta a pedir ao Supabase com outra identidade — por
+// isso o corte por comercial tem de ser feito aqui, no cliente, e não
+// pode assumir que a RLS já tratou disto por "Ver como".
+function fuMinhasOrc(rows){
+  var isAdmin = !!(typeof CU!=='undefined' && CU && CU.admin);
+  var nome = (typeof CU!=='undefined' && CU) ? CU.name : null;
+  if(isAdmin || !nome) return rows;
+  return rows.filter(function(o){ return o.vendedor === nome; });
+}
+window.fuMinhasOrc = fuMinhasOrc;
+
+// Agrupa por comercial (o.vendedor) -> coluna -> lista de cards. Admin
+// real (sem "Ver como") vê todos os grupos; qualquer outra sessão (real
+// ou impersonada via fuMinhasOrc) só vê o próprio grupo.
 function fuAgruparKanban(){
   var grupos={};
-  fuOrcamentosAtivos().forEach(function(o){
+  fuMinhasOrc(fuOrcamentosAtivos()).forEach(function(o){
     var com=o.vendedor||'—';
     if(!grupos[com]) grupos[com]={a_contactar:[],contactado:[],em_negociacao:[],contactar_novamente:[]};
     var col=fuColunaDoOrc(o);
