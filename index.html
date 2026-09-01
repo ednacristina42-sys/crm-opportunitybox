@@ -13242,6 +13242,36 @@ function crmSaveLead(){
 var crmAtividades; try{ crmAtividades=JSON.parse(localStorage.getItem('ob-crm-atividades')||'null'); }catch(e){ crmAtividades=null; } crmAtividades = crmAtividades || [];
 function saveCrmAtividades(){ localStorage.setItem('ob-crm-atividades', JSON.stringify(crmAtividades.slice(0,2000))); }
 
+// Excluir um Lembrete/follow-up (Admin apenas). Reaproveita a mesma fonte e
+// persistência de crmAddAtividade() (crmAtividades + saveCrmAtividades(),
+// que já dispara obSbPush('ob-crm-atividades') automaticamente) — sem
+// tabela nova, sem tocar em cliData/orcData/crmLeads. Validação de admin
+// dentro da própria função, não só no botão (pedido explícito da Edna).
+// NOTA (Fase 2, risco registado): crmAtividades não tem hoje proteção
+// contra redução/concorrência equivalente à de ob-clients — não implementada
+// aqui por decisão explícita de escopo desta etapa.
+function crmDeleteAtividade(ts){
+  var isAdmin=!!(typeof CU!=='undefined' && CU && CU.admin===true);
+  if(!isAdmin){
+    if(typeof showToast==='function') showToast('Só o Admin pode excluir follow-ups.');
+    return false;
+  }
+  var idx=(crmAtividades||[]).findIndex(function(a){ return a && a.ts===ts; });
+  if(idx===-1) return false;
+  var item=crmAtividades[idx];
+  var resumo=(item.texto||'este follow-up').slice(0,120);
+  if(!confirm('Excluir definitivamente este follow-up?\n\n'+resumo+'\n\nEsta ação não pode ser desfeita.')) return false;
+  crmAtividades.splice(idx,1);
+  saveCrmAtividades();
+  // Atualizar de imediato as vistas que dependem de crmAtividades
+  try{ var _c=(typeof _cliAtual==='function')?_cliAtual():null; if(_c && typeof cliRenderProximoFollowup==='function') cliRenderProximoFollowup(_c); }catch(e){}
+  try{ if(typeof renderMeuPainel==='function') renderMeuPainel(); }catch(e){}
+  try{ if(typeof agRenderCentroUnificado==='function') agRenderCentroUnificado(); }catch(e){}
+  if(typeof showToast==='function') showToast('✓ Follow-up excluído');
+  return true;
+}
+window.crmDeleteAtividade=crmDeleteAtividade;
+
 var _crmAtivTipo = 'Nota'; // tipo em curso no formulário inline
 
 function crmAddAtividade(leadId, tipo, texto, autor, opts){
@@ -15827,9 +15857,12 @@ function cliRenderProximoFollowup(c){
   var dataFmt=m?(m[3]+'/'+m[2]+'/'+m[1]+' às '+m[4]+':'+m[5]):quando;
   var acaoEsc=String(item.acao||'—').replace(/[&<>"']/g,function(ch){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]; });
   var tagAtrasado=atrasado?' <span style="color:var(--r);font-weight:700;font-size:10.5px;text-transform:uppercase;letter-spacing:.04em">Atrasado</span>':'';
+  var isAdminFu=!!(typeof CU!=='undefined' && CU && CU.admin===true);
+  var tsAttr=String(item.ts||'').replace(/'/g,"\\'");
+  var btnExcluirFu=isAdminFu?(' <button class="tbtn" style="padding:1px 7px;font-size:10.5px;color:var(--r);margin-left:6px" onclick="crmDeleteAtividade(\''+tsAttr+'\')" title="Excluir (Admin)">🗑️ Excluir</button>'):'';
   el.innerHTML='<div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">Próximo follow-up</div>'
     +'<div style="font-size:13px;color:'+(atrasado?'var(--r)':'var(--txt2)')+';font-weight:600">'+dataFmt+tagAtrasado+'</div>'
-    +'<div style="font-size:12.5px;color:var(--muted)">'+acaoEsc+'</div>';
+    +'<div style="font-size:12.5px;color:var(--muted)">'+acaoEsc+btnExcluirFu+'</div>';
 }
 window.cliRenderProximoFollowup=cliRenderProximoFollowup;
 function cliEnviarWhatsApp(){
@@ -18330,7 +18363,8 @@ function renderDashboardCFO(){
   var projetosActivos = orcAll.filter(function(o){return o.st==='Aprovado'||o.st==='Em Produção'||o.st==='Concluído';});
   var emRisco = projetosActivos.filter(function(o){
     var cTotal=(o.custoMateriais||0)+(o.custoMO||0)+(o.custoLog||0);
-    return o.val>0 && cTotal/o.val>0.85;
+    var v=orcGetValorTotal(o);
+    return v>0 && cTotal/v>0.85;
   }).length;
 
   var vencidas = faturasValidas.filter(function(d){ return tocoGetEstado(d)==='Vencido'; });
@@ -18368,12 +18402,12 @@ function renderFinanceiro(){
   // Usa apenas orçamentos reais (orcData, vindos do Google Sheets / criados no CRM).
   // Não há fallback para dados fictícios: sem dados reais, mostra estado vazio.
   var orcAll = (typeof orcData!=='undefined'?orcData:[]);
-  var realRows = orcAll.filter(function(o){ return o.val>0; });
+  var realRows = orcAll.filter(function(o){ return orcGetValorTotal(o)>0; });
   if(realRows.length){
     var corEstado = {Faturado:'var(--g)',Aprovado:'var(--y)','Em Produção':'var(--b)',Concluído:'var(--g)',Cancelado:'var(--muted)',Pendente:'var(--muted2)'};
     var classEstado = {Faturado:'bg',Aprovado:'bb','Em Produção':'bb',Concluído:'bg',Cancelado:'br',Pendente:'ba','Em análise':'ba'};
     el.innerHTML = realRows.map(function(o){
-      var rev = o.val||0;
+      var rev = orcGetValorTotal(o);
       var temCusto = o.custoMateriais!=null || o.custoMO!=null || o.custoLog!=null;
       var cost = (o.custoMateriais||0)+(o.custoMO||0)+(o.custoLog||0);
       var mar = rev>0 ? ((rev-cost)/rev*100) : 0;
@@ -18402,12 +18436,13 @@ function renderRelatorios(){
   var orcParaMargem = (typeof orcData!=='undefined'?orcData:[]);
   var topClis = (typeof cliData!=='undefined'?cliData:[]).slice().sort(function(a,b){return (b.rev||0)-(a.rev||0);}).slice(0,10);
   if(el) el.innerHTML=topClis.map(function(c){
-    var orcsCli = orcParaMargem.filter(function(o){return o.cli===c.n && o.val>0;});
+    var orcsCli = orcParaMargem.filter(function(o){return o.cli===c.n && orcGetValorTotal(o)>0;});
     var margemTxt = '—';
     if(orcsCli.length){
       var margemMedia = orcsCli.reduce(function(s,o){
         var cTotal=(o.custoMateriais||0)+(o.custoMO||0)+(o.custoLog||0);
-        return s + ((o.val-cTotal)/o.val*100);
+        var v=orcGetValorTotal(o);
+        return s + ((v-cTotal)/v*100);
       },0) / orcsCli.length;
       margemTxt = margemMedia.toFixed(1)+'%';
     }
@@ -18479,18 +18514,19 @@ function renderRelatorios(){
   // Rentabilidade por projecto
   var tbody = document.getElementById('rel-proj-tbody');
   if(tbody){
-    var rows = todoOrc.filter(function(o){return o.val>0;}).map(function(o){
+    var rows = todoOrc.filter(function(o){return orcGetValorTotal(o)>0;}).map(function(o){
+      var v = orcGetValorTotal(o);
       var cMat = o.custoMateriais||0;
       var cMO  = o.custoMO||0;
       var cLog = o.custoLog||0;
       var cTotal = cMat + cMO + cLog;
-      var margem = o.val - cTotal;
-      var margemPct = o.val>0 ? (margem/o.val*100).toFixed(1) : 0;
+      var margem = v - cTotal;
+      var margemPct = v>0 ? (margem/v*100).toFixed(1) : 0;
       var cls = margemPct>=35?'rel-marg-pos':margemPct>=15?'rel-marg-low':'rel-marg-neg';
       return '<tr>'+
         '<td style="font-size:12px;color:var(--y)">'+o.num+'</td>'+
         '<td>'+o.cli+'</td>'+
-        '<td style="color:var(--g);font-weight:600">'+fmt(o.val)+'</td>'+
+        '<td style="color:var(--g);font-weight:600">'+fmt(v)+'</td>'+
         '<td style="color:var(--muted)">'+(isAdmin?fmt(cMat):'—')+'</td>'+
         '<td style="color:#8b5cf6">'+(isAdmin?fmt(cMO):'—')+'</td>'+
         '<td style="color:#4d94db">'+(isAdmin?fmt(cLog):'—')+'</td>'+
@@ -18503,10 +18539,11 @@ function renderRelatorios(){
     tbody.innerHTML = rows || '<tr><td colspan="10" style="text-align:center;color:var(--muted);padding:16px">Sem dados de projectos</td></tr>';
 
     // Margem media
-    var projs = todoOrc.filter(function(o){return o.val>0;});
+    var projs = todoOrc.filter(function(o){return orcGetValorTotal(o)>0;});
     var margemTotal = projs.reduce(function(s,o){
+      var v=orcGetValorTotal(o);
       var cT=(o.custoMateriais||0)+(o.custoMO||0)+(o.custoLog||0);
-      return s + (o.val>0?(o.val-cT)/o.val*100:0);
+      return s + (v>0?(v-cT)/v*100:0);
     },0);
     var margemMedia = projs.length>0?(margemTotal/projs.length).toFixed(1):'—';
     var _mm = document.getElementById('rel-margem-media');
@@ -18516,7 +18553,7 @@ function renderRelatorios(){
   // Volume YTD
   var ytd = todoOrc.filter(function(o){
     return ['Aprovado','Em Producao','Em Producao','Concluido','Concluido'].indexOf(o.st)>=0;
-  }).reduce(function(s,o){return s+(o.val||0);},0);
+  }).reduce(function(s,o){return s+orcGetValorTotal(o);},0);
   var _vy = document.getElementById('rel-volume-ytd');
   if(_vy) _vy.textContent = fmt(ytd);
 
@@ -18723,7 +18760,7 @@ function initCharts(){
   // pipeChart — distribuição real de orçamentos por estado
   (function(){
     var canvasEl=document.getElementById('pipeChart'); if(!canvasEl) return;
-    var orcAll=(typeof orcData!=='undefined'?orcData:[]).filter(function(o){return o.val>0;});
+    var orcAll=(typeof orcData!=='undefined'?orcData:[]).filter(function(o){return orcGetValorTotal(o)>0;});
     var estados=['Pendente','Em análise','Aprovado','Em Produção','Concluído','Faturado','Cancelado'];
     var cores={'Pendente':'rgba(107,107,114,.8)','Em análise':'rgba(77,148,219,.8)','Aprovado':YEL,'Em Produção':'rgba(139,92,246,.8)','Concluído':'rgba(63,207,142,.8)','Faturado':'rgba(39,174,96,.9)','Cancelado':'rgba(224,85,85,.7)'};
     var labelsFin=[],dataFin=[],coresFin=[];
@@ -18736,7 +18773,7 @@ function initCharts(){
   // Quando ainda não há custos lançados (caso dos orçamentos importados da planilha), a margem
   // não é um dado real — mostramos em vez disso a distribuição real por estado (tipo "pizza").
   (function(){
-    var orcAll = (typeof orcData!=='undefined'?orcData:[]).filter(function(o){ return o.val>0; });
+    var orcAll = (typeof orcData!=='undefined'?orcData:[]).filter(function(o){ return orcGetValorTotal(o)>0; });
     var temCusto = function(o){ return o.custoMateriais!=null || o.custoMO!=null || o.custoLog!=null; };
     var orcComCusto = orcAll.filter(temCusto);
     var canvasEl = document.getElementById('finMarChart');
@@ -18753,9 +18790,9 @@ function initCharts(){
     if(tituloEl) tituloEl.textContent = orcComCusto.length ? 'Margem por Projeto (%)' : 'Orçamentos por Estado';
     if(orcComCusto.length){
       // Há custos reais lançados: mostra margem por projeto (top 15 por receita, para não esmagar o gráfico).
-      var top = orcComCusto.slice().sort(function(a,b){return (b.val||0)-(a.val||0);}).slice(0,15);
+      var top = orcComCusto.slice().sort(function(a,b){return orcGetValorTotal(b)-orcGetValorTotal(a);}).slice(0,15);
       var pnames=top.map(function(o){ var n=o.cli||o.num||'—'; return n.length>18?n.substring(0,18)+'…':n; });
-      var margens=top.map(function(o){ var cost=(o.custoMateriais||0)+(o.custoMO||0)+(o.custoLog||0); return o.val>0?((o.val-cost)/o.val*100):0; });
+      var margens=top.map(function(o){ var v=orcGetValorTotal(o); var cost=(o.custoMateriais||0)+(o.custoMO||0)+(o.custoLog||0); return v>0?((v-cost)/v*100):0; });
       mk('finMarChart','bar',{labels:pnames,datasets:[{data:margens,
         backgroundColor:margens.map(function(m){return m<15?'rgba(224,85,85,.75)':m<25?'rgba(217,130,43,.75)':YEL;}),borderRadius:4}]},
         {indexAxis:'y',plugins:{legend:{display:false}},scales:{x:{grid:{color:GC}}}});
@@ -18815,13 +18852,13 @@ function initCharts(){
   (function(){
     var canvasEl = document.getElementById('sectorChart');
     if(!canvasEl) return;
-    var orcReal = (typeof orcData!=='undefined'?orcData:[]).filter(function(o){ return o.val>0; });
+    var orcReal = (typeof orcData!=='undefined'?orcData:[]).filter(function(o){ return orcGetValorTotal(o)>0; });
     var clis = (typeof cliData!=='undefined'?cliData:[]);
     var porSetor = {};
     orcReal.forEach(function(o){
       var cli = clis.find(function(c){ return c.n===o.cli; });
       var sec = (cli && cli.sec) || 'Outro';
-      porSetor[sec] = (porSetor[sec]||0) + (o.val||0);
+      porSetor[sec] = (porSetor[sec]||0) + orcGetValorTotal(o);
     });
     var setores = Object.keys(porSetor);
     if(!setores.length){
@@ -18840,7 +18877,7 @@ function initCharts(){
   // prodChart — orçamentos em produção vs concluídos vs outros (dados reais)
   (function(){
     var canvasEl=document.getElementById('prodChart'); if(!canvasEl) return;
-    var orcAll=(typeof orcData!=='undefined'?orcData:[]).filter(function(o){return o.val>0;});
+    var orcAll=(typeof orcData!=='undefined'?orcData:[]).filter(function(o){return orcGetValorTotal(o)>0;});
     var grupos=[
       {label:'Pendente/Análise',sts:['Pendente','Em análise'],cor:'rgba(107,107,114,.8)'},
       {label:'Aprovado',sts:['Aprovado'],cor:YEL},
@@ -21120,14 +21157,15 @@ function tocoSaveHist() { localStorage.setItem('ob-toco-hist', JSON.stringify(TO
 // Mapear um orçamento para o payload TocOnline
 function tocoMapearPayload(orc) {
   var linhas = (orc.linhas || []);
+  var valorOrc = orcGetValorTotal(orc);
   // Se não houver linhas estruturadas, criar uma linha a partir do resumo
   if (!linhas.length) {
     linhas = [{
       descricao: orc.tipo || 'Reclamo Luminoso',
       quantidade: 1,
-      precoUnit: orc.val || 0,
+      precoUnit: valorOrc,
       iva: 23,
-      total: orc.val || 0
+      total: valorOrc
     }];
   }
   return {
@@ -21154,9 +21192,9 @@ function tocoMapearPayload(orc) {
       };
     }),
     totais: {
-      subtotal: orc.val || 0,
-      iva: Math.round((orc.val||0) * 0.23 * 100) / 100,
-      total: Math.round((orc.val||0) * 1.23 * 100) / 100
+      subtotal: valorOrc,
+      iva: Math.round(valorOrc * 0.23 * 100) / 100,
+      total: Math.round(valorOrc * 1.23 * 100) / 100
     },
     metadados: {
       origem: 'OpportunityBox CRM',
@@ -21209,7 +21247,7 @@ async function enviarParaTocOnline(orcamentoId) {
       ts: new Date().toISOString(),
       orcNum: orcamentoId,
       cliente: orc.cli,
-      valor: orc.val,
+      valor: orcGetValorTotal(orc),
       status: ok ? 'Enviado' : 'Erro ' + status,
       resp: respText.slice(0, 200)
     });
@@ -21223,7 +21261,7 @@ async function enviarParaTocOnline(orcamentoId) {
         localStorage.setItem('ob-orcamentos', JSON.stringify((typeof orcData !== 'undefined' ? orcData : []).slice(0,200)));
       }
       if (btn) { btn.textContent = '✓ Rascunho enviado'; btn.style.background='var(--g)'; btn.style.color='#fff'; }
-      alert('Rascunho criado no TocOnline!' + NL + 'Cliente: ' + orc.cli + NL + 'Valor: EUR' + (orc.val||0).toFixed(2) + NL + 'Estado CRM: Aguardando Aprovação de Edna Faria');
+      alert('Rascunho criado no TocOnline!' + NL + 'Cliente: ' + orc.cli + NL + 'Valor: EUR' + orcGetValorTotal(orc).toFixed(2) + NL + 'Estado CRM: Aguardando Aprovação de Edna Faria');
       if (typeof orcRenderList === 'function') orcRenderList();
     } else {
       if (btn) { btn.textContent = '✗ Erro ' + status; btn.disabled = false; }
@@ -21412,6 +21450,16 @@ function parseVencTes(str) {
   }
   return new Date(str);
 }
+
+// Vencido = por receber (estado!=='Recebido') com vencimento anterior a hoje.
+// Reaproveita parseVencTes(); único ponto reutilizado onde antes o mesmo
+// teste estava duplicado (ex.: card financeiro do Meu Painel).
+function tesEstaVencido(r, refDate){
+  if(!r || r.estado==='Recebido') return false;
+  var vd=parseVencTes(r.vencimento);
+  return !isNaN(vd) && vd < (refDate||new Date());
+}
+window.tesEstaVencido=tesEstaVencido;
 
 function tesRender() {
   // KPIs
@@ -21727,6 +21775,35 @@ function tesSaveReceber(){ localStorage.setItem('ob-tes-receber',JSON.stringify(
 function tesGetReceber(){ return TES_RECEBER; }
 function tesGetRecebidos(){ return TES_RECEBER.filter(r=>r.estado==='Recebido'); }
 
+// Resolve o comercial responsável por um registo de TES_RECEBER a partir do
+// nome do cliente — nunca por nome fixo/hardcoded. Ordem: 1) orçamento mais
+// recente do cliente em orcData (o.vendedor, já a fonte usada no resto do
+// CRM); 2) comercialAtivo/comercialResp em cliData (mesmo padrão já usado em
+// cliMeusClientes()). Devolve '' se não encontrar correspondência — não
+// inventa nem atribui por omissão.
+function tesResolverVendedor(clienteNome){
+  var nome=String(clienteNome||'').trim();
+  if(!nome) return '';
+  var nomeLower=nome.toLowerCase();
+  try{
+    var orcs=(typeof orcData!=='undefined'&&orcData)?orcData:[];
+    var orcsCliente=orcs.filter(function(o){ return o && String(o.cli||'').trim().toLowerCase()===nomeLower && o.vendedor; });
+    if(orcsCliente.length){
+      // Mais recente primeiro (orcData é normalmente unshift — mais recente já à frente,
+      // mas ordenamos explicitamente por segurança, sem assumir a ordem do array).
+      orcsCliente.sort(function(a,b){ return String(b.data||b.dt||'').localeCompare(String(a.data||a.dt||'')); });
+      return orcsCliente[0].vendedor;
+    }
+  }catch(e){}
+  try{
+    var clientes=(typeof cliData!=='undefined'&&cliData)?cliData:[];
+    var c=clientes.find(function(x){ return x && String(x.n||'').trim().toLowerCase()===nomeLower; });
+    if(c) return c.comercialAtivo||c.comercialResp||'';
+  }catch(e){}
+  return '';
+}
+window.tesResolverVendedor=tesResolverVendedor;
+
 // Liga as faturas reais do TocOnline (tocoFaturasCache) à Tesouraria.
 // Atualiza/cria entradas em TES_RECEBER a partir das faturas (FT) e notas de crédito (NC) reais — nunca apaga lançamentos manuais.
 // Não renderiza nada (sem recursão); quem chama decide se/quando renderizar.
@@ -21744,18 +21821,23 @@ function tocoMergeFaturasCacheReceber(){
     var liq = parseFloat(d.NetAmount||d.Net||0) || (total/1.23);
     var estado = (typeof tocoGetEstado==='function') ? tocoGetEstado(d) : 'Em Aberto';
     var pago = estado==='Pago';
+    var clienteNome = d.CustomerName || (d.Customer && d.Customer.Name) || '—';
     var existente = porId[id];
     if(existente){
       if(existente.total!==total || existente.valorLiq!==liq) alterou=true;
       existente.total = total; existente.valorLiq = liq;
       if(pago && existente.estado!=='Recebido'){ existente.estado='Recebido'; existente.dataRec=new Date().toLocaleDateString('pt-PT'); alterou=true; }
+      // Faturas TocOnline não trazem vendedor — só preenchemos se ainda estiver
+      // vazio, nunca sobrescrevemos um valor já correto/gravado manualmente.
+      if(!existente.vendedor){ var vExist=tesResolverVendedor(existente.cliente||clienteNome); if(vExist){ existente.vendedor=vExist; alterou=true; } }
     } else {
       alterou = true;
       TES_RECEBER.unshift({
         id:'TOCO-'+id, _tocoId:id, tipo:'FT',
         data:new Date().toLocaleDateString('pt-PT'),
         descricao:'Fatura '+(d.Number||d.DocumentNumber||id),
-        cliente: d.CustomerName || (d.Customer && d.Customer.Name) || '—',
+        cliente: clienteNome,
+        vendedor: tesResolverVendedor(clienteNome),
         projeto:'',
         valorLiq: liq, ivaPct: 23, total: total,
         vencimento: d.DueDate || d.Date || '',
@@ -21776,11 +21858,13 @@ function tocoMergeFaturasCacheReceber(){
       existente.total = total; existente.valorLiq = total/1.23;
     } else {
       alterou = true;
+      var clienteNC = d.CustomerName || (d.Customer && d.Customer.Name) || '—';
       TES_RECEBER.unshift({
         id:'TOCO-NC-'+id, _tocoId:id, tipo:'NC',
         data:new Date().toLocaleDateString('pt-PT'),
         descricao:'Nota de Crédito '+(d.Number||d.DocumentNumber||id),
-        cliente: d.CustomerName || (d.Customer && d.Customer.Name) || '—',
+        cliente: clienteNC,
+        vendedor: tesResolverVendedor(clienteNC),
         projeto:'',
         valorLiq: total/1.23, ivaPct: 23, total: total,
         vencimento:'', dataEmissao: d.Date || d.DocumentDate || '',
@@ -21833,6 +21917,10 @@ function sheetMergeReceber(){
         vencimento = dtV.toLocaleDateString('pt-PT');
       }
     }
+    // O Sheet já traz o vendedor real por linha (coluna "Vendedor", já parseada
+    // em avFindCol/idx.vendedor) — é a fonte primária. Só recorre à derivação
+    // por cliente (orçamento/carteira) se a linha do Sheet vier sem vendedor.
+    var vendedorLinha = r.vendedor || tesResolverVendedor(r.nome);
     var existente = porSheetId[sid];
     if(existente){
       // Atualizar valores se mudaram
@@ -21843,6 +21931,7 @@ function sheetMergeReceber(){
         existente.dataRec = r.dataRec || new Date().toLocaleDateString('pt-PT');
         alterou=true;
       }
+      if(!existente.vendedor && vendedorLinha){ existente.vendedor=vendedorLinha; alterou=true; }
     } else {
       alterou=true;
       TES_RECEBER.push({
@@ -21852,6 +21941,7 @@ function sheetMergeReceber(){
         data: dataEmissao,
         descricao: 'Fatura '+sid,
         cliente: r.nome || '—',
+        vendedor: vendedorLinha,
         projeto: '',
         valorLiq: liq,
         ivaPct: 23,
@@ -24749,7 +24839,7 @@ function importarConfiguracao() {
   EventBus.subscribe('orcamento_guardado', function(orc){
     if (!agenteAtivo('orcamentos') || !orc) return;
     var custo = (orc.custoMateriais||0) + (orc.custoMO||0) + (orc.custoLog||0);
-    var valor = (orc.totais && orc.totais.total) || orc.val || 0;
+    var valor = orcGetValorTotal(orc);
     if (!valor) return;
     var margem = ((valor - custo) / valor) * 100;
     if (margem < 25) EventBus.publish('orcamento_margem_baixa', { orc: orc, margem: margem });
@@ -25941,10 +26031,7 @@ function renderMeuPainel(){
       var clientesUnicos={};
       receberAberto.forEach(function(r){ if(r.cliente) clientesUnicos[r.cliente]=true; });
       var valorAberto=receberAberto.reduce(function(s,r){ return s+parseFloat(r.total||0); },0);
-      var receberVencido=receberAberto.filter(function(r){
-        var vd=(typeof parseVencTes==='function') ? parseVencTes(r.vencimento) : new Date(NaN);
-        return !isNaN(vd) && vd<hojeVenc;
-      });
+      var receberVencido=receberAberto.filter(function(r){ return (typeof tesEstaVencido==='function') ? tesEstaVencido(r, hojeVenc) : false; });
       var valorVencido=receberVencido.reduce(function(s,r){ return s+parseFloat(r.total||0); },0);
 
       set('mp-kpi-cobrar', Object.keys(clientesUnicos).length);
@@ -26380,8 +26467,12 @@ function _mvRenderRecebimentos(view){
   var rows = _mvTesData || [];
   var scoped = view.isAdmin ? rows : rows.filter(function(r){ return r.vendedor === (CU&&CU.name); });
   var sum = function(estado){ return scoped.filter(function(r){return r.estado===estado;}).reduce(function(s,r){return s+(parseFloat(r.total)||0);},0); };
-  var src = { recebido: sum('Recebido'), naoRecebido: sum('Não Recebido'), parcial: sum('Recebido Parcial') };
-  var total = src.recebido+src.naoRecebido+src.parcial;
+  // Simplificado para os 2 estados que a fonte real (TocOnline/Sheet) de facto
+  // grava — 'Recebido'/'Pendente'. 'Não Recebido'/'Recebido Parcial' nunca são
+  // escritos pelos sincronizadores; usá-los aqui fazia o total ficar incompleto
+  // (excluía os Pendentes) e o donut mostrar uma % de recebido artificialmente alta.
+  var src = { recebido: sum('Recebido'), pendente: sum('Pendente') };
+  var total = src.recebido+src.pendente;
   var pctRec = total>0 ? (src.recebido/total*100) : 0;
   wrap.innerHTML = '<div class="mv-card-title">🏦 Recebimentos</div>'
     + '<div class="mv-card-sub">'+(view.isAdmin?'Dados reais (Tesouraria) — agregado global':'Dados reais (Tesouraria) — '+(CU?CU.name:''))+'</div>'
@@ -26393,7 +26484,7 @@ function _mvRenderRecebimentos(view){
       + '</div></div>'
     + '<div style="flex:1;display:flex;flex-direction:column;gap:8px">'
       + '<div class="mv-mini" style="border-color:rgba(34,197,94,.2);background:rgba(34,197,94,.05)"><div class="mv-mini-lbl">Recebido</div><div class="mv-mini-val" style="color:#4ade80">'+_mvFmtEURFull(src.recebido)+'</div></div>'
-      + '<div class="mv-mini" style="border-color:rgba(239,68,68,.2);background:rgba(239,68,68,.05)"><div class="mv-mini-lbl">Não Recebido</div><div class="mv-mini-val" style="color:#f87171">'+_mvFmtEURFull(src.naoRecebido)+'</div></div>'
+      + '<div class="mv-mini" style="border-color:rgba(239,68,68,.2);background:rgba(239,68,68,.05)"><div class="mv-mini-lbl">Pendente</div><div class="mv-mini-val" style="color:#f87171">'+_mvFmtEURFull(src.pendente)+'</div></div>'
     + '</div></div>'
     + '<div style="font-size:10px;color:var(--mv-muted);margin-top:10px">⚠ Não existe ligação fatura↔orçamento — indicador agregado a partir da Tesouraria (Financeiro → Histórico de Faturação), não por linha de orçamento.</div>';
 }
@@ -26680,6 +26771,10 @@ function mpRenderLembretesHoje(){
       abrir='<button class="mp-action-btn" style="margin:0;padding:4px 10px;font-size:12px" onclick="cliOpenEdit('+idLit+')">Abrir</button>';
     } else {
       abrir='<span style="color:var(--muted);font-size:12px">—</span>';
+    }
+    if(isAdmin){
+      var tsLit=esc(JSON.stringify(a.ts));
+      abrir+=' <button class="mp-action-btn" style="margin:0;padding:4px 8px;font-size:12px;color:var(--r)" onclick="crmDeleteAtividade('+tsLit+')" title="Excluir (Admin)">🗑️</button>';
     }
     return '<tr>'
       +'<td>'+esc(hora)+'</td>'
@@ -27650,7 +27745,7 @@ function mp2RenderProximosSete(){
     if(!m||!dentroJanela(m[1])) return;
     var cli=(typeof cliData!=='undefined'&&cliData)?cliData:[];
     var c=(a.clienteId!=null)?cli.find(function(x){ return x&&x.id===a.clienteId; }):null;
-    itens.push({cliente:c?c.n:'—', acao:a.acao||'Lembrete', prazo:m[1], valor:0, leadId:null, clienteId:a.clienteId});
+    itens.push({cliente:c?c.n:'—', acao:a.acao||'Lembrete', prazo:m[1], valor:0, leadId:null, clienteId:a.clienteId, ts:a.ts});
   });
   itens.sort(function(a,b){ return a.prazo.localeCompare(b.prazo); });
 
@@ -27661,11 +27756,12 @@ function mp2RenderProximosSete(){
     var prazoFmt=it.prazo.split('-').reverse().join('/');
     var valorTxt=it.valor>0 ? (typeof fmt==='function'?fmt(Math.round(it.valor)):('€'+Math.round(it.valor))) : '—';
     var onclickAttr = it.clienteId!=null ? ('cliOpenEdit('+JSON.stringify(it.clienteId)+')') : (it.leadId!=null ? ('obAbrirLead('+it.leadId+')') : '');
+    var btnExcluir = (isAdmin && it.ts) ? (' <button class="tbtn" style="padding:0 6px;font-size:10.5px;color:var(--r)" onclick="event.stopPropagation();crmDeleteAtividade(\''+String(it.ts).replace(/'/g,"\\'")+'\')" title="Excluir (Admin)">🗑️</button>') : '';
     return '<tr style="cursor:pointer" onclick="'+onclickAttr+'">'
       +'<td>'+_agEsc(it.cliente)+'</td>'
       +'<td>'+_agEsc(it.acao)+'</td>'
       +'<td style="color:var(--muted)">'+prazoFmt+'</td>'
-      +'<td style="font-family:\'DM Mono\',monospace">'+valorTxt+'</td>'
+      +'<td style="font-family:\'DM Mono\',monospace">'+valorTxt+btnExcluir+'</td>'
     +'</tr>';
   }
   tbody.innerHTML=itens.slice(0,LIMITE).map(linha).join('');
