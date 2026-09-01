@@ -5587,6 +5587,41 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--txt);min-he
 .mp-daysummary b{color:var(--txt2);font-weight:600}
 .mp-daysummary .mp-sep{opacity:.45;margin:0 7px}
 
+/* ADD (14/08/2026): Meu Painel v2 — dashboard comercial compacta. Reaproveita
+   .kpi/.fu-card/.tbtn/.sh já existentes; só acrescenta as variantes mais
+   pequenas pedidas (cards menores, menos texto, mais espaço em branco). */
+#page-meu-painel .mp2-kpi-row{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:18px}
+#page-meu-painel .mp2-kpi{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;cursor:default}
+#page-meu-painel .mp2-kpi[data-action]{cursor:pointer;transition:border-color .15s}
+#page-meu-painel .mp2-kpi[data-action]:hover{border-color:var(--border2)}
+#page-meu-painel .mp2-kpi-lbl{font-size:11px;color:var(--muted);margin-bottom:4px}
+#page-meu-painel .mp2-kpi-val{font-size:19px;font-weight:700;color:var(--txt2);font-family:'DM Mono',monospace}
+#page-meu-painel .mp2-kpi.mp2-r .mp2-kpi-val{color:var(--r)}
+#page-meu-painel .mp2-kpi-val.mp2-y{color:var(--y)}
+#page-meu-painel .mp2-cards.mp2-limit5 .ag-tophoje-card:nth-child(n+6){display:none}
+#page-meu-painel .ag-tophoje-card{padding:9px 10px;font-size:12.5px}
+#page-meu-painel .ag-tophoje-card .fu-card-cliente{margin-bottom:2px;font-size:13px}
+#page-meu-painel .ag-tophoje-card .ag-card-motivo{font-size:12px;color:var(--muted)}
+#page-meu-painel .mp2-carteira{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:20px}
+#page-meu-painel .mp2-carteira-item{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:9px 12px;cursor:pointer;transition:border-color .15s}
+#page-meu-painel .mp2-carteira-item:hover{border-color:var(--border2)}
+#page-meu-painel .mp2-carteira-lbl{font-size:11px;color:var(--muted)}
+#page-meu-painel .mp2-carteira-val{font-size:15px;font-weight:700;color:var(--txt2);font-family:'DM Mono',monospace;margin-top:2px}
+#page-meu-painel .mp2-risco-resumo{display:flex;align-items:center;gap:16px;flex-wrap:wrap;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:20px;font-size:12.5px;color:var(--muted)}
+#page-meu-painel .mp2-risco-resumo b{font-family:'DM Mono',monospace}
+#page-meu-painel table{font-size:13px}
+.mp2-menu{position:fixed;z-index:400;background:var(--bg2);border:1px solid var(--border2);border-radius:8px;padding:4px;box-shadow:0 8px 24px rgba(0,0,0,.35);display:flex;flex-direction:column;min-width:150px}
+.mp2-menu button{background:none;border:none;color:var(--txt2);font-family:'Inter',sans-serif;font-size:12.5px;text-align:left;padding:7px 10px;border-radius:6px;cursor:pointer}
+.mp2-menu button:hover{background:var(--bg3)}
+@media(max-width:900px){
+  #page-meu-painel .mp2-kpi-row{grid-template-columns:repeat(2,1fr)}
+  #page-meu-painel .mp2-carteira{grid-template-columns:repeat(2,1fr)}
+}
+@media(max-width:640px){
+  #page-meu-painel .mp2-kpi-row{grid-template-columns:1fr}
+  #page-meu-painel .mp2-carteira{grid-template-columns:1fr}
+}
+
 /* Grid layouts */
 .g2{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
 .g3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:12px}
@@ -7173,103 +7208,107 @@ tbody tr:hover{background:rgba(255,203,45,.05)}
   </div>
   <div class="admin-page">
 
-    <!-- ADD: 🎯 Prioridades de Hoje (Etapa 7B) — Top 10 fixo do dia, gerado
-         e persistido por agObterTopHoje() (crmAtividades tipo:'TopHojeItem',
-         sem tabela nova). Populado por agRenderTopHoje(). -->
-    <div class="sh"><h2>🎯 Prioridades de Hoje</h2></div>
+    <!-- Meu Painel v2 (14/08/2026) — dashboard comercial compacta e orientada
+         à ação. Reutiliza toda a lógica/dados já existentes (agObterTopHoje,
+         agListaUnificada, ativosMeus, valorNegociacao, etc.), calculados em
+         renderMeuPainel() como antes; só a apresentação mudou. Nada foi
+         apagado: os blocos completos continuam acessíveis via "Ver todas as
+         prioridades" / "Ver todos" / "Ver clientes em risco". -->
+
+    <!-- KPIs principais (4 cards compactos) -->
+    <div class="mp2-kpi-row" id="mp2-kpi-row">
+      <div class="mp2-kpi" data-action="goPage" data-page="comercial-followup">
+        <div class="mp2-kpi-lbl">Follow-ups hoje</div>
+        <div class="mp2-kpi-val" id="mp-kpi-followup">—</div>
+      </div>
+      <div class="mp2-kpi" data-action="goPage" data-page="comercial-orcamentos">
+        <div class="mp2-kpi-lbl">Valor em negociação</div>
+        <div class="mp2-kpi-val mp2-y" id="mp-kpi-negociacao">—</div>
+      </div>
+      <div class="mp2-kpi">
+        <div class="mp2-kpi-lbl">Ticket médio</div>
+        <div class="mp2-kpi-val" id="mp-kpi-ticket">—</div>
+      </div>
+      <div class="mp2-kpi mp2-r" data-action="goPage" data-page="comercial-followup">
+        <div class="mp2-kpi-lbl">Clientes em risco</div>
+        <div class="mp2-kpi-val" id="mp-kpi-risco">—</div>
+      </div>
+    </div>
+
+    <!-- Bloco principal: Faça agora (Top 5 do Top Hoje já existente, resto
+         escondido por CSS até "Ver todas as prioridades") -->
+    <div class="sh"><h2>🎯 Faça agora</h2></div>
     <div id="ag-tophoje-progresso" style="margin-bottom:10px"></div>
-    <div class="fu-cards-grid" id="ag-tophoje-cards" style="margin-bottom:20px"></div>
-
-    <div class="sh"><h2>Prioridades de hoje</h2></div>
-    <div class="g3">
-      <div class="kpi kA mp-action">
-        <div class="klbl">📞 Follow-up</div>
-        <div class="kval" id="mp-kpi-followup">—</div>
-        <div class="ksub">clientes com follow-up activo</div>
-        <div class="mp-breakdown" id="mp-followup-breakdown"></div>
-        <button class="mp-action-btn" data-action="goPage" data-page="comercial-followup">Abrir Follow-up</button>
-      </div>
-      <div class="kpi kR mp-action">
-        <div class="klbl">🚨 Clientes em risco</div>
-        <div class="kval" id="mp-kpi-risco">—</div>
-        <div class="ksub">prioridade alta / crítica / perdido sugerido</div>
-        <div class="mp-breakdown" id="mp-risco-breakdown"></div>
-        <button class="mp-action-btn" data-action="goPage" data-page="comercial-followup">Ver prioritários</button>
-      </div>
-      <div class="kpi mp-action">
-        <div class="klbl">💰 Negócios em aberto</div>
-        <div class="kval" id="mp-kpi-pendentes">—</div>
-        <div class="ksub" id="mp-kpi-pendentes-sub">propostas em estado "Pendente"</div>
-        <button class="mp-action-btn" data-action="goPage" data-page="comercial-orcamentos">Abrir Orçamentos</button>
-      </div>
+    <div class="fu-cards-grid mp2-cards mp2-limit5" id="ag-tophoje-cards" style="margin-bottom:10px"></div>
+    <div style="margin:0 0 22px" id="mp2-vertodas-wrap">
+      <button class="tbtn" onclick="mp2ToggleTodas()" id="mp2-vertodas-btn">Ver todas as prioridades</button>
     </div>
 
-    <!-- ADD: card funcional "Lembretes de Hoje" — lê crmAtividades (tipo Lembrete,
-         due de hoje) e cliData. Só leitura; populado por mpRenderLembretesHoje()
-         chamado de dentro de renderMeuPainel(). Reutiliza .sh/.tw/table existentes. -->
-    <div class="sh"><h2>📌 Lembretes de Hoje</h2></div>
-    <div class="tw" id="mp-lembretes-hoje-wrap">
-      <table>
-        <thead><tr><th>Hora</th><th>Cliente</th><th>Tipo</th><th>Prioridade</th><th>Estado</th><th>Abrir</th></tr></thead>
-        <tbody id="mp-lembretes-hoje"></tbody>
-      </table>
+    <!-- Minha carteira -->
+    <div class="sh"><h2>Minha carteira</h2></div>
+    <div class="mp2-carteira" id="mp2-carteira"></div>
+
+    <!-- Próximos 7 dias (tabela compacta) -->
+    <div id="mp2-sete-section" style="display:none">
+      <div class="sh"><h2>Próximos 7 dias</h2></div>
+      <div class="tw" id="mp2-sete-wrap">
+        <table>
+          <thead><tr><th>Cliente</th><th>Ação</th><th>Prazo</th><th>Valor</th></tr></thead>
+          <tbody id="mp2-sete-tbody"></tbody>
+        </table>
+      </div>
+      <div id="mp2-sete-vertodos-wrap" style="margin:8px 0 22px;display:none"><button class="tbtn" id="mp2-sete-vertodos-btn">Ver todos</button></div>
     </div>
 
-    <!-- ADD: Centro de Prioridades Comerciais (Etapas 7/7B) — unifica Leads
-         parados, Orçamentos ativos, ações agendadas em atraso e Clientes (motor
-         da Etapa 6) num único feed deduplicado por nome normalizado, excluindo
-         o que já está no Top 10 de hoje de alguém. Sem tabela nova, sem IA a
-         inventar prioridades. Populado por agRenderCentroUnificado(), chamado
-         de dentro de renderMeuPainel(). Respeita "Ver como comercial". -->
-    <div class="sh"><h2>📋 Próximas Prioridades</h2></div>
-    <div id="ag-admin-resumo" style="display:none;margin-bottom:14px"></div>
-    <div id="ag-filtros-bar" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px"></div>
-    <div class="fu-cards-grid" id="ag-prioridades-cards"></div>
-
-    <div class="sh"><h2>Resumo comercial</h2></div>
-    <div class="g3">
-      <div class="kpi kY">
-        <div class="klbl">Valor em negociação</div>
-        <div class="kval" id="mp-kpi-negociacao">—</div>
-        <div class="ksub" id="mp-kpi-negociacao-sub">—</div>
-      </div>
-      <div class="kpi kB">
-        <div class="klbl">Ticket médio</div>
-        <div class="kval" id="mp-kpi-ticket">—</div>
-        <div class="ksub" id="mp-kpi-ticket-sub">—</div>
-      </div>
-      <div class="kpi kG">
-        <div class="klbl">Taxa de conversão</div>
-        <div class="kval" id="mp-kpi-conversao">—</div>
-        <div class="ksub">do Pipeline de Leads</div>
-      </div>
+    <!-- Clientes em risco / Reativação — resumo, não a lista inteira -->
+    <div id="mp2-risco-section" style="display:none">
+      <div class="sh"><h2>Carteira que precisa de atenção</h2></div>
+      <div class="mp2-risco-resumo" id="mp2-risco-resumo"></div>
     </div>
-    <div class="sh"><h2>Financeiro</h2></div>
-    <div class="mp-fin-grid">
-      <div class="kpi mp-action mp-placeholder" id="mp-cobrar-card">
-        <div class="klbl">💳 Por cobrar</div>
-        <div class="kval" id="mp-kpi-cobrar">—</div>
-        <div class="ksub" id="mp-kpi-cobrar-sub">clientes com valores em aberto</div>
-        <div class="mp-breakdown" id="mp-cobrar-breakdown"></div>
-        <button class="mp-action-btn" id="mp-cobrar-btn" data-action="goPage" data-page="tesouraria" style="display:none">Abrir Cobranças</button>
+
+    <!-- Todas as prioridades (Top Hoje completo + Centro de Prioridades) —
+         escondido por omissão, revelado por "Ver todas as prioridades".
+         Mesmo motor de sempre (agRenderCentroUnificado/agObterTopHoje), só
+         não fica aberto na primeira tela. -->
+    <div id="mp2-todas-prioridades" style="display:none">
+      <div class="sh"><h2>📋 Todas as prioridades</h2></div>
+      <div id="ag-admin-resumo" style="display:none;margin-bottom:14px"></div>
+      <div id="ag-filtros-bar" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px"></div>
+      <div class="fu-cards-grid" id="ag-prioridades-cards" style="margin-bottom:20px"></div>
+    </div>
+
+    <!-- Lembretes de Hoje — só aparece se houver algum -->
+    <div id="mp-lembretes-hoje-section" style="display:none">
+      <div class="sh"><h2>📌 Lembretes de Hoje</h2></div>
+      <div class="tw" id="mp-lembretes-hoje-wrap">
+        <table>
+          <thead><tr><th>Hora</th><th>Cliente</th><th>Tipo</th><th>Prioridade</th><th>Estado</th><th>Abrir</th></tr></thead>
+          <tbody id="mp-lembretes-hoje"></tbody>
+        </table>
       </div>
     </div>
 
-    <div class="sh"><h2>Últimas actividades</h2></div>
-    <div class="tw" id="mp-atividades-wrap">
-      <div id="mp-atividades-list" style="padding:4px 6px"></div>
-    </div>
-    <div class="sh"><h2>Em breve</h2></div>
-    <div class="g3">
-      <div class="kpi mp-placeholder"><div class="klbl">Meta do mês</div><div class="kval">—</div><div class="ksub">Em breve</div></div>
-      <div class="kpi mp-placeholder"><div class="klbl">Valor vendido</div><div class="kval">—</div><div class="ksub">Em breve</div></div>
-      <div class="kpi mp-placeholder"><div class="klbl">Valor por faturar</div><div class="kval">—</div><div class="ksub">Em breve</div></div>
-    </div>
-    <div class="g3">
-      <div class="kpi mp-placeholder"><div class="klbl">Agenda</div><div class="kval">—</div><div class="ksub">Em breve</div></div>
-      <div class="kpi mp-placeholder"><div class="klbl">IA recomenda</div><div class="kval">—</div><div class="ksub">Em breve</div></div>
+    <!-- Financeiro — só aparece para quem tem acesso real -->
+    <div id="mp-fin-section" style="display:none">
+      <div class="sh"><h2>Financeiro</h2></div>
+      <div class="mp-fin-grid">
+        <div class="kpi mp-action" id="mp-cobrar-card">
+          <div class="klbl">💳 Por cobrar</div>
+          <div class="kval" id="mp-kpi-cobrar">—</div>
+          <div class="ksub" id="mp-kpi-cobrar-sub">clientes com valores em aberto</div>
+          <div class="mp-breakdown" id="mp-cobrar-breakdown"></div>
+          <button class="mp-action-btn" id="mp-cobrar-btn" data-action="goPage" data-page="tesouraria">Abrir Cobranças</button>
+        </div>
+      </div>
     </div>
 
+    <!-- Últimas actividades — só aparece se houver alguma -->
+    <div id="mp-atividades-section" style="display:none">
+      <div class="sh"><h2>Últimas actividades</h2></div>
+      <div class="tw" id="mp-atividades-wrap">
+        <div id="mp-atividades-list" style="padding:4px 6px"></div>
+      </div>
+    </div>
 
   </div>
 </div>
@@ -7378,9 +7417,10 @@ tbody tr:hover{background:rgba(255,203,45,.05)}
     </div>
   </div>
   <div class="task-content">
-    <div style="position:relative;max-width:360px;margin-bottom:14px">
+    <div style="position:relative;max-width:360px;margin-bottom:6px">
       <input type="text" id="cli-busca-input" placeholder="🔍 Pesquisar cliente" oninput="cliBuscarInput(this.value)" class="form-input" style="width:100%"/>
     </div>
+    <div id="cli-carteira-info" style="font-size:12px;color:var(--muted);margin-bottom:14px"></div>
     <div class="tw"><table><thead><tr><th>Cliente</th><th>Sector</th><th>Contacto</th><th>Email</th><th>Telefone</th><th>Projetos</th><th>Receita total</th><th>Último contacto</th><th>Estado</th></tr></thead><tbody id="clientes-tbody"></tbody></table></div>
   </div>
 </div>
@@ -10800,6 +10840,7 @@ tbody tr:hover{background:rgba(255,203,45,.05)}
         </div>
       </div>
 
+      <div id="cli-proximo-followup" style="display:none;margin-top:14px;border-top:1px solid var(--border);padding-top:12px"></div>
       <div id="cli-acoes-comerciais" style="display:none;gap:8px;flex-wrap:wrap;margin-top:6px;border-top:1px solid var(--border);padding-top:12px">
         <button class="tbtn" onclick="cliRegistarContacto()">📇 Registar contacto</button>
         <button class="tbtn" onclick="cliCriarLembrete()">📌 Criar Lembrete Comercial</button>
@@ -15648,6 +15689,7 @@ function cliOpenNew(){
   document.getElementById('cli-modal-title').textContent='+ Novo Cliente';
   document.getElementById('cli-del-btn').style.display='none';
   { var _ac=document.getElementById('cli-acoes-comerciais'); if(_ac) _ac.style.display='none'; }
+  { var _pf=document.getElementById('cli-proximo-followup'); if(_pf){ _pf.style.display='none'; _pf.innerHTML=''; } }
   cm.classList.add('open');
 }
 
@@ -15677,6 +15719,8 @@ function cliOpenEdit(id){
   document.getElementById('cli-modal').classList.add('open');
   // Painel de recebimentos
   cliRenderRecebimentos(c);
+  // Próximo follow-up
+  cliRenderProximoFollowup(c);
 }
 
 // ── P1 Clientes: ações comerciais (Registar contacto / Agendar follow-up /
@@ -15740,6 +15784,54 @@ function cliCriarLembrete(){
       return true;
     }, 'Criar Lembrete');
 }
+
+// Próximo follow-up no Card Cliente: reaproveita crmAtividades (mesma fonte
+// de cliCriarLembrete(), sem tabela nem lógica paralela). Prioridade: 1º um
+// vencido ainda pendente (o mais antigo, se houver vários) marcado "Atrasado";
+// só na ausência de vencidos mostra o próximo futuro (o mais próximo).
+// Lembretes concluídos (resultado preenchido) nunca contam.
+function cliProximoFollowup(clienteId){
+  var agora=new Date();
+  var pendentes=(crmAtividades||[]).filter(function(a){
+    if(!a || a.tipo!=='Lembrete' || a.resultado || a.clienteId!==clienteId) return false;
+    var quando=a.due||a.data;
+    if(!quando) return false;
+    return !isNaN(new Date(quando));
+  });
+  if(!pendentes.length) return null;
+  function porData(a,b){ return new Date(a.due||a.data) - new Date(b.due||b.data); }
+  var vencidos=pendentes.filter(function(a){ return new Date(a.due||a.data) < agora; });
+  if(vencidos.length){
+    vencidos.sort(porData);
+    return { item:vencidos[0], atrasado:true };
+  }
+  var futuros=pendentes.filter(function(a){ return new Date(a.due||a.data) >= agora; });
+  futuros.sort(porData);
+  return { item:futuros[0], atrasado:false };
+}
+window.cliProximoFollowup=cliProximoFollowup;
+
+function cliRenderProximoFollowup(c){
+  var el=document.getElementById('cli-proximo-followup');
+  if(!el||!c) return;
+  el.style.display='block';
+  var resultado=cliProximoFollowup(c.id);
+  if(!resultado){
+    el.innerHTML='<div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">Próximo follow-up</div>'
+      +'<div style="font-size:13px;color:var(--muted)">Nenhum follow-up agendado <button class="tbtn" style="padding:2px 8px;font-size:11.5px;margin-left:6px" onclick="cliCriarLembrete()">+ Agendar</button></div>';
+    return;
+  }
+  var item=resultado.item, atrasado=resultado.atrasado;
+  var quando=item.due||item.data;
+  var m=String(quando).match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+  var dataFmt=m?(m[3]+'/'+m[2]+'/'+m[1]+' às '+m[4]+':'+m[5]):quando;
+  var acaoEsc=String(item.acao||'—').replace(/[&<>"']/g,function(ch){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]; });
+  var tagAtrasado=atrasado?' <span style="color:var(--r);font-weight:700;font-size:10.5px;text-transform:uppercase;letter-spacing:.04em">Atrasado</span>':'';
+  el.innerHTML='<div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">Próximo follow-up</div>'
+    +'<div style="font-size:13px;color:'+(atrasado?'var(--r)':'var(--txt2)')+';font-weight:600">'+dataFmt+tagAtrasado+'</div>'
+    +'<div style="font-size:12.5px;color:var(--muted)">'+acaoEsc+'</div>';
+}
+window.cliRenderProximoFollowup=cliRenderProximoFollowup;
 function cliEnviarWhatsApp(){
   var c=_cliAtual(); if(!c){ return; }
   var telRaw=c.tel||c.finTel||'';
@@ -15959,6 +16051,23 @@ var clientes=[
   {n:'Transportes Alcopark',sec:'Logística',cont:'Vítor Alves',tel:'+351 219 000 010',projs:2,rev:5600,last:'há 2 meses',st:'at-risk'},
 ];
 
+// Escopo por comercial em vista (real ou "Ver como") -- mesmo padrão já
+// usado em fuMinhasOrc/_mvMinhasLinhas. comercialAtivo = responsável atual
+// pela carteira; comercialResp = vendedor histórico (fallback quando a
+// carteira ainda não foi reclassificada). Clientes sem nenhum dos dois
+// campos preenchidos não são atribuídos a ninguém automaticamente: o
+// admin continua a vê-los, um comercial normal não.
+function cliMeusClientes(rows){
+  var isAdmin = !!(typeof CU!=='undefined' && CU && CU.admin);
+  var nome = (typeof CU!=='undefined' && CU) ? CU.name : null;
+  if(isAdmin || !nome) return rows;
+  return rows.filter(function(c){
+    var responsavel = (c.comercialAtivo!=null && c.comercialAtivo!=='') ? c.comercialAtivo : c.comercialResp;
+    return responsavel === nome;
+  });
+}
+window.cliMeusClientes = cliMeusClientes;
+
 // Pesquisa/ordenação da listagem de Clientes: só afeta a EXIBIÇÃO (não
 // regrava nem reordena cliData/ob-clients/Supabase). Filtra por nome, NIF,
 // telefone, e-mail e contacto; ordena A→Z por nome (localeCompare pt-BR,
@@ -15991,7 +16100,14 @@ function renderClientes(){
   const el=document.getElementById('clientes-tbody');if(!el)return;
   const data=(typeof cliData!=='undefined'&&cliData)?cliData:clientes;
   const isAdmin = !!(CU && CU.admin === true);
-  const lista=cliFiltrarBusca(data, _cliBusca).slice().sort(cliOrdenarPorNome);
+  const minhaCarteira=cliMeusClientes(data);
+  const carteiraInfoEl=document.getElementById('cli-carteira-info');
+  if(carteiraInfoEl){
+    var n=minhaCarteira.length;
+    var sufixo=n===1?' cliente':' clientes';
+    carteiraInfoEl.textContent = isAdmin ? (n+sufixo) : ('Minha carteira — '+n+sufixo);
+  }
+  const lista=cliFiltrarBusca(minhaCarteira, _cliBusca).slice().sort(cliOrdenarPorNome);
   if(!lista.length){
     el.innerHTML='<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:24px">Nenhum cliente encontrado.</td></tr>';
     return;
@@ -25799,8 +25915,8 @@ function renderMeuPainel(){
       if(nf===0 && np===0 && valorNegociacao===0){
         dsEl.textContent='Sem pendências para hoje. Bom trabalho!';
       } else {
-        dsEl.innerHTML='Hoje tens: '
-          +'<b>'+nf+'</b> follow-up'+(nf===1?'':'s')
+        dsEl.innerHTML=
+          '<b>'+nf+'</b> follow-up'+(nf===1?'':'s')
           +'<span class="mp-sep">·</span><b>'+np+'</b> proposta'+(np===1?'':'s')+' pendente'+(np===1?'':'s')
           +'<span class="mp-sep">·</span><b>'+fmtEuro(valorNegociacao)+'</b> em negociação';
       }
@@ -25814,8 +25930,10 @@ function renderMeuPainel(){
   // já existente no resto do CRM (obPodeVerFinanceiro): um comercial
   // nunca vê dados financeiros, mesmo agregados, aqui incluído.
   var cobrarCard=document.getElementById('mp-cobrar-card');
+  var finSection=document.getElementById('mp-fin-section');
   if(cobrarCard){
     var podeVerFin=(typeof obPodeVerFinanceiro==='function') ? obPodeVerFinanceiro() : false;
+    if(finSection) finSection.style.display = podeVerFin ? '' : 'none';
     if(podeVerFin){
       try{ if(typeof tocoMergeFaturasCacheReceber==='function') tocoMergeFaturasCacheReceber(); }catch(e){}
       var hojeVenc=new Date();
@@ -25840,10 +25958,8 @@ function renderMeuPainel(){
       cobrarCard.classList.remove('mp-placeholder');
       var cobrarBtn=document.getElementById('mp-cobrar-btn');
       if(cobrarBtn) cobrarBtn.style.display='';
-    } else {
-      set('mp-kpi-cobrar', '—');
-      set('mp-kpi-cobrar-sub', 'sem acesso a dados financeiros');
     }
+    // Sem acesso: finSection já fica oculta acima — não mostra "sem acesso"/€0/card vazio.
   }
 
   // Últimas actividades (crmAtividades já vem ordenado do mais recente
@@ -25856,8 +25972,10 @@ function renderMeuPainel(){
     var todasAtiv=((typeof crmAtividades!=='undefined'&&crmAtividades)?crmAtividades:[]).filter(function(a){ return a && a.tipo!=='TopHojeItem'; });
     var minhasAtiv= (isAdmin||!nome) ? todasAtiv : todasAtiv.filter(function(a){ return a.autor===nome; });
     var ultimas=minhasAtiv.slice(0,5);
+    var ativSection=document.getElementById('mp-atividades-section');
+    if(ativSection) ativSection.style.display = ultimas.length ? '' : 'none';
     if(!ultimas.length){
-      ativEl.innerHTML='<div style="color:var(--muted);font-size:13px;padding:8px 4px;font-style:italic">Sem actividades registadas.</div>';
+      ativEl.innerHTML='';
     } else {
       var icones={'Nota':'📝','Chamada':'📞','Email':'✉','Visita':'🚗','WhatsApp':'💬'};
       ativEl.innerHTML=ultimas.map(function(a){
@@ -25882,6 +26000,29 @@ function renderMeuPainel(){
   // "🤖 Prioridades do Agente"; agRenderPrioridades() continua definida e
   // utilizável, só deixou de ser chamada aqui).
   try{ agRenderCentroUnificado(); }catch(e){}
+
+  // Meu Painel v2 (14/08/2026): "Ver todas as prioridades" volta ao estado
+  // fechado a cada render (evita ficar aberto por engano ao trocar de "Ver
+  // como" ou navegar de volta para Meu Painel).
+  var mp2Cards=document.getElementById('ag-tophoje-cards');
+  var mp2Painel=document.getElementById('mp2-todas-prioridades');
+  var mp2Btn=document.getElementById('mp2-vertodas-btn');
+  if(mp2Cards) mp2Cards.classList.add('mp2-limit5');
+  if(mp2Painel) mp2Painel.style.display='none';
+  if(mp2Btn) mp2Btn.textContent='Ver todas as prioridades';
+
+  // Reativação — reaproveita o mesmo teste já usado no filtro "Reativação"
+  // do Centro de Prioridades (AG_FILTROS), para nunca haver dois critérios
+  // diferentes de "reativação" no mesmo painel.
+  var reativacaoCount=0;
+  try{
+    var _filtroReativacao=AG_FILTROS.find(function(f){ return f.key==='reativacao'; });
+    if(_filtroReativacao) reativacaoCount=agListaUnificada().lista.filter(_filtroReativacao.test).length;
+  }catch(e){}
+
+  try{ mp2RenderCarteira({ pendentesCount:pendentes.length, valorNegociacao:valorNegociacao, riscoCount:prioritarioCount, reativacaoCount:reativacaoCount, fmtEuro:fmtEuro }); }catch(e){}
+  try{ mp2RenderRiscoResumo({ criticaCount:porPrioridade.critica, altaCount:porPrioridade.alta, reativacaoCount:reativacaoCount }); }catch(e){}
+  try{ mp2RenderProximosSete(); }catch(e){}
 }
 window.renderMeuPainel=renderMeuPainel;
 
@@ -26519,8 +26660,10 @@ function mpRenderLembretesHoje(){
     var hb=((parseDue(b.due||b.data)||{}).hora)||'99:99';
     return ha<hb?-1:(ha>hb?1:0);
   });
+  var lembSection=document.getElementById('mp-lembretes-hoje-section');
+  if(lembSection) lembSection.style.display = lista.length ? '' : 'none';
   if(!lista.length){
-    tb.innerHTML='<tr><td colspan="6" style="text-align:center;color:var(--muted);font-style:italic;padding:14px">Sem lembretes para hoje.</td></tr>';
+    tb.innerHTML='';
     return;
   }
   tb.innerHTML=lista.map(function(a){
@@ -27312,12 +27455,13 @@ function agRenderTopHoje(){
     var valorLinha=item.valor>0 ? (' · €'+Math.round(item.valor).toLocaleString('pt-PT')) : '';
     var acoes;
     if(item.tipoOrigem==='cliente'){
-      acoes='<button class="tbtn" onclick="agLigar('+idAttr+')" title="Ligar">📞</button>'
-        +'<button class="tbtn" onclick="agWhatsApp('+idAttr+')" title="WhatsApp">💬</button>'
-        +'<button class="tbtn" onclick="agEmail('+idAttr+')" title="Email">✉️</button>'
-        +'<button class="tbtn" onclick="agRegistarResultado('+idAttr+')" title="Registar resultado">📝</button>'
-        +'<button class="tbtn" onclick="agAdiarTopHoje('+keyAttr+')" title="Adiar">📅</button>'
-        +'<button class="tbtn" onclick="agConcluirTopHoje('+keyAttr+')" title="Concluir">✅</button>';
+      // Contactar consolida Ligar/WhatsApp/Email num só botão (mp2AbrirContactar);
+      // Adiar/Registar continuam disponíveis, só que atrás de "⋯" (mp2AbrirMais) —
+      // reutilizam exatamente as mesmas funções de sempre, só a apresentação mudou.
+      acoes='<button class="tbtn" onclick="cliOpenEdit('+idAttr+')" title="Abrir ficha do cliente">↗ Abrir</button>'
+        +'<button class="tbtn" onclick="mp2AbrirContactar('+idAttr+',this)" title="Ligar / WhatsApp / Email">📞 Contactar</button>'
+        +'<button class="tbtn y" onclick="agConcluirTopHoje('+keyAttr+')" title="Concluir">✅ Concluir</button>'
+        +'<button class="tbtn" onclick="mp2AbrirMais('+idAttr+','+keyAttr+',this)" title="Mais ações">⋯</button>';
     } else {
       var origemJson=_agEsc(JSON.stringify({tipo:item.tipoOrigem, origId:item.origId, leadId:item.leadId}));
       acoes='<button class="tbtn" onclick="agAbrirOrigem('+origemJson+')" title="Abrir">↗ Abrir</button>'
@@ -27367,6 +27511,174 @@ function agConcluir(clienteId){
   try{ mpRenderLembretesHoje(); }catch(e){}
 }
 window.agConcluir = agConcluir;
+
+// ══ MEU PAINEL v2 (14/08/2026) — dashboard comercial compacta ═══════
+// Menu "Contactar"/"⋯" dos cards de Faça agora: reaproveita sempre as
+// mesmas ações (agLigar/agWhatsApp/agEmail/agRegistarResultado/
+// agAdiarTopHoje), só consolidadas num popover em vez de 1 botão por ação.
+function _mp2FecharMenu(){
+  var menu=document.getElementById('mp2-menu');
+  if(menu) menu.remove();
+  document.removeEventListener('click', _mp2FecharMenuFora, true);
+}
+window._mp2FecharMenu=_mp2FecharMenu;
+function _mp2FecharMenuFora(e){
+  var menu=document.getElementById('mp2-menu');
+  if(menu && !menu.contains(e.target)) _mp2FecharMenu();
+}
+function _mp2AbrirMenu(itensHtml, btnEl){
+  _mp2FecharMenu();
+  var menu=document.createElement('div');
+  menu.id='mp2-menu';
+  menu.className='mp2-menu';
+  menu.innerHTML=itensHtml;
+  document.body.appendChild(menu);
+  var r=btnEl.getBoundingClientRect();
+  var topPos=r.bottom+4, leftPos=r.left;
+  if(topPos+120>window.innerHeight) topPos=r.top-4-menu.offsetHeight;
+  if(leftPos+160>window.innerWidth) leftPos=window.innerWidth-166;
+  menu.style.top=topPos+'px';
+  menu.style.left=leftPos+'px';
+  setTimeout(function(){ document.addEventListener('click', _mp2FecharMenuFora, true); }, 0);
+}
+function mp2AbrirContactar(clienteId, btnEl){
+  _mp2AbrirMenu(
+     '<button onclick="_mp2FecharMenu();agLigar('+clienteId+')">📞 Ligar</button>'
+    +'<button onclick="_mp2FecharMenu();agWhatsApp('+clienteId+')">💬 WhatsApp</button>'
+    +'<button onclick="_mp2FecharMenu();agEmail('+clienteId+')">✉️ Email</button>'
+  , btnEl);
+}
+window.mp2AbrirContactar=mp2AbrirContactar;
+function mp2AbrirMais(clienteId, itemKey, btnEl){
+  _mp2AbrirMenu(
+     '<button onclick="_mp2FecharMenu();agRegistarResultado('+clienteId+')">📝 Registar resultado</button>'
+    +'<button onclick="_mp2FecharMenu();agAdiarTopHoje('+itemKey+')">📅 Adiar</button>'
+  , btnEl);
+}
+window.mp2AbrirMais=mp2AbrirMais;
+
+// "Ver todas as prioridades" — revela o resto do Top Hoje (itens 6+, já
+// renderizados no DOM, só escondidos por CSS) e o Centro de Prioridades
+// completo (já populado por agRenderCentroUnificado(), só a secção estava
+// oculta). Não recalcula nada, não duplica lógica nenhuma.
+function mp2ToggleTodas(){
+  var cards=document.getElementById('ag-tophoje-cards');
+  var painel=document.getElementById('mp2-todas-prioridades');
+  var btn=document.getElementById('mp2-vertodas-btn');
+  if(!cards||!painel||!btn) return;
+  var aberto=cards.classList.contains('mp2-limit5');
+  if(aberto){
+    cards.classList.remove('mp2-limit5');
+    painel.style.display='block';
+    btn.textContent='Ver menos';
+  } else {
+    cards.classList.add('mp2-limit5');
+    painel.style.display='none';
+    btn.textContent='Ver todas as prioridades';
+  }
+}
+window.mp2ToggleTodas=mp2ToggleTodas;
+
+// "Minha carteira" — faixa de resumo com Pendentes/Em negociação/Risco/
+// Reativação, cada um clicável (data-action="goPage", reutiliza a mesma
+// delegação de cliques central já usada em todo o CRM).
+function mp2RenderCarteira(o){
+  var wrap=document.getElementById('mp2-carteira');
+  if(!wrap) return;
+  var itens=[
+    {lbl:'Pendentes', val:String(o.pendentesCount), page:'comercial-orcamentos'},
+    {lbl:'Em negociação', val:o.fmtEuro(o.valorNegociacao), page:'comercial-orcamentos'},
+    {lbl:'Risco', val:String(o.riscoCount), page:'comercial-followup'},
+    {lbl:'Reativação', val:String(o.reativacaoCount), page:'comercial-followup'}
+  ];
+  wrap.innerHTML=itens.map(function(it){
+    return '<div class="mp2-carteira-item" data-action="goPage" data-page="'+it.page+'">'
+      +'<div class="mp2-carteira-lbl">'+it.lbl+'</div>'
+      +'<div class="mp2-carteira-val">'+it.val+'</div>'
+    +'</div>';
+  }).join('');
+}
+window.mp2RenderCarteira=mp2RenderCarteira;
+
+// "Carteira que precisa de atenção" — resumo (críticos/alta/reativação),
+// nunca a lista inteira. "Ver clientes em risco" reaproveita a mesma
+// navegação já usada nos KPIs (goPage + Follow-up).
+function mp2RenderRiscoResumo(o){
+  var secao=document.getElementById('mp2-risco-section');
+  var wrap=document.getElementById('mp2-risco-resumo');
+  if(!secao||!wrap) return;
+  if(!o.criticaCount && !o.altaCount && !o.reativacaoCount){ secao.style.display='none'; wrap.innerHTML=''; return; }
+  secao.style.display='block';
+  wrap.innerHTML=
+     '<span><b style="color:var(--r)">'+o.criticaCount+'</b> crítico'+(o.criticaCount===1?'':'s')+'</span>'
+    +'<span><b style="color:var(--a)">'+o.altaCount+'</b> prioridade alta</span>'
+    +'<span><b style="color:var(--b)">'+o.reativacaoCount+'</b> reativação</span>'
+    +'<button class="tbtn" data-action="goPage" data-page="comercial-followup">Ver clientes em risco</button>';
+}
+window.mp2RenderRiscoResumo=mp2RenderRiscoResumo;
+
+// "Próximos 7 dias" — tabela compacta (Cliente/Ação/Prazo/Valor), amanhã
+// até +7 dias (hoje já está em "Faça agora"/Lembretes de Hoje, evita
+// repetir). Reaproveita os MESMOS dados ao vivo (crmLeads.proximaAcao,
+// crmAtividades tipo Lembrete) que agItensHoje()/obAcoesAgendadas() já
+// usam — só uma janela de datas diferente; nenhuma fonte de dados nova.
+function mp2RenderProximosSete(){
+  var secao=document.getElementById('mp2-sete-section');
+  var tbody=document.getElementById('mp2-sete-tbody');
+  var vertodosWrap=document.getElementById('mp2-sete-vertodos-wrap');
+  if(!secao||!tbody) return;
+  var isAdmin=!!(typeof CU!=='undefined'&&CU&&CU.admin);
+  var nome=(typeof CU!=='undefined'&&CU)?CU.name:null;
+  var minhas=function(v){ return isAdmin||!nome||v===nome; };
+  var hoje=new Date(); hoje.setHours(0,0,0,0);
+  var lim=new Date(hoje); lim.setDate(lim.getDate()+7);
+  function dentroJanela(str){
+    if(!str) return false;
+    var d=new Date(str+'T00:00:00');
+    return !isNaN(d) && d>hoje && d<=lim;
+  }
+  var itens=[];
+  (typeof crmLeads!=='undefined'?crmLeads:[]||[]).forEach(function(l){
+    if(typeof FU_ESTADOS_LEAD_TERMINAIS!=='undefined' && FU_ESTADOS_LEAD_TERMINAIS.indexOf(l.st)!==-1) return;
+    var pa=l.proximaAcao;
+    if(!pa||!pa.data||!minhas(l.ass)||!dentroJanela(pa.data)) return;
+    itens.push({cliente:l.emp||l.n||'—', acao:pa.desc||pa.tipo||'Ação', prazo:pa.data, valor:l.val||0, leadId:l.id, clienteId:null});
+  });
+  (typeof crmAtividades!=='undefined'?crmAtividades:[]||[]).forEach(function(a){
+    if(!a||a.tipo!=='Lembrete'||a.resultado||!minhas(a.autor)) return;
+    var m=String(a.due||a.data||'').match(/^(\d{4}-\d{2}-\d{2})/);
+    if(!m||!dentroJanela(m[1])) return;
+    var cli=(typeof cliData!=='undefined'&&cliData)?cliData:[];
+    var c=(a.clienteId!=null)?cli.find(function(x){ return x&&x.id===a.clienteId; }):null;
+    itens.push({cliente:c?c.n:'—', acao:a.acao||'Lembrete', prazo:m[1], valor:0, leadId:null, clienteId:a.clienteId});
+  });
+  itens.sort(function(a,b){ return a.prazo.localeCompare(b.prazo); });
+
+  if(!itens.length){ secao.style.display='none'; return; }
+  secao.style.display='block';
+  var LIMITE=6;
+  function linha(it){
+    var prazoFmt=it.prazo.split('-').reverse().join('/');
+    var valorTxt=it.valor>0 ? (typeof fmt==='function'?fmt(Math.round(it.valor)):('€'+Math.round(it.valor))) : '—';
+    var onclickAttr = it.clienteId!=null ? ('cliOpenEdit('+JSON.stringify(it.clienteId)+')') : (it.leadId!=null ? ('obAbrirLead('+it.leadId+')') : '');
+    return '<tr style="cursor:pointer" onclick="'+onclickAttr+'">'
+      +'<td>'+_agEsc(it.cliente)+'</td>'
+      +'<td>'+_agEsc(it.acao)+'</td>'
+      +'<td style="color:var(--muted)">'+prazoFmt+'</td>'
+      +'<td style="font-family:\'DM Mono\',monospace">'+valorTxt+'</td>'
+    +'</tr>';
+  }
+  tbody.innerHTML=itens.slice(0,LIMITE).map(linha).join('');
+  if(itens.length>LIMITE && vertodosWrap){
+    vertodosWrap.style.display='block';
+    var btn=vertodosWrap.querySelector('button');
+    if(btn) btn.onclick=function(){
+      tbody.innerHTML=itens.map(linha).join('');
+      vertodosWrap.style.display='none';
+    };
+  } else if(vertodosWrap){ vertodosWrap.style.display='none'; }
+}
+window.mp2RenderProximosSete=mp2RenderProximosSete;
 
 function obAbrirLead(id){
   try{ goPage('comercial-pipeline'); }catch(e){}
