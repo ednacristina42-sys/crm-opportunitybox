@@ -26466,12 +26466,14 @@ function _mvRenderRecebimentos(view){
   }
   var rows = _mvTesData || [];
   var scoped = view.isAdmin ? rows : rows.filter(function(r){ return r.vendedor === (CU&&CU.name); });
-  var sum = function(estado){ return scoped.filter(function(r){return r.estado===estado;}).reduce(function(s,r){return s+(parseFloat(r.total)||0);},0); };
-  // Simplificado para os 2 estados que a fonte real (TocOnline/Sheet) de facto
-  // grava — 'Recebido'/'Pendente'. 'Não Recebido'/'Recebido Parcial' nunca são
-  // escritos pelos sincronizadores; usá-los aqui fazia o total ficar incompleto
-  // (excluía os Pendentes) e o donut mostrar uma % de recebido artificialmente alta.
-  var src = { recebido: sum('Recebido'), pendente: sum('Pendente') };
+  // Fonte real (Vendas 2026 → TES_RECEBER) grava os 3 estados oficiais:
+  // 'Recebido', 'Não Recebido', 'Recebido Parcial'. Para 'Recebido Parcial'
+  // usa-se valorRecebido/saldoAReceber (não o total da fatura inteira), para
+  // não sobrestimar nem subestimar o que falta receber.
+  var sumField = function(estado, field){ return scoped.filter(function(r){return r.estado===estado;}).reduce(function(s,r){return s+(parseFloat(r[field])||0);},0); };
+  var recebido = sumField('Recebido','total') + sumField('Recebido Parcial','valorRecebido');
+  var pendente = sumField('Não Recebido','total') + sumField('Recebido Parcial','saldoAReceber');
+  var src = { recebido: recebido, pendente: pendente };
   var total = src.recebido+src.pendente;
   var pctRec = total>0 ? (src.recebido/total*100) : 0;
   wrap.innerHTML = '<div class="mv-card-title">🏦 Recebimentos</div>'
@@ -26562,38 +26564,60 @@ function _mvPieOpts(){
   return { responsive:true, maintainAspectRatio:false, plugins:{ legend:{position:'bottom', labels:{color:'#94a3b8', font:{size:10.5}, boxWidth:10, padding:10}}, tooltip:{backgroundColor:'#141416', borderColor:'#28282d', borderWidth:1, titleColor:'#f8fafc', bodyColor:'#d4d4d8'} } };
 }
 
-// Ranking = Aprovado + Faturado (Orçamentos/view.rows) — validado contra a
-// Google Sheet oficial (Mapa Individual por comercial), 14/08/2026. Cada
-// estado é somado e contado separadamente para o valor e a contagem
-// exibidos serem auditáveis; "Em Produção" (fora do st de Orçamentos) nunca
-// entra aqui. Sem dependência de _mvTesData — só view.rows, como antes.
+// Roster de comerciais ativos — mesma lista já usada em agResumoTopHojeAdmin()
+// (linha ~27511), reaproveitada aqui só para garantir que um comercial sem
+// nenhuma fatura ainda (ex.: André Nolasco) aparece no ranking com €0,00 em
+// vez de desaparecer silenciosamente. Não é um valor financeiro hardcoded —
+// é a lista de nomes; o valor de cada um vem sempre, sem exceção, de
+// _mvTesData.
+var MV_COMERCIAIS_ROSTER = ['Paulo Faria','Rui Mota','Humberto Estrelinha','André Nolasco'];
+
+// Ranking = Valor Faturado LÍQUIDO do ano atual, a partir da faturação real
+// sincronizada de "Vendas 2026" → TES_RECEBER (blob 'ob-tes-receber' em
+// ob_crm_dados, mesma fonte de _mvRenderRecebimentos/_mvRenderMetaComercial/
+// Histórico de Faturação — nenhuma cópia nova). Deixa de usar
+// ob_orcamentos.st==='Faturado' (pipeline) porque não reflete a faturação
+// real da empresa. Paulo continua incluído normalmente (é comercial ativo,
+// role=admin não é motivo de exclusão). Nunca mistura com Tesouraria
+// (Recebido/Por receber/Vencido são indicadores separados, calculados só em
+// _mvRenderRecebimentos/Meu Painel/Histórico de Faturação).
 function _mvRenderRanking(view){
   var card = document.getElementById('mv-ranking-card');
   if(!card) return;
   if(!view.isAdmin){ card.style.display='none'; return; }
   card.style.display='';
+  if(_mvTesData===null){
+    var listElLoading = document.getElementById('mv-ranking-list');
+    if(listElLoading) listElLoading.innerHTML = '<div class="mv-empty">A carregar faturação real…</div>';
+    _mvEnsureTesData().then(function(){ _mvRenderRanking(view); });
+    return;
+  }
+  var anoAtual = new Date().getFullYear();
   var porComercial = {};
-  view.rows.forEach(function(o){
-    var v = o.vendedor; if(!v) return;
-    if(!porComercial[v]) porComercial[v] = { aprovadoValor:0, aprovadoQtd:0, faturadoValor:0, faturadoQtd:0 };
-    var pc = porComercial[v];
-    if(o.st==='Aprovado'){ pc.aprovadoValor += _mvValor(o); pc.aprovadoQtd++; }
-    else if(o.st==='Faturado'){ pc.faturadoValor += _mvValor(o); pc.faturadoQtd++; }
+  (_mvTesData||[]).forEach(function(r){
+    var v = r.vendedor; if(!v) return;
+    var d = _mvParseData(r.dataEmissao||r.data);
+    if(d && d.getFullYear()!==anoAtual) return;
+    if(!porComercial[v]) porComercial[v] = { totalLiquido:0, qtd:0 };
+    var liq = (typeof r.totalLiquido==='number') ? r.totalLiquido : (parseFloat(r.totalLiquido)||0);
+    porComercial[v].totalLiquido += liq;
+    porComercial[v].qtd++;
   });
+  MV_COMERCIAIS_ROSTER.forEach(function(n){ if(!porComercial[n]) porComercial[n] = { totalLiquido:0, qtd:0 }; });
   var lista = Object.keys(porComercial).map(function(n){
     var pc = porComercial[n];
-    return { nome:n, aprovadoValor:pc.aprovadoValor, aprovadoQtd:pc.aprovadoQtd, faturadoValor:pc.faturadoValor, faturadoQtd:pc.faturadoQtd, total:pc.aprovadoValor+pc.faturadoValor };
+    return { nome:n, total:pc.totalLiquido, qtd:pc.qtd };
   });
   lista.sort(function(a,b){ return b.total-a.total; });
-  var maxValor = lista.length ? lista[0].total : 1;
+  var maxValor = (lista.length && lista[0].total>0) ? lista[0].total : 1;
   var medalhas = ['#fde047','#cbd5e1','#d97706'];
   var listEl = document.getElementById('mv-ranking-list');
   if(listEl) listEl.innerHTML = lista.map(function(c,i){
-    var pct = maxValor>0 ? (c.total/maxValor*100) : 0;
+    var pct = maxValor>0 ? (Math.max(0,c.total)/maxValor*100) : 0;
     return '<div class="mv-rank-row"><div class="mv-rank-pos" style="color:'+(medalhas[i]||'#94a3b8')+'">'+(i+1)+'</div>'
       + '<div class="mv-rank-body"><div class="mv-rank-top"><span>'+c.nome+'</span><span style="font-weight:700">'+_mvFmtEUR(c.total)+'</span></div>'
       + '<div class="mv-progress-track"><div class="mv-progress-fill" style="width:'+pct+'%"></div></div>'
-      + '<div class="mv-rank-sub">Aprovado: '+_mvFmtEUR(c.aprovadoValor)+' ('+c.aprovadoQtd+') + Faturado: '+_mvFmtEUR(c.faturadoValor)+' ('+c.faturadoQtd+') = Total '+_mvFmtEUR(c.total)+'</div></div></div>';
+      + '<div class="mv-rank-sub">Valor Faturado líquido '+anoAtual+': '+_mvFmtEUR(c.total)+' · '+c.qtd+' fatura'+(c.qtd===1?'':'s')+'</div></div></div>';
   }).join('') || '<div class="mv-empty">Sem dados no filtro atual.</div>';
 }
 
