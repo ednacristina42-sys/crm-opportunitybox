@@ -7417,9 +7417,10 @@ tbody tr:hover{background:rgba(255,203,45,.05)}
     </div>
   </div>
   <div class="task-content">
-    <div style="position:relative;max-width:360px;margin-bottom:14px">
+    <div style="position:relative;max-width:360px;margin-bottom:6px">
       <input type="text" id="cli-busca-input" placeholder="🔍 Pesquisar cliente" oninput="cliBuscarInput(this.value)" class="form-input" style="width:100%"/>
     </div>
+    <div id="cli-carteira-info" style="font-size:12px;color:var(--muted);margin-bottom:14px"></div>
     <div class="tw"><table><thead><tr><th>Cliente</th><th>Sector</th><th>Contacto</th><th>Email</th><th>Telefone</th><th>Projetos</th><th>Receita total</th><th>Último contacto</th><th>Estado</th></tr></thead><tbody id="clientes-tbody"></tbody></table></div>
   </div>
 </div>
@@ -10839,6 +10840,7 @@ tbody tr:hover{background:rgba(255,203,45,.05)}
         </div>
       </div>
 
+      <div id="cli-proximo-followup" style="display:none;margin-top:14px;border-top:1px solid var(--border);padding-top:12px"></div>
       <div id="cli-acoes-comerciais" style="display:none;gap:8px;flex-wrap:wrap;margin-top:6px;border-top:1px solid var(--border);padding-top:12px">
         <button class="tbtn" onclick="cliRegistarContacto()">📇 Registar contacto</button>
         <button class="tbtn" onclick="cliCriarLembrete()">📌 Criar Lembrete Comercial</button>
@@ -15687,6 +15689,7 @@ function cliOpenNew(){
   document.getElementById('cli-modal-title').textContent='+ Novo Cliente';
   document.getElementById('cli-del-btn').style.display='none';
   { var _ac=document.getElementById('cli-acoes-comerciais'); if(_ac) _ac.style.display='none'; }
+  { var _pf=document.getElementById('cli-proximo-followup'); if(_pf){ _pf.style.display='none'; _pf.innerHTML=''; } }
   cm.classList.add('open');
 }
 
@@ -15716,6 +15719,8 @@ function cliOpenEdit(id){
   document.getElementById('cli-modal').classList.add('open');
   // Painel de recebimentos
   cliRenderRecebimentos(c);
+  // Próximo follow-up
+  cliRenderProximoFollowup(c);
 }
 
 // ── P1 Clientes: ações comerciais (Registar contacto / Agendar follow-up /
@@ -15779,6 +15784,54 @@ function cliCriarLembrete(){
       return true;
     }, 'Criar Lembrete');
 }
+
+// Próximo follow-up no Card Cliente: reaproveita crmAtividades (mesma fonte
+// de cliCriarLembrete(), sem tabela nem lógica paralela). Prioridade: 1º um
+// vencido ainda pendente (o mais antigo, se houver vários) marcado "Atrasado";
+// só na ausência de vencidos mostra o próximo futuro (o mais próximo).
+// Lembretes concluídos (resultado preenchido) nunca contam.
+function cliProximoFollowup(clienteId){
+  var agora=new Date();
+  var pendentes=(crmAtividades||[]).filter(function(a){
+    if(!a || a.tipo!=='Lembrete' || a.resultado || a.clienteId!==clienteId) return false;
+    var quando=a.due||a.data;
+    if(!quando) return false;
+    return !isNaN(new Date(quando));
+  });
+  if(!pendentes.length) return null;
+  function porData(a,b){ return new Date(a.due||a.data) - new Date(b.due||b.data); }
+  var vencidos=pendentes.filter(function(a){ return new Date(a.due||a.data) < agora; });
+  if(vencidos.length){
+    vencidos.sort(porData);
+    return { item:vencidos[0], atrasado:true };
+  }
+  var futuros=pendentes.filter(function(a){ return new Date(a.due||a.data) >= agora; });
+  futuros.sort(porData);
+  return { item:futuros[0], atrasado:false };
+}
+window.cliProximoFollowup=cliProximoFollowup;
+
+function cliRenderProximoFollowup(c){
+  var el=document.getElementById('cli-proximo-followup');
+  if(!el||!c) return;
+  el.style.display='block';
+  var resultado=cliProximoFollowup(c.id);
+  if(!resultado){
+    el.innerHTML='<div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">Próximo follow-up</div>'
+      +'<div style="font-size:13px;color:var(--muted)">Nenhum follow-up agendado <button class="tbtn" style="padding:2px 8px;font-size:11.5px;margin-left:6px" onclick="cliCriarLembrete()">+ Agendar</button></div>';
+    return;
+  }
+  var item=resultado.item, atrasado=resultado.atrasado;
+  var quando=item.due||item.data;
+  var m=String(quando).match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+  var dataFmt=m?(m[3]+'/'+m[2]+'/'+m[1]+' às '+m[4]+':'+m[5]):quando;
+  var acaoEsc=String(item.acao||'—').replace(/[&<>"']/g,function(ch){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]; });
+  var tagAtrasado=atrasado?' <span style="color:var(--r);font-weight:700;font-size:10.5px;text-transform:uppercase;letter-spacing:.04em">Atrasado</span>':'';
+  el.innerHTML='<div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">Próximo follow-up</div>'
+    +'<div style="font-size:13px;color:'+(atrasado?'var(--r)':'var(--txt2)')+';font-weight:600">'+dataFmt+tagAtrasado+'</div>'
+    +'<div style="font-size:12.5px;color:var(--muted)">'+acaoEsc+'</div>';
+}
+window.cliRenderProximoFollowup=cliRenderProximoFollowup;
 function cliEnviarWhatsApp(){
   var c=_cliAtual(); if(!c){ return; }
   var telRaw=c.tel||c.finTel||'';
@@ -15998,6 +16051,23 @@ var clientes=[
   {n:'Transportes Alcopark',sec:'Logística',cont:'Vítor Alves',tel:'+351 219 000 010',projs:2,rev:5600,last:'há 2 meses',st:'at-risk'},
 ];
 
+// Escopo por comercial em vista (real ou "Ver como") -- mesmo padrão já
+// usado em fuMinhasOrc/_mvMinhasLinhas. comercialAtivo = responsável atual
+// pela carteira; comercialResp = vendedor histórico (fallback quando a
+// carteira ainda não foi reclassificada). Clientes sem nenhum dos dois
+// campos preenchidos não são atribuídos a ninguém automaticamente: o
+// admin continua a vê-los, um comercial normal não.
+function cliMeusClientes(rows){
+  var isAdmin = !!(typeof CU!=='undefined' && CU && CU.admin);
+  var nome = (typeof CU!=='undefined' && CU) ? CU.name : null;
+  if(isAdmin || !nome) return rows;
+  return rows.filter(function(c){
+    var responsavel = (c.comercialAtivo!=null && c.comercialAtivo!=='') ? c.comercialAtivo : c.comercialResp;
+    return responsavel === nome;
+  });
+}
+window.cliMeusClientes = cliMeusClientes;
+
 // Pesquisa/ordenação da listagem de Clientes: só afeta a EXIBIÇÃO (não
 // regrava nem reordena cliData/ob-clients/Supabase). Filtra por nome, NIF,
 // telefone, e-mail e contacto; ordena A→Z por nome (localeCompare pt-BR,
@@ -16030,7 +16100,14 @@ function renderClientes(){
   const el=document.getElementById('clientes-tbody');if(!el)return;
   const data=(typeof cliData!=='undefined'&&cliData)?cliData:clientes;
   const isAdmin = !!(CU && CU.admin === true);
-  const lista=cliFiltrarBusca(data, _cliBusca).slice().sort(cliOrdenarPorNome);
+  const minhaCarteira=cliMeusClientes(data);
+  const carteiraInfoEl=document.getElementById('cli-carteira-info');
+  if(carteiraInfoEl){
+    var n=minhaCarteira.length;
+    var sufixo=n===1?' cliente':' clientes';
+    carteiraInfoEl.textContent = isAdmin ? (n+sufixo) : ('Minha carteira — '+n+sufixo);
+  }
+  const lista=cliFiltrarBusca(minhaCarteira, _cliBusca).slice().sort(cliOrdenarPorNome);
   if(!lista.length){
     el.innerHTML='<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:24px">Nenhum cliente encontrado.</td></tr>';
     return;
