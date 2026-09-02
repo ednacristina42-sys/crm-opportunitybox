@@ -26200,40 +26200,70 @@ function _mvTipoProdNorm(raw){
   return raw.trim();
 }
 
+// _mvLoadingPromise: mesma correção que _mvTesLoadingPromise (ver _mvEnsureTesData) —
+// devolver null enquanto _mvLoading está true fazia cada chamador concorrente
+// reagendar-se a si próprio, e com latência de rede real (não mockada) isso nunca
+// dá tempo ao fetch original de terminar (fila de microtasks nunca esvazia, página
+// trava por completo). Duas chamadas a renderMapaVendas() em sucessão rápida (ex.:
+// navegar para Mapa de Vendas duas vezes seguidas) já bastavam para disparar isto,
+// mesmo antes de existir um segundo consumidor de _mvTesData. Corrigido devolvendo
+// a MESMA promise pendente a todos os chamadores concorrentes.
+var _mvLoadingPromise = null;
 async function _mvEnsureData(){
   if(_mvData) return _mvData;
-  if(_mvLoading) return null;
+  if(_mvLoadingPromise) return _mvLoadingPromise;
   _mvLoading = true;
-  try{
-    var sb = (typeof crmSBClient==='function') ? crmSBClient() : null;
-    if(!sb){ _mvData = []; _mvLoading=false; return _mvData; }
-    var res = await sb.from('ob_orcamentos')
-      .select('id,cli,vendedor,nif,val,st,data,dt,obs,extra,owner_id')
-      .is('deleted_at', null)
-      .limit(5000);
-    if(res.error){ console.warn('[MV] load falhou:', res.error); _mvData = []; }
-    else { _mvData = res.data || []; }
-  }catch(e){ console.warn('[MV] load exception:', e); _mvData = []; }
+  _mvLoadingPromise = (async function(){
+    try{
+      var sb = (typeof crmSBClient==='function') ? crmSBClient() : null;
+      if(!sb){ _mvData = []; return _mvData; }
+      var res = await sb.from('ob_orcamentos')
+        .select('id,cli,vendedor,nif,val,st,data,dt,obs,extra,owner_id')
+        .is('deleted_at', null)
+        .limit(5000);
+      if(res.error){ console.warn('[MV] load falhou:', res.error); _mvData = []; }
+      else { _mvData = res.data || []; }
+    }catch(e){ console.warn('[MV] load exception:', e); _mvData = []; }
+    return _mvData;
+  })();
+  var result = await _mvLoadingPromise;
   _mvLoading = false;
-  return _mvData;
+  _mvLoadingPromise = null;
+  return result;
 }
 
 // Recebimentos: mesma fonte real (blob 'ob-tes-receber') que alimenta Financeiro >
 // Histórico de Faturação — leitura independente própria, não depende do TES_RECEBER
 // em memória nem de _hfData da outra página.
+//
+// _mvTesLoadingPromise: agora que _mvRenderRanking() também consome _mvTesData (além
+// de _mvRenderMetaComercial/_mvRenderRecebimentos), passou a haver 2-3 chamadores
+// concorrentes na mesma renderMapaVendas(). Devolver null enquanto _mvTesLoading
+// está true fazia cada chamador reagendar-se a si próprio num .then() já resolvido
+// — com um fetch real (latência de rede real, não mockada) isto nunca dá tempo ao
+// fetch original de terminar: a fila de microtasks nunca esvazia, o browser fica
+// perpetuamente a reagendar-se e trava por completo (nada mais responde a cliques).
+// Corrigido devolvendo a MESMA promise pendente a todos os chamadores concorrentes,
+// para todos esperarem pelo único fetch real em vez de criarem o seu próprio ciclo.
+var _mvTesLoadingPromise = null;
 async function _mvEnsureTesData(){
   if(_mvTesData) return _mvTesData;
-  if(_mvTesLoading) return null;
+  if(_mvTesLoadingPromise) return _mvTesLoadingPromise;
   _mvTesLoading = true;
-  try{
-    var sb = (typeof crmSBClient==='function') ? crmSBClient() : null;
-    if(!sb){ _mvTesData = []; _mvTesLoading=false; return _mvTesData; }
-    var res = await sb.from('ob_crm_dados').select('dados').eq('chave','ob-tes-receber').maybeSingle();
-    if(res.error){ console.warn('[MV] load recebimentos falhou:', res.error); _mvTesData = []; }
-    else { _mvTesData = (res.data && res.data.dados) || []; }
-  }catch(e){ console.warn('[MV] load recebimentos exception:', e); _mvTesData = []; }
+  _mvTesLoadingPromise = (async function(){
+    try{
+      var sb = (typeof crmSBClient==='function') ? crmSBClient() : null;
+      if(!sb){ _mvTesData = []; return _mvTesData; }
+      var res = await sb.from('ob_crm_dados').select('dados').eq('chave','ob-tes-receber').maybeSingle();
+      if(res.error){ console.warn('[MV] load recebimentos falhou:', res.error); _mvTesData = []; }
+      else { _mvTesData = (res.data && res.data.dados) || []; }
+    }catch(e){ console.warn('[MV] load recebimentos exception:', e); _mvTesData = []; }
+    return _mvTesData;
+  })();
+  var result = await _mvTesLoadingPromise;
   _mvTesLoading = false;
-  return _mvTesData;
+  _mvTesLoadingPromise = null;
+  return result;
 }
 
 function _mvMinhasLinhas(rows){
@@ -29503,19 +29533,29 @@ function _hfParseData(str){
   return isNaN(d) ? null : d;
 }
 
+// _hfLoadingPromise: mesma correção que _mvTesLoadingPromise/_mvLoadingPromise —
+// devolver null enquanto _hfLoading está true expõe o mesmo risco de travamento
+// se renderHistoricoFaturacao() for chamada duas vezes em sucessão rápida antes
+// do fetch real terminar. Ver comentário completo em _mvEnsureTesData().
+var _hfLoadingPromise = null;
 async function _hfEnsureData(){
   if(_hfData) return _hfData;
-  if(_hfLoading) return null;
+  if(_hfLoadingPromise) return _hfLoadingPromise;
   _hfLoading = true;
-  try{
-    var sb = (typeof crmSBClient==='function') ? crmSBClient() : null;
-    if(!sb){ _hfData = []; _hfLoading=false; return _hfData; }
-    var res = await sb.from('ob_crm_dados').select('dados,updated_at').eq('chave','ob-tes-receber').maybeSingle();
-    if(res.error){ console.warn('[HF] load falhou:', res.error); _hfData = []; }
-    else { _hfData = (res.data && res.data.dados) || []; _hfLastUpdate = res.data && res.data.updated_at; }
-  }catch(e){ console.warn('[HF] load exception:', e); _hfData = []; }
+  _hfLoadingPromise = (async function(){
+    try{
+      var sb = (typeof crmSBClient==='function') ? crmSBClient() : null;
+      if(!sb){ _hfData = []; return _hfData; }
+      var res = await sb.from('ob_crm_dados').select('dados,updated_at').eq('chave','ob-tes-receber').maybeSingle();
+      if(res.error){ console.warn('[HF] load falhou:', res.error); _hfData = []; }
+      else { _hfData = (res.data && res.data.dados) || []; _hfLastUpdate = res.data && res.data.updated_at; }
+    }catch(e){ console.warn('[HF] load exception:', e); _hfData = []; }
+    return _hfData;
+  })();
+  var result = await _hfLoadingPromise;
   _hfLoading = false;
-  return _hfData;
+  _hfLoadingPromise = null;
+  return result;
 }
 
 function renderHistoricoFaturacao(){
