@@ -31,7 +31,7 @@
 //   TOC_REFRESH_TOKEN   obtido no fluxo acima; sem ele não há leitura de dados
 //   TOC_API_BASE        API_URL da conta.   Default: https://api30.toconline.pt
 //   TOC_OAUTH_URL       OAUTH_URL da conta. Default: derivado de TOC_API_BASE
-//   TOC_REDIRECT_URI    Default: o próprio ?resource=callback desta função
+//   TOC_REDIRECT_URI    Default: https://<SUPABASE_URL>/functions/v1/crm-toconline?resource=callback
 //
 // Nenhum segredo é registado em log. O access_token nunca sai da função.
 // O refresh_token só aparece na página de callback, uma vez, para quem
@@ -104,11 +104,21 @@ function oauthUrl(): string {
   const e = Deno.env.get("TOC_OAUTH_URL");
   return e ? semBarra(e) : semBarra(apiBase()).replace("//api", "//app");
 }
-function redirectUri(req: Request): string {
+// O callback tem de ser SEMPRE a URL publica e completa desta funcao:
+//   https://<ref>.supabase.co/functions/v1/crm-toconline?resource=callback
+// Nao pode ser derivada de req.url: o runtime das Edge Functions apresenta o
+// pedido interno como http://<ref>.supabase.co/crm-toconline — perde o https
+// e perde o /functions/v1. Era isso que produzia um redirect_uri invalido.
+const NOME_FUNCAO = "crm-toconline";
+const CALLBACK_FALLBACK =
+  `https://ddzlbmnmsdyodouqxbjx.supabase.co/functions/v1/${NOME_FUNCAO}?resource=callback`;
+
+function redirectUri(): string {
   const e = Deno.env.get("TOC_REDIRECT_URI");
-  if (e) return e;
-  const u = new URL(req.url);
-  return `${u.origin}${u.pathname}?resource=callback`;
+  if (e) return e.trim();
+  const base = Deno.env.get("SUPABASE_URL");
+  if (base) return `${semBarra(base)}/functions/v1/${NOME_FUNCAO}?resource=callback`;
+  return CALLBACK_FALLBACK;
 }
 
 // ── state assinado (HMAC com a gateway key): sem estado no servidor ────────
@@ -337,7 +347,7 @@ Deno.serve(async (req: Request) => {
         const p = new URLSearchParams({
           response_type: "code",
           client_id: precisaSecret("TOC_CLIENT_ID"),
-          redirect_uri: redirectUri(req),
+          redirect_uri: redirectUri(),
           scope: SCOPE,
           state: await assinarState(),
         });
@@ -350,7 +360,7 @@ Deno.serve(async (req: Request) => {
       // ?dry=1 mostra o destino sem redirigir. Nao revela nada de novo: o
       // client_id ja viaja na propria URL de autorizacao, por desenho OAuth.
       if (url.searchParams.get("dry") === "1") {
-        return json({ authorize_url: destino, oauth_host: new URL(destino).host, redirect_uri: redirectUri(req) }, 200);
+        return json({ authorize_url: destino, oauth_host: new URL(destino).host, redirect_uri: redirectUri() }, 200);
       }
       return new Response(null, {
         status: 302,
@@ -370,7 +380,7 @@ Deno.serve(async (req: Request) => {
       const t = await pedirToken(new URLSearchParams({
         grant_type: "authorization_code",
         code,
-        redirect_uri: redirectUri(req),
+        redirect_uri: redirectUri(),
       }), "authorization_code");
 
       const refresh = t.refresh_token as string | undefined;
