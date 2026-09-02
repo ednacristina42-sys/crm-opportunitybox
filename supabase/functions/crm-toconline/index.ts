@@ -18,7 +18,7 @@
 // nem o assistente nem o CRM conseguem alcançar o TOConline, é a PRÓPRIA
 // função que conduz o fluxo:
 //   ?resource=auth      → redirige o browser para o ecrã de autorização
-//   ?resource=callback  → recebe o code, troca por tokens, mostra o
+//   (retorno)           → recebe o code, troca por tokens, mostra o
 //                         refresh_token UMA vez para ser gravado como secret,
 //                         e corre logo o diagnóstico com o token acabado de obter
 //
@@ -31,7 +31,7 @@
 //   TOC_REFRESH_TOKEN   obtido no fluxo acima; sem ele não há leitura de dados
 //   TOC_API_BASE        API_URL da conta.   Default: https://api30.toconline.pt
 //   TOC_OAUTH_URL       OAUTH_URL da conta. Default: derivado de TOC_API_BASE
-//   TOC_REDIRECT_URI    Default: https://<SUPABASE_URL>/functions/v1/crm-toconline?resource=callback
+//   TOC_REDIRECT_URI    Default: https://<SUPABASE_URL>/functions/v1/crm-toconline
 //
 // Nenhum segredo é registado em log. O access_token nunca sai da função.
 // O refresh_token só aparece na página de callback, uma vez, para quem
@@ -104,20 +104,28 @@ function oauthUrl(): string {
   const e = Deno.env.get("TOC_OAUTH_URL");
   return e ? semBarra(e) : semBarra(apiBase()).replace("//api", "//app");
 }
-// O callback tem de ser SEMPRE a URL publica e completa desta funcao:
-//   https://<ref>.supabase.co/functions/v1/crm-toconline?resource=callback
-// Nao pode ser derivada de req.url: o runtime das Edge Functions apresenta o
-// pedido interno como http://<ref>.supabase.co/crm-toconline — perde o https
-// e perde o /functions/v1. Era isso que produzia um redirect_uri invalido.
+// O callback e a URL publica e completa desta funcao, SEM query string:
+//   https://<ref>.supabase.co/functions/v1/crm-toconline
+//
+// Duas regras que custaram caro e ficam aqui registadas:
+//  1. Nao pode ser derivada de req.url. O runtime das Edge Functions apresenta
+//     o pedido interno como http://<ref>.supabase.co/crm-toconline — perde o
+//     https e perde o /functions/v1.
+//  2. Nao pode levar query string. A documentacao do TOConline descreve o
+//     OAUTH_REDIRECT_URL como um endereco fixo, registado no formulario das
+//     credenciais, e todos os exemplos sao URLs sem query. Enviar
+//     ?resource=callback dava invalid_request, e no unico retorno que chegou
+//     a sair o parametro vinha descartado — o servidor reconstroi o endereco.
+//     O callback passa a ser reconhecido pelo code/error + state (ver router).
 const NOME_FUNCAO = "crm-toconline";
 const CALLBACK_FALLBACK =
-  `https://ddzlbmnmsdyodouqxbjx.supabase.co/functions/v1/${NOME_FUNCAO}?resource=callback`;
+  `https://ddzlbmnmsdyodouqxbjx.supabase.co/functions/v1/${NOME_FUNCAO}`;
 
 function redirectUri(): string {
   const e = Deno.env.get("TOC_REDIRECT_URI");
   if (e) return e.trim();
   const base = Deno.env.get("SUPABASE_URL");
-  if (base) return `${semBarra(base)}/functions/v1/${NOME_FUNCAO}?resource=callback`;
+  if (base) return `${semBarra(base)}/functions/v1/${NOME_FUNCAO}`;
   return CALLBACK_FALLBACK;
 }
 
@@ -339,13 +347,12 @@ Deno.serve(async (req: Request) => {
   // pela pessoa no browser, o segundo e chamado pelo TOConline. O /callback
   // esta protegido pelo state assinado (HMAC + TTL), nao pela gateway key.
   //
-  // O `resource` pode nem chegar no retorno: ha servidores OAuth que
-  // reconstroem o redirect_uri e descartam a query string ja existente,
-  // devolvendo so ?code=…&state=…. Sem isto, esse retorno caia no ramo final
-  // e respondia 401. Por isso o callback e reconhecido tambem pela presenca
-  // de code/error com state — e SO quando nao vem `resource` nenhum, para
-  // que ninguem possa anexar ?code=&state= a um recurso de dados e escapar
-  // a gateway key.
+  // O `resource` NAO chega no retorno: o redirect_uri registado no TOConline
+  // e uma URL fixa sem query string, por isso o callback e reconhecido pela
+  // presenca de code/error — e SO quando nao vem `resource` nenhum, para que
+  // ninguem possa anexar ?code=&state= a um recurso de dados e escapar a
+  // gateway key. `resource=callback` continua a funcionar, por compatibilidade.
+  //
   // Nao se exige `state` aqui: um retorno sem state tem de chegar ao ramo do
   // callback para ser recusado com "State invalido" — mensagem que se percebe
   // — em vez de um 401 mudo. A troca do code so acontece depois do HMAC.
@@ -366,10 +373,16 @@ Deno.serve(async (req: Request) => {
       // em que um erro caia no ramo de HTML do catch).
       let destino: string;
       try {
+        // Ordem e nomes exactamente como a documentacao oficial os lista:
+        //   <OAUTH_URL>/auth?client_id=…&redirect_uri=…&response_type=code&scope=commercial
+        // O `state` nao consta da documentacao mas e padrao OAuth2 (RFC 6749
+        // §4.1.1, recomendado) e e o que protege o callback contra CSRF, ja
+        // que este nao tem gateway key. Vai em ultimo, para nao se intrometer
+        // entre os parametros documentados.
         const p = new URLSearchParams({
-          response_type: "code",
           client_id: precisaSecret("TOC_CLIENT_ID"),
           redirect_uri: redirectUri(),
+          response_type: "code",
           scope: SCOPE,
           state: await assinarState(),
         });
@@ -399,9 +412,13 @@ Deno.serve(async (req: Request) => {
       if (!await validarState(url.searchParams.get("state") ?? "")) {
         return html(`<h1 class="err">State invalido ou expirado</h1><p>Reabrir <code>?resource=auth</code> e repetir dentro de 15 minutos.</p>`, 400);
       }
+      // A documentacao descreve o POST /token do authorization_code com
+      // grant_type, o codigo e o scope. O redirect_uri vai tambem, como a
+      // RFC exige quando esteve presente no pedido de autorizacao.
       const t = await pedirToken(new URLSearchParams({
         grant_type: "authorization_code",
         code,
+        scope: SCOPE,
         redirect_uri: redirectUri(),
       }), "authorization_code");
 
