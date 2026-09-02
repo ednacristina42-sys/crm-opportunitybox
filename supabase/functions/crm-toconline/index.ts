@@ -95,7 +95,7 @@ const semBarra = (s: string) => s.replace(/\/+$/, "");
 
 function precisaSecret(nome: string): string {
   const v = Deno.env.get(nome);
-  if (!v) throw new HttpError(500, `Secret em falta: ${nome} não está definido.`);
+  if (!v) throw new HttpError(500, `Secret em falta: ${nome} nao esta definido.`);
   return v;
 }
 
@@ -133,6 +133,50 @@ async function validarState(state: string): Promise<boolean> {
   return safeEqual(sig, hex);
 }
 
+// ── Persistencia na base (service_role; RLS nao se aplica) ────────────────
+// As chaves usadas aqui (toc-oauth, toc-snapshot) NAO constam da politica de
+// anon (limitada a ob-leads / ob-clients / ob-crm-atividades / ob-crm-historico),
+// por isso nao ficam legiveis pelo browser.
+const CHAVE_OAUTH = "toc-oauth";
+const CHAVE_SNAPSHOT = "toc-snapshot";
+
+function sbCfg(): { url: string; key: string } | null {
+  const url = Deno.env.get("SUPABASE_URL");
+  const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  return url && key ? { url: semBarra(url), key } : null;
+}
+
+async function guardarNaBase(chave: string, dados: unknown): Promise<boolean> {
+  const cfg = sbCfg();
+  if (!cfg) return false;
+  try {
+    const r = await fetch(`${cfg.url}/rest/v1/ob_crm_dados?on_conflict=chave`, {
+      method: "POST",
+      headers: {
+        "apikey": cfg.key,
+        "Authorization": `Bearer ${cfg.key}`,
+        "Content-Type": "application/json",
+        "Prefer": "resolution=merge-duplicates",
+      },
+      body: JSON.stringify({ chave, dados, updated_at: new Date().toISOString() }),
+    });
+    return r.ok;
+  } catch { return false; }
+}
+
+async function lerDaBase(chave: string): Promise<unknown | null> {
+  const cfg = sbCfg();
+  if (!cfg) return null;
+  try {
+    const r = await fetch(`${cfg.url}/rest/v1/ob_crm_dados?chave=eq.${encodeURIComponent(chave)}&select=dados`, {
+      headers: { "apikey": cfg.key, "Authorization": `Bearer ${cfg.key}` },
+    });
+    if (!r.ok) return null;
+    const linhas = await r.json();
+    return linhas?.[0]?.dados ?? null;
+  } catch { return null; }
+}
+
 function basicAuth(): string {
   return "Basic " + btoa(`${precisaSecret("TOC_CLIENT_ID")}:${precisaSecret("TOC_CLIENT_SECRET")}`);
 }
@@ -153,7 +197,7 @@ async function pedirToken(corpo: URLSearchParams, grant: string) {
     throw new HttpError(502, `TOConline recusou o pedido de token (HTTP ${res.status}, grant_type=${grant}).`);
   }
   try { return await res.json() as Record<string, unknown>; }
-  catch { throw new HttpError(502, "Resposta do token não é JSON válido."); }
+  catch { throw new HttpError(502, "Resposta do token nao e JSON valido."); }
 }
 
 /** access_token para leitura — só por refresh_token. */
@@ -161,14 +205,23 @@ async function getAccessToken(): Promise<string> {
   const agora = Date.now();
   if (tokenCache && tokenCache.expiresAt > agora) return tokenCache.token;
 
-  const refresh = Deno.env.get("TOC_REFRESH_TOKEN");
+  // O TOConline pode rodar o refresh_token a cada utilizacao. Se so
+  // dependessemos do secret, a integracao partia-se na primeira renovacao.
+  // Por isso: le primeiro o valor persistido na base, com fallback ao secret,
+  // e regrava sempre que a resposta trouxer um refresh_token novo.
+  const guardado = await lerDaBase(CHAVE_OAUTH) as { refresh_token?: string } | null;
+  const refresh = guardado?.refresh_token || Deno.env.get("TOC_REFRESH_TOKEN");
   if (!refresh) {
-    throw new HttpError(428, "Autorização inicial por fazer: TOC_REFRESH_TOKEN não está definido. Abrir ?resource=auth para autorizar no TOConline.");
+    throw new HttpError(428, "Autorizacao inicial por fazer: TOC_REFRESH_TOKEN nao esta definido. Abrir ?resource=auth para autorizar no TOConline.");
   }
   const t = await pedirToken(
     new URLSearchParams({ grant_type: "refresh_token", refresh_token: refresh }), "refresh_token");
   const at = t.access_token as string | undefined;
   if (!at) throw new HttpError(502, "Resposta do token sem access_token.");
+  const novoRefresh = t.refresh_token as string | undefined;
+  if (novoRefresh && novoRefresh !== refresh) {
+    await guardarNaBase(CHAVE_OAUTH, { refresh_token: novoRefresh, atualizado_em: new Date().toISOString() });
+  }
   const ttl = typeof t.expires_in === "number" ? t.expires_in : 3600;
   tokenCache = { token: at, expiresAt: agora + Math.max(ttl - 60, 30) * 1000 };
   return at;
@@ -188,7 +241,7 @@ async function resolverPath(recurso: string, token: string): Promise<string> {
     if (r.status === 401 || r.status === 403) break;
   }
   throw new HttpError(ultimo === 401 || ultimo === 403 ? 502 : 404,
-    `Nenhum endpoint de '${recurso}' respondeu em ${apiBase()} (último HTTP ${ultimo}). Verificar TOC_API_BASE.`);
+    `Nenhum endpoint de '${recurso}' respondeu em ${apiBase()} (ultimo HTTP ${ultimo}). Verificar TOC_API_BASE.`);
 }
 
 function extrairLista(payload: unknown): unknown[] {
@@ -234,7 +287,7 @@ async function diagnostico(tokenJaObtido?: string) {
       TOC_CLIENT_ID: Deno.env.get("TOC_CLIENT_ID") ? "definido" : "EM FALTA",
       TOC_CLIENT_SECRET: Deno.env.get("TOC_CLIENT_SECRET") ? "definido" : "EM FALTA",
       TOC_GATEWAY_KEY: Deno.env.get("TOC_GATEWAY_KEY") ? "definido" : "EM FALTA",
-      TOC_REFRESH_TOKEN: Deno.env.get("TOC_REFRESH_TOKEN") ? "definido" : "EM FALTA (autorização por fazer)",
+      TOC_REFRESH_TOKEN: Deno.env.get("TOC_REFRESH_TOKEN") ? "definido" : "nao definido",
       TOC_API_BASE: Deno.env.get("TOC_API_BASE") ? "definido" : "a usar default",
       TOC_OAUTH_URL: Deno.env.get("TOC_OAUTH_URL") ? "definido" : "a usar default",
     },
@@ -254,9 +307,9 @@ async function diagnostico(tokenJaObtido?: string) {
     for (const p of cfg.paths) {
       try {
         const r = await tocGet(p + (cfg.query ? "?" + cfg.query : ""), token);
-        linhas.push(`${p} → HTTP ${r.status}`);
+        linhas.push(`${p} -> HTTP ${r.status}`);
         if (r.ok) break;
-      } catch { linhas.push(`${p} → erro de rede`); }
+      } catch { linhas.push(`${p} -> erro de rede`); }
     }
     endpoints[recurso] = linhas.join(" | ");
   }
@@ -266,7 +319,7 @@ async function diagnostico(tokenJaObtido?: string) {
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
-  if (req.method !== "GET") return json({ error: "Apenas GET é suportado." }, 405);
+  if (req.method !== "GET") return json({ error: "Apenas GET e suportado." }, 405);
 
   const url = new URL(req.url);
   const pedido = url.searchParams.get("resource") ?? "";
@@ -308,11 +361,11 @@ Deno.serve(async (req: Request) => {
     // ── 2) Callback: troca o code por tokens e valida logo os endpoints ────
     if (pedido === "callback") {
       const erro = url.searchParams.get("error");
-      if (erro) return html(`<h1 class="err">Autorização recusada</h1><p>O TOConline devolveu: <code>${esc(erro)}</code></p>`, 400);
+      if (erro) return html(`<h1 class="err">Autorizacao recusada</h1><p>O TOConline devolveu: <code>${esc(erro)}</code></p>`, 400);
       const code = url.searchParams.get("code");
-      if (!code) return html(`<h1 class="err">Falta o parâmetro <code>code</code></h1>`, 400);
+      if (!code) return html(`<h1 class="err">Falta o parametro <code>code</code></h1>`, 400);
       if (!await validarState(url.searchParams.get("state") ?? "")) {
-        return html(`<h1 class="err">State inválido ou expirado</h1><p>Reabrir <code>?resource=auth</code> e repetir dentro de 15 minutos.</p>`, 400);
+        return html(`<h1 class="err">State invalido ou expirado</h1><p>Reabrir <code>?resource=auth</code> e repetir dentro de 15 minutos.</p>`, 400);
       }
       const t = await pedirToken(new URLSearchParams({
         grant_type: "authorization_code",
@@ -322,25 +375,57 @@ Deno.serve(async (req: Request) => {
 
       const refresh = t.refresh_token as string | undefined;
       const access = t.access_token as string | undefined;
-      if (!refresh) return html(`<h1 class="err">O TOConline não devolveu refresh_token</h1><p>Verificar se a aplicação tem o scope <code>${SCOPE}</code> activo.</p>`, 502);
+      if (!refresh) return html(`<h1 class="err">O TOConline nao devolveu refresh_token</h1><p>Verificar se a aplicacao tem o scope <code>${SCOPE}</code> activo.</p>`, 502);
 
-      // Valida já os endpoints com o access_token acabado de obter.
-      const diag = await diagnostico(access);
+      // Persiste o refresh_token na base (chave fora do alcance de anon), para
+      // sobreviver a rotacao e dispensar nova colagem manual no secret.
+      const guardouToken = await guardarNaBase(CHAVE_OAUTH,
+        { refresh_token: refresh, atualizado_em: new Date().toISOString() });
+
+      // Valida ja os endpoints com o access_token acabado de obter.
+      const diag = await diagnostico(access!);
+
+      // Recolhe o cadastro e deposita-o na base, para o assistente poder fazer
+      // o dry-run sem precisar de invocar a funcao (o egresso do ambiente dele
+      // esta bloqueado para supabase.co e toconline.pt).
+      const snapshot: Record<string, unknown> = { obtido_em: new Date().toISOString(), diag };
+      let resumo = "";
+      try {
+        const clientes = await buscarTudo("customers", access!);
+        snapshot.customers = clientes;
+        snapshot.customers_count = clientes.length;
+        resumo += `<li>clientes: <b>${clientes.length}</b> (via <code>${esc(pathCache["customers"] ?? "?")}</code>)</li>`;
+      } catch (e) {
+        snapshot.customers_erro = e instanceof HttpError ? e.message : "falhou";
+        resumo += `<li class="err">clientes: ${esc(String(snapshot.customers_erro))}</li>`;
+      }
+      try {
+        const faturas = await buscarTudo("invoices", access!);
+        snapshot.invoices_count = faturas.length;
+        snapshot.invoices_amostra = faturas.slice(0, 3);
+        resumo += `<li>faturas: <b>${faturas.length}</b> (via <code>${esc(pathCache["invoices"] ?? "?")}</code>)</li>`;
+      } catch (e) {
+        snapshot.invoices_erro = e instanceof HttpError ? e.message : "falhou";
+        resumo += `<li class="err">faturas: ${esc(String(snapshot.invoices_erro))}</li>`;
+      }
+      const guardouSnapshot = await guardarNaBase(CHAVE_SNAPSHOT, snapshot);
+
       return html(
-        `<h1 class="ok">Autorização concluída</h1>` +
-        `<p><b>Passo único que falta:</b> copiar o valor abaixo e gravá-lo no Supabase ` +
-        `(projeto <code>ddzlbmnmsdyodouqxbjx</code> → Edge Functions → Secrets) com o nome ` +
-        `<code>TOC_REFRESH_TOKEN</code>.</p>` +
-        `<pre>${esc(refresh)}</pre>` +
-        `<p>Diagnóstico feito agora com o token acabado de obter — envie este bloco ao assistente:</p>` +
-        `<pre>${esc(JSON.stringify(diag, null, 2))}</pre>` +
-        `<p style="color:#666">O access_token não é mostrado nem guardado fora da memória da função.</p>`);
+        `<h1 class="ok">Autorizacao concluida</h1>` +
+        `<ul>${resumo}</ul>` +
+        (guardouSnapshot
+          ? `<p class="ok">Dados depositados na base (<code>${CHAVE_SNAPSHOT}</code>). Pode fechar esta pagina — o assistente le-os a partir daqui, sem mais nada da sua parte.</p>`
+          : `<p class="err">Nao foi possivel gravar na base. Envie o bloco abaixo ao assistente.</p><pre>${esc(JSON.stringify(diag, null, 2))}</pre>`) +
+        (guardouToken
+          ? `<p style="color:#666">O refresh_token foi guardado automaticamente e sobrevive a rotacao. Nao e preciso copiar nada.</p>`
+          : `<p><b>Gravar no Supabase -> Secrets como <code>TOC_REFRESH_TOKEN</code>:</b></p><pre>${esc(refresh)}</pre>`) +
+        `<p style="color:#666">O access_token nao e mostrado nem persistido.</p>`);
     }
 
     // ── 3) Tudo o resto exige a gateway key, SÓ no cabeçalho ───────────────
     const esperada = precisaSecret("TOC_GATEWAY_KEY");
     if (!safeEqual(req.headers.get("x-api-key") ?? "", esperada)) {
-      return json({ error: "Não autorizado." }, 401);
+      return json({ error: "Nao autorizado." }, 401);
     }
 
     if (pedido === "diag") return json(await diagnostico(), 200);
@@ -358,7 +443,7 @@ Deno.serve(async (req: Request) => {
       return json({ resource: pedido, resolved: recurso, path: pathCache[recurso], count: data.length, data }, 200);
     }
 
-    return json({ error: "resource inválido. Use: customers | clients | invoices | credit_notes | receipts | token | diag | auth" }, 400);
+    return json({ error: "resource invalido. Use: customers | clients | invoices | credit_notes | receipts | token | diag | auth" }, 400);
   } catch (e) {
     if (e instanceof HttpError) {
       // So o callback devolve HTML (e uma pagina para pessoa ler). O auth
