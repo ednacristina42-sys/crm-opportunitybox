@@ -162,6 +162,8 @@ async function validarState(state: string): Promise<boolean> {
 // por isso nao ficam legiveis pelo browser.
 const CHAVE_OAUTH = "toc-oauth";
 const CHAVE_SNAPSHOT = "toc-snapshot";
+const CHAVE_SYNC = "toc-sync-estado";
+const CHAVE_CLIENTES = "ob-clients";
 
 function sbCfg(): { url: string; key: string } | null {
   const url = Deno.env.get("SUPABASE_URL");
@@ -198,6 +200,69 @@ async function lerDaBase(chave: string): Promise<unknown | null> {
     const linhas = await r.json();
     return linhas?.[0]?.dados ?? null;
   } catch { return null; }
+}
+
+// ══ AUTENTICACAO DO CHAMADOR ══════════════════════════════════════════════
+// Duas vias, e a diferenca entre elas importa:
+//
+//  A) JWT do utilizador (o CRM no browser). O token vem do Supabase Auth da
+//     sessao iniciada. NAO basta verifica-lo: a anon key do projecto e ela
+//     propria um JWT valido e passaria numa verificacao ingenua (e por isso
+//     que verify_jwt=true, sozinho, nao protege nada). Por isso resolve-se o
+//     token em /auth/v1/user — que devolve utilizador so para tokens de
+//     sessao real — e exige-se perfil ACTIVO em ob_profiles com funcao
+//     reconhecida. A anon key nao tem utilizador e e recusada.
+//
+//  B) x-api-key (so servidor-para-servidor: o agendamento horario). Nunca
+//     mais viaja no browser — o index.html deixou de a conhecer.
+//
+// Nada disto altera Auth ou RLS: e leitura de ob_profiles com service_role,
+// exactamente as mesmas regras que o proprio CRM ja aplica no login.
+const FUNCOES_VALIDAS = ["admin", "manager", "comercial", "financeiro"];
+
+async function utilizadorDoToken(token: string): Promise<{ id: string; email: string } | null> {
+  const cfg = sbCfg();
+  if (!cfg) return null;
+  try {
+    const r = await fetch(`${cfg.url}/auth/v1/user`, {
+      headers: { "apikey": cfg.key, "Authorization": `Bearer ${token}` },
+    });
+    if (!r.ok) return null;
+    const u = await r.json();
+    return u?.id ? { id: u.id, email: u.email ?? "" } : null;
+  } catch { return null; }
+}
+
+async function perfilActivo(userId: string): Promise<{ role: string } | null> {
+  const cfg = sbCfg();
+  if (!cfg) return null;
+  try {
+    const r = await fetch(
+      `${cfg.url}/rest/v1/ob_profiles?id=eq.${encodeURIComponent(userId)}&select=id,role,active`,
+      { headers: { "apikey": cfg.key, "Authorization": `Bearer ${cfg.key}` } });
+    if (!r.ok) return null;
+    const linhas = await r.json();
+    const p = linhas?.[0];
+    if (!p || p.active !== true || FUNCOES_VALIDAS.indexOf(p.role) === -1) return null;
+    return { role: p.role };
+  } catch { return null; }
+}
+
+type Chamador = { via: "jwt"; userId: string; role: string } | { via: "chave" };
+
+async function autenticar(req: Request): Promise<Chamador> {
+  const auth = req.headers.get("authorization") ?? "";
+  if (/^Bearer\s+/i.test(auth)) {
+    const token = auth.replace(/^Bearer\s+/i, "").trim();
+    const u = await utilizadorDoToken(token);
+    if (!u) throw new HttpError(401, "Sessao invalida ou expirada. Volte a entrar no CRM.");
+    const p = await perfilActivo(u.id);
+    if (!p) throw new HttpError(403, "A sua conta nao tem perfil activo no CRM.");
+    return { via: "jwt", userId: u.id, role: p.role };
+  }
+  const esperada = precisaSecret("TOC_GATEWAY_KEY");
+  if (safeEqual(req.headers.get("x-api-key") ?? "", esperada)) return { via: "chave" };
+  throw new HttpError(401, "Nao autorizado.");
 }
 
 function basicAuth(): string {
@@ -395,6 +460,186 @@ async function diagnostico(tokenJaObtido?: string) {
   return out;
 }
 
+// ══ SINCRONIZACAO TOCONLINE -> CLIENTES ═══════════════════════════════════
+// Regras, todas deliberadas e todas testadas no dry-run de 02/09:
+//  · Prioridade de correspondencia: tocId -> NIF exacto -> nome + confirmacao
+//    forte (telefone ou email coincidente). Nunca so pelo nome.
+//  · 999999990 ("Consumidor Final") NAO e identidade: excluido dos dois lados.
+//    Sem isto, quatro registos do TOConline colavam-se ao mesmo cliente.
+//  · So se escreve em campo VAZIO. Campo ja preenchido e diferente = conflito,
+//    contado e mostrado, nunca sobrescrito.
+//  · Emails @opportunitybox.pt sao do comercial, nao do cliente: bloqueados.
+//  · Prazo so nos seis valores da lista; qualquer outro fica pendente.
+//  · Nunca cria clientes. Nunca apaga clientes. Nunca toca em comercialResp,
+//    receita, projectos ou historico.
+// Idempotente por construcao: a segunda passagem nao encontra campos vazios
+// para preencher, logo devolve 0 actualizados.
+
+const PRAZOS: Record<string, string> = {
+  "0": "Imediato", "15": "15 dias", "30": "30 dias",
+  "45": "45 dias", "60": "60 dias", "90": "90 dias",
+};
+const NIF_GENERICO = "999999990";
+const VAZIOS = ["", "none", "null", "n/a", "na", "#n/a", "-"];
+
+const val = (x: unknown): string => {
+  const t = String(x ?? "").trim();
+  return VAZIOS.indexOf(t.toLowerCase()) >= 0 ? "" : t;
+};
+const vazio = (x: unknown) => val(x) === "";
+const digitos = (x: unknown) => val(x).replace(/\D/g, "");
+const nifNorm = (x: unknown) => { const d = digitos(x); return d.length === 9 ? d : ""; };
+const telNorm = (x: unknown) => {
+  let d = digitos(x);
+  if (d.startsWith("00351")) d = d.slice(5);
+  if (d.length === 12 && d.startsWith("351")) d = d.slice(3);
+  return d.length >= 9 ? d : "";
+};
+const semAcento = (x: unknown) =>
+  val(x).toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+const chaveTexto = (x: unknown) => semAcento(x).replace(/[^A-Z0-9]/g, "");
+const nomeNorm = (x: unknown) => semAcento(x)
+  .replace(/[^A-Z0-9 ]/g, " ")
+  .replace(/\b(LDA|LIMITADA|UNIPESSOAL|SGPS|SA|EIRELI|MEI|ME|CRL|ACE|EM|SU)\b/g, " ")
+  .replace(/\s+/g, " ").trim();
+const cpNorm = (x: unknown) => {
+  const d = digitos(x);
+  return d.length === 7 ? `${d.slice(0, 4)}-${d.slice(4)}` : val(x);
+};
+
+type Cli = Record<string, unknown>;
+
+async function sincronizarClientes(seco: boolean, via: string) {
+  const inicio = Date.now();
+  const token = await getAccessToken();
+  const rec = await buscarClientes(token);
+
+  const idx: Record<string, Record<string, unknown>> = {};
+  for (const r of rec.included as Record<string, unknown>[]) idx[`${r.type}:${r.id}`] = r;
+  const rel = (c: Record<string, unknown>, nome: string, campo: string) => {
+    const d = ((c.relationships as Record<string, Record<string, Record<string, unknown>>>)?.[nome]?.data);
+    if (!d?.id) return "";
+    const r = idx[`${d.type}:${d.id}`];
+    return val((r?.attributes as Record<string, unknown>)?.[campo]);
+  };
+
+  // Lado TOConline, achatado
+  const toc = (rec.data as Record<string, unknown>[]).map((c) => {
+    const a = (c.attributes ?? {}) as Record<string, unknown>;
+    return {
+      id: String(c.id), nome: val(a.business_name), nif: nifNorm(a.tax_registration_number),
+      tel: val(a.phone_number), tlm: val(a.mobile_number), contacto: val(a.contact_name),
+      email: rel(c, "main_email_address", "email"),
+      morada: rel(c, "main_address", "address_detail"),
+      cp: rel(c, "main_address", "postcode"), loc: rel(c, "main_address", "city"),
+      due: rel(c, "defaults", "due_days"),
+    };
+  });
+
+  const clientes = (await lerDaBase(CHAVE_CLIENTES)) as Cli[] | null;
+  if (!Array.isArray(clientes)) throw new HttpError(500, "Nao foi possivel ler ob-clients.");
+
+  const conta = <T>(xs: T[], k: (x: T) => string) => {
+    const m: Record<string, number> = {};
+    for (const x of xs) { const v = k(x); if (v) m[v] = (m[v] ?? 0) + 1; }
+    return m;
+  };
+  const nifToc = conta(toc, (t) => t.nif);
+  const nifCrm = conta(clientes, (c) => nifNorm(c.nif));
+  const nomeToc = conta(toc, (t) => nomeNorm(t.nome));
+  const porTocId: Record<string, Cli[]> = {};
+  const porNif: Record<string, Cli[]> = {};
+  const porNome: Record<string, Cli[]> = {};
+  for (const c of clientes) {
+    if (val(c.tocId)) (porTocId[val(c.tocId)] ??= []).push(c);
+    const n = nifNorm(c.nif); if (n) (porNif[n] ??= []).push(c);
+    const nm = nomeNorm(c.n); if (nm) (porNome[nm] ??= []).push(c);
+  }
+
+  let encontrados = 0, atualizados = 0, campos = 0;
+  const conflitos: unknown[] = [], ambiguos: unknown[] = [], semMatch: unknown[] = [];
+  const exemplos: unknown[] = [];
+  const casados = new Set<string>();
+
+  for (const t of toc) {
+    let alvo: Cli | null = null, criterio = "", jaExplicado = false;
+    const cands = (xs?: Cli[]) => (xs && xs.length === 1 ? xs[0] : null);
+
+    if (porTocId[t.id]) { alvo = cands(porTocId[t.id]); criterio = "tocId"; }
+    if (!alvo && t.nif && t.nif !== NIF_GENERICO && nifToc[t.nif] === 1 && nifCrm[t.nif] === 1) {
+      alvo = cands(porNif[t.nif]); criterio = "NIF";
+    }
+    if (!alvo) {
+      const nm = nomeNorm(t.nome);
+      const c = nm && nomeToc[nm] === 1 ? cands(porNome[nm]) : null;
+      if (c) {
+        const nifC = nifNorm(c.nif);
+        const telsT = [telNorm(t.tel), telNorm(t.tlm)].filter(Boolean);
+        const confirma = telsT.indexOf(telNorm(c.tel)) >= 0 ||
+          (!!chaveTexto(c.email) && chaveTexto(c.email) === chaveTexto(t.email));
+        if (nifC && t.nif && nifC !== t.nif) {
+          ambiguos.push({ toc_id: t.id, nome: t.nome, motivo: "nome igual, NIF diferente" }); jaExplicado = true;
+        } else if (confirma) { alvo = c; criterio = "nome+confirmacao"; }
+        else { ambiguos.push({ toc_id: t.id, nome: t.nome, motivo: "so o nome coincide, sem confirmacao" }); jaExplicado = true; }
+      } else if (nm && (porNome[nm]?.length ?? 0) > 1) {
+        ambiguos.push({ toc_id: t.id, nome: t.nome, motivo: "nome corresponde a varios clientes" }); jaExplicado = true;
+      }
+    }
+    // "Novos" e "ambiguos" tem de ser conjuntos disjuntos: um registo retido
+    // por duvida NAO e um cliente novo, e conta-lo nas duas colunas fazia o
+    // painel prometer mais clientes novos do que existem.
+    if (!alvo) {
+      if (!jaExplicado) semMatch.push({ toc_id: t.id, nome: t.nome, nif: t.nif });
+      continue;
+    }
+    if (casados.has(String(alvo.id))) {
+      ambiguos.push({ toc_id: t.id, nome: t.nome, motivo: "cliente ja casado com outro registo TOConline" });
+      continue;
+    }
+    casados.add(String(alvo.id)); encontrados++;
+
+    const antes: Record<string, string> = {}, depois: Record<string, string> = {};
+    const preencher = (campo: string, novo: string, atualBruto: unknown) => {
+      if (!novo) return;
+      const atual = val(atualBruto);
+      if (!atual) { antes[campo] = ""; depois[campo] = novo; }
+      else if (chaveTexto(novo) !== chaveTexto(atual)) {
+        conflitos.push({ cliente: alvo!.id, nome: alvo!.n, campo, crm: atual, toc: novo });
+      }
+    };
+    if (vazio(alvo.tocId)) { antes.tocId = ""; depois.tocId = t.id; }
+    preencher("tel", val(t.tel) || val(t.tlm), alvo.tel);
+    if (t.email && !/opportunitybox/i.test(t.email)) preencher("email", t.email, alvo.email);
+    preencher("cont", t.contacto, alvo.cont);
+    preencher("cp", cpNorm(t.cp), cpNorm(alvo.cp));
+    preencher("localidade", t.loc, alvo.localidade);
+    const pz = PRAZOS[digitos(t.due)] ?? (val(t.due) ? "" : "");
+    if (pz) preencher("prazo", pz, alvo.prazo);
+
+    const chaves = Object.keys(depois);
+    if (chaves.length) {
+      atualizados++; campos += chaves.length;
+      if (!seco) for (const k of chaves) alvo[k] = depois[k];
+      if (exemplos.length < 20) exemplos.push({ cliente: alvo.id, nome: alvo.n, antes, depois, criterio });
+    }
+  }
+
+  let gravou = false;
+  if (!seco && atualizados > 0) gravou = await guardarNaBase(CHAVE_CLIENTES, clientes);
+
+  const estado = {
+    ts: new Date().toISOString(), status: seco ? "simulado" : (atualizados === 0 ? "sem alteracoes" : (gravou ? "ok" : "falha ao gravar")),
+    via, duracao_ms: Date.now() - inicio, include: rec.include,
+    clientes_toconline: toc.length, clientes_crm: clientes.length,
+    encontrados, atualizados, campos_preenchidos: campos,
+    novos: semMatch.length, conflitos: conflitos.length, ambiguos: ambiguos.length,
+    lista_novos: semMatch.slice(0, 200), lista_conflitos: conflitos.slice(0, 200),
+    lista_ambiguos: ambiguos.slice(0, 200), exemplos,
+  };
+  if (!seco) await guardarNaBase(CHAVE_SYNC, estado);
+  return estado;
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
   if (req.method !== "GET") return json({ error: "Apenas GET e suportado." }, 405);
@@ -537,14 +782,16 @@ Deno.serve(async (req: Request) => {
         `<p style="color:#666">O access_token nao e mostrado nem persistido.</p>`);
     }
 
-    // ── 3) Tudo o resto exige a gateway key, SÓ no cabeçalho ───────────────
-    // Chega-se aqui em tudo o que nao seja auth/callback: diag, token,
-    // customers, clients, invoices, credit_notes, receipts, e tambem um
-    // pedido sem `resource`. Nenhum destes passa sem a chave, e a chave so
-    // e lida do cabecalho — nunca da query string.
-    const esperada = precisaSecret("TOC_GATEWAY_KEY");
-    if (!safeEqual(req.headers.get("x-api-key") ?? "", esperada)) {
-      return json({ error: "Nao autorizado." }, 401);
+    // ── 3) Tudo o resto exige chamador autenticado ─────────────────────────
+    // JWT de utilizador do CRM (browser) ou x-api-key (servidor-para-servidor).
+    // Nunca por query string, em qualquer das vias.
+    const quem = await autenticar(req);
+
+    if (pedido === "estado") return json(await lerDaBase(CHAVE_SYNC) ?? { nunca: true }, 200);
+
+    if (pedido === "sync") {
+      const seco = url.searchParams.get("dry") === "1";
+      return json(await sincronizarClientes(seco, quem.via), 200);
     }
 
     if (pedido === "diag") return json(await diagnostico(), 200);
@@ -562,7 +809,7 @@ Deno.serve(async (req: Request) => {
       return json({ resource: pedido, resolved: recurso, path: pathCache[recurso], count: data.length, data }, 200);
     }
 
-    return json({ error: "resource invalido. Use: customers | clients | invoices | credit_notes | receipts | token | diag | auth" }, 400);
+    return json({ error: "resource invalido. Use: sync | estado | customers | clients | invoices | credit_notes | receipts | token | diag | auth" }, 400);
   } catch (e) {
     if (e instanceof HttpError) {
       // So o callback devolve HTML (e uma pagina para pessoa ler). O auth
