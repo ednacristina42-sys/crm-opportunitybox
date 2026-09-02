@@ -334,11 +334,31 @@ Deno.serve(async (req: Request) => {
   const url = new URL(req.url);
   const pedido = url.searchParams.get("resource") ?? "";
 
+  // ── Router: os dois pontos de entrada do OAuth sao publicos ──────────────
+  // Nem o /auth nem o /callback podem exigir x-api-key: o primeiro e aberto
+  // pela pessoa no browser, o segundo e chamado pelo TOConline. O /callback
+  // esta protegido pelo state assinado (HMAC + TTL), nao pela gateway key.
+  //
+  // O `resource` pode nem chegar no retorno: ha servidores OAuth que
+  // reconstroem o redirect_uri e descartam a query string ja existente,
+  // devolvendo so ?code=…&state=…. Sem isto, esse retorno caia no ramo final
+  // e respondia 401. Por isso o callback e reconhecido tambem pela presenca
+  // de code/error com state — e SO quando nao vem `resource` nenhum, para
+  // que ninguem possa anexar ?code=&state= a um recurso de dados e escapar
+  // a gateway key.
+  const retornoOAuth = url.searchParams.has("state") &&
+    (url.searchParams.has("code") || url.searchParams.has("error"));
+  const rota = pedido === "auth"
+    ? "auth"
+    : (pedido === "callback" || (pedido === "" && retornoOAuth))
+      ? "callback"
+      : pedido;
+
   try {
     // ── 1) Início da autorização: redirige para o TOConline ────────────────
     // Sem gateway key: é um ponto de entrada de browser e não expõe nada —
     // quem abre isto tem ainda de se autenticar no TOConline.
-    if (pedido === "auth") {
+    if (rota === "auth") {
       // Este ramo NUNCA devolve HTML: ou 302, ou JSON de erro. Uma pagina
       // intermediaria aqui quebra o fluxo OAuth (foi o que aconteceu na v3,
       // em que um erro caia no ramo de HTML do catch).
@@ -369,7 +389,7 @@ Deno.serve(async (req: Request) => {
     }
 
     // ── 2) Callback: troca o code por tokens e valida logo os endpoints ────
-    if (pedido === "callback") {
+    if (rota === "callback") {
       const erro = url.searchParams.get("error");
       if (erro) return html(`<h1 class="err">Autorizacao recusada</h1><p>O TOConline devolveu: <code>${esc(erro)}</code></p>`, 400);
       const code = url.searchParams.get("code");
@@ -433,6 +453,10 @@ Deno.serve(async (req: Request) => {
     }
 
     // ── 3) Tudo o resto exige a gateway key, SÓ no cabeçalho ───────────────
+    // Chega-se aqui em tudo o que nao seja auth/callback: diag, token,
+    // customers, clients, invoices, credit_notes, receipts, e tambem um
+    // pedido sem `resource`. Nenhum destes passa sem a chave, e a chave so
+    // e lida do cabecalho — nunca da query string.
     const esperada = precisaSecret("TOC_GATEWAY_KEY");
     if (!safeEqual(req.headers.get("x-api-key") ?? "", esperada)) {
       return json({ error: "Nao autorizado." }, 401);
@@ -458,7 +482,7 @@ Deno.serve(async (req: Request) => {
     if (e instanceof HttpError) {
       // So o callback devolve HTML (e uma pagina para pessoa ler). O auth
       // devolve sempre JSON, para nunca substituir o redirect por uma pagina.
-      return pedido === "callback"
+      return rota === "callback"
         ? html(`<h1 class="err">Erro</h1><p>${esc(e.message)}</p>`, e.status)
         : json({ error: e.message }, e.status);
     }
