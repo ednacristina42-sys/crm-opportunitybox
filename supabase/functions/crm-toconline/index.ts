@@ -74,7 +74,12 @@ const html = (body: string, status = 200) =>
     `<style>body{font:15px/1.6 system-ui,sans-serif;max-width:760px;margin:40px auto;padding:0 20px;color:#222}` +
     `code,pre{background:#f4f4f5;border-radius:6px;padding:2px 6px;font-family:ui-monospace,monospace;word-break:break-all}` +
     `pre{padding:14px;white-space:pre-wrap}.ok{color:#137333}.err{color:#c5221f}h1{font-size:20px}</style>${body}`,
-    { status, headers: { "Content-Type": "text/html; charset=utf-8" } });
+    { status, headers: {
+      "Content-Type": "text/html; charset=utf-8",
+      "Cache-Control": "no-store, no-cache, must-revalidate",
+      "Referrer-Policy": "no-referrer",
+      "X-Content-Type-Options": "nosniff",
+    } });
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) =>
   ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
@@ -271,14 +276,33 @@ Deno.serve(async (req: Request) => {
     // Sem gateway key: é um ponto de entrada de browser e não expõe nada —
     // quem abre isto tem ainda de se autenticar no TOConline.
     if (pedido === "auth") {
-      const p = new URLSearchParams({
-        response_type: "code",
-        client_id: precisaSecret("TOC_CLIENT_ID"),
-        redirect_uri: redirectUri(req),
-        scope: SCOPE,
-        state: await assinarState(),
+      // Este ramo NUNCA devolve HTML: ou 302, ou JSON de erro. Uma pagina
+      // intermediaria aqui quebra o fluxo OAuth (foi o que aconteceu na v3,
+      // em que um erro caia no ramo de HTML do catch).
+      let destino: string;
+      try {
+        const p = new URLSearchParams({
+          response_type: "code",
+          client_id: precisaSecret("TOC_CLIENT_ID"),
+          redirect_uri: redirectUri(req),
+          scope: SCOPE,
+          state: await assinarState(),
+        });
+        destino = `${oauthUrl()}/auth?${p}`;
+      } catch (e) {
+        const st = e instanceof HttpError ? e.status : 500;
+        const msg = e instanceof HttpError ? e.message : "Falha ao construir a autorizacao.";
+        return json({ error: msg, resource: "auth" }, st);
+      }
+      // ?dry=1 mostra o destino sem redirigir. Nao revela nada de novo: o
+      // client_id ja viaja na propria URL de autorizacao, por desenho OAuth.
+      if (url.searchParams.get("dry") === "1") {
+        return json({ authorize_url: destino, oauth_host: new URL(destino).host, redirect_uri: redirectUri(req) }, 200);
+      }
+      return new Response(null, {
+        status: 302,
+        headers: { "Location": destino, "Cache-Control": "no-store" },
       });
-      return new Response(null, { status: 302, headers: { Location: `${oauthUrl()}/auth?${p}` } });
     }
 
     // ── 2) Callback: troca o code por tokens e valida logo os endpoints ────
@@ -337,7 +361,9 @@ Deno.serve(async (req: Request) => {
     return json({ error: "resource inválido. Use: customers | clients | invoices | credit_notes | receipts | token | diag | auth" }, 400);
   } catch (e) {
     if (e instanceof HttpError) {
-      return pedido === "callback" || pedido === "auth"
+      // So o callback devolve HTML (e uma pagina para pessoa ler). O auth
+      // devolve sempre JSON, para nunca substituir o redirect por uma pagina.
+      return pedido === "callback"
         ? html(`<h1 class="err">Erro</h1><p>${esc(e.message)}</p>`, e.status)
         : json({ error: e.message }, e.status);
     }
