@@ -50,6 +50,11 @@ const PAGE_SIZE = 100;
 const MAX_PAGES = 50;
 const STATE_TTL_MS = 15 * 60 * 1000;
 
+// Nesta conta (api2) o caminho valido das faturas e /commercial_sales_documents:
+// /api/v1/commercial_sales_documents devolve HTTP 400 para document_type=FT.
+// A ordem abaixo mantem-se porque resolverPath ja cai no segundo caminho, e
+// noutras contas o /api/v1 e o que responde. A recolha integral do historico
+// (>=5000 faturas, tecto da paginacao) fica para uma fase posterior.
 const RECURSOS: Record<string, { paths: string[]; query?: string }> = {
   customers:    { paths: ["/api/customers", "/customers"] },
   invoices:     { paths: ["/api/v1/commercial_sales_documents", "/commercial_sales_documents"], query: "filter[document_type]=FT" },
@@ -294,6 +299,61 @@ async function buscarTudo(recurso: string, token: string): Promise<unknown[]> {
   return todos;
 }
 
+// ── Clientes com relationships (JSON:API `include`) ───────────────────────
+// O /api/customers devolve morada, email principal e condicoes de pagamento
+// apenas como referencias (`relationships` -> so o id). Os dados so vem se se
+// pedir `include`, e o TOConline devolve-os na seccao `included`.
+//
+// A sintaxe exacta nao esta documentada, por isso tentam-se varias por ordem
+// e fica registado qual respondeu — a resposta real e que decide, nao um
+// palpite. Se nenhuma funcionar, recolhe-se sem include, como antes: e sempre
+// preferivel um snapshot mais pobre do que nenhum snapshot.
+const INCLUDES = [
+  "main_address,main_email_address,defaults",
+  "main_address,main_email_address",
+  "addresses,email_addresses,defaults",
+  "main_address",
+  "",
+];
+
+async function buscarClientes(token: string) {
+  const path = await resolverPath("customers", token);
+  const tentativas: string[] = [];
+  let escolhido = "";
+  for (const inc of INCLUDES) {
+    const qs = (inc ? `include=${encodeURIComponent(inc)}&` : "") + "page[size]=1&page[number]=1";
+    const r = await tocGet(`${path}?${qs}`, token);
+    tentativas.push(`${inc || "(sem include)"} -> HTTP ${r.status}`);
+    if (r.ok) { escolhido = inc; break; }
+  }
+
+  const data: unknown[] = [];
+  const included: unknown[] = [];
+  const vistos = new Set<string>();
+  for (let pagina = 1; pagina <= MAX_PAGES; pagina++) {
+    const qs = (escolhido ? `include=${encodeURIComponent(escolhido)}&` : "") +
+      `page[size]=${PAGE_SIZE}&page[number]=${pagina}`;
+    const res = await tocGet(`${path}?${qs}`, token);
+    if (!res.ok) {
+      if (pagina === 1) throw new HttpError(502, `TOConline devolveu HTTP ${res.status} em ${path}`);
+      break;
+    }
+    let payload: Record<string, unknown>;
+    try { payload = await res.json(); } catch { break; }
+    const lote = extrairLista(payload);
+    if (!lote.length) break;
+    data.push(...lote);
+    // O `included` repete-se entre paginas; guarda-se cada recurso uma so vez.
+    for (const r of (Array.isArray(payload.included) ? payload.included : [])) {
+      const o = r as Record<string, unknown>;
+      const k = `${o.type}:${o.id}`;
+      if (!vistos.has(k)) { vistos.add(k); included.push(o); }
+    }
+    if (lote.length < PAGE_SIZE) break;
+  }
+  return { data, included, include: escolhido, tentativas, path };
+}
+
 /** Diagnóstico: só metadados e códigos de estado. Nunca dados, nunca tokens. */
 async function diagnostico(tokenJaObtido?: string) {
   const out: Record<string, unknown> = {
@@ -440,10 +500,16 @@ Deno.serve(async (req: Request) => {
       const snapshot: Record<string, unknown> = { obtido_em: new Date().toISOString(), diag };
       let resumo = "";
       try {
-        const clientes = await buscarTudo("customers", access!);
-        snapshot.customers = clientes;
-        snapshot.customers_count = clientes.length;
-        resumo += `<li>clientes: <b>${clientes.length}</b> (via <code>${esc(pathCache["customers"] ?? "?")}</code>)</li>`;
+        const c = await buscarClientes(access!);
+        snapshot.customers = c.data;
+        snapshot.customers_count = c.data.length;
+        snapshot.customers_included = c.included;
+        snapshot.customers_included_count = c.included.length;
+        snapshot.customers_include = c.include;
+        snapshot.customers_include_tentativas = c.tentativas;
+        resumo += `<li>clientes: <b>${c.data.length}</b> (via <code>${esc(c.path)}</code>` +
+          (c.include ? `, include <code>${esc(c.include)}</code>` : `, sem include`) +
+          `)</li><li>recursos relacionados: <b>${c.included.length}</b></li>`;
       } catch (e) {
         snapshot.customers_erro = e instanceof HttpError ? e.message : "falhou";
         resumo += `<li class="err">clientes: ${esc(String(snapshot.customers_erro))}</li>`;
