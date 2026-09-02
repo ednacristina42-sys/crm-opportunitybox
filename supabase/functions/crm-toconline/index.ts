@@ -346,8 +346,10 @@ Deno.serve(async (req: Request) => {
   // de code/error com state — e SO quando nao vem `resource` nenhum, para
   // que ninguem possa anexar ?code=&state= a um recurso de dados e escapar
   // a gateway key.
-  const retornoOAuth = url.searchParams.has("state") &&
-    (url.searchParams.has("code") || url.searchParams.has("error"));
+  // Nao se exige `state` aqui: um retorno sem state tem de chegar ao ramo do
+  // callback para ser recusado com "State invalido" — mensagem que se percebe
+  // — em vez de um 401 mudo. A troca do code so acontece depois do HMAC.
+  const retornoOAuth = url.searchParams.has("code") || url.searchParams.has("error");
   const rota = pedido === "auth"
     ? "auth"
     : (pedido === "callback" || (pedido === "" && retornoOAuth))
