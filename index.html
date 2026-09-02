@@ -15630,9 +15630,34 @@ var OB_CLIENTES_FICTICIOS = [
   'Hotel Serra da Lua','Restaurante O Farol','Auto Premium Sintra','Pingo Bom Terrugem',
   'CC Mira Sintra','Clínica Dente & Saúde','Bar Nox Cascais','Transportes Alcopark','Fit Studio Lisboa'
 ];
-var cliData; try{ cliData=JSON.parse(localStorage.getItem('ob-clients')||'null'); }catch(e){ cliData=null; } cliData = cliData || OB_CLIENTES_REAIS.map(function(nome,i){
-  return {id:i+1,n:nome,sec:'Outro',cont:'',email:'',tel:'',nif:'',morada:'',projs:0,rev:0,last:'—',st:'active'};
-});
+// Estado de carregamento da base de Clientes (02/09/2026). A base oficial vive
+// no Supabase (chave 'ob-clients'); este browser NUNCA a fabrica. Valores:
+//   'carregando' — obSbBoot() ainda não concluiu a leitura remota
+//   'ok'         — leitura remota concluída com sucesso
+//   'erro'       — leitura remota falhou: mostrar erro, nunca inventar dados
+//   'demo'       — semente de demonstração carregada à mão (obClientsSeedDemo)
+window._obClientsEstado = 'carregando';
+var cliData; try{ cliData=JSON.parse(localStorage.getItem('ob-clients')||'null'); }catch(e){ cliData=null; }
+// Sem cópia local válida a base fica VAZIA até obSbBoot() trazer a remota.
+// Até 01/09/2026 era semeada aqui com OB_CLIENTES_REAIS — foi essa semente de
+// 30 registos que acabou gravada no Supabase por cima da base real de 1.749
+// clientes. Nunca mais como fallback de produção: para demo/teste existe
+// obClientsSeedDemo(), manual e sem sincronização.
+if(!Array.isArray(cliData)) cliData = [];
+
+// Semente de DEMONSTRAÇÃO — só manual, a partir da consola. Não é chamada em
+// nenhum ponto do arranque, não grava no localStorage e nunca sincroniza para
+// o Supabase (saveCliData() não é invocada aqui de propósito).
+function obClientsSeedDemo(){
+  cliData = OB_CLIENTES_REAIS.map(function(nome,i){
+    return {id:i+1,n:nome,sec:'Outro',cont:'',email:'',tel:'',nif:'',morada:'',projs:0,rev:0,last:'—',st:'active'};
+  });
+  window._obClientsEstado='demo';
+  try{ renderClientes(); }catch(e){}
+  console.warn('[OB] Base de Clientes substituída pelos '+cliData.length+' registos de DEMO — apenas neste browser, sem sincronização.');
+  return cliData.length;
+}
+window.obClientsSeedDemo = obClientsSeedDemo;
 var cliEditId = null;
 // Id definido automaticamente pelo autocomplete de nome/NIF em cliOpenNew() (nunca
 // por cliOpenEdit()). Só quando cliEditId===_cliAutoMatchId é seguro limpar o match
@@ -16138,11 +16163,18 @@ function renderClientes(){
   if(carteiraInfoEl){
     var n=minhaCarteira.length;
     var sufixo=n===1?' cliente':' clientes';
-    carteiraInfoEl.textContent = isAdmin ? (n+sufixo) : ('Minha carteira — '+n+sufixo);
+    if(!data.length && (window._obClientsEstado==='carregando'||window._obClientsEstado==='erro'))
+      carteiraInfoEl.textContent = window._obClientsEstado==='erro' ? '—' : 'a carregar…';
+    else carteiraInfoEl.textContent = isAdmin ? (n+sufixo) : ('Minha carteira — '+n+sufixo);
   }
   const lista=cliFiltrarBusca(minhaCarteira, _cliBusca).slice().sort(cliOrdenarPorNome);
   if(!lista.length){
-    el.innerHTML='<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:24px">Nenhum cliente encontrado.</td></tr>';
+    // Base vazia e leitura remota ainda por concluir/falhada não é "nenhum
+    // cliente": distinguir evita que um erro de rede pareça base apagada.
+    var _msg='Nenhum cliente encontrado.';
+    if(!data.length && window._obClientsEstado==='carregando') _msg='A carregar a base de clientes…';
+    else if(!data.length && window._obClientsEstado==='erro') _msg='⚠ Não foi possível ler a base de clientes do servidor. Verifica a ligação e recarrega a página — nada foi alterado.';
+    el.innerHTML='<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:24px">'+_msg+'</td></tr>';
     return;
   }
   el.innerHTML=lista.map(c=>`<tr style="cursor:pointer" onclick="cliOpenEdit(${c.id||0})">
@@ -16638,18 +16670,20 @@ _uniInitFromSB();
     if(localStorage.getItem('ob-limpeza-ficticios-v1')) return; // já executado antes, não repetir
     var antesCli = cliData.length, antesOrc = orcData.length;
     cliData = cliData.filter(function(c){ return OB_CLIENTES_FICTICIOS.indexOf(c.n) === -1; });
-    OB_CLIENTES_REAIS.forEach(function(nome){
-      if(!cliData.find(function(c){ return c.n === nome; })){
-        var novoId = (Math.max(0, ...cliData.map(function(c){ return c.id||0; })) || 0) + 1;
-        cliData.push({id:novoId,n:nome,sec:'Outro',cont:'',email:'',tel:'',nif:'',morada:'',projs:0,rev:0,last:'—',st:'active'});
-      }
-    });
+    // 02/09/2026: aqui era reinjectado OB_CLIENTES_REAIS (os 30) sempre que
+    // faltassem em cliData — segundo caminho pelo qual a semente voltava a
+    // aparecer como se fosse a base oficial, mesmo com a leitura remota
+    // falhada. A base cadastral vem só do Supabase ('ob-clients'); esta
+    // limpeza apenas REMOVE fictícios, nunca cria clientes.
     orcData = orcData.filter(function(o){ return OB_CLIENTES_FICTICIOS.indexOf(o.cli) === -1; });
     var fatLimpa = fatData.filter(function(f){
       var nomeCli = f.Customer && (f.Customer.Name||f.Customer) || f.cliente || f.cli || '';
       return OB_CLIENTES_FICTICIOS.indexOf(nomeCli) === -1;
     });
-    localStorage.setItem('ob-clients', JSON.stringify(cliData));
+    // Só regrava 'ob-clients' se esta limpeza tiver mesmo removido fictícios.
+    // Sem isto, um arranque com leitura remota falhada (cliData vazia)
+    // gravava por cima da cópia local uma base vazia.
+    if(cliData.length !== antesCli) localStorage.setItem('ob-clients', JSON.stringify(cliData));
     localStorage.setItem('ob-orcamentos', JSON.stringify(orcData.slice(0,5000)));
     localStorage.setItem('ob-faturas', JSON.stringify(fatLimpa));
     fatData = fatLimpa;
@@ -28632,6 +28666,7 @@ async function obSbBoot(){
             adoptou=true;
           }
           window._obClientsRemoteReady=true;
+          window._obClientsEstado='ok';
           return;
         }
         if(localVazio&&remotoTem){
@@ -28657,15 +28692,24 @@ async function obSbBoot(){
       // resposta (Supabase sem registo ainda) — mesmo assim é uma leitura
       // bem-sucedida, tem de desbloquear o push (senão fica preso para
       // sempre num Supabase novo/vazio).
-      if(!viuOBClients){ window._obClientsRemoteReady=true; window._obClientsRemoteCount=0; window._obClientsRemoteUpdatedAt=null; }
+      if(!viuOBClients){ window._obClientsRemoteReady=true; window._obClientsEstado='ok'; window._obClientsRemoteCount=0; window._obClientsRemoteUpdatedAt=null; }
       if(adoptou){
         console.log('[SB-CRM] Dados carregados do Supabase (dispositivo novo).');
         try{ if(typeof crmRenderAll==='function') crmRenderAll(); }catch(e){}
         try{ if(typeof renderClientes==='function') renderClientes(); }catch(e){}
         try{ if(typeof uniInitAll==='function') uniInitAll(); }catch(e){}
       }
+    } else {
+      window._obClientsEstado='erro';
+      console.error('[SB-CRM] Leitura remota falhou (HTTP '+r.status+'). Clientes fica em estado de erro — nada é fabricado nem enviado.');
     }
-  }catch(e){ console.warn('[SB-CRM] boot sync falhou:',e); }
+  }catch(e){
+    window._obClientsEstado='erro';
+    console.warn('[SB-CRM] boot sync falhou:',e);
+  }
+  // Repinta sempre — sem isto o ecrã ficaria preso em "A carregar…" quando a
+  // leitura remota falha (o render acima só corre quando adopta dados).
+  try{ if(typeof renderClientes==='function') renderClientes(); }catch(e){}
   // ADD: antes do backup, incorpora leads/actividades que só existem no
   // Supabase (ex.: criados por integrações externas como o WhatsApp/Leonor,
   // sem passar por este browser) — sem isto, o "backup" a seguir reenviava
