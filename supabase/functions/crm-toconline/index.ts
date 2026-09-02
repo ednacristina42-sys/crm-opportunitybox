@@ -4,27 +4,36 @@
 // Arquitetura:   CRM (browser) ──x-api-key──► esta função ──OAuth2──► TOConline
 // Sem Make. Sem Zapier. Sem credenciais no browser. Sem tokens no browser.
 //
-// Substitui a versão que vivia no projeto do app Lovable
-// ("equipaopportunitybox"), a qual tinha client_id/client_secret escritos em
-// texto simples no código-fonte e reutilizava a chave de gateway da função de
-// funcionários. Ambos os problemas estão corrigidos aqui.
+// ── CONFORMIDADE COM A DOCUMENTAÇÃO OFICIAL (api-docs.toconline.pt) ────────
+// "Autenticação Detalhada" / "Autenticação Simplificada":
+//   • O pedido de token é POST a  OAUTH_URL/token
+//   • As credenciais vão no cabeçalho  Authorization: Basic base64(client_id:secret)
+//     — NÃO no corpo. (A versão anterior enviava-as no corpo: corrigido.)
+//   • O corpo vai URL-encoded.
+//   • A resposta traz access_token, refresh_token e expires_in.
+//   • OAUTH_URL e API_URL são fornecidos por conta, junto com as credenciais.
+//     Por isso NÃO são adivinhados aqui — ver TOC_OAUTH_URL / TOC_API_BASE.
 //
-// ── SECRETS OBRIGATÓRIOS (Supabase → Edge Functions → Secrets) ─────────────
-//   TOC_CLIENT_ID       client_id OAuth2 do TOConline
-//   TOC_CLIENT_SECRET   client_secret OAuth2 do TOConline
+// Fluxo: a doc descreve authorization_code (GET OAUTH_URL/auth → POST /token).
+// Esse primeiro passo exige uma autorização humana no TOConline, impossível de
+// fazer sem interação. Por isso esta função suporta os dois modos que podem
+// correr sem interação, e diz qual funcionou:
+//   • TOC_REFRESH_TOKEN definido  → grant_type=refresh_token   (recomendado)
+//   • caso contrário              → grant_type=client_credentials
+//
+// ── SECRETS OBRIGATÓRIOS ──────────────────────────────────────────────────
+//   TOC_CLIENT_ID       "Identificador" / OAUTH_CLIENT_ID
+//   TOC_CLIENT_SECRET   "Segredo" / OAUTH_CLIENT_SECRET
 //   TOC_GATEWAY_KEY     chave que o CRM envia em x-api-key (própria desta
 //                       função — NÃO reutilizar CRM_EMPLOYEES_API_KEY)
 //
 // ── SECRETS OPCIONAIS ─────────────────────────────────────────────────────
-//   TOC_API_BASE        base da API. Default: https://api30.toconline.pt
-//                       O TOConline atribui um host numerado por conta; o
-//                       default vem do que o CRM já usa, mas NÃO está
-//                       confirmado para esta conta — validar com resource=diag
-//                       antes de assumir.
-//   TOC_TOKEN_URL       endpoint do token. Default: derivado de TOC_API_BASE
-//                       (api30 → app30) + /oauth/token
+//   TOC_API_BASE        API_URL da conta.   Default: https://api30.toconline.pt
+//   TOC_OAUTH_URL       OAUTH_URL da conta. Default: derivado de TOC_API_BASE
+//   TOC_REFRESH_TOKEN   refresh_token obtido na autorização inicial
 //
 // Nenhum valor de segredo é registado em log nem devolvido ao cliente.
+// Nenhum access_token ou refresh_token sai desta função.
 // ══════════════════════════════════════════════════════════════════════════
 
 const CORS = {
@@ -35,44 +44,54 @@ const CORS = {
 
 const DEFAULT_API_BASE = "https://api30.toconline.pt";
 const PAGE_SIZE = 100;
-const MAX_PAGES = 50; // travão de segurança: 5000 registos por recurso
+const MAX_PAGES = 50; // travão: 5000 registos por recurso
 
-// Caminhos comprovados no CRM (tocoFetch/tocoSincronizarFaturas, index.html).
-const PATHS = {
-  invoices: "/api/v1/commercial_sales_documents?filter[document_type]=FT",
-  customers: "/api/customers",
+// A doc oficial usa API_URL + caminho; conforme a conta, o prefixo "/api" pode
+// ou não fazer parte do API_URL. Tentamos os candidatos por ordem e ficamos
+// pelo primeiro que responda — o diag reporta qual resolveu.
+const RECURSOS: Record<string, { paths: string[]; query?: string }> = {
+  customers:    { paths: ["/api/customers", "/customers"] },
+  invoices:     { paths: ["/api/v1/commercial_sales_documents", "/commercial_sales_documents"], query: "filter[document_type]=FT" },
+  credit_notes: { paths: ["/api/v1/commercial_sales_documents", "/commercial_sales_documents"], query: "filter[document_type]=NC" },
+  receipts:     { paths: ["/api/v1/commercial_sales_receipts", "/commercial_sales_receipts"] },
 };
+const ALIAS: Record<string, string> = { clients: "customers" };
 
-// ── Cache do access_token, apenas em memória da instância ──────────────────
-// Nunca persistido, nunca devolvido ao cliente. Renovado 60s antes de expirar.
-let tokenCache: { token: string; expiresAt: number } | null = null;
+class HttpError extends Error {
+  status: number;
+  constructor(status: number, message: string) { super(message); this.status = status; }
+}
+
+// Cache do access_token, só em memória da instância. Nunca persistido.
+let tokenCache: { token: string; expiresAt: number; grant: string } | null = null;
+// Caminho já resolvido por recurso, para não repetir tentativas.
+const pathCache: Record<string, string> = {};
 
 function json(body: unknown, status: number) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...CORS, "Content-Type": "application/json" },
-  });
+  return new Response(JSON.stringify(body), { status, headers: { ...CORS, "Content-Type": "application/json" } });
 }
 
 /** Comparação de tempo constante — não revela o prefixo correto da chave. */
 function safeEqual(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
-  let diff = 0;
-  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  return diff === 0;
+  let d = 0;
+  for (let i = 0; i < a.length; i++) d |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return d === 0;
 }
 
-function tokenUrlFrom(apiBase: string): string {
-  const explicit = Deno.env.get("TOC_TOKEN_URL");
-  if (explicit) return explicit;
+const semBarra = (s: string) => s.replace(/\/+$/, "");
+
+function oauthUrl(apiBase: string): string {
+  const explicito = Deno.env.get("TOC_OAUTH_URL");
+  if (explicito) return semBarra(explicito);
   // api30.toconline.pt → app30.toconline.pt (o host do OAuth espelha o da API)
-  return apiBase.replace(/\/+$/, "").replace("//api", "//app") + "/oauth/token";
+  return semBarra(apiBase).replace("//api", "//app");
 }
 
-/** Obtém (ou reutiliza) o access_token. Devolve só o token, nunca o corpo bruto. */
+/** Obtém (ou reutiliza) o access_token, conforme a doc oficial. */
 async function getAccessToken(apiBase: string): Promise<string> {
-  const now = Date.now();
-  if (tokenCache && tokenCache.expiresAt > now) return tokenCache.token;
+  const agora = Date.now();
+  if (tokenCache && tokenCache.expiresAt > agora) return tokenCache.token;
 
   const clientId = Deno.env.get("TOC_CLIENT_ID");
   const clientSecret = Deno.env.get("TOC_CLIENT_SECRET");
@@ -81,50 +100,61 @@ async function getAccessToken(apiBase: string): Promise<string> {
     throw new HttpError(500, "Secrets em falta: TOC_CLIENT_ID e/ou TOC_CLIENT_SECRET não estão definidos.");
   }
 
-  const res = await fetch(tokenUrlFrom(apiBase), {
+  const refresh = Deno.env.get("TOC_REFRESH_TOKEN");
+  const corpo = refresh
+    ? new URLSearchParams({ grant_type: "refresh_token", refresh_token: refresh })
+    : new URLSearchParams({ grant_type: "client_credentials" });
+  const grant = refresh ? "refresh_token" : "client_credentials";
+
+  // Doc oficial: Authorization: Basic base64(client_id ":" secret)
+  const basic = btoa(`${clientId}:${clientSecret}`);
+
+  const res = await fetch(`${oauthUrl(apiBase)}/token`, {
     method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      grant_type: "client_credentials",
-      client_id: clientId,
-      client_secret: clientSecret,
-    }).toString(),
+    headers: {
+      "Authorization": `Basic ${basic}`,
+      "Content-Type": "application/x-www-form-urlencoded",
+      "Accept": "application/json",
+    },
+    body: corpo.toString(),
   });
 
   if (!res.ok) {
     // Nunca ecoar o corpo: pode repetir credenciais enviadas.
-    throw new HttpError(502, `TOConline recusou o pedido de token (HTTP ${res.status}).`);
+    throw new HttpError(502, `TOConline recusou o pedido de token (HTTP ${res.status}, grant_type=${grant}).`);
   }
 
   let parsed: { access_token?: string; expires_in?: number };
-  try {
-    parsed = await res.json();
-  } catch {
-    throw new HttpError(502, "Resposta do token não é JSON válido.");
-  }
+  try { parsed = await res.json(); } catch { throw new HttpError(502, "Resposta do token não é JSON válido."); }
   if (!parsed.access_token) throw new HttpError(502, "Resposta do token sem access_token.");
 
   const ttl = typeof parsed.expires_in === "number" ? parsed.expires_in : 3600;
-  tokenCache = { token: parsed.access_token, expiresAt: now + Math.max(ttl - 60, 30) * 1000 };
+  tokenCache = { token: parsed.access_token, expiresAt: agora + Math.max(ttl - 60, 30) * 1000, grant };
   return tokenCache.token;
 }
 
-class HttpError extends Error {
-  status: number;
-  constructor(status: number, message: string) {
-    super(message);
-    this.status = status;
-  }
-}
-
-/** GET autenticado à API TOConline. */
 async function tocGet(apiBase: string, path: string, token: string): Promise<Response> {
-  return await fetch(apiBase.replace(/\/+$/, "") + path, {
+  return await fetch(semBarra(apiBase) + path, {
     headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
   });
 }
 
-function extractList(payload: unknown): unknown[] {
+/** Descobre qual dos caminhos candidatos responde nesta conta. */
+async function resolverPath(apiBase: string, recurso: string, token: string): Promise<string> {
+  if (pathCache[recurso]) return pathCache[recurso];
+  const cfg = RECURSOS[recurso];
+  let ultimo = 0;
+  for (const p of cfg.paths) {
+    const r = await tocGet(apiBase, p + (cfg.query ? "?" + cfg.query : ""), token);
+    if (r.ok) { pathCache[recurso] = p; return p; }
+    ultimo = r.status;
+    if (r.status === 401 || r.status === 403) break; // não é o caminho, é a autorização
+  }
+  throw new HttpError(ultimo === 401 || ultimo === 403 ? 502 : 404,
+    `Nenhum endpoint de '${recurso}' respondeu em ${apiBase} (último HTTP ${ultimo}). Verificar TOC_API_BASE.`);
+}
+
+function extrairLista(payload: unknown): unknown[] {
   if (Array.isArray(payload)) return payload;
   if (payload && typeof payload === "object") {
     const p = payload as Record<string, unknown>;
@@ -135,30 +165,42 @@ function extractList(payload: unknown): unknown[] {
   return [];
 }
 
-/** Percorre todas as páginas de um recurso e devolve o array completo. */
-async function fetchAllPages(apiBase: string, basePath: string, token: string): Promise<unknown[]> {
-  const all: unknown[] = [];
-  const sep = basePath.includes("?") ? "&" : "?";
-  for (let page = 1; page <= MAX_PAGES; page++) {
-    const path = `${basePath}${sep}page[size]=${PAGE_SIZE}&page[number]=${page}`;
-    const res = await tocGet(apiBase, path, token);
+async function buscarTudo(apiBase: string, recurso: string, token: string): Promise<unknown[]> {
+  const cfg = RECURSOS[recurso];
+  const path = await resolverPath(apiBase, recurso, token);
+  const todos: unknown[] = [];
+  for (let pagina = 1; pagina <= MAX_PAGES; pagina++) {
+    const qs = [cfg.query, `page[size]=${PAGE_SIZE}`, `page[number]=${pagina}`].filter(Boolean).join("&");
+    const res = await tocGet(apiBase, `${path}?${qs}`, token);
     if (!res.ok) {
-      if (page === 1) throw new HttpError(res.status === 404 ? 404 : 502, `TOConline devolveu HTTP ${res.status} em ${basePath}`);
-      break; // páginas seguintes falharem não invalida o já obtido
+      if (pagina === 1) throw new HttpError(502, `TOConline devolveu HTTP ${res.status} em ${path}`);
+      break;
     }
     let payload: unknown;
     try { payload = await res.json(); } catch { break; }
-    const lote = extractList(payload);
+    const lote = extrairLista(payload);
     if (!lote.length) break;
-    all.push(...lote);
+    todos.push(...lote);
     if (lote.length < PAGE_SIZE) break;
   }
-  return all;
+  return todos;
 }
 
-/** Diagnóstico: só códigos de estado, nunca dados nem tokens. */
+/** Diagnóstico: só metadados e códigos de estado. Nunca dados, nunca tokens. */
 async function diagnostico(apiBase: string) {
-  const out: Record<string, unknown> = { api_base: apiBase, token_url: tokenUrlFrom(apiBase) };
+  const out: Record<string, unknown> = {
+    api_base: apiBase,
+    oauth_url: oauthUrl(apiBase) + "/token",
+    grant_type: Deno.env.get("TOC_REFRESH_TOKEN") ? "refresh_token" : "client_credentials",
+    secrets: {
+      TOC_CLIENT_ID: Deno.env.get("TOC_CLIENT_ID") ? "definido" : "EM FALTA",
+      TOC_CLIENT_SECRET: Deno.env.get("TOC_CLIENT_SECRET") ? "definido" : "EM FALTA",
+      TOC_GATEWAY_KEY: Deno.env.get("TOC_GATEWAY_KEY") ? "definido" : "EM FALTA",
+      TOC_API_BASE: Deno.env.get("TOC_API_BASE") ? "definido" : "a usar default",
+      TOC_OAUTH_URL: Deno.env.get("TOC_OAUTH_URL") ? "definido" : "a usar default",
+      TOC_REFRESH_TOKEN: Deno.env.get("TOC_REFRESH_TOKEN") ? "definido" : "não definido",
+    },
+  };
   let token: string;
   try {
     token = await getAccessToken(apiBase);
@@ -167,16 +209,20 @@ async function diagnostico(apiBase: string) {
     out.oauth = e instanceof HttpError ? e.message : "falhou";
     return out;
   }
-  const testes: Record<string, string> = {};
-  for (const [nome, path] of Object.entries(PATHS)) {
-    try {
-      const r = await tocGet(apiBase, path, token);
-      testes[path] = `HTTP ${r.status}`;
-    } catch {
-      testes[path] = "erro de rede";
+  const endpoints: Record<string, string> = {};
+  for (const recurso of Object.keys(RECURSOS)) {
+    const cfg = RECURSOS[recurso];
+    const linhas: string[] = [];
+    for (const p of cfg.paths) {
+      try {
+        const r = await tocGet(apiBase, p + (cfg.query ? "?" + cfg.query : ""), token);
+        linhas.push(`${p} → HTTP ${r.status}`);
+        if (r.ok) break;
+      } catch { linhas.push(`${p} → erro de rede`); }
     }
+    endpoints[recurso] = linhas.join(" | ");
   }
-  out.endpoints = testes;
+  out.endpoints = endpoints;
   return out;
 }
 
@@ -184,35 +230,41 @@ Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
   if (req.method !== "GET") return json({ error: "Apenas GET é suportado." }, 405);
 
-  // ── Gateway: chave própria desta função ─────────────────────────────────
-  const expected = Deno.env.get("TOC_GATEWAY_KEY");
-  if (!expected) return json({ error: "Secret em falta: TOC_GATEWAY_KEY não está definido." }, 500);
-  const provided = req.headers.get("x-api-key") ?? "";
-  if (!safeEqual(provided, expected)) return json({ error: "Não autorizado." }, 401);
-
   const url = new URL(req.url);
-  const apiBase = Deno.env.get("TOC_API_BASE") || DEFAULT_API_BASE;
-  const resource = url.searchParams.get("resource") ?? "";
+
+  // ── Gateway: chave própria desta função ─────────────────────────────────
+  // Aceita no cabeçalho x-api-key (preferido) ou em ?key= — este último por
+  // conveniência de diagnóstico a partir de um link, ao custo de a chave
+  // aparecer nos logs do gateway. Não é uma credencial TOConline.
+  const esperada = Deno.env.get("TOC_GATEWAY_KEY");
+  if (!esperada) return json({ error: "Secret em falta: TOC_GATEWAY_KEY não está definido." }, 500);
+  const fornecida = req.headers.get("x-api-key") ?? url.searchParams.get("key") ?? "";
+  if (!safeEqual(fornecida, esperada)) return json({ error: "Não autorizado." }, 401);
+
+  const apiBase = semBarra(Deno.env.get("TOC_API_BASE") || DEFAULT_API_BASE);
+  const pedido = url.searchParams.get("resource") ?? "";
+  const recurso = ALIAS[pedido] ?? pedido;
 
   try {
-    // Diagnóstico — valida credenciais e host sem devolver dados nem token.
-    if (resource === "diag") return json(await diagnostico(apiBase), 200);
+    if (pedido === "diag") return json(await diagnostico(apiBase), 200);
 
-    // Confirma que o OAuth funciona. NUNCA devolve o token (ao contrário da
-    // versão antiga, que devolvia o JSON completo ao browser).
-    if (resource === "token") {
+    // Confirma o OAuth sem NUNCA devolver o token.
+    if (pedido === "token") {
       await getAccessToken(apiBase);
-      return json({ ok: true, expira_em_s: Math.round(((tokenCache?.expiresAt ?? 0) - Date.now()) / 1000) }, 200);
+      return json({
+        ok: true,
+        grant_type: tokenCache?.grant,
+        expira_em_s: Math.round(((tokenCache?.expiresAt ?? 0) - Date.now()) / 1000),
+      }, 200);
     }
 
-    if (resource === "invoices" || resource === "customers" || resource === "clients") {
-      const path = resource === "invoices" ? PATHS.invoices : PATHS.customers; // clients ≡ customers
+    if (RECURSOS[recurso]) {
       const token = await getAccessToken(apiBase);
-      const data = await fetchAllPages(apiBase, path, token);
-      return json({ resource, count: data.length, data }, 200);
+      const data = await buscarTudo(apiBase, recurso, token);
+      return json({ resource: pedido, resolved: recurso, path: pathCache[recurso], count: data.length, data }, 200);
     }
 
-    return json({ error: "resource inválido. Use: invoices | customers | clients | token | diag" }, 400);
+    return json({ error: "resource inválido. Use: customers | clients | invoices | credit_notes | receipts | token | diag" }, 400);
   } catch (e) {
     if (e instanceof HttpError) return json({ error: e.message }, e.status);
     return json({ error: "Erro interno ao contactar o TOConline." }, 500);
