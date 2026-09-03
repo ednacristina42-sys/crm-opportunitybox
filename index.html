@@ -26459,8 +26459,12 @@ function _mvRenderKpis(view){
     return !!d && d.getFullYear()===anoAtual;
   });
   var totalFat = tesRows.reduce(function(s,r){ return s+(parseFloat(r.valorLiq)||0); }, 0);
-  var ftPositivas = tesRows.filter(function(r){ return r.tipo==='FT' && (parseFloat(r.total)||0)>0; }).length;
-  var ticketMedio = ftPositivas>0 ? totalFat/ftPositivas : 0;
+  // Ticket Médio: só FT (nunca NC) com valor positivo — numerador e
+  // denominador vêm ambas do mesmo subconjunto, ao contrário de Total
+  // Faturado (que continua a somar FT+NC líquido, sem filtrar por tipo).
+  var ftPositivasRows = tesRows.filter(function(r){ return r.tipo==='FT' && (parseFloat(r.total)||0)>0; });
+  var somaFtPositivas = ftPositivasRows.reduce(function(s,r){ return s+(parseFloat(r.valorLiq)||0); }, 0);
+  var ticketMedio = ftPositivasRows.length>0 ? somaFtPositivas/ftPositivasRows.length : 0;
 
   var cards = [
     {ic:'💼', lbl:'Total Orçamentado', val:_mvFmtEUR(totalOrc), color:'var(--mv-txt)'},
