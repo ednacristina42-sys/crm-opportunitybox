@@ -1382,6 +1382,80 @@ async function auditoriaReconciliacaoAgregada(paginasPorChamada: number, reinici
   };
 }
 
+// ══ SYNC_DOCS — paginação completa por lotes, SEM CHECKPOINT (SOMENTE LEITURA) ══
+// A Central de Sincronização Financeira do CRM (preview) chamava directamente
+// resource=invoices/credit_notes/receipts, que usa buscarTudo()/MAX_PAGES=50
+// (teto histórico de 5.000 documentos, pensado para o snapshot leve do
+// callback OAuth) — insuficiente com 6.086 faturas reais. Este recurso novo
+// devolve paginação completa, um lote de páginas TOConline por chamada, tal
+// como auditoriaFaturasLote()/auditoriaReconciliacaoAgregada(), mas SEM
+// persistir nenhum checkpoint em ob_crm_dados: cada chamada é independente,
+// devolve pagina_seguinte, e é o CHAMADOR (o browser) que decide repetir a
+// chamada até paginacao_completa:true, acumulando o resultado do seu lado.
+// Isto evita criar mais uma chave de checkpoint na base só para um proxy
+// paginado — o volume por chamada já fica pequeno (achatarDocumento por
+// página, igual a buscarDocumentosCompletos(), nunca a colecção bruta
+// inteira em memória).
+// Compatibilidade: resource=invoices/credit_notes/receipts (buscarTudo(),
+// MAX_PAGES) e o snapshot do callback OAuth continuam exactamente como
+// estavam — nada aqui os altera. Só GET ao TOConline; nunca cria, altera ou
+// cancela documentos; nunca escreve em ob-tes-receber, ob_orcamentos,
+// ob-clients, Financeiro, Ranking, Histórico ou CFO.
+async function sincDocsLote(
+  recurso: "invoices" | "credit_notes" | "receipts",
+  paginaInicio: number,
+  paginasPorChamada: number,
+): Promise<Record<string, unknown>> {
+  const inicioChamada = Date.now();
+  const token = await getAccessToken();
+  const path = await resolverPath(recurso, token);
+  const cfg = RECURSOS[recurso];
+
+  const candidatos = recurso === "receipts" ? [""] : DOC_INCLUDES;
+  const tentativas: string[] = [];
+  let escolhido = "";
+  for (const inc of candidatos) {
+    const qs = [cfg.query, inc ? `include=${encodeURIComponent(inc)}` : "", "page[size]=1", "page[number]=1"]
+      .filter(Boolean).join("&");
+    const r = await tocGet(`${path}?${qs}`, token);
+    tentativas.push(`${inc || "(sem include)"} -> HTTP ${r.status}`);
+    if (r.ok) { escolhido = inc; break; }
+  }
+
+  const data: DocAchatado[] = [];
+  let pagina = paginaInicio;
+  let paginasProcessadas = 0;
+  let terminou = false; // fim real da paginação (página curta ou vazia) — nunca escreve nada, só leitura
+  let parcial = false;  // parou por orçamento de tempo desta chamada, sem chegar ao fim
+
+  for (; paginasProcessadas < paginasPorChamada; paginasProcessadas++) {
+    if (Date.now() - inicioChamada > 90000) { parcial = true; break; }
+    const qs = [cfg.query, escolhido ? `include=${encodeURIComponent(escolhido)}` : "", `page[size]=${PAGE_SIZE}`, `page[number]=${pagina}`]
+      .filter(Boolean).join("&");
+    const res = await tocGet(`${path}?${qs}`, token);
+    if (!res.ok) {
+      if (pagina === paginaInicio && paginasProcessadas === 0) throw new HttpError(502, `TOConline devolveu HTTP ${res.status} em ${path}`);
+      terminou = true; break;
+    }
+    let payload: Record<string, unknown>;
+    try { payload = await res.json(); } catch { terminou = true; break; }
+    const lote = extrairLista(payload);
+    if (!lote.length) { terminou = true; break; }
+    for (const doc of lote as Record<string, unknown>[]) data.push(achatarDocumento(doc));
+    pagina++;
+    if (lote.length < PAGE_SIZE) { terminou = true; break; }
+    // `payload`/`lote` saem de scope aqui — nada retém os campos brutos.
+  }
+
+  return {
+    tipo: recurso, pagina_inicio: paginaInicio, pagina_seguinte: pagina,
+    paginas_processadas: paginasProcessadas, contagem: data.length,
+    paginacao_completa: terminou, parcial,
+    include_escolhido: escolhido, tentativas_include: tentativas,
+    data,
+  };
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
   if (req.method !== "GET") return json({ error: "Apenas GET e suportado." }, 405);
@@ -1575,6 +1649,26 @@ Deno.serve(async (req: Request) => {
       return json(await lerDaBase(CHAVE_RECONCILE) ?? { nunca: true }, 200);
     }
 
+    // Paginação completa por lotes, sem checkpoint (ver bloco acima). Usado
+    // pela Central de Sincronização Financeira do CRM em vez do
+    // resource=invoices/credit_notes/receipts (esses continuam capados em
+    // MAX_PAGES=50/5.000 documentos, inalterados, para compatibilidade).
+    // ?tipo=invoices|credit_notes|receipts (obrigatório), ?pagina=N (default
+    // 1, primeira página desta chamada), ?paginas=N (default 15, quantas
+    // páginas TOConline processar nesta chamada).
+    if (pedido === "sync_docs") {
+      const tipoParam = url.searchParams.get("tipo") ?? "";
+      if (tipoParam !== "invoices" && tipoParam !== "credit_notes" && tipoParam !== "receipts") {
+        return json({ error: "tipo invalido. Use: invoices | credit_notes | receipts" }, 400);
+      }
+      const paginaParam = Number(url.searchParams.get("pagina"));
+      const paginaInicio = Number.isFinite(paginaParam) && paginaParam > 0 ? Math.floor(paginaParam) : 1;
+      const paginasParam = Number(url.searchParams.get("paginas"));
+      const paginas = Number.isFinite(paginasParam) && paginasParam > 0
+        ? Math.min(50, Math.floor(paginasParam)) : PAGINAS_POR_LOTE_DEFAULT;
+      return json(await sincDocsLote(tipoParam, paginaInicio, paginas), 200);
+    }
+
     if (pedido === "token") {
       await getAccessToken();
       return json({ ok: true, grant_type: "refresh_token",
@@ -1588,7 +1682,7 @@ Deno.serve(async (req: Request) => {
       return json({ resource: pedido, resolved: recurso, path: pathCache[recurso], count: data.length, data }, 200);
     }
 
-    return json({ error: "resource invalido. Use: sync | estado | customers | clients | invoices | credit_notes | receipts | token | diag | auth | finance_audit | finance_audit_estado | finance_reconcile | finance_reconcile_estado" }, 400);
+    return json({ error: "resource invalido. Use: sync | estado | customers | clients | invoices | credit_notes | receipts | token | diag | auth | finance_audit | finance_audit_estado | finance_reconcile | finance_reconcile_estado | sync_docs" }, 400);
   } catch (e) {
     if (e instanceof HttpError) {
       // So o callback devolve HTML (e uma pagina para pessoa ler). O auth
