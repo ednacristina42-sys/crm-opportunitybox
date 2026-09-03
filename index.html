@@ -22027,37 +22027,55 @@ function sincFinDiffReceber(antes, depois){
 // invoices). Recibos só para contagem no painel — a mesclagem em
 // TES_RECEBER já resolve o estado (Pago/Aberto/Vencido) a partir do
 // próprio documento FT/NC, como tocoMergeFaturasCacheReceber() já faz hoje.
+// Busca um recurso TOConline por completo via resource=sync_docs (crm-toconline
+// v20) — paginação real por lotes, sem o teto de 5.000 documentos do antigo
+// resource=invoices/credit_notes/receipts (buscarTudo()/MAX_PAGES=50, que
+// ficava aquém das 6.087 faturas reais). Itera pagina_seguinte até
+// paginacao_completa:true; nunca cai para Make. Se parar antes disso (erro,
+// ou o limite de segurança de chamadas abaixo, que nunca deveria ser
+// atingido com paginas=15 — 61 páginas de faturas cabem em 5 chamadas),
+// devolve completo:false — quem chama decide não gravar ob-tes-receber.
+async function sincFinBuscarRecursoCompleto(tipo){
+  var pagina = 1, dados = [], chamadas = 0, completo = false;
+  while(true){
+    chamadas++;
+    var j = await tocoEF('sync_docs', 'tipo=' + encodeURIComponent(tipo) + '&pagina=' + pagina + '&paginas=15');
+    if(j.error) throw new Error(tipo + ': ' + j.error);
+    dados = dados.concat(j.data || []);
+    pagina = j.pagina_seguinte;
+    if(j.paginacao_completa){ completo = true; break; }
+    if(chamadas > 30){ console.warn('[SincFin] ' + tipo + ': mais de 30 chamadas sem completar, a parar.'); break; }
+  }
+  return { tipo: tipo, dados: dados, completo: completo, chamadas: chamadas };
+}
+
 async function sincFinBuscarTocOnline(){
-  var normalizar = function(item, tipo){
-    var a = item.attributes || item;
+  // achatarDocumento() (Edge Function) já devolve status_bruto (o campo
+  // "status" numérico do TOConline) — mesmo campo que o normalizador antigo
+  // lia como Status, agora sem reinterpretação nenhuma da nossa parte.
+  var normalizarAchatado = function(d, tipoTes){
     return {
-      _tipo: tipo,
-      Id: item.id || a.id || a.Id,
-      Number: a.document_no || a.number || a.Number || item.id,
-      CustomerName: a.customer_business_name || a.entity_name || a.CustomerName || a.name || a.client_name,
-      CustomerTaxNumber: a.customer_tax_registration_number || a.nif || a.CustomerTaxNumber,
-      Date: a.date || a.Date || a.invoice_date || a.created_at,
-      DueDate: a.due_date || a.DueDate || a.payment_due_date,
-      TotalAmount: parseFloat(a.gross_total ?? a.total_amount ?? a.TotalAmount ?? a.amount ?? a.net_total ?? 0) || 0,
-      Status: a.status || a.Status || a.payment_status || 'open',
+      _tipo: tipoTes, Id: d.id, Number: d.document_no || d.id,
+      CustomerName: d.customer_business_name, CustomerTaxNumber: d.customer_tax_registration_number,
+      Date: d.date, DueDate: d.due_date,
+      TotalAmount: (typeof d.gross_total === 'number') ? d.gross_total : (parseFloat(d.gross_total) || 0),
+      Status: d.status_bruto,
     };
   };
-  var extrair = function(payload){
-    return Array.isArray(payload) ? payload
-      : (payload && Array.isArray(payload.data)) ? payload.data
-      : (payload && Array.isArray(payload.invoices)) ? payload.invoices
-      : (payload && Array.isArray(payload.items)) ? payload.items
-      : [];
-  };
 
-  var faturas = extrair(await tocoEF('invoices')).map(function(x){ return normalizar(x,'FT'); });
-  var notas = extrair(await tocoEF('credit_notes')).map(function(x){ return normalizar(x,'NC'); });
-  var recibosCount = 0;
-  try{ recibosCount = extrair(await tocoEF('receipts')).length; }
-  catch(eRec){ console.warn('[SincFin] recibos:', eRec.message); }
+  var resInv = await sincFinBuscarRecursoCompleto('invoices');
+  var resNc = await sincFinBuscarRecursoCompleto('credit_notes');
+  var resRec = await sincFinBuscarRecursoCompleto('receipts');
 
-  var todos = faturas.concat(notas);
-  if(todos.length){
+  var faturas = resInv.dados.map(function(d){ return normalizarAchatado(d, 'FT'); });
+  var notas = resNc.dados.map(function(d){ return normalizarAchatado(d, 'NC'); });
+  var completo = resInv.completo && resNc.completo && resRec.completo;
+
+  // Só mescla no cache (e, a seguir, em TES_RECEBER) se os TRÊS recursos
+  // completaram a paginação — uma mesclagem parcial (ex.: só 15 das 61
+  // páginas de faturas) contaria como "sincronizado" sem o estar.
+  if(completo){
+    var todos = faturas.concat(notas);
     var chave = function(d){ return (d._tipo||'') + '-' + (d.Id||d.Number||''); };
     var mapa = {};
     (_tocoFatCache||[]).forEach(function(d){ mapa[chave(d)] = d; });
@@ -22066,7 +22084,12 @@ async function sincFinBuscarTocOnline(){
     _tocoFatCache = merged;
     try{ localStorage.setItem(TOCO_FAT_KEY, JSON.stringify({ts: Date.now(), data: merged})); }catch(e){}
   }
-  return { faturas: faturas.length, notas: notas.length, recibos: recibosCount };
+
+  return {
+    faturas: resInv.dados.length, notas: resNc.dados.length, recibos: resRec.dados.length,
+    paginacao_completa: { invoices: resInv.completo, credit_notes: resNc.completo, receipts: resRec.completo },
+    completo: completo,
+  };
 }
 
 function sincFinRenderPainel(state){
@@ -22085,8 +22108,12 @@ function sincFinRenderPainel(state){
       + '<div style="font-size:11px;color:var(--muted);margin-top:2px">' + rot + '</div></div>';
   };
   var quando = r.ts ? new Date(r.ts).toLocaleString('pt-PT') : '—';
+  var pc = r.paginacao_completa || {};
+  var badgePag = function(v){ return v === true ? '✓' : (v === false ? '✗' : '—'); };
+  var badgeCor = function(v){ return v === true ? '#34c759' : (v === false ? '#ff453a' : 'var(--muted)'); };
   var html = '<div style="font-size:12.5px;color:var(--muted);margin-bottom:10px">Última sincronização: ' + quando
-    + (r.ok ? ' <span style="color:#34c759">✓ concluída</span>' : (r.erros && r.erros.length ? ' <span style="color:#ff453a">com erros</span>' : ''))
+    + (r.gravado ? ' <span style="color:#34c759">✓ gravado em ob-tes-receber</span>'
+       : (r.ts ? ' <span style="color:#ff453a">✗ não gravado' + (r.motivo_nao_gravado ? ' — ' + r.motivo_nao_gravado : '') + '</span>' : ''))
     + '</div>'
     + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:9px">'
     + cartao('Google Sheets', r.sheets_ok ? '✓ atualizado' : '✗ falhou', r.sheets_ok ? '#34c759' : '#ff453a')
@@ -22098,6 +22125,12 @@ function sincFinRenderPainel(state){
     + cartao('Documentos atualizados', r.documentos_atualizados != null ? r.documentos_atualizados : '—', '#60a5fa')
     + cartao('Conflitos', r.conflitos != null ? r.conflitos : '—', r.conflitos ? '#f5a623' : 'var(--muted)')
     + cartao('Erros', (r.erros||[]).length, r.erros && r.erros.length ? '#ff453a' : 'var(--muted)')
+    + '</div>'
+    + '<div style="font-weight:600;font-size:12.5px;margin:14px 0 6px">Paginação completa (TOConline)</div>'
+    + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:9px">'
+    + cartao('Faturas (FT)', badgePag(pc.invoices), badgeCor(pc.invoices))
+    + cartao('Notas de Crédito (NC)', badgePag(pc.credit_notes), badgeCor(pc.credit_notes))
+    + cartao('Recibos', badgePag(pc.receipts), badgeCor(pc.receipts))
     + '</div>';
   if(r.erros && r.erros.length){
     var esc = function(x){ return String(x==null?'':x).replace(/[&<>"]/g, function(c){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]; }); };
@@ -22121,10 +22154,12 @@ async function sincronizarFinanceiroCentral(){
   var btn = document.getElementById('sinc-fin-btn');
   if(btn){ btn.disabled = true; btn.style.opacity = .6; }
   var resumo = {
-    ts: new Date().toISOString(), ok: false, sheets_ok: false,
+    ts: new Date().toISOString(), ok: false, gravado: false, motivo_nao_gravado: '', sheets_ok: false,
     faturas_toconline: 0, notas_credito: 0, recibos: 0, clientes: 0,
+    paginacao_completa: { invoices: null, credit_notes: null, receipts: null },
     documentos_novos: 0, documentos_atualizados: 0, conflitos: 0, erros: [],
   };
+  var bloquearGravacao = false;
   try{
     // 1) Estado remoto mais recente ANTES de mexer em nada — não mesclar
     // contra uma cópia local (deste browser) que pode estar desatualizada.
@@ -22137,7 +22172,11 @@ async function sincronizarFinanceiroCentral(){
     var antesSnapshot = JSON.parse(JSON.stringify(atualRemoto));
 
     // 2) Backup — antes de qualquer reconciliação que altere ob-tes-receber.
-    sincFinBaixarBackup(atualRemoto);
+    // Se o backup falhar, aborta: nunca reconciliar/gravar sem uma cópia de
+    // segurança descarregada primeiro.
+    if(!sincFinBaixarBackup(atualRemoto)){
+      throw new Error('Backup de ob-tes-receber falhou — sincronização abortada antes de qualquer alteração.');
+    }
 
     // Passa a mesclar sobre a cópia remota mais fresca.
     TES_RECEBER = atualRemoto;
@@ -22151,16 +22190,27 @@ async function sincronizarFinanceiroCentral(){
       if(!resumo.sheets_ok) resumo.erros.push('Google Sheets: sem confirmação de sucesso (ver consola).');
     }catch(eSheet){ resumo.erros.push('Google Sheets: ' + eSheet.message); }
 
-    // 4) TOConline — FT + NC. Nunca cai para Make: se a Edge Function falhar,
-    // fica registado como erro em vez de usar o proxy Make.
-    sincFinRenderPainel({ a_correr:true, passo:'A sincronizar TOConline (faturas + notas de crédito)…' });
+    // 4) TOConline — FT + NC + recibos, paginação completa via
+    // resource=sync_docs (nunca cai para Make). Itera cada recurso até
+    // paginacao_completa:true; se algum não completar, bloqueia a gravação
+    // no passo 7 — nunca grava ob-tes-receber com uma sincronização parcial.
+    sincFinRenderPainel({ a_correr:true, passo:'A sincronizar TOConline (faturas, notas de crédito, recibos)…' });
     try{
       var tocoCounts = await sincFinBuscarTocOnline();
       resumo.faturas_toconline = tocoCounts.faturas;
       resumo.notas_credito = tocoCounts.notas;
       resumo.recibos = tocoCounts.recibos;
-      tocoMergeFaturasCacheReceber();
-    }catch(eToco){ resumo.erros.push('TOConline (faturas/NC): ' + eToco.message); }
+      resumo.paginacao_completa = tocoCounts.paginacao_completa;
+      if(tocoCounts.completo){
+        tocoMergeFaturasCacheReceber();
+      } else {
+        bloquearGravacao = true;
+        resumo.erros.push('TOConline: paginação não completou para todos os recursos — ' + JSON.stringify(tocoCounts.paginacao_completa));
+      }
+    }catch(eToco){
+      bloquearGravacao = true;
+      resumo.erros.push('TOConline (faturas/NC/recibos): ' + eToco.message);
+    }
 
     // 5) Clientes TOConline → CRM (Fase B, já em produção — só preenche
     // campos vazios, nunca cria nem apaga clientes).
@@ -22172,50 +22222,60 @@ async function sincronizarFinanceiroCentral(){
       if(eCli.atualizados > 0 && typeof obSbBoot === 'function'){ try{ await obSbBoot(); }catch(eBoot){} }
     }catch(eCliente){ resumo.erros.push('Clientes TOConline: ' + eCliente.message); }
 
-    // 6) Diferenças entre o estado lido no passo 1 e TES_RECEBER depois das mesclagens.
+    // 6) Diferenças entre o estado lido no passo 1 e TES_RECEBER depois das
+    // mesclagens — informativo mesmo que a gravação seja bloqueada a seguir.
     var diff = sincFinDiffReceber(antesSnapshot, TES_RECEBER);
     resumo.documentos_novos = diff.novos;
     resumo.documentos_atualizados = diff.atualizados;
     resumo.conflitos += diff.conflitos;
 
     // 7) Gravação real na cloud — autenticada (crmSBClient), nunca a anon
-    // key de obSbPush(). tesSaveReceber() continua a ser chamada só para
-    // manter o localStorage deste browser coerente; o seu obSbPush interno
-    // continua a falhar em silêncio para esta chave, tal como já falhava
-    // antes desta central existir — inofensivo, a gravação real é a de baixo.
-    sincFinRenderPainel({ a_correr:true, passo:'A gravar em ob-tes-receber…' });
-    tesSaveReceber();
-    var grav = await sb.from('ob_crm_dados').upsert(
-      { chave:'ob-tes-receber', dados: TES_RECEBER, updated_at: new Date().toISOString() },
-      { onConflict:'chave' }
-    );
-    if(grav.error) throw new Error('Gravação em ob-tes-receber falhou: ' + grav.error.message + ' (confirme que a sua conta tem perfil Admin ou Financeiro)');
+    // key de obSbPush(). Só grava se TODOS os recursos TOConline completaram
+    // a paginação (bloquearGravacao); uma sincronização parcial nunca escreve
+    // em ob-tes-receber, mesmo que só as alterações do Google Sheets já
+    // estivessem prontas.
+    if(bloquearGravacao){
+      resumo.motivo_nao_gravado = 'paginação TOConline incompleta (ver Paginação completa abaixo) — ob-tes-receber não foi alterado.';
+    } else {
+      sincFinRenderPainel({ a_correr:true, passo:'A gravar em ob-tes-receber…' });
+      // tesSaveReceber() continua a ser chamada só para manter o localStorage
+      // deste browser coerente; o seu obSbPush interno continua a falhar em
+      // silêncio para esta chave, tal como já falhava antes desta central
+      // existir — inofensivo, a gravação real é a de baixo.
+      tesSaveReceber();
+      var grav = await sb.from('ob_crm_dados').upsert(
+        { chave:'ob-tes-receber', dados: TES_RECEBER, updated_at: new Date().toISOString() },
+        { onConflict:'chave' }
+      );
+      if(grav.error) throw new Error('Gravação em ob-tes-receber falhou: ' + grav.error.message + ' (confirme que a sua conta tem perfil Admin ou Financeiro)');
+      resumo.gravado = true;
 
-    // 8) Refrescar as vistas que leem ob-tes-receber diretamente, com os
-    // mesmos dados que acabámos de gravar — sem esperar por reload.
-    _hfData = TES_RECEBER.slice();
-    _mvTesData = TES_RECEBER.slice();
-    try{ if(typeof renderDashboardCFO==='function') renderDashboardCFO(); }catch(e){}
-    var pageFin = document.getElementById('page-financeiro');
-    if(pageFin && pageFin.classList.contains('on')){
-      try{ if(typeof renderFinanceiro==='function') renderFinanceiro(); }catch(e){}
-      try{ if(typeof initCharts==='function') setTimeout(initCharts, 100); }catch(e){}
-    }
-    var pageTes = document.getElementById('page-tesouraria');
-    if(pageTes && pageTes.classList.contains('on')){ try{ if(typeof tesRender==='function') tesRender(); }catch(e){} }
-    var pageHf = document.getElementById('page-historico-faturacao');
-    if(pageHf && pageHf.classList.contains('on')){ try{ if(typeof renderHistoricoFaturacao==='function') renderHistoricoFaturacao(); }catch(e){} }
-    var pageMv = document.getElementById('page-mapa-vendas');
-    if(pageMv && pageMv.classList.contains('on')){ try{ if(typeof renderMapaVendas==='function') renderMapaVendas(); }catch(e){} }
-    var pageAv = document.getElementById('page-admin-analise-vendas');
-    if(pageAv && pageAv.classList.contains('on')){ try{ if(typeof renderAnaliseVendas==='function') renderAnaliseVendas(); }catch(e){} }
-    var pageRel = document.getElementById('page-relatorios');
-    if(pageRel && pageRel.classList.contains('on')){ try{ if(typeof renderRelatorios==='function') renderRelatorios(); }catch(e){} }
-    var pageOrc = document.getElementById('page-comercial-orcamentos');
-    if(pageOrc && pageOrc.classList.contains('on')){ try{ if(typeof tocoFiltrar==='function') tocoFiltrar(); }catch(e){} }
+      // 8) Refrescar as vistas que leem ob-tes-receber diretamente, com os
+      // mesmos dados que acabámos de gravar — sem esperar por reload.
+      _hfData = TES_RECEBER.slice();
+      _mvTesData = TES_RECEBER.slice();
+      try{ if(typeof renderDashboardCFO==='function') renderDashboardCFO(); }catch(e){}
+      var pageFin = document.getElementById('page-financeiro');
+      if(pageFin && pageFin.classList.contains('on')){
+        try{ if(typeof renderFinanceiro==='function') renderFinanceiro(); }catch(e){}
+        try{ if(typeof initCharts==='function') setTimeout(initCharts, 100); }catch(e){}
+      }
+      var pageTes = document.getElementById('page-tesouraria');
+      if(pageTes && pageTes.classList.contains('on')){ try{ if(typeof tesRender==='function') tesRender(); }catch(e){} }
+      var pageHf = document.getElementById('page-historico-faturacao');
+      if(pageHf && pageHf.classList.contains('on')){ try{ if(typeof renderHistoricoFaturacao==='function') renderHistoricoFaturacao(); }catch(e){} }
+      var pageMv = document.getElementById('page-mapa-vendas');
+      if(pageMv && pageMv.classList.contains('on')){ try{ if(typeof renderMapaVendas==='function') renderMapaVendas(); }catch(e){} }
+      var pageAv = document.getElementById('page-admin-analise-vendas');
+      if(pageAv && pageAv.classList.contains('on')){ try{ if(typeof renderAnaliseVendas==='function') renderAnaliseVendas(); }catch(e){} }
+      var pageRel = document.getElementById('page-relatorios');
+      if(pageRel && pageRel.classList.contains('on')){ try{ if(typeof renderRelatorios==='function') renderRelatorios(); }catch(e){} }
+      var pageOrc = document.getElementById('page-comercial-orcamentos');
+      if(pageOrc && pageOrc.classList.contains('on')){ try{ if(typeof tocoFiltrar==='function') tocoFiltrar(); }catch(e){} }
 
-    if(typeof EventBus !== 'undefined' && EventBus.publish){
-      EventBus.publish('dados_financeiros_atualizados', { timestamp: resumo.ts, fonte: 'Sincronizar Financeiro' });
+      if(typeof EventBus !== 'undefined' && EventBus.publish){
+        EventBus.publish('dados_financeiros_atualizados', { timestamp: resumo.ts, fonte: 'Sincronizar Financeiro' });
+      }
     }
 
     resumo.ok = true;
