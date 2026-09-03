@@ -466,6 +466,12 @@ async function diagnostico(tokenJaObtido?: string) {
 //    forte (telefone ou email coincidente). Nunca so pelo nome.
 //  · 999999990 ("Consumidor Final") NAO e identidade: excluido dos dois lados.
 //    Sem isto, quatro registos do TOConline colavam-se ao mesmo cliente.
+//  · Correcao de 02/09: o excluido-dos-dois-lados era so o ramo de match por
+//    NIF — o registo ainda seguia para o match por nome e acabava contado em
+//    "novos" ou "ambiguos". Agora fica de fora logo no topo do ciclo: nunca
+//    conta como novo elegivel, nunca e criado, nunca entra em match/fusao
+//    por nenhum criterio. Fica so na sua propria lista "bloqueados", para
+//    auditoria.
 //  · So se escreve em campo VAZIO. Campo ja preenchido e diferente = conflito,
 //    contado e mostrado, nunca sobrescrito.
 //  · Emails @opportunitybox.pt sao do comercial, nao do cliente: bloqueados.
@@ -558,10 +564,20 @@ async function sincronizarClientes(seco: boolean, via: string) {
 
   let encontrados = 0, atualizados = 0, campos = 0;
   const conflitos: unknown[] = [], ambiguos: unknown[] = [], semMatch: unknown[] = [];
+  const bloqueados: unknown[] = [];
   const exemplos: unknown[] = [];
   const casados = new Set<string>();
 
   for (const t of toc) {
+    // NIF 999999990 ("Consumidor Final") e um placeholder generico do TOConline,
+    // nao uma identidade de cliente — varios registos diferentes usam-no. Fica
+    // de fora de tudo: nao conta como "novo" elegivel, nunca e criado, nunca
+    // entra em match/fusao (nem por NIF nem por nome). So aparece na sua propria
+    // lista de bloqueados, para auditoria.
+    if (t.nif === NIF_GENERICO || nomeNorm(t.nome) === "CONSUMIDOR FINAL") {
+      bloqueados.push({ toc_id: t.id, nome: t.nome, motivo: "NIF genérico (999999990) / Consumidor Final — placeholder, não é identidade de cliente" });
+      continue;
+    }
     let alvo: Cli | null = null, criterio = "", jaExplicado = false;
     const cands = (xs?: Cli[]) => (xs && xs.length === 1 ? xs[0] : null);
 
@@ -633,8 +649,9 @@ async function sincronizarClientes(seco: boolean, via: string) {
     clientes_toconline: toc.length, clientes_crm: clientes.length,
     encontrados, atualizados, campos_preenchidos: campos,
     novos: semMatch.length, conflitos: conflitos.length, ambiguos: ambiguos.length,
+    bloqueados: bloqueados.length,
     lista_novos: semMatch.slice(0, 200), lista_conflitos: conflitos.slice(0, 200),
-    lista_ambiguos: ambiguos.slice(0, 200), exemplos,
+    lista_ambiguos: ambiguos.slice(0, 200), lista_bloqueados: bloqueados.slice(0, 200), exemplos,
   };
   if (!seco) await guardarNaBase(CHAVE_SYNC, estado);
   return estado;
