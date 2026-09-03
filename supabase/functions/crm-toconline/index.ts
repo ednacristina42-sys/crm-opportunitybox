@@ -1152,6 +1152,236 @@ async function auditoriaFaturasLote(paginasPorChamada: number, reiniciar: boolea
   };
 }
 
+// ══ FASE C — RECONCILIACAO AGREGADA POR CLIENTE (SOMENTE LEITURA) ══════════
+// Objetivo (autorizado depois do diagnostico das 292 divergencias de valor):
+// reconciliar TOConline vs ob-tes-receber por SOMA por cliente, nao por
+// linha — o diagnostico mostrou que 86% das linhas do ob-tes-receber
+// pertencem a clientes com mais de uma linha (projectos/tranches), enquanto
+// o TOConline fatura por documento; comparar linha-a-linha por valor estava
+// destinado a falhar na maioria dos casos. FT e NC sao tratados e somados
+// SEPARADAMENTE dos dois lados, nunca comparados um com o outro. Placeholders
+// (Cliente Final / NIF 999999990) sao excluidos por completo, dos dois
+// lados, antes de somar. So GET ao TOConline, so leitura de ob-tes-receber;
+// escreve so no checkpoint proprio e no relatorio final (toc-finance-
+// reconcile), nunca em ob-tes-receber/ob_orcamentos/Financeiro/Ranking/
+// Historico/CFO. Vendedor TOConline continua NAO CONFIRMADO — nao usado
+// aqui, nao usado no Ranking.
+const CHAVE_RECONCILE = "toc-finance-reconcile";
+const CHAVE_RECONCILE_CKPT = "toc-finance-reconcile-checkpoint";
+
+interface ClienteTocAc {
+  nome_exemplo: string;
+  toc_ft_bruto: number; toc_ft_count: number; toc_ft_pendente: number; toc_ft_anuladas: number;
+  toc_nc_bruto: number; toc_nc_count: number; toc_nc_anuladas: number;
+}
+interface CheckpointReconcile {
+  next_page_invoices: number;
+  paginas_processadas_invoices: number;
+  credit_notes_concluido: boolean;
+  include_escolhido_invoices: string;
+  clientes: Record<string, ClienteTocAc>;
+  placeholders_excluidos_toc: number;
+  iniciado_em: string;
+}
+
+// Mesma regra da Fase B (NIF_GENERICO / "Consumidor Final"), alargada ao
+// padrao "Cliente Final" encontrado no ob-tes-receber (pedido explicito).
+const ehPlaceholder = (nome: unknown, nif?: unknown): boolean => {
+  const n = nomeNorm(nome);
+  if (n.includes("CLIENTE FINAL") || n === "CONSUMIDOR FINAL") return true;
+  if (nif !== undefined && nif !== "" && nifNorm(nif) === NIF_GENERICO) return true;
+  return false;
+};
+
+function acumularDocReconcile(clientes: Record<string, ClienteTocAc>, d: DocAchatado, tipo: "ft" | "nc"): boolean {
+  if (ehPlaceholder(d.customer_business_name, d.customer_tax_registration_number)) return true;
+  const nm = nomeNorm(d.customer_business_name) || "(SEM NOME)";
+  if (!clientes[nm]) {
+    clientes[nm] = { nome_exemplo: d.customer_business_name || nm, toc_ft_bruto: 0, toc_ft_count: 0, toc_ft_pendente: 0, toc_ft_anuladas: 0, toc_nc_bruto: 0, toc_nc_count: 0, toc_nc_anuladas: 0 };
+  }
+  const c = clientes[nm];
+  if (tipo === "ft") {
+    if (d.voided_reason) c.toc_ft_anuladas++;
+    else { c.toc_ft_bruto += d.gross_total; c.toc_ft_count++; c.toc_ft_pendente += d.pending_total; }
+  } else {
+    if (d.voided_reason) c.toc_nc_anuladas++;
+    else { c.toc_nc_bruto += Math.abs(d.gross_total); c.toc_nc_count++; }
+  }
+  return false;
+}
+
+async function auditoriaReconciliacaoAgregada(paginasPorChamada: number, reiniciar: boolean): Promise<Record<string, unknown>> {
+  const inicioChamada = Date.now();
+  const token = await getAccessToken();
+  const numGenerico = (x: unknown): number => (typeof x === "number" ? x : parseFloat(String(x ?? "")) || 0);
+
+  let ckpt = reiniciar ? null : (await lerDaBase(CHAVE_RECONCILE_CKPT)) as CheckpointReconcile | null;
+  if (!ckpt) {
+    ckpt = {
+      next_page_invoices: 1, paginas_processadas_invoices: 0, credit_notes_concluido: false,
+      include_escolhido_invoices: "", clientes: {}, placeholders_excluidos_toc: 0,
+      iniciado_em: new Date().toISOString(),
+    };
+  }
+  const clientes = ckpt.clientes;
+
+  // Notas de credito: so ~260 documentos / poucas paginas — cabem inteiras
+  // numa chamada, sem checkpoint proprio. Reutiliza buscarDocumentosCompletos
+  // (mesma funcao ja usada e testada em toc-finance-audit-credit_notes).
+  if (!ckpt.credit_notes_concluido) {
+    const { data: ncDocs } = await buscarDocumentosCompletos("credit_notes", token, 40000);
+    for (const d of ncDocs) if (acumularDocReconcile(clientes, d, "nc")) ckpt.placeholders_excluidos_toc++;
+    ckpt.credit_notes_concluido = true;
+  }
+
+  // Faturas: em lotes, mesma rede de seguranca da auditoriaFaturasLote
+  // (6086 faturas de uma vez ja rebentou com WORKER_RESOURCE_LIMIT).
+  const path = await resolverPath("invoices", token);
+  const cfg = RECURSOS["invoices"];
+  let escolhido = ckpt.include_escolhido_invoices;
+  if (!escolhido && ckpt.paginas_processadas_invoices === 0) {
+    for (const inc of DOC_INCLUDES) {
+      const qs = [cfg.query, inc ? `include=${encodeURIComponent(inc)}` : "", "page[size]=1", "page[number]=1"].filter(Boolean).join("&");
+      const r = await tocGet(`${path}?${qs}`, token);
+      if (r.ok) { escolhido = inc; break; }
+    }
+  }
+
+  let paginasNesteLote = 0, terminouInvoices = false, paginaAtual = ckpt.next_page_invoices;
+  for (; paginasNesteLote < paginasPorChamada; paginasNesteLote++) {
+    const qs = [cfg.query, escolhido ? `include=${encodeURIComponent(escolhido)}` : "", `page[size]=${PAGE_SIZE}`, `page[number]=${paginaAtual}`]
+      .filter(Boolean).join("&");
+    const res = await tocGet(`${path}?${qs}`, token);
+    if (!res.ok) {
+      if (paginaAtual === 1 && ckpt.paginas_processadas_invoices === 0) throw new HttpError(502, `TOConline devolveu HTTP ${res.status} em ${path}`);
+      terminouInvoices = true; break;
+    }
+    let payload: Record<string, unknown>;
+    try { payload = await res.json(); } catch { terminouInvoices = true; break; }
+    const lote = extrairLista(payload);
+    if (!lote.length) { terminouInvoices = true; break; }
+    for (const docBruto of lote as Record<string, unknown>[]) {
+      const d = achatarDocumento(docBruto);
+      if (acumularDocReconcile(clientes, d, "ft")) ckpt.placeholders_excluidos_toc++;
+    }
+    ckpt.paginas_processadas_invoices++;
+    paginaAtual++;
+    if (lote.length < PAGE_SIZE) { terminouInvoices = true; break; }
+    if (Date.now() - inicioChamada > 90000) break; // orcamento de tempo por chamada
+  }
+
+  ckpt.next_page_invoices = paginaAtual;
+  ckpt.include_escolhido_invoices = escolhido;
+  await guardarNaBase(CHAVE_RECONCILE_CKPT, ckpt);
+
+  if (!terminouInvoices) {
+    return {
+      concluido: false,
+      next_page_invoices: ckpt.next_page_invoices, paginas_processadas_invoices: ckpt.paginas_processadas_invoices,
+      clientes_toconline_ate_agora: Object.keys(clientes).length,
+      nota: "Lote gravado (toc-finance-reconcile-checkpoint). Chame de novo resource=finance_reconcile para continuar.",
+    };
+  }
+
+  // Lado CRM: ob-tes-receber completo, agregado por cliente, FT/NC separado.
+  const tes = (await lerDaBase(CHAVE_TES_RECEBER)) as Record<string, unknown>[] | null;
+  const tesRows = Array.isArray(tes) ? tes : [];
+  let placeholdersExcluidosCrm = 0;
+  const crmMap: Record<string, { nome_exemplo: string; ft_total: number; ft_count: number; ft_recebido: number; ft_naorecebido: number; nc_total: number; nc_count: number }> = {};
+  for (const linhaRaw of tesRows) {
+    const linha = linhaRaw as Record<string, unknown>;
+    const clienteNome = linha.cliente;
+    if (ehPlaceholder(clienteNome, linha.nif)) { placeholdersExcluidosCrm++; continue; }
+    const nm = nomeNorm(clienteNome) || "(SEM NOME)";
+    if (!crmMap[nm]) crmMap[nm] = { nome_exemplo: val(clienteNome) || nm, ft_total: 0, ft_count: 0, ft_recebido: 0, ft_naorecebido: 0, nc_total: 0, nc_count: 0 };
+    const c = crmMap[nm];
+    const valor = numGenerico(linha.total ?? linha.valorRecebido);
+    const tipo = val(linha.tipo);
+    const estado = val(linha.estado);
+    if (tipo === "NC") { c.nc_total += Math.abs(valor); c.nc_count++; }
+    else { c.ft_total += valor; c.ft_count++; if (estado === "Recebido") c.ft_recebido++; else c.ft_naorecebido++; }
+  }
+
+  // Fusao por nome normalizado + categorizacao.
+  const todosNomes = new Set([...Object.keys(clientes), ...Object.keys(crmMap)]);
+  type LinhaReconcile = {
+    cliente: string; toc_ft_bruto: number; toc_nc_bruto: number; toc_saldo_liquido: number; toc_ft_pendente: number;
+    crm_ft_total: number; crm_nc_total: number; crm_saldo_liquido: number;
+    diferenca: number; diferenca_abs: number;
+    crm_estado_agregado: string; toc_liquidado: boolean;
+    parcial: boolean; crm_recebido_toc_pendente: boolean; crm_naorecebido_toc_liquidado: boolean;
+  };
+  const linhas: LinhaReconcile[] = [];
+  for (const nm of todosNomes) {
+    const t = clientes[nm], c = crmMap[nm];
+    const toc_ft_bruto = t?.toc_ft_bruto ?? 0, toc_nc_bruto = t?.toc_nc_bruto ?? 0, toc_ft_pendente = t?.toc_ft_pendente ?? 0;
+    const crm_ft_total = c?.ft_total ?? 0, crm_nc_total = c?.nc_total ?? 0;
+    const toc_saldo_liquido = toc_ft_bruto - toc_nc_bruto, crm_saldo_liquido = crm_ft_total - crm_nc_total;
+    const diferenca = toc_saldo_liquido - crm_saldo_liquido;
+    const crm_estado_agregado = !c || c.ft_count === 0 ? "sem_dados_crm"
+      : c.ft_recebido > 0 && c.ft_naorecebido === 0 ? "Recebido"
+      : c.ft_naorecebido > 0 && c.ft_recebido === 0 ? "Não Recebido" : "Misto";
+    const toc_liquidado = toc_ft_pendente <= 0.5;
+    linhas.push({
+      cliente: t?.nome_exemplo || c?.nome_exemplo || nm,
+      toc_ft_bruto, toc_nc_bruto, toc_saldo_liquido, toc_ft_pendente,
+      crm_ft_total, crm_nc_total, crm_saldo_liquido,
+      diferenca, diferenca_abs: Math.abs(diferenca),
+      crm_estado_agregado, toc_liquidado,
+      parcial: crm_estado_agregado === "Misto" || (toc_ft_pendente > 0.5 && toc_ft_pendente < toc_ft_bruto - 0.5),
+      crm_recebido_toc_pendente: crm_estado_agregado === "Recebido" && !toc_liquidado && (t?.toc_ft_count ?? 0) > 0,
+      crm_naorecebido_toc_liquidado: crm_estado_agregado === "Não Recebido" && toc_liquidado && (t?.toc_ft_count ?? 0) > 0,
+    });
+  }
+
+  const reconciliados = linhas.filter((l) => l.diferenca_abs <= 0.5);
+  const divergentes = linhas.filter((l) => l.diferenca_abs > 0.5);
+  const parciais = linhas.filter((l) => l.parcial);
+  const casosRecebidoPendente = linhas.filter((l) => l.crm_recebido_toc_pendente);
+  const casosNaoRecebidoLiquidado = linhas.filter((l) => l.crm_naorecebido_toc_liquidado);
+  const diferencaTotalSinalizada = linhas.reduce((s, l) => s + l.diferenca, 0);
+  const diferencaTotalAbsoluta = linhas.reduce((s, l) => s + l.diferenca_abs, 0);
+  const maiores20 = [...linhas].sort((a, b) => b.diferenca_abs - a.diferenca_abs).slice(0, 20);
+
+  const clientesComNcCrm = Object.entries(crmMap).filter(([, c]) => c.nc_count > 0);
+  const nc27ComNcToc = clientesComNcCrm.filter(([nm]) => (clientes[nm]?.toc_nc_count ?? 0) > 0).length;
+
+  const relatorio = {
+    ts: new Date().toISOString(), modo: "reconciliacao_agregada_por_cliente",
+    duracao_total_ms: Date.now() - Date.parse(ckpt.iniciado_em),
+    paginas_processadas_invoices: ckpt.paginas_processadas_invoices,
+    clientes_analisados: linhas.length,
+    clientes_reconciliados_diferenca_ate_050: reconciliados.length,
+    clientes_divergencia_real_acima_050: divergentes.length,
+    placeholders_excluidos: { toconline: ckpt.placeholders_excluidos_toc, crm: placeholdersExcluidosCrm },
+    impacto_27_nc: {
+      linhas_nc_no_crm: 27, clientes_com_nc_no_crm: clientesComNcCrm.length,
+      desses_com_nc_tambem_no_toconline: nc27ComNcToc,
+      total_nc_crm: clientesComNcCrm.reduce((s, [, c]) => s + c.nc_total, 0),
+      total_nc_toconline: Object.values(clientes).reduce((s, c) => s + c.toc_nc_bruto, 0),
+    },
+    casos_pagamento_parcial: parciais.length,
+    casos_crm_recebido_toc_pendente: casosRecebidoPendente.length,
+    casos_crm_naorecebido_toc_liquidado: casosNaoRecebidoLiquidado.length,
+    diferenca_total_euros_sinalizada: diferencaTotalSinalizada,
+    diferenca_total_euros_absoluta: diferencaTotalAbsoluta,
+    amostra_maiores_20_desvios: maiores20,
+    amostra_pagamento_parcial: parciais.slice(0, 30),
+    amostra_crm_recebido_toc_pendente: casosRecebidoPendente.slice(0, 30),
+    amostra_crm_naorecebido_toc_liquidado: casosNaoRecebidoLiquidado.slice(0, 30),
+    nota: "SOMENTE LEITURA. Reconciliacao por soma agregada por cliente (nao exige 1:1 linha-documento). Placeholders (Cliente Final / NIF 999999990) excluidos de ambos os lados antes de somar. FT e NC tratados e somados separadamente dos dois lados, nunca comparados um com o outro. Vendedor TOConline continua NAO CONFIRMADO — nao usado aqui nem no Ranking. Nao escreveu em ob-tes-receber, ob_orcamentos, Financeiro, Ranking, Historico ou CFO.",
+  };
+  await guardarNaBase(CHAVE_RECONCILE, relatorio);
+  return {
+    concluido: true,
+    clientes_analisados: relatorio.clientes_analisados,
+    clientes_reconciliados_diferenca_ate_050: relatorio.clientes_reconciliados_diferenca_ate_050,
+    clientes_divergencia_real_acima_050: relatorio.clientes_divergencia_real_acima_050,
+    diferenca_total_euros_sinalizada: relatorio.diferenca_total_euros_sinalizada,
+    diferenca_total_euros_absoluta: relatorio.diferenca_total_euros_absoluta,
+  };
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
   if (req.method !== "GET") return json({ error: "Apenas GET e suportado." }, 405);
@@ -1331,6 +1561,20 @@ Deno.serve(async (req: Request) => {
       return json(await lerDaBase(CHAVE_FINANCE_AUDIT) ?? { nunca: true }, 200);
     }
 
+    // Reconciliacao agregada por cliente (ver bloco acima). Mesmo esquema de
+    // lotes/checkpoint de finance_audit&parte=invoices: ?paginas=N (default
+    // 15), ?reiniciar=1 para comecar do zero.
+    if (pedido === "finance_reconcile") {
+      const paginasParam = Number(url.searchParams.get("paginas"));
+      const paginas = Number.isFinite(paginasParam) && paginasParam > 0
+        ? Math.min(50, Math.floor(paginasParam)) : PAGINAS_POR_LOTE_DEFAULT;
+      const reiniciar = url.searchParams.get("reiniciar") === "1";
+      return json(await auditoriaReconciliacaoAgregada(paginas, reiniciar), 200);
+    }
+    if (pedido === "finance_reconcile_estado") {
+      return json(await lerDaBase(CHAVE_RECONCILE) ?? { nunca: true }, 200);
+    }
+
     if (pedido === "token") {
       await getAccessToken();
       return json({ ok: true, grant_type: "refresh_token",
@@ -1344,7 +1588,7 @@ Deno.serve(async (req: Request) => {
       return json({ resource: pedido, resolved: recurso, path: pathCache[recurso], count: data.length, data }, 200);
     }
 
-    return json({ error: "resource invalido. Use: sync | estado | customers | clients | invoices | credit_notes | receipts | token | diag | auth | finance_audit | finance_audit_estado" }, 400);
+    return json({ error: "resource invalido. Use: sync | estado | customers | clients | invoices | credit_notes | receipts | token | diag | auth | finance_audit | finance_audit_estado | finance_reconcile | finance_reconcile_estado" }, 400);
   } catch (e) {
     if (e instanceof HttpError) {
       // So o callback devolve HTML (e uma pagina para pessoa ler). O auth
