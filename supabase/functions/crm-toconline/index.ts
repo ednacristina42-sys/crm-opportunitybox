@@ -844,15 +844,28 @@ async function auditoriaFinanceira(parte: string): Promise<Record<string, unknow
   const duplicadosToconline = (grupo: DocAchatado[]) => grupo.length - new Set(grupo.map((d) => d.id)).size;
 
   // ── Match heuristico com ob-tes-receber (SO LEITURA — nunca escreve la) ──
+  // ob-tes-receber grava datas como texto "DD/MM/AAAA" (import da Sheet); o
+  // TOConline devolve "date" em ISO "AAAA-MM-DD". Comparar as duas strings
+  // directamente (alfabeticamente) dava sempre falso e descartava as 474
+  // linhas como "fora do periodo" mesmo quando estavam dentro — por isso a
+  // normalizacao para ISO antes de qualquer comparacao de data.
+  const dataParaISO = (x: unknown): string => {
+    const t = val(x);
+    if (!t) return "";
+    const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(t);
+    if (m) return `${m[3]}-${m[2]}-${m[1]}`;
+    if (/^\d{4}-\d{2}-\d{2}/.test(t)) return t.slice(0, 10);
+    return "";
+  };
   const tes = (await lerDaBase(CHAVE_TES_RECEBER)) as Record<string, unknown>[] | null;
   const tesRows = Array.isArray(tes) ? tes : [];
-  const dentroDoPeriodo = (data: string) => !periodoCoberto.desde || !data || (data >= periodoCoberto.desde && data <= periodoCoberto.ate!);
+  const dentroDoPeriodo = (dataISO: string) => !periodoCoberto.desde || !dataISO || (dataISO >= periodoCoberto.desde && dataISO <= periodoCoberto.ate!);
   const candidatosMatch = [...brutos.invoices, ...brutos.credit_notes];
   const semMatch: unknown[] = [], divergenciasValor: unknown[] = [], divergenciasStatus: unknown[] = [];
   let comMatch = 0;
   for (const linha of tesRows) {
     const dataLinha = val((linha as Record<string, unknown>).dataEmissao) || val((linha as Record<string, unknown>).data);
-    if (!dentroDoPeriodo(dataLinha)) continue; // fora do periodo que a auditoria conseguiu cobrir — nao e "sem match", e "nao auditado"
+    if (!dentroDoPeriodo(dataParaISO(dataLinha))) continue; // fora do periodo que a auditoria conseguiu cobrir — nao e "sem match", e "nao auditado"
     const nomeLinha = nomeNorm((linha as Record<string, unknown>).cliente);
     const valorLinha = num((linha as Record<string, unknown>).total ?? (linha as Record<string, unknown>).valorRecebido);
     const cands = candidatosMatch.filter((d) => nomeNorm(d.customer_business_name) === nomeLinha);
