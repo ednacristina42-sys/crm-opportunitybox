@@ -8904,7 +8904,7 @@ tbody tr:hover{background:rgba(255,203,45,.05)}
       <div class="pg-title">Painel Financeiro</div>
     </div>
     <div class="pg-actions">
-      <button class="tbtn y" style="font-size:13px" onclick="sincFinAbrirPainel()" title="Central única: Google Sheets Vendas 2026 + TOConline (faturas, NC, clientes) → Dashboard CFO, Financeiro, Tesouraria, Histórico de Faturação, Análise de Vendas, Relatórios, Faturas e Mapa de Vendas">🔄 Sincronizar Financeiro</button>
+      <button class="tbtn y" style="font-size:13px" onclick="sincFinAbrirPainel()" title="DRY-RUN: reconcilia Google Sheets Vendas 2026 + TOConline (faturas, NC, clientes) contra ob-tes-receber e mostra o relatório — não grava nada">🔄 Sincronizar Financeiro (dry-run)</button>
       <button class="tbtn" style="font-size:13px" onclick="tocoSincronizarFaturas(false).then(function(){ tocoAtualizarTesourariaComFaturas(); renderFinanceiro(); if(typeof renderRelatorios==='function')renderRelatorios(); initCharts(); })" title="Vai buscar as faturas mais recentes ao TocOnline e atualiza Tesouraria/Financeiro/Relatórios">🔄 Sincronizar Faturas TocOnline</button>
       <button class="tbtn" style="font-size:13px" onclick="if(confirm('Importar orçamentos da planilha (aba Orçamentos 2026)? Isto não substitui dados existentes.')) importarOrcamentos2026()" title="Importar orçamentos da planilha Google Sheets">📥 Importar Orçamentos (Sheets)</button>
     </div>
@@ -21957,28 +21957,37 @@ function tocoAtualizarTesourariaComFaturas(){
   if(typeof tesRender==='function') tesRender();
 }
 
-// ══ CENTRAL ÚNICA DE SINCRONIZAÇÃO FINANCEIRA ══════════════════════════════
-// Um botão "Sincronizar Financeiro" que encadeia as fontes já existentes e
-// testadas — não substitui nenhuma delas, só as chama pela ordem certa:
-//   1. Google Sheets "Vendas 2026"  → avSyncVendedoresSheet() → sheetMergeReceber()
-//   2. TOConline FT + NC (leitura, Edge Function, nunca Make) → sincFinBuscarTocOnline() → tocoMergeFaturasCacheReceber()
-//   3. Clientes TOConline → CRM (Fase B, já em produção) → tocoEF('sync')
-// As três são, cada uma isoladamente, TOConline/Sheets → CRM, nunca CRM →
-// TOConline; nenhuma cria/anula documento fiscal nem apaga clientes; a
-// mesclagem em TES_RECEBER é sempre idempotente por id (_tocoId/_sheetId,
-// já testado nas funções reutilizadas) e nunca sobrescreve vendedor já
-// preenchido — tesResolverVendedor() nunca lê o "user" do TOConline, por
-// isso um vendedor TOConline nunca entra sozinho no Ranking (mesma regra
-// da Fase C).
+// ══ CENTRAL ÚNICA DE SINCRONIZAÇÃO FINANCEIRA — MODO DRY-RUN ═══════════════
+// Um botão "Sincronizar Financeiro" que lê as fontes já existentes e
+// testadas e RECONCILIA contra o que já está em ob-tes-receber, sem gravar
+// nada nesta versão:
+//   1. Google Sheets "Vendas 2026"  → avSyncVendedoresSheet() → sheetMergeReceber() (local, nunca chega à cloud)
+//   2. TOConline FT + NC + recibos, paginação completa (resource=sync_docs, nunca Make) → sincFinBuscarRecursoCompleto()
+//   3. Reconciliação contra as linhas existentes por identidade segura
+//      (cliente+data+valor, FT e NC sempre separadas) → sincFinReconciliar()
+//   4. Clientes TOConline → CRM (Fase B, já em produção) → tocoEF('sync')
+// Nenhuma escreve documento fiscal nem apaga clientes; nunca CRM →
+// TOConline. Vendedor TOConline nunca entra sozinho no Ranking —
+// tesResolverVendedor() nunca lê o "user" do TOConline (mesma regra da
+// Fase C).
 //
-// GRAVAÇÃO NA CLOUD: tesSaveReceber()→obSbPush() usa a anon key num fetch
-// cru; a política RLS de ob-tes-receber só permite INSERT/UPDATE a
-// utilizadores autenticados com role admin/financeiro — a anon key falha
-// sempre (silenciosamente, sem log), por isso hoje esta chave não fica de
-// facto sincronizada na cloud a partir do browser por essa via. Esta
-// central grava de forma explícita e vigiada com crmSBClient() (a mesma
-// sessão/JWT já exigida para o resto do CRM) e reporta erro em vez de
-// falhar em silêncio.
+// INCIDENTE 03/09: a versão anterior desta central assumia que idempotência
+// por _tocoId/_sheetId bastava para não duplicar — mas as duas fontes nunca
+// partilham essas marcas (0 linhas com ambas), por isso TODO documento
+// TOConline era tratado como novo e anexado às cegas. Um teste real levou
+// ob-tes-receber de 480 para 6.827 registos. Restaurado manualmente via SQL
+// (removidas as 6.347 linhas marcadas _tocoId, mantidas as 480 _sheetId
+// originais). A partir daqui: TOConline nunca é anexado sem reconciliar
+// primeiro, e ESTA CENTRAL NÃO GRAVA NADA (dry-run apenas) até o relatório
+// de reconciliação ser revisto e a gravação ser reautorizada explicitamente.
+//
+// GRAVAÇÃO NA CLOUD (quando for reautorizada): tesSaveReceber()→obSbPush()
+// usa a anon key num fetch cru; a política RLS de ob-tes-receber só permite
+// INSERT/UPDATE a utilizadores autenticados com role admin/financeiro — a
+// anon key falha sempre (silenciosamente, sem log). Por isso qualquer
+// gravação futura terá de continuar a usar crmSBClient() (a mesma
+// sessão/JWT já exigida para o resto do CRM) e reportar erro em vez de
+// falhar em silêncio — nunca voltar ao caminho antigo.
 var SINC_FIN_ULT_KEY = 'ob-sinc-financeiro-ultima';
 var SINC_FIN_EM_CURSO = false;
 
@@ -22000,33 +22009,107 @@ function sincFinBaixarBackup(dadosAtuais){
   }catch(e){ console.warn('[SincFin] backup falhou:', e); return false; }
 }
 
-// novos/atualizados por diferença de id entre o estado lido no início e
-// TES_RECEBER depois das mesclagens; conflito de vendedor é só reportado
-// (nunca corrigido sozinho) quando tesResolverVendedor() aponta para um
-// nome diferente do que já está gravado na linha.
-function sincFinDiffReceber(antes, depois){
-  var idxAntes = {};
-  (antes||[]).forEach(function(r){ if(r && r.id) idxAntes[r.id] = r; });
-  var novos = 0, atualizados = 0, conflitosVendedor = 0;
-  (depois||[]).forEach(function(r){
-    if(!r || !r.id) return;
-    var a = idxAntes[r.id];
-    if(!a) novos++;
-    else if(a.total !== r.total || a.estado !== r.estado || a.valorLiq !== r.valorLiq) atualizados++;
-    if(r.cliente && typeof tesResolverVendedor === 'function'){
-      var resolvido = tesResolverVendedor(r.cliente);
-      if(resolvido && r.vendedor && resolvido !== r.vendedor) conflitosVendedor++;
-    }
-  });
-  return { novos: novos, atualizados: atualizados, conflitos: conflitosVendedor };
+// INCIDENTE 03/09: um teste real anexou 6.347 documentos TOConline como
+// linhas NOVAS em ob-tes-receber (480 -> 6.827), porque a idempotência por
+// _tocoId/_sheetId nunca reconcilia as duas fontes (0 linhas tinham ambas
+// as marcas — TOConline nunca sabe que uma linha já existe vinda do Sheet).
+// Restaurado manualmente para 480 via SQL direto (ver histórico). A partir
+// daqui, TOConline NUNCA é anexado às cegas: primeiro reconcilia-se contra
+// as linhas existentes por identidade segura (cliente+data+valor, nunca
+// FT com NC), e esta central fica em MODO DRY-RUN — nenhuma escrita em
+// ob-tes-receber — até essa reconciliação ser revista e aprovada.
+
+// Mesma normalização de nome já usada e testada na Fase C (Edge Function
+// crm-toconline: nomeNorm) — sem acentos, sufixos de empresa removidos,
+// para "R C Sanches II, Lda" e "R C SANCHES II LDA" caírem na mesma chave.
+function sincFinNomeNorm(x){
+  var s = String(x||'').trim().toUpperCase();
+  try{ s = s.normalize('NFD').replace(/[̀-ͯ]/g,''); }catch(e){}
+  return s.replace(/[^A-Z0-9 ]/g,' ')
+    .replace(/\b(LDA|LIMITADA|UNIPESSOAL|SGPS|SA|EIRELI|MEI|ME|CRL|ACE|EM|SU)\b/g,' ')
+    .replace(/\s+/g,' ').trim();
+}
+// Mesma normalização de data já usada e testada na Fase C (dataParaISO):
+// "DD/MM/AAAA" (Sheet/CRM) -> "AAAA-MM-DD"; ISO já vem assim do TOConline.
+function sincFinDataISO(x){
+  var t = String(x||'').trim();
+  if(!t) return '';
+  var m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(t);
+  if(m) return m[3]+'-'+m[2]+'-'+m[1];
+  if(/^\d{4}-\d{2}-\d{2}/.test(t)) return t.slice(0,10);
+  return '';
 }
 
-// Busca FT + NC via a Edge Function (nunca Make) e mescla no cache de
-// faturas TOConline — mesma normalização/idempotência já usada por
-// avSyncTocOnlineViaEF(), estendida a credit_notes (essa função só busca
-// invoices). Recibos só para contagem no painel — a mesclagem em
-// TES_RECEBER já resolve o estado (Pago/Aberto/Vencido) a partir do
-// próprio documento FT/NC, como tocoMergeFaturasCacheReceber() já faz hoje.
+// Reconcilia documentos TOConline (já achatados, paginação completa) contra
+// linhas EXISTENTES em ob-tes-receber do MESMO tipo (FT ou NC — nunca
+// cruzados). Identidade segura = cliente normalizado + data exata
+// normalizada + valor (tolerância €0,50, mesma já usada e aprovada na
+// Fase C). Nunca resolve ambiguidade sozinha: uma linha existente só pode
+// ser reivindicada por UM documento; se mais que um documento aponta para
+// a mesma linha, ou mais que uma linha corresponde ao mesmo documento, fica
+// como ambiguidade — a linha existente nunca é tocada, nada é inserido.
+function sincFinReconciliar(tipoTes, existentesRows, tocDocs){
+  var existentesDoTipo = (existentesRows||[]).filter(function(r){ return String(r.tipo||'FT') === tipoTes; });
+  var idx = {};
+  existentesDoTipo.forEach(function(r){
+    var d = sincFinDataISO(r.dataEmissao || r.data);
+    var nm = sincFinNomeNorm(r.cliente);
+    if(!d || !nm) return;
+    var k = nm + '|' + d;
+    (idx[k] = idx[k] || []).push(r);
+  });
+
+  var usados = {};
+  var matches = [], novos = [], ambiguidades = [];
+  (tocDocs||[]).forEach(function(doc){
+    if(doc.voided_reason) return; // documentos anulados não entram na reconciliação
+    var nm = sincFinNomeNorm(doc.customer_business_name);
+    var d = sincFinDataISO(doc.date);
+    var k = nm + '|' + d;
+    var candidatos = (idx[k] || []).filter(function(r){
+      return Math.abs((parseFloat(r.total)||0) - doc.gross_total) < 0.5;
+    });
+    if(!candidatos.length){
+      novos.push(doc);
+    } else if(candidatos.length === 1){
+      var r = candidatos[0];
+      if(usados[r.id]){
+        ambiguidades.push({ doc_no: doc.document_no, cliente: doc.customer_business_name, valor: doc.gross_total, data: doc.date, motivo: 'linha existente ' + r.id + ' já corresponde a outro documento TOConline (' + usados[r.id] + ')' });
+      } else {
+        usados[r.id] = doc.document_no || doc.id;
+        matches.push({ doc: doc, linha_existente: r });
+      }
+    } else {
+      ambiguidades.push({ doc_no: doc.document_no, cliente: doc.customer_business_name, valor: doc.gross_total, data: doc.date, motivo: candidatos.length + ' linhas existentes correspondem (mesmo cliente+data+valor)', candidatos: candidatos.map(function(c){return c.id;}) });
+    }
+  });
+
+  return { tipo: tipoTes, existentes: existentesDoTipo.length, matches: matches, novos: novos, ambiguidades: ambiguidades };
+}
+
+// Entre os documentos com correspondência segura (matches), reporta — mas
+// nunca corrige sozinho — divergências de vendedor (tesResolverVendedor()
+// nunca lê o "user" do TOConline, mesma regra da Fase C) e de estado
+// (Recebido no CRM vs. ainda pendente no TOConline, ou o inverso).
+function sincFinConflitosEmMatches(matches){
+  var conflitos = [];
+  (matches||[]).forEach(function(m){
+    var r = m.linha_existente, doc = m.doc;
+    if(r.cliente && typeof tesResolverVendedor === 'function'){
+      var resolvido = tesResolverVendedor(r.cliente);
+      if(resolvido && r.vendedor && resolvido !== r.vendedor){
+        conflitos.push({ linha_existente: r.id, doc_no: doc.document_no, motivo: 'vendedor divergente', crm: r.vendedor, resolvido: resolvido });
+      }
+    }
+    var liquidadoToc = (doc.pending_total <= 0.005) && !doc.voided_reason;
+    var estadoBate = (r.estado === 'Recebido' && liquidadoToc) || (r.estado !== 'Recebido' && !liquidadoToc);
+    if(!estadoBate){
+      conflitos.push({ linha_existente: r.id, doc_no: doc.document_no, motivo: 'estado divergente', crm_estado: r.estado, toconline_pending_total: doc.pending_total });
+    }
+  });
+  return conflitos;
+}
+
 // Busca um recurso TOConline por completo via resource=sync_docs (crm-toconline
 // v20) — paginação real por lotes, sem o teto de 5.000 documentos do antigo
 // resource=invoices/credit_notes/receipts (buscarTudo()/MAX_PAGES=50, que
@@ -22049,48 +22132,6 @@ async function sincFinBuscarRecursoCompleto(tipo){
   return { tipo: tipo, dados: dados, completo: completo, chamadas: chamadas };
 }
 
-async function sincFinBuscarTocOnline(){
-  // achatarDocumento() (Edge Function) já devolve status_bruto (o campo
-  // "status" numérico do TOConline) — mesmo campo que o normalizador antigo
-  // lia como Status, agora sem reinterpretação nenhuma da nossa parte.
-  var normalizarAchatado = function(d, tipoTes){
-    return {
-      _tipo: tipoTes, Id: d.id, Number: d.document_no || d.id,
-      CustomerName: d.customer_business_name, CustomerTaxNumber: d.customer_tax_registration_number,
-      Date: d.date, DueDate: d.due_date,
-      TotalAmount: (typeof d.gross_total === 'number') ? d.gross_total : (parseFloat(d.gross_total) || 0),
-      Status: d.status_bruto,
-    };
-  };
-
-  var resInv = await sincFinBuscarRecursoCompleto('invoices');
-  var resNc = await sincFinBuscarRecursoCompleto('credit_notes');
-  var resRec = await sincFinBuscarRecursoCompleto('receipts');
-
-  var faturas = resInv.dados.map(function(d){ return normalizarAchatado(d, 'FT'); });
-  var notas = resNc.dados.map(function(d){ return normalizarAchatado(d, 'NC'); });
-  var completo = resInv.completo && resNc.completo && resRec.completo;
-
-  // Só mescla no cache (e, a seguir, em TES_RECEBER) se os TRÊS recursos
-  // completaram a paginação — uma mesclagem parcial (ex.: só 15 das 61
-  // páginas de faturas) contaria como "sincronizado" sem o estar.
-  if(completo){
-    var todos = faturas.concat(notas);
-    var chave = function(d){ return (d._tipo||'') + '-' + (d.Id||d.Number||''); };
-    var mapa = {};
-    (_tocoFatCache||[]).forEach(function(d){ mapa[chave(d)] = d; });
-    todos.forEach(function(d){ mapa[chave(d)] = d; });
-    var merged = Object.keys(mapa).map(function(k){ return mapa[k]; });
-    _tocoFatCache = merged;
-    try{ localStorage.setItem(TOCO_FAT_KEY, JSON.stringify({ts: Date.now(), data: merged})); }catch(e){}
-  }
-
-  return {
-    faturas: resInv.dados.length, notas: resNc.dados.length, recibos: resRec.dados.length,
-    paginacao_completa: { invoices: resInv.completo, credit_notes: resNc.completo, receipts: resRec.completo },
-    completo: completo,
-  };
-}
 
 function sincFinRenderPainel(state){
   var wrap = document.getElementById('sinc-fin-corpo');
@@ -22111,9 +22152,12 @@ function sincFinRenderPainel(state){
   var pc = r.paginacao_completa || {};
   var badgePag = function(v){ return v === true ? '✓' : (v === false ? '✗' : '—'); };
   var badgeCor = function(v){ return v === true ? '#34c759' : (v === false ? '#ff453a' : 'var(--muted)'); };
-  var html = '<div style="font-size:12.5px;color:var(--muted);margin-bottom:10px">Última sincronização: ' + quando
-    + (r.gravado ? ' <span style="color:#34c759">✓ gravado em ob-tes-receber</span>'
-       : (r.ts ? ' <span style="color:#ff453a">✗ não gravado' + (r.motivo_nao_gravado ? ' — ' + r.motivo_nao_gravado : '') + '</span>' : ''))
+  var ft = r.ft || {}, nc = r.nc || {};
+  var html = '<div style="background:rgba(245,166,35,.12);border:1px solid rgba(245,166,35,.4);border-radius:8px;padding:8px 12px;margin-bottom:12px;font-size:12.5px;font-weight:600;color:#f5a623">'
+    + '⚠ MODO DRY-RUN — nenhuma escrita em ob-tes-receber. Este relatório mostra o que uma sincronização real faria; nada foi gravado.'
+    + '</div>'
+    + '<div style="font-size:12.5px;color:var(--muted);margin-bottom:10px">Última corrida: ' + quando
+    + ' <span style="color:#f5a623">— dry-run, não gravado' + (r.motivo_nao_gravado ? ' (' + r.motivo_nao_gravado + ')' : '') + '</span>'
     + '</div>'
     + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:9px">'
     + cartao('Google Sheets', r.sheets_ok ? '✓ atualizado' : '✗ falhou', r.sheets_ok ? '#34c759' : '#ff453a')
@@ -22121,17 +22165,46 @@ function sincFinRenderPainel(state){
     + cartao('Notas de Crédito', r.notas_credito != null ? r.notas_credito : '—')
     + cartao('Recibos', r.recibos != null ? r.recibos : '—')
     + cartao('Clientes TOConline', r.clientes != null ? r.clientes : '—')
-    + cartao('Documentos novos', r.documentos_novos != null ? r.documentos_novos : '—', '#34c759')
-    + cartao('Documentos atualizados', r.documentos_atualizados != null ? r.documentos_atualizados : '—', '#60a5fa')
-    + cartao('Conflitos', r.conflitos != null ? r.conflitos : '—', r.conflitos ? '#f5a623' : 'var(--muted)')
+    + cartao('Conflitos (matches)', r.conflitos != null ? r.conflitos : '—', r.conflitos ? '#f5a623' : 'var(--muted)')
     + cartao('Erros', (r.erros||[]).length, r.erros && r.erros.length ? '#ff453a' : 'var(--muted)')
+    + cartao('Total final esperado', r.total_final_esperado != null ? r.total_final_esperado : '—', '#60a5fa')
     + '</div>'
     + '<div style="font-weight:600;font-size:12.5px;margin:14px 0 6px">Paginação completa (TOConline)</div>'
     + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:9px">'
     + cartao('Faturas (FT)', badgePag(pc.invoices), badgeCor(pc.invoices))
     + cartao('Notas de Crédito (NC)', badgePag(pc.credit_notes), badgeCor(pc.credit_notes))
     + cartao('Recibos', badgePag(pc.receipts), badgeCor(pc.receipts))
+    + '</div>'
+    + '<div style="font-weight:600;font-size:12.5px;margin:14px 0 6px">Reconciliação — Faturas (FT)</div>'
+    + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:9px">'
+    + cartao('Existentes', ft.existentes != null ? ft.existentes : '—')
+    + cartao('Matches', ft.matches != null ? ft.matches : '—', '#34c759')
+    + cartao('Novos reais', ft.novos_reais != null ? ft.novos_reais : '—', '#f5a623')
+    + cartao('Ambiguidades', ft.ambiguidades != null ? ft.ambiguidades : '—', ft.ambiguidades ? '#ff453a' : 'var(--muted)')
+    + '</div>'
+    + '<div style="font-weight:600;font-size:12.5px;margin:14px 0 6px">Reconciliação — Notas de Crédito (NC)</div>'
+    + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:9px">'
+    + cartao('Existentes', nc.existentes != null ? nc.existentes : '—')
+    + cartao('Matches', nc.matches != null ? nc.matches : '—', '#34c759')
+    + cartao('Novos reais', nc.novos_reais != null ? nc.novos_reais : '—', '#f5a623')
+    + cartao('Ambiguidades', nc.ambiguidades != null ? nc.ambiguidades : '—', nc.ambiguidades ? '#ff453a' : 'var(--muted)')
     + '</div>';
+  var esc0 = function(x){ return String(x==null?'':x).replace(/[&<>"]/g, function(c){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]; }); };
+  var tabelaAmostra = function(titulo, lista, cols){
+    if(!lista || !lista.length) return '';
+    var h = '<div style="margin-top:12px;font-weight:600;font-size:12.5px">' + titulo + ' (amostra de ' + lista.length + ')</div>'
+      + '<div style="max-height:180px;overflow:auto;border:1px solid var(--border);border-radius:8px;margin-top:6px">';
+    lista.forEach(function(x){ h += '<div style="padding:5px 9px;border-bottom:1px solid var(--border);font-size:12px">' + cols(x) + '</div>'; });
+    return h + '</div>';
+  };
+  html += tabelaAmostra('Ambiguidades (linha existente mantida, nada inserido)', (r.amostra_ambiguidades||[]), function(x){
+    return '<b>' + esc0(x.doc_no) + '</b> · ' + esc0(x.cliente) + ' · €' + esc0(x.valor) + ' · ' + esc0(x.data) + ' — <span style="color:var(--muted)">' + esc0(x.motivo) + '</span>';
+  });
+  html += tabelaAmostra('Conflitos em matches (linha mantida, só reportado)', (r.amostra_conflitos||[]), function(x){
+    return '<b>' + esc0(x.linha_existente) + '</b> ↔ ' + esc0(x.doc_no) + ' — <span style="color:var(--muted)">' + esc0(x.motivo)
+      + (x.crm ? (': CRM=' + esc0(x.crm) + ' TOC=' + esc0(x.resolvido)) : '')
+      + (x.crm_estado ? (': CRM=' + esc0(x.crm_estado) + ' pending_total TOC=' + esc0(x.toconline_pending_total)) : '') + '</span>';
+  });
   if(r.erros && r.erros.length){
     var esc = function(x){ return String(x==null?'':x).replace(/[&<>"]/g, function(c){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]; }); };
     html += '<div style="margin-top:12px"><div style="font-weight:600;font-size:12.5px;margin-bottom:6px">Detalhe dos erros</div>'
@@ -22142,6 +22215,12 @@ function sincFinRenderPainel(state){
   wrap.innerHTML = html;
 }
 
+// MODO DRY-RUN (desde o incidente 03/09): esta função NUNCA escreve em
+// ob-tes-receber. Lê o estado atual, sincroniza Google Sheets, lê TOConline
+// por completo (FT/NC/recibos), reconcilia contra as linhas existentes por
+// identidade segura (sincFinReconciliar) e mostra o relatório. Parar aqui é
+// deliberado — a gravação real só volta a existir depois de o relatório ser
+// revisto e aprovado explicitamente, numa próxima alteração autorizada.
 async function sincronizarFinanceiroCentral(){
   if(SINC_FIN_EM_CURSO) return;
   var modal = document.getElementById('sinc-fin-modal');
@@ -22154,130 +22233,92 @@ async function sincronizarFinanceiroCentral(){
   var btn = document.getElementById('sinc-fin-btn');
   if(btn){ btn.disabled = true; btn.style.opacity = .6; }
   var resumo = {
-    ts: new Date().toISOString(), ok: false, gravado: false, motivo_nao_gravado: '', sheets_ok: false,
-    faturas_toconline: 0, notas_credito: 0, recibos: 0, clientes: 0,
+    ts: new Date().toISOString(), ok: false, gravado: false,
+    motivo_nao_gravado: 'modo dry-run — gravação desativada até aprovação da reconciliação',
+    sheets_ok: false, faturas_toconline: 0, notas_credito: 0, recibos: 0, clientes: 0,
     paginacao_completa: { invoices: null, credit_notes: null, receipts: null },
-    documentos_novos: 0, documentos_atualizados: 0, conflitos: 0, erros: [],
+    ft: null, nc: null, conflitos: 0, total_final_esperado: null,
+    amostra_ambiguidades: [], amostra_conflitos: [], erros: [],
   };
-  var bloquearGravacao = false;
   try{
-    // 1) Estado remoto mais recente ANTES de mexer em nada — não mesclar
-    // contra uma cópia local (deste browser) que pode estar desatualizada.
+    // 1) Estado remoto ATUAL de ob-tes-receber — só leitura.
     sincFinRenderPainel({ a_correr:true, passo:'A ler ob-tes-receber atual…' });
     var sb = crmSBClient();
     if(!sb) throw new Error('Supabase indisponível no browser.');
     var remoto = await sb.from('ob_crm_dados').select('dados').eq('chave','ob-tes-receber').maybeSingle();
     if(remoto.error) throw new Error('Falha a ler dados atuais: ' + remoto.error.message);
-    var atualRemoto = (remoto.data && remoto.data.dados) || [];
-    var antesSnapshot = JSON.parse(JSON.stringify(atualRemoto));
+    var existentes = (remoto.data && remoto.data.dados) || [];
 
-    // 2) Backup — antes de qualquer reconciliação que altere ob-tes-receber.
-    // Se o backup falhar, aborta: nunca reconciliar/gravar sem uma cópia de
-    // segurança descarregada primeiro.
-    if(!sincFinBaixarBackup(atualRemoto)){
-      throw new Error('Backup de ob-tes-receber falhou — sincronização abortada antes de qualquer alteração.');
+    // 2) Backup — sempre descarregado antes de qualquer reconciliação,
+    // mesmo em dry-run (nada é gravado, mas a regra é incondicional). Se
+    // falhar, aborta.
+    if(!sincFinBaixarBackup(existentes)){
+      throw new Error('Backup de ob-tes-receber falhou — dry-run abortado antes de qualquer reconciliação.');
     }
 
-    // Passa a mesclar sobre a cópia remota mais fresca.
-    TES_RECEBER = atualRemoto;
-
-    // 3) Google Sheets "Vendas 2026"
+    // 3) Google Sheets "Vendas 2026" — se falhar, bloqueia TODO o dry-run:
+    // reconciliar contra um estado desatualizado tornaria "novos reais" e
+    // "matches" pouco fiáveis. sheetMergeReceber() (chamado dentro desta
+    // função) mescla no TES_RECEBER local (memória/localStorage) — nunca
+    // grava na cloud (obSbPush já falha por RLS para esta chave, como
+    // sempre falhou); usamos esse resultado local como base "existentes"
+    // para a reconciliação seguinte, exatamente como uma corrida real usaria.
     sincFinRenderPainel({ a_correr:true, passo:'A sincronizar Google Sheets…' });
+    TES_RECEBER = existentes;
     var sheetRowsAntes = window.AV_SHEET_ROWS;
     try{
       await avSyncVendedoresSheet();
       resumo.sheets_ok = !!(window.AV_SHEET_ROWS && window.AV_SHEET_ROWS !== sheetRowsAntes);
-      if(!resumo.sheets_ok) resumo.erros.push('Google Sheets: sem confirmação de sucesso (ver consola).');
-    }catch(eSheet){ resumo.erros.push('Google Sheets: ' + eSheet.message); }
+    }catch(eSheet){ resumo.sheets_ok = false; resumo.erros.push('Google Sheets: ' + eSheet.message); }
+    if(!resumo.sheets_ok){
+      throw new Error('Google Sheets falhou — dry-run abortado (nenhuma reconciliação feita).');
+    }
+    existentes = TES_RECEBER;
 
-    // 4) TOConline — FT + NC + recibos, paginação completa via
-    // resource=sync_docs (nunca cai para Make). Itera cada recurso até
-    // paginacao_completa:true; se algum não completar, bloqueia a gravação
-    // no passo 7 — nunca grava ob-tes-receber com uma sincronização parcial.
-    sincFinRenderPainel({ a_correr:true, passo:'A sincronizar TOConline (faturas, notas de crédito, recibos)…' });
+    // 4) TOConline — FT + NC + recibos, paginação completa via sync_docs.
+    // Se qualquer recurso não completar, aborta — sem paginação completa
+    // não há reconciliação fiável.
+    sincFinRenderPainel({ a_correr:true, passo:'A ler TOConline (faturas, notas de crédito, recibos)…' });
+    var resInv, resNc, resRec;
     try{
-      var tocoCounts = await sincFinBuscarTocOnline();
-      resumo.faturas_toconline = tocoCounts.faturas;
-      resumo.notas_credito = tocoCounts.notas;
-      resumo.recibos = tocoCounts.recibos;
-      resumo.paginacao_completa = tocoCounts.paginacao_completa;
-      if(tocoCounts.completo){
-        tocoMergeFaturasCacheReceber();
-      } else {
-        bloquearGravacao = true;
-        resumo.erros.push('TOConline: paginação não completou para todos os recursos — ' + JSON.stringify(tocoCounts.paginacao_completa));
-      }
+      resInv = await sincFinBuscarRecursoCompleto('invoices');
+      resNc = await sincFinBuscarRecursoCompleto('credit_notes');
+      resRec = await sincFinBuscarRecursoCompleto('receipts');
     }catch(eToco){
-      bloquearGravacao = true;
-      resumo.erros.push('TOConline (faturas/NC/recibos): ' + eToco.message);
+      throw new Error('TOConline: ' + eToco.message + ' — dry-run abortado.');
+    }
+    resumo.faturas_toconline = resInv.dados.length;
+    resumo.notas_credito = resNc.dados.length;
+    resumo.recibos = resRec.dados.length;
+    resumo.paginacao_completa = { invoices: resInv.completo, credit_notes: resNc.completo, receipts: resRec.completo };
+    if(!(resInv.completo && resNc.completo && resRec.completo)){
+      throw new Error('Paginação TOConline incompleta — dry-run abortado (ver Paginação completa abaixo).');
     }
 
-    // 5) Clientes TOConline → CRM (Fase B, já em produção — só preenche
-    // campos vazios, nunca cria nem apaga clientes).
+    // 5) Reconciliação — FT e NC sempre separadas, nunca cruzadas. Recibos
+    // não geram linhas em ob-tes-receber (só contados acima) — mantém-se a
+    // leitura completa pedida, sem inventar reconciliação nova para eles.
+    sincFinRenderPainel({ a_correr:true, passo:'A reconciliar contra as linhas existentes…' });
+    var recFt = sincFinReconciliar('FT', existentes, resInv.dados);
+    var recNc = sincFinReconciliar('NC', existentes, resNc.dados);
+    resumo.ft = { existentes: recFt.existentes, matches: recFt.matches.length, novos_reais: recFt.novos.length, ambiguidades: recFt.ambiguidades.length };
+    resumo.nc = { existentes: recNc.existentes, matches: recNc.matches.length, novos_reais: recNc.novos.length, ambiguidades: recNc.ambiguidades.length };
+    var conflitosFt = sincFinConflitosEmMatches(recFt.matches);
+    var conflitosNc = sincFinConflitosEmMatches(recNc.matches);
+    resumo.conflitos = conflitosFt.length + conflitosNc.length;
+    resumo.total_final_esperado = existentes.length + recFt.novos.length + recNc.novos.length;
+    resumo.amostra_ambiguidades = recFt.ambiguidades.concat(recNc.ambiguidades).slice(0, 30);
+    resumo.amostra_conflitos = conflitosFt.concat(conflitosNc).slice(0, 30);
+
+    // 6) Clientes TOConline → CRM (Fase B, já em produção, sem ligação a
+    // ob-tes-receber — mantém-se exatamente como estava).
     sincFinRenderPainel({ a_correr:true, passo:'A sincronizar clientes TOConline…' });
     try{
       var eCli = await tocoEF('sync', '');
       resumo.clientes = eCli.clientes_toconline || 0;
-      resumo.conflitos += eCli.conflitos || 0;
-      if(eCli.atualizados > 0 && typeof obSbBoot === 'function'){ try{ await obSbBoot(); }catch(eBoot){} }
     }catch(eCliente){ resumo.erros.push('Clientes TOConline: ' + eCliente.message); }
 
-    // 6) Diferenças entre o estado lido no passo 1 e TES_RECEBER depois das
-    // mesclagens — informativo mesmo que a gravação seja bloqueada a seguir.
-    var diff = sincFinDiffReceber(antesSnapshot, TES_RECEBER);
-    resumo.documentos_novos = diff.novos;
-    resumo.documentos_atualizados = diff.atualizados;
-    resumo.conflitos += diff.conflitos;
-
-    // 7) Gravação real na cloud — autenticada (crmSBClient), nunca a anon
-    // key de obSbPush(). Só grava se TODOS os recursos TOConline completaram
-    // a paginação (bloquearGravacao); uma sincronização parcial nunca escreve
-    // em ob-tes-receber, mesmo que só as alterações do Google Sheets já
-    // estivessem prontas.
-    if(bloquearGravacao){
-      resumo.motivo_nao_gravado = 'paginação TOConline incompleta (ver Paginação completa abaixo) — ob-tes-receber não foi alterado.';
-    } else {
-      sincFinRenderPainel({ a_correr:true, passo:'A gravar em ob-tes-receber…' });
-      // tesSaveReceber() continua a ser chamada só para manter o localStorage
-      // deste browser coerente; o seu obSbPush interno continua a falhar em
-      // silêncio para esta chave, tal como já falhava antes desta central
-      // existir — inofensivo, a gravação real é a de baixo.
-      tesSaveReceber();
-      var grav = await sb.from('ob_crm_dados').upsert(
-        { chave:'ob-tes-receber', dados: TES_RECEBER, updated_at: new Date().toISOString() },
-        { onConflict:'chave' }
-      );
-      if(grav.error) throw new Error('Gravação em ob-tes-receber falhou: ' + grav.error.message + ' (confirme que a sua conta tem perfil Admin ou Financeiro)');
-      resumo.gravado = true;
-
-      // 8) Refrescar as vistas que leem ob-tes-receber diretamente, com os
-      // mesmos dados que acabámos de gravar — sem esperar por reload.
-      _hfData = TES_RECEBER.slice();
-      _mvTesData = TES_RECEBER.slice();
-      try{ if(typeof renderDashboardCFO==='function') renderDashboardCFO(); }catch(e){}
-      var pageFin = document.getElementById('page-financeiro');
-      if(pageFin && pageFin.classList.contains('on')){
-        try{ if(typeof renderFinanceiro==='function') renderFinanceiro(); }catch(e){}
-        try{ if(typeof initCharts==='function') setTimeout(initCharts, 100); }catch(e){}
-      }
-      var pageTes = document.getElementById('page-tesouraria');
-      if(pageTes && pageTes.classList.contains('on')){ try{ if(typeof tesRender==='function') tesRender(); }catch(e){} }
-      var pageHf = document.getElementById('page-historico-faturacao');
-      if(pageHf && pageHf.classList.contains('on')){ try{ if(typeof renderHistoricoFaturacao==='function') renderHistoricoFaturacao(); }catch(e){} }
-      var pageMv = document.getElementById('page-mapa-vendas');
-      if(pageMv && pageMv.classList.contains('on')){ try{ if(typeof renderMapaVendas==='function') renderMapaVendas(); }catch(e){} }
-      var pageAv = document.getElementById('page-admin-analise-vendas');
-      if(pageAv && pageAv.classList.contains('on')){ try{ if(typeof renderAnaliseVendas==='function') renderAnaliseVendas(); }catch(e){} }
-      var pageRel = document.getElementById('page-relatorios');
-      if(pageRel && pageRel.classList.contains('on')){ try{ if(typeof renderRelatorios==='function') renderRelatorios(); }catch(e){} }
-      var pageOrc = document.getElementById('page-comercial-orcamentos');
-      if(pageOrc && pageOrc.classList.contains('on')){ try{ if(typeof tocoFiltrar==='function') tocoFiltrar(); }catch(e){} }
-
-      if(typeof EventBus !== 'undefined' && EventBus.publish){
-        EventBus.publish('dados_financeiros_atualizados', { timestamp: resumo.ts, fonte: 'Sincronizar Financeiro' });
-      }
-    }
-
+    // 7) FIM — dry-run. Nenhuma escrita em ob-tes-receber acontece aqui.
     resumo.ok = true;
   }catch(eGeral){
     resumo.ok = false;
@@ -30418,15 +30459,15 @@ window.tocoSyncAgora = tocoSyncAgora;
 <div id="sinc-fin-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9000;align-items:center;justify-content:center;padding:20px">
   <div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;max-width:780px;width:100%;max-height:88vh;overflow:auto;padding:22px">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
-      <div style="font-size:17px;font-weight:600">🔄 Sincronizar Financeiro</div>
+      <div style="font-size:17px;font-weight:600">🔄 Sincronizar Financeiro <span style="font-size:11px;font-weight:600;color:#f5a623;border:1px solid rgba(245,166,35,.4);background:rgba(245,166,35,.12);border-radius:5px;padding:2px 7px;vertical-align:middle">DRY-RUN</span></div>
       <button onclick="document.getElementById('sinc-fin-modal').style.display='none'" style="background:none;border:none;color:var(--muted);font-size:22px;cursor:pointer;line-height:1">×</button>
     </div>
     <div style="font-size:12.5px;color:var(--muted);margin-bottom:14px">
-      Google Sheets "Vendas 2026" + TOConline (faturas, notas de crédito, clientes) → Supabase → Dashboard CFO, Financeiro, Tesouraria, Histórico de Faturação, Análise de Vendas, Relatórios, Faturas e Mapa de Vendas.
-      Só leitura do TOConline (nunca cria/anula documentos, nunca CRM→TOConline), nunca apaga registos, sempre idempotente. Faz backup (download) de ob-tes-receber antes de gravar. Só Admin/Financeiro podem sincronizar.
+      Google Sheets "Vendas 2026" + TOConline (faturas, notas de crédito, clientes) — leitura completa e reconciliação contra o que já existe em ob-tes-receber.
+      <b>Modo dry-run: esta corrida NUNCA grava nada</b> — só mostra existentes, matches, novos reais, conflitos, ambiguidades e o total final que uma sincronização real produziria. FT e NC são sempre reconciliadas em separado, nunca cruzadas; uma linha existente ambígua nunca é tocada. Só leitura do TOConline (nunca cria/anula documentos, nunca CRM→TOConline). Só Admin/Financeiro podem correr.
     </div>
     <div style="display:flex;gap:10px;align-items:center;margin-bottom:14px;flex-wrap:wrap">
-      <button id="sinc-fin-btn" onclick="sincronizarFinanceiroCentral()" style="background:var(--accent);border:none;color:#fff;border-radius:8px;padding:9px 18px;cursor:pointer;font-size:13px;font-weight:600">Sincronizar agora</button>
+      <button id="sinc-fin-btn" onclick="sincronizarFinanceiroCentral()" style="background:var(--accent);border:none;color:#fff;border-radius:8px;padding:9px 18px;cursor:pointer;font-size:13px;font-weight:600">Correr dry-run</button>
     </div>
     <div id="sinc-fin-corpo" style="font-size:12.5px"></div>
   </div>
