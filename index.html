@@ -7381,7 +7381,7 @@ tbody tr:hover{background:rgba(255,203,45,.05)}
     <div class="mv-charts-grid" id="mv-charts-grid">
       <div class="mv-card mv-chart-span2"><div class="mv-card-title">Vendas por Mês</div><div class="mv-card-sub">Valor orçamentado por mês, no filtro atual</div><div class="mv-chart-box"><canvas id="mv-chart-mes"></canvas></div></div>
       <div class="mv-card"><div class="mv-card-title">Conversão por Estado</div><div class="mv-card-sub">Distribuição por estado</div><div class="mv-chart-box"><canvas id="mv-chart-estado"></canvas></div></div>
-      <div class="mv-card" id="mv-chart-comercial-card"><div class="mv-card-title">Vendas por Comercial</div><div class="mv-card-sub">Valor adjudicado+faturado</div><div class="mv-chart-box"><canvas id="mv-chart-comercial"></canvas></div></div>
+      <div class="mv-card" id="mv-chart-comercial-card"><div class="mv-card-title">Vendas por Comercial</div><div class="mv-card-sub">Faturação real líquida — Vendas 2026</div><div class="mv-chart-box"><canvas id="mv-chart-comercial"></canvas></div></div>
       <div class="mv-card"><div class="mv-card-title">Origem dos Negócios</div><div class="mv-card-sub">Distribuição por origem</div><div class="mv-chart-box"><canvas id="mv-chart-origem"></canvas></div></div>
       <div class="mv-card" id="mv-chart-tipo-card"><div class="mv-card-title">Tipo de Produção</div><div class="mv-card-sub">Top tipos + "Outros"</div><div class="mv-chart-box"><canvas id="mv-chart-tipo"></canvas></div></div>
       <div class="mv-card mv-chart-span3"><div class="mv-card-title">Evolução Anual</div><div class="mv-card-sub">Orçamentado vs. Faturado por mês</div><div class="mv-chart-box"><canvas id="mv-chart-anual"></canvas></div></div>
@@ -26442,12 +26442,29 @@ function _mvRenderKpis(view){
   var fatur = rows.filter(function(o){return o.st==='Faturado';});
   var cancel = rows.filter(function(o){return o.st==='Cancelado';});
   var totalAdj = aprov.reduce(function(s,o){return s+_mvValor(o);},0);
-  var totalFat = fatur.reduce(function(s,o){return s+_mvValor(o);},0);
   var totalPerd = cancel.reduce(function(s,o){return s+_mvValor(o);},0);
   var decididos = aprov.length+fatur.length+cancel.length;
   var conversao = decididos>0 ? ((aprov.length+fatur.length)/decididos*100) : 0;
-  var ganhos = aprov.concat(fatur);
-  var ticketMedio = ganhos.length>0 ? (totalAdj+totalFat)/ganhos.length : 0;
+
+  // Total Faturado / Ticket Médio = faturação real líquida (mesma fonte que
+  // _mvRenderRanking: ob-tes-receber via _mvTesData, ano atual, valorLiq —
+  // não o pipeline de ob_orcamentos). Se _mvTesData ainda não carregou,
+  // mostra 0 nesta passagem e re-renderiza quando chegar (mesmo padrão já
+  // usado por Recebimentos/Meta Comercial/Ranking).
+  if(_mvTesData===null) _mvEnsureTesData().then(function(){ _mvRenderKpis(view); });
+  var anoAtual = new Date().getFullYear();
+  var tesRows = (_mvTesData||[]).filter(function(r){
+    if(!view.isAdmin && r.vendedor !== (CU&&CU.name)) return false;
+    var d = _mvParseData(r.dataEmissao||r.data);
+    return !!d && d.getFullYear()===anoAtual;
+  });
+  var totalFat = tesRows.reduce(function(s,r){ return s+(parseFloat(r.valorLiq)||0); }, 0);
+  // Ticket Médio: só FT (nunca NC) com valor positivo — numerador e
+  // denominador vêm ambas do mesmo subconjunto, ao contrário de Total
+  // Faturado (que continua a somar FT+NC líquido, sem filtrar por tipo).
+  var ftPositivasRows = tesRows.filter(function(r){ return r.tipo==='FT' && (parseFloat(r.total)||0)>0; });
+  var somaFtPositivas = ftPositivasRows.reduce(function(s,r){ return s+(parseFloat(r.valorLiq)||0); }, 0);
+  var ticketMedio = ftPositivasRows.length>0 ? somaFtPositivas/ftPositivasRows.length : 0;
 
   var cards = [
     {ic:'💼', lbl:'Total Orçamentado', val:_mvFmtEUR(totalOrc), color:'var(--mv-txt)'},
@@ -26585,8 +26602,18 @@ function _mvRenderCharts(view){
   var cardComercial = document.getElementById('mv-chart-comercial-card');
   if(view.isAdmin){
     if(cardComercial) cardComercial.style.display='';
+    // Vendas por Comercial = faturação real líquida (ob-tes-receber via
+    // _mvTesData, ano atual, valorLiq) — mesma fonte que Total Faturado/
+    // Ticket Médio e _mvRenderRanking, não o pipeline de ob_orcamentos.
+    if(_mvTesData===null) _mvEnsureTesData().then(function(){ _mvRenderCharts(view); });
+    var anoAtualCom = new Date().getFullYear();
     var porComercial = {};
-    rows.filter(function(o){return o.st==='Aprovado'||o.st==='Faturado';}).forEach(function(o){ porComercial[o.vendedor]=(porComercial[o.vendedor]||0)+_mvValor(o); });
+    (_mvTesData||[]).forEach(function(r){
+      var v = r.vendedor; if(!v) return;
+      var d = _mvParseData(r.dataEmissao||r.data);
+      if(!d || d.getFullYear()!==anoAtualCom) return;
+      porComercial[v] = (porComercial[v]||0) + (parseFloat(r.valorLiq)||0);
+    });
     var comerciaisOrd = Object.keys(porComercial).sort(function(a,b){return porComercial[b]-porComercial[a];});
     _mvChart('mv-chart-comercial', { type:'bar', data:{ labels:comerciaisOrd, datasets:[{ data:comerciaisOrd.map(function(c){return porComercial[c];}), backgroundColor:comerciaisOrd.map(function(c,i){return i===0?'#facc15':'#3f3f46';}), borderRadius:6 }]}, options:_mvChartOpts(true, true) });
   } else if(cardComercial){ cardComercial.style.display='none'; }
