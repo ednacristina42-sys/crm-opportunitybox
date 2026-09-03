@@ -886,7 +886,11 @@ async function auditoriaFinanceira(parte: string): Promise<Record<string, unknow
     tentativas_include: tentativasPorRecurso,
     nota: "SOMENTE LEITURA: nenhum dado foi escrito em ob-tes-receber, ob_orcamentos ou ob-clients. 'status_bruto' e o codigo numerico do TOConline, ainda nao documentado — a classificacao liquidada/em_aberto/vencida/parcial e heuristica, baseada em pending_total e due_date.",
   };
-  await guardarNaBase(CHAVE_FINANCE_AUDIT, relatorio);
+  // Cada corrida grava na sua propria chave (nunca pisa uma corrida anterior
+  // de outra "parte"); a corrida "tudo" tambem grava na chave simples, para
+  // ser a leitura por omissao.
+  await guardarNaBase(`${CHAVE_FINANCE_AUDIT}-${partes.join("-")}`, relatorio);
+  if (partes.length === todasPartes.length) await guardarNaBase(CHAVE_FINANCE_AUDIT, relatorio);
   return relatorio;
 }
 
