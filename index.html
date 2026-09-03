@@ -29965,6 +29965,7 @@ function tocoSyncMostrar(e){
     tocoSyncCartao('Novos (sem match)', e.novos != null ? e.novos : '—', '#f5a623') +
     tocoSyncCartao('Conflitos', e.conflitos != null ? e.conflitos : '—', '#ff453a') +
     tocoSyncCartao('Ambíguos', e.ambiguos != null ? e.ambiguos : '—', '#f5a623') +
+    tocoSyncCartao('Bloqueados (placeholder)', e.bloqueados != null ? e.bloqueados : '—', 'var(--muted)') +
     tocoSyncCartao('TOConline', e.clientes_toconline != null ? e.clientes_toconline : '—');
   var linhas = function(titulo, lista, cols){
     if(!lista || !lista.length) return '';
@@ -29984,6 +29985,8 @@ function tocoSyncMostrar(e){
       return '<b>' + esc(x.nome) + '</b> · ' + esc(x.campo) + ': <span style="color:var(--muted)">CRM</span> ' + esc(x.crm) +
              ' <span style="color:var(--muted)">→ TOC</span> ' + esc(x.toc); }) +
     linhas('Ambíguos — retidos por falta de confirmação segura', e.lista_ambiguos, function(x){
+      return '<b>' + esc(x.nome) + '</b> <span style="color:var(--muted)">' + esc(x.motivo) + '</span>'; }) +
+    linhas('Bloqueados — NIF genérico / Consumidor Final, nunca contam nem entram em match', e.lista_bloqueados, function(x){
       return '<b>' + esc(x.nome) + '</b> <span style="color:var(--muted)">' + esc(x.motivo) + '</span>'; });
 }
 
