@@ -1166,24 +1166,63 @@ function avTocoIntegrar(){
   if(typeof avBars==='function') avBars();
 }
 
-var AV_TOCO_EF_URL = 'https://xtiguuyvotnpwqzmggnc.supabase.co/functions/v1/crm-toconline';
-var AV_TOCO_EF_KEY = 'ob-crm-2026-secure';
+// ══ TOConline — LEITURA via Edge Function do projecto oficial ═════════════
+// Fase B (02/09/2026). Antes: este ficheiro apontava para o projecto antigo
+// xtiguuyvotnpwqzmggnc e levava uma x-api-key partilhada em texto simples —
+// num HTML público, portanto legível por qualquer visitante, que podia então
+// chamar a função e ler toda a facturação. Essa chave saiu daqui.
+//
+// Agora o browser autentica-se com o JWT da própria sessão do Supabase Auth
+// (o mesmo login do CRM). A Edge Function resolve o token em /auth/v1/user e
+// exige perfil activo em ob_profiles — a anon key, que é também um JWT, não
+// resolve utilizador nenhum e é recusada. Nenhum segredo vive no frontend.
+//
+// Só LEITURA passa por aqui. O envio de orçamentos e faturas para o TOConline
+// continua tal como estava, pelo webhook do Make, por testar noutra fase.
+var TOCO_EF_URL = 'https://ddzlbmnmsdyodouqxbjx.supabase.co/functions/v1/crm-toconline';
+
+async function tocoEFToken(){
+  try{
+    if(typeof crmAuthGetSession === 'function'){
+      var s = await crmAuthGetSession();
+      if(s && s.access_token) return s.access_token;
+      if(s && s.session && s.session.access_token) return s.session.access_token;
+    }
+    var sb = (typeof crmSBClient === 'function') ? crmSBClient() : null;
+    if(sb && sb.auth && sb.auth.getSession){
+      var r = await sb.auth.getSession();
+      var t = r && r.data && r.data.session && r.data.session.access_token;
+      if(t) return t;
+    }
+  }catch(e){ console.warn('[TOCO EF] sessão indisponível:', e && e.message); }
+  return '';
+}
+
+// Chamada única a todos os recursos de leitura da Edge Function.
+async function tocoEF(recurso, extraQS){
+  var token = await tocoEFToken();
+  if(!token) throw new Error('Sessão terminada. Volte a entrar no CRM para sincronizar o TOConline.');
+  var url = TOCO_EF_URL + '?resource=' + encodeURIComponent(recurso) + (extraQS ? '&' + extraQS : '');
+  var resp = await fetch(url, { headers: { 'Authorization': 'Bearer ' + token } });
+  var txt = await resp.text();
+  var payload; try{ payload = JSON.parse(txt); }catch(e){ payload = null; }
+  if(!resp.ok){
+    var msg = (payload && payload.error) || ('HTTP ' + resp.status);
+    if(resp.status === 401) msg = 'Sessão inválida ou expirada. Volte a entrar no CRM.';
+    if(resp.status === 403) msg = 'A sua conta não tem perfil activo no CRM.';
+    if(resp.status === 428) msg = 'O TOConline ainda não foi autorizado. Contacte o administrador.';
+    throw new Error(msg);
+  }
+  return payload;
+}
+var AV_TOCO_EF_URL = TOCO_EF_URL; // compatibilidade com código antigo
 
 async function avSyncTocOnlineViaEF(){
   var tsEl = document.getElementById('av-sb-ts');
   if(tsEl) tsEl.textContent = '⏳ A sincronizar TocOnline...';
 
   // Chama a Edge Function para obter token + invoices
-  var resp = await fetch(AV_TOCO_EF_URL + '?resource=invoices', {headers:{'x-api-key': AV_TOCO_EF_KEY}});
-  if(!resp.ok){
-    var errTxt = await resp.text();
-    console.warn('[AV EF] Invoices HTTP', resp.status, errTxt);
-    // Mostrar o que a API devolveu para debug
-    console.warn('[AV EF] TocOnline HTTP', resp.status, errTxt.slice(0,200));
-    throw new Error('TOConline EF HTTP ' + resp.status + ': ' + errTxt.slice(0,200));
-  }
-
-  var payload = await resp.json();
+  var payload = await tocoEF('invoices');
   console.log('[AV EF] TOConline payload:', payload);
 
   // Normalizar para o formato interno { _tipo, Id, Number, CustomerName, Date, DueDate, TotalAmount, Status }
@@ -7413,7 +7452,7 @@ tbody tr:hover{background:rgba(255,203,45,.05)}
     <div class="pg-hdr-top">
       <div class="pg-space-icon" style="background:var(--dc)">D</div>
       <div class="pg-title">Clientes</div>
-      <div class="pg-actions"><button onclick="tocoAbrirImportarClientes()" style="background:rgba(99,102,241,.15);border:1px solid rgba(99,102,241,.4);color:#818cf8;border-radius:7px;padding:5px 12px;font-size:13px;cursor:pointer;margin-right:6px">🔄 Importar TocOnline</button><button class="tbtn y" data-action="cliOpenNew">+ Novo Cliente</button></div>
+      <div class="pg-actions"><button onclick="tocoSyncPainel()" style="background:rgba(52,199,89,.15);border:1px solid rgba(52,199,89,.4);color:#34c759;border-radius:7px;padding:5px 12px;font-size:13px;cursor:pointer;margin-right:6px" title="Sincronização TOConline → CRM">🔄 Sincronização TOConline</button><button onclick="tocoAbrirImportarClientes()" style="background:rgba(99,102,241,.15);border:1px solid rgba(99,102,241,.4);color:#818cf8;border-radius:7px;padding:5px 12px;font-size:13px;cursor:pointer;margin-right:6px">🔄 Importar TocOnline</button><button class="tbtn y" data-action="cliOpenNew">+ Novo Cliente</button></div>
     </div>
   </div>
   <div class="task-content">
@@ -23631,96 +23670,60 @@ function tocoShowStatus(msg, type) {
 // ── Testar ligação ───────────────────────────────────────────────
 async function tocoTestarLigacao() {
   var el = function(id){ return document.getElementById(id); };
-  var key = (el('toco-cfg-key')||{value:''}).value.trim();
-  var url = (el('toco-cfg-url')||{value:'https://api30.toconline.pt'}).value.trim();
-  var webhook = (el('toco-cfg-webhook')||{value:''}).value.trim();
-  var preferProxy = (el('toco-cfg-proxy')||{checked:false}).checked; // ADD: respeitar checkbox "Usar Make.com como proxy"
-  if(!key){ tocoShowStatus('⚠️ Introduz a API Key primeiro', 'warn'); return; }
+  // Fase B: já não há API Key nem webhook a introduzir para LEITURA — as
+  // credenciais do TOConline vivem nos Secrets da Edge Function. O teste passa
+  // a ser o mesmo caminho que a aplicação usa de verdade.
   tocoShowStatus('⏳ A testar ligação...', 'warn');
   try {
-    var result = await tocoFetch(url, key, webhook, '/api/customers', 'GET', null, preferProxy);
-    if(result && (result.data || Array.isArray(result))) {
-      tocoShowStatus('✅ Ligação OK! TocOnline respondeu com sucesso.', 'ok');
+    var d = await tocoEF('diag');
+    if(d && d.oauth === 'ok'){
+      tocoShowStatus('✅ Ligação OK — ' + (d.api_base || 'TOConline') + ' respondeu por OAuth2.', 'ok');
     } else {
-      tocoShowStatus('⚠️ Resposta recebida mas formato inesperado. Verifica a API Key.', 'warn');
+      tocoShowStatus('⚠️ A Edge Function respondeu mas o OAuth falhou: ' + ((d && d.oauth) || 'sem detalhe'), 'warn');
     }
   } catch(e) {
     tocoShowStatus('❌ Erro: ' + e.message, 'err');
   }
 }
 
-// ── Fetch com dupla estratégia (directa + Make proxy) ───────────
-// ADD: parâmetro opcional preferProxy — quando true e webhookUrl preenchido,
-// vai directo ao Make sem perder tempo a tentar a ligação directa (que sabemos
-// que vai falhar por CORS na maioria das contas TocOnline).
+// ── Leitura do TOConline: SEMPRE pela Edge Function oficial ──────────────
+// Fase B. Esta função mantém a assinatura antiga (baseUrl/apiKey/webhookUrl)
+// porque há quatro chamadores espalhados pelo ficheiro, mas os três primeiros
+// argumentos deixaram de ser usados: já não há ligação directa do browser ao
+// TOConline (que falhava por CORS de qualquer forma) nem proxy pelo Make.
+// O caminho é um só: browser --JWT--> crm-toconline --OAuth2--> TOConline.
+//
+// Só LEITURA. Um método diferente de GET é recusado aqui de propósito: o envio
+// de documentos para o TOConline continua no fluxo Make, ainda por migrar, e
+// deixá-lo cair silenciosamente neste caminho seria trocar o comportamento de
+// escrita sem teste nenhum.
+var TOCO_ENDPOINT_RECURSO = [
+  { re: /commercial_sales_documents/i, ft: 'invoices', nc: 'credit_notes' },
+  { re: /commercial_sales_receipts/i,  ft: 'receipts' },
+  { re: /customers|clients|entities/i, ft: 'customers' }
+];
+
+function tocoRecursoDe(endpoint){
+  var e = String(endpoint || '');
+  for(var i=0;i<TOCO_ENDPOINT_RECURSO.length;i++){
+    var m = TOCO_ENDPOINT_RECURSO[i];
+    if(m.re.test(e)) return (m.nc && /document_type\]?=NC|=NC\b/i.test(e)) ? m.nc : m.ft;
+  }
+  return '';
+}
+
 async function tocoFetch(baseUrl, apiKey, webhookUrl, endpoint, method, body, preferProxy) {
-  method = method || 'GET';
-
-  function chamarProxy() {
-    var ctrl2 = new AbortController();
-    var t2 = setTimeout(function(){ ctrl2.abort(); }, 15000);
-    console.log('[TocOnline Proxy] URL:', webhookUrl, '| endpoint:', endpoint, '| method:', method);
-    return fetch(webhookUrl, {
-      method: 'POST',
-      signal: ctrl2.signal,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'proxy', endpoint: endpoint, method: method, api_key: apiKey, base_url: baseUrl, body: body || null })
-    }).then(function(proxyResp){
-      clearTimeout(t2);
-      console.log('[TocOnline Proxy] HTTP status:', proxyResp.status);
-      return proxyResp.text().then(function(rawText){
-        console.log('[TocOnline Proxy] Resposta:', rawText);
-        if(!proxyResp.ok) {
-          var msg;
-          if(proxyResp.status === 500) msg = 'Erro no servidor do TocOnline/Make. Verifique se o cenário no Make está ativo e sem erros.';
-          else if(proxyResp.status === 401 || proxyResp.status === 403) msg = 'Autenticação expirada. Atualize as credenciais no Make.';
-          else if(proxyResp.status === 404) msg = 'Webhook do Make não encontrado. Verifique a URL configurada.';
-          else msg = 'Proxy HTTP ' + proxyResp.status;
-          throw new Error(msg);
-        }
-        try { return JSON.parse(rawText); } catch(e3) { return rawText; }
-      });
-    }).catch(function(e2){
-      clearTimeout(t2);
-      if(e2.name === 'AbortError') throw new Error('TocOnline não respondeu. Tente novamente.');
-      throw new Error(e2.message.indexOf('Erro no servidor') === 0 || e2.message.indexOf('Autenticação') === 0 || e2.message.indexOf('Webhook') === 0 || e2.message.indexOf('Proxy HTTP') === 0 ? e2.message : 'Proxy Make falhou: ' + e2.message);
-    });
+  method = (method || 'GET').toUpperCase();
+  if(method !== 'GET'){
+    throw new Error('Escrita no TOConline não passa por este caminho (só leitura foi migrada).');
   }
-
-  if(preferProxy && webhookUrl) {
-    return chamarProxy();
-  }
-
-  var controller = new AbortController();
-  var timeout = setTimeout(function(){ controller.abort(); }, 10000);
-  try {
-    // ESTRATÉGIA A — directa
-    var opts = {
-      method: method,
-      signal: controller.signal,
-      headers: {
-        'Authorization': 'Bearer ' + apiKey,
-        'Content-Type': 'application/json',
-        'Accept': 'application/json'
-      }
-    };
-    if(body) opts.body = JSON.stringify(body);
-    var resp = await fetch(baseUrl + endpoint, opts);
-    clearTimeout(timeout);
-    if(!resp.ok) throw new Error('HTTP ' + resp.status);
-    return await resp.json();
-  } catch(e) {
-    clearTimeout(timeout);
-    // ESTRATÉGIA B — Make proxy (se configurado e se for erro CORS/network)
-    if(webhookUrl && (e.name === 'TypeError' || e.name === 'AbortError' || e.message.includes('CORS') || e.message.includes('fetch'))) {
-      try {
-        return await chamarProxy();
-      } catch(e2) {
-        throw new Error('Ligação directa e proxy Make falharam: ' + e2.message);
-      }
-    }
-    throw e;
-  }
+  var recurso = tocoRecursoDe(endpoint);
+  if(!recurso) throw new Error('Endpoint TOConline não reconhecido para leitura: ' + endpoint);
+  var payload = await tocoEF(recurso);
+  // A Edge Function devolve { resource, count, data:[...] }; os chamadores
+  // antigos esperam o corpo cru do TOConline ({data:[...]}), por isso
+  // devolve-se a mesma forma para não haver adaptações espalhadas.
+  return { data: (payload && payload.data) || [] };
 }
 
 // ── Card real de ligação (painel Integrações) ───────────────────
@@ -29930,7 +29933,112 @@ function hfSyncClick(){
   );
 }
 window.hfSyncClick = hfSyncClick;
+
+// ══ Painel de Sincronização TOConline (Fase B) ════════════════════════════
+// O browser não sincroniza: só pede à Edge Function que o faça e lê os
+// contadores que ela devolve. Toda a decisão (o que é conflito, o que é
+// ambíguo, o que se preenche) vive do lado do servidor, o mesmo código que o
+// agendamento horário vai usar — para o botão e o agendamento nunca poderem
+// divergir um do outro.
+function tocoSyncCartao(rot, val, cor){
+  return '<div style="background:var(--bg3);border:1px solid var(--border);border-radius:9px;padding:9px 11px">' +
+    '<div style="font-size:19px;font-weight:600;color:' + (cor || 'var(--fg)') + '">' + val + '</div>' +
+    '<div style="font-size:11px;color:var(--muted);margin-top:2px">' + rot + '</div></div>';
+}
+
+function tocoSyncMostrar(e){
+  var cards = document.getElementById('toco-sync-cards');
+  var det = document.getElementById('toco-sync-detalhe');
+  var st = document.getElementById('toco-sync-status');
+  if(!e || e.nunca){
+    if(cards) cards.innerHTML = '';
+    if(det) det.innerHTML = '<div style="color:var(--muted)">Ainda não foi feita nenhuma sincronização.</div>';
+    if(st) st.textContent = 'sem histórico';
+    return;
+  }
+  var quando = e.ts ? new Date(e.ts).toLocaleString('pt-PT') : '—';
+  if(st) st.textContent = 'última: ' + quando + ' · ' + (e.status || '—') +
+    (e.duracao_ms ? ' · ' + Math.round(e.duracao_ms/100)/10 + 's' : '');
+  if(cards) cards.innerHTML =
+    tocoSyncCartao('Encontrados', e.encontrados != null ? e.encontrados : '—') +
+    tocoSyncCartao('Atualizados', e.atualizados != null ? e.atualizados : '—', '#34c759') +
+    tocoSyncCartao('Novos (sem match)', e.novos != null ? e.novos : '—', '#f5a623') +
+    tocoSyncCartao('Conflitos', e.conflitos != null ? e.conflitos : '—', '#ff453a') +
+    tocoSyncCartao('Ambíguos', e.ambiguos != null ? e.ambiguos : '—', '#f5a623') +
+    tocoSyncCartao('Bloqueados (placeholder)', e.bloqueados != null ? e.bloqueados : '—', 'var(--muted)') +
+    tocoSyncCartao('TOConline', e.clientes_toconline != null ? e.clientes_toconline : '—');
+  var linhas = function(titulo, lista, cols){
+    if(!lista || !lista.length) return '';
+    var h = '<div style="margin-top:12px;font-weight:600">' + titulo + ' (' + lista.length + ')</div>' +
+      '<div style="max-height:190px;overflow:auto;border:1px solid var(--border);border-radius:8px;margin-top:6px">';
+    for(var i=0;i<lista.length && i<120;i++){
+      h += '<div style="padding:5px 9px;border-bottom:1px solid var(--border);font-size:12px">' + cols(lista[i]) + '</div>';
+    }
+    return h + '</div>';
+  };
+  var esc = function(x){ return String(x == null ? '' : x).replace(/[&<>"]/g, function(c){
+    return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]; }); };
+  if(det) det.innerHTML =
+    linhas('Clientes do TOConline sem correspondência — nenhum foi criado', e.lista_novos, function(x){
+      return '<b>' + esc(x.nome) + '</b> <span style="color:var(--muted)">NIF ' + esc(x.nif || '—') + ' · toc ' + esc(x.toc_id) + '</span>'; }) +
+    linhas('Conflitos — campo já preenchido e diferente, não foi tocado', e.lista_conflitos, function(x){
+      return '<b>' + esc(x.nome) + '</b> · ' + esc(x.campo) + ': <span style="color:var(--muted)">CRM</span> ' + esc(x.crm) +
+             ' <span style="color:var(--muted)">→ TOC</span> ' + esc(x.toc); }) +
+    linhas('Ambíguos — retidos por falta de confirmação segura', e.lista_ambiguos, function(x){
+      return '<b>' + esc(x.nome) + '</b> <span style="color:var(--muted)">' + esc(x.motivo) + '</span>'; }) +
+    linhas('Bloqueados — NIF genérico / Consumidor Final, nunca contam nem entram em match', e.lista_bloqueados, function(x){
+      return '<b>' + esc(x.nome) + '</b> <span style="color:var(--muted)">' + esc(x.motivo) + '</span>'; });
+}
+
+async function tocoSyncPainel(){
+  var m = document.getElementById('toco-sync-modal');
+  if(m) m.style.display = 'flex';
+  var st = document.getElementById('toco-sync-status');
+  if(st) st.textContent = 'a ler estado…';
+  try{ tocoSyncMostrar(await tocoEF('estado')); }
+  catch(e){ if(st) st.textContent = '⚠ ' + e.message; }
+}
+
+async function tocoSyncAgora(simular){
+  var btn = document.getElementById('toco-sync-btn');
+  var st = document.getElementById('toco-sync-status');
+  if(btn){ btn.disabled = true; btn.style.opacity = .6; }
+  if(st) st.textContent = simular ? '⏳ a simular…' : '⏳ a sincronizar…';
+  try{
+    var e = await tocoEF('sync', simular ? 'dry=1' : '');
+    tocoSyncMostrar(e);
+    // Só uma gravação real muda a base local; a simulação não mexe em nada.
+    if(!simular && e.atualizados > 0 && typeof obSbBoot === 'function'){
+      try{ await obSbBoot(); }catch(err){}
+      try{ if(typeof renderClientes === 'function') renderClientes(); }catch(err){}
+    }
+  }catch(err){ if(st) st.textContent = '❌ ' + err.message; }
+  finally{ if(btn){ btn.disabled = false; btn.style.opacity = 1; } }
+}
+window.tocoSyncPainel = tocoSyncPainel;
+window.tocoSyncAgora = tocoSyncAgora;
+
 </script>
 
+
+<!-- ══ Sincronização TOConline → CRM (Fase B) ═══════════════════════════ -->
+<div id="toco-sync-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9000;align-items:center;justify-content:center;padding:20px">
+  <div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;max-width:760px;width:100%;max-height:88vh;overflow:auto;padding:22px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+      <div style="font-size:17px;font-weight:600">🔄 Sincronização TOConline</div>
+      <button onclick="document.getElementById('toco-sync-modal').style.display='none'" style="background:none;border:none;color:var(--muted);font-size:22px;cursor:pointer;line-height:1">×</button>
+    </div>
+    <div style="font-size:12.5px;color:var(--muted);margin-bottom:14px">
+      TOConline → Edge Function → CRM. Só preenche campos vazios; nunca substitui o que já lá está, nunca cria nem apaga clientes.
+    </div>
+    <div style="display:flex;gap:10px;align-items:center;margin-bottom:14px;flex-wrap:wrap">
+      <button id="toco-sync-btn" onclick="tocoSyncAgora(false)" style="background:var(--accent);border:none;color:#fff;border-radius:8px;padding:9px 18px;cursor:pointer;font-size:13px;font-weight:600">Sincronizar agora</button>
+      <button onclick="tocoSyncAgora(true)" style="background:var(--bg3);border:1px solid var(--border);color:var(--fg);border-radius:8px;padding:9px 16px;cursor:pointer;font-size:13px" title="Calcula tudo sem gravar nada">Simular (sem gravar)</button>
+      <span id="toco-sync-status" style="font-size:12.5px;color:var(--muted)"></span>
+    </div>
+    <div id="toco-sync-cards" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(115px,1fr));gap:9px;margin-bottom:14px"></div>
+    <div id="toco-sync-detalhe" style="font-size:12.5px"></div>
+  </div>
+</div>
 </body>
 </html>
