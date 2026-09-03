@@ -441,13 +441,22 @@ async function buscarClientes(token: string) {
 //     marca parcial=true em vez de continuar as cegas ou rebentar no limite
 //     de execucao da function. TETO_PAGINAS e so uma rede de seguranca
 //     contra loop infinito (nao e um limite de negocio).
+//
+// Eficiencia (02/09, corrida real com 6086 faturas deu WORKER_RESOURCE_LIMIT):
+// cada documento bruto do TOConline traz ~80 campos, muitos deles pesados
+// (document_hash_sum em base64, series de campos nulos, etc.) — reter os
+// 6086 objectos brutos ate ao fim da paginacao para so entao achatar era o
+// pico de memoria. Agora achata-se pagina a pagina (achatarDocumento, ja
+// definida mais abaixo — function declaration, hoisted) e so o resultado
+// magro (~12 campos) fica em memoria; o payload bruto de cada pagina sai de
+// scope e fica livre para recolha assim que a iteracao termina.
 const DOC_INCLUDES = ["user", "issuer", "current_company_users", ""];
 
 async function buscarDocumentosCompletos(
   recurso: "invoices" | "credit_notes" | "receipts",
   token: string,
   prazoMs: number,
-): Promise<{ data: Record<string, unknown>[]; included: Record<string, unknown>[]; include: string; paginas: number; parcial: boolean; tentativas: string[] }> {
+): Promise<{ data: DocAchatado[]; included: Record<string, unknown>[]; include: string; paginas: number; parcial: boolean; tentativas: string[] }> {
   const cfg = RECURSOS[recurso];
   const path = await resolverPath(recurso, token);
   const tentativas: string[] = [];
@@ -463,7 +472,7 @@ async function buscarDocumentosCompletos(
     if (r.ok) { escolhido = inc; break; }
   }
 
-  const data: Record<string, unknown>[] = [];
+  const data: DocAchatado[] = [];
   const included: Record<string, unknown>[] = [];
   const vistos = new Set<string>();
   const inicio = Date.now();
@@ -483,13 +492,14 @@ async function buscarDocumentosCompletos(
     try { payload = await res.json(); } catch { break; }
     const lote = extrairLista(payload);
     if (!lote.length) break;
-    data.push(...(lote as Record<string, unknown>[]));
+    for (const doc of lote as Record<string, unknown>[]) data.push(achatarDocumento(doc));
     for (const r of (Array.isArray(payload.included) ? payload.included : [])) {
       const o = r as Record<string, unknown>;
       const k = `${o.type}:${o.id}`;
       if (!vistos.has(k)) { vistos.add(k); included.push(o); }
     }
     if (lote.length < PAGE_SIZE) break;
+    // `payload`/`lote` saem de scope aqui — nada retem os campos brutos.
   }
   return { data, included, include: escolhido, paginas: pagina, parcial, tentativas };
 }
@@ -787,7 +797,7 @@ async function auditoriaFinanceira(parte: string): Promise<Record<string, unknow
     const restante = ORCAMENTO_TOTAL_MS - (Date.now() - inicio);
     if (restante < 5000) { parcialPorRecurso[r] = true; tentativasPorRecurso[r] = ["ignorado: orcamento de tempo global esgotado"]; continue; }
     const { data, included, paginas, parcial, tentativas } = await buscarDocumentosCompletos(r, token, Math.min(PRAZO_POR_RECURSO_MS, restante));
-    brutos[r] = data.map(achatarDocumento);
+    brutos[r] = data; // ja vem achatado pagina a pagina (ver buscarDocumentosCompletos)
     includedTodos.push(...included);
     paginasPorRecurso[r] = paginas;
     parcialPorRecurso[r] = parcial;
