@@ -22263,15 +22263,29 @@ async function sincronizarFinanceiroCentral(){
     // grava na cloud (obSbPush já falha por RLS para esta chave, como
     // sempre falhou); usamos esse resultado local como base "existentes"
     // para a reconciliação seguinte, exatamente como uma corrida real usaria.
+    //
+    // DETEÇÃO DE SUCESSO: avSyncVendedoresSheet() nunca lança exceção (todos
+    // os erros — CORS/fetch, CSV vazio, colunas em falta, 0 linhas de 2026 —
+    // são apanhados internamente na própria função) e nunca devolve valor
+    // nenhum (é sempre undefined, por desenho — não há "return" com dados em
+    // caminho nenhum). A versão anterior desta central inferia sucesso só
+    // por identidade de referência de window.AV_SHEET_ROWS antes/depois —
+    // funciona para distinguir sucesso de falha, mas ao falhar nunca mostrava
+    // a RAZÃO real, só a mensagem genérica desta central. A própria função já
+    // escreve essa razão em #av-sb-ts ('✅ Sheets · N faturas · M vendedores'
+    // em sucesso; '⚠️ Sheets: <erro real>' em falha) — ler esse texto é o
+    // sinal fiável e informativo, sem alterar avSyncVendedoresSheet().
     sincFinRenderPainel({ a_correr:true, passo:'A sincronizar Google Sheets…' });
     TES_RECEBER = existentes;
-    var sheetRowsAntes = window.AV_SHEET_ROWS;
-    try{
-      await avSyncVendedoresSheet();
-      resumo.sheets_ok = !!(window.AV_SHEET_ROWS && window.AV_SHEET_ROWS !== sheetRowsAntes);
-    }catch(eSheet){ resumo.sheets_ok = false; resumo.erros.push('Google Sheets: ' + eSheet.message); }
+    var tsElSheets = document.getElementById('av-sb-ts');
+    try{ await avSyncVendedoresSheet(); }
+    catch(eSheet){ resumo.erros.push('Google Sheets (exceção inesperada): ' + eSheet.message); }
+    var textoSheets = tsElSheets ? String(tsElSheets.textContent || '').trim() : '';
+    resumo.sheets_ok = textoSheets.indexOf('✅') === 0;
     if(!resumo.sheets_ok){
-      throw new Error('Google Sheets falhou — dry-run abortado (nenhuma reconciliação feita).');
+      resumo.erros.push('Google Sheets: ' + (textoSheets ||
+        '(sem confirmação — elemento av-sb-ts não encontrado; abra a página Análise de Vendas pelo menos uma vez nesta sessão e tente novamente)'));
+      throw new Error('Google Sheets falhou — dry-run abortado (nenhuma reconciliação feita). Ver razão real em "Erros".');
     }
     existentes = TES_RECEBER;
 
