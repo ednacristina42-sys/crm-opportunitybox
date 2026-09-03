@@ -917,6 +917,241 @@ async function auditoriaFinanceira(parte: string): Promise<Record<string, unknow
   return relatorio;
 }
 
+// ══ FASE C — FATURAS EM LOTES, COM CHECKPOINT (SOMENTE LEITURA) ════════════
+// auditoriaFinanceira("invoices") busca as 6086 faturas de uma vez so numa
+// chamada — e isso rebentou com HTTP 546 WORKER_RESOURCE_LIMIT (03/09). Este
+// modo processa um numero limitado de paginas do TOConline por chamada HTTP
+// e persiste um checkpoint (CHAVE_INVOICES_CKPT) com SO os acumuladores
+// (totais, periodo, utilizadores, TES ja resolvidos, amostra de ate 50
+// documentos) — nunca a colecao completa de faturas. A chamada seguinte
+// (mesmo resource=finance_audit&parte=invoices) le o checkpoint e continua
+// de "next_page" em diante. So GET ao TOConline, so leitura de
+// ob-tes-receber; escreve so no checkpoint e, na ultima pagina, no relatorio
+// final toc-finance-audit-invoices (a mesma chave de sempre). Nao consulta
+// credit_notes nem receipts nesta corrida — usar os relatorios ja existentes
+// para essas partes. Nunca toca em Financeiro/Ranking/Historico/CFO/
+// ob-tes-receber/ob_orcamentos.
+const CHAVE_INVOICES_CKPT = "toc-finance-audit-invoices-checkpoint";
+const PAGINAS_POR_LOTE_DEFAULT = 15;
+
+type TotaisAc = { net: number; iva: number; gross: number; liquidadas: number; emAberto: number; vencidas: number; parciais: number; anuladas: number; recebido: number; aReceber: number; vencidoValor: number };
+const totaisVazios = (): TotaisAc => ({ net: 0, iva: 0, gross: 0, liquidadas: 0, emAberto: 0, vencidas: 0, parciais: 0, anuladas: 0, recebido: 0, aReceber: 0, vencidoValor: 0 });
+function somarUm(ac: TotaisAc, d: DocAchatado, hojeISO: string) {
+  if (d.voided_reason) { ac.anuladas++; return; }
+  ac.net += d.net_total; ac.iva += d.tax_payable; ac.gross += d.gross_total;
+  ac.recebido += (d.gross_total - d.pending_total); ac.aReceber += d.pending_total;
+  if (d.pending_total <= 0.005) ac.liquidadas++;
+  else if (d.pending_total >= d.gross_total - 0.005) {
+    if (d.due_date && d.due_date < hojeISO) { ac.vencidas++; ac.vencidoValor += d.pending_total; } else ac.emAberto++;
+  } else {
+    ac.parciais++;
+    if (d.due_date && d.due_date < hojeISO) ac.vencidoValor += d.pending_total;
+  }
+}
+
+interface CheckpointFaturas {
+  next_page: number;
+  paginas_processadas: number;
+  ids_vistos: string[];
+  contagem: number;
+  totais: TotaisAc;
+  periodo: { desde: string | null; ate: string | null };
+  include_escolhido: string;
+  tentativas_include: string[];
+  users_mapa: Record<string, { type: string; atributos: Record<string, unknown>; freq: number }>;
+  tes_resolvido: Record<string, { tipo: "match" | "divergencia_valor" | "divergencia_status"; detalhe: Record<string, unknown> }>;
+  amostra_documentos: DocAchatado[];
+  iniciado_em: string;
+}
+
+async function auditoriaFaturasLote(paginasPorChamada: number, reiniciar: boolean): Promise<Record<string, unknown>> {
+  const inicioChamada = Date.now();
+  const token = await getAccessToken();
+  const hojeISO = new Date().toISOString().slice(0, 10);
+  const numGenerico = (x: unknown): number => (typeof x === "number" ? x : parseFloat(String(x ?? "")) || 0);
+
+  let ckpt = reiniciar ? null : (await lerDaBase(CHAVE_INVOICES_CKPT)) as CheckpointFaturas | null;
+
+  const path = await resolverPath("invoices", token);
+  const cfg = RECURSOS["invoices"];
+
+  let escolhido = ckpt?.include_escolhido ?? "";
+  const tentativasInclude = ckpt?.tentativas_include ?? [];
+  if (!ckpt) {
+    for (const inc of DOC_INCLUDES) {
+      const qs = [cfg.query, inc ? `include=${encodeURIComponent(inc)}` : "", "page[size]=1", "page[number]=1"].filter(Boolean).join("&");
+      const r = await tocGet(`${path}?${qs}`, token);
+      tentativasInclude.push(`${inc || "(sem include)"} -> HTTP ${r.status}`);
+      if (r.ok) { escolhido = inc; break; }
+    }
+  }
+
+  if (!ckpt) {
+    ckpt = {
+      next_page: 1, paginas_processadas: 0, ids_vistos: [], contagem: 0,
+      totais: totaisVazios(), periodo: { desde: null, ate: null },
+      include_escolhido: escolhido, tentativas_include: tentativasInclude,
+      users_mapa: {}, tes_resolvido: {}, amostra_documentos: [],
+      iniciado_em: new Date().toISOString(),
+    };
+  }
+
+  const idsVistos = new Set(ckpt.ids_vistos);
+  const usersMapa = ckpt.users_mapa;
+  const tesResolvido = ckpt.tes_resolvido;
+  const amostra = ckpt.amostra_documentos;
+  const totais = ckpt.totais;
+  let desde = ckpt.periodo.desde, ate = ckpt.periodo.ate;
+  let duplicadosNesteLote = 0;
+
+  const tes = (await lerDaBase(CHAVE_TES_RECEBER)) as Record<string, unknown>[] | null;
+  const tesRows = Array.isArray(tes) ? tes : [];
+
+  let paginasNesteLote = 0;
+  let terminou = false;
+  let paginaAtual = ckpt.next_page;
+
+  for (; paginasNesteLote < paginasPorChamada; paginasNesteLote++) {
+    const qs = [cfg.query, escolhido ? `include=${encodeURIComponent(escolhido)}` : "", `page[size]=${PAGE_SIZE}`, `page[number]=${paginaAtual}`]
+      .filter(Boolean).join("&");
+    const res = await tocGet(`${path}?${qs}`, token);
+    if (!res.ok) {
+      if (paginaAtual === 1 && ckpt.paginas_processadas === 0) throw new HttpError(502, `TOConline devolveu HTTP ${res.status} em ${path}`);
+      terminou = true; break;
+    }
+    let payload: Record<string, unknown>;
+    try { payload = await res.json(); } catch { terminou = true; break; }
+    const lote = extrairLista(payload);
+    if (!lote.length) { terminou = true; break; }
+
+    const incluidosPagina: Record<string, unknown>[] = Array.isArray(payload.included)
+      ? (payload.included as Record<string, unknown>[]) : [];
+
+    const docsLote: DocAchatado[] = [];
+    for (const docBruto of lote as Record<string, unknown>[]) {
+      const d = achatarDocumento(docBruto);
+      docsLote.push(d);
+      if (idsVistos.has(d.id)) duplicadosNesteLote++; else idsVistos.add(d.id);
+      somarUm(totais, d, hojeISO);
+      if (d.date) {
+        if (!desde || d.date < desde) desde = d.date;
+        if (!ate || d.date > ate) ate = d.date;
+      }
+      if (d.user_id) {
+        const k = `${d.user_type}:${d.user_id}`;
+        if (!usersMapa[k]) {
+          const inc = incluidosPagina.find((x) => x.type === d.user_type && String(x.id) === d.user_id);
+          usersMapa[k] = { type: d.user_type, atributos: ((inc as Record<string, unknown>)?.attributes as Record<string, unknown>) ?? {}, freq: 0 };
+        }
+        usersMapa[k].freq++;
+      }
+      if (amostra.length < 50) amostra.push(d);
+    }
+
+    // Resolve TES ainda pendentes contra este lote (nome + valor, so faturas).
+    // Um TES por resolver que nao aparece neste lote fica pendente para o
+    // proximo — so e dado como "sem match" na ultima pagina.
+    const porNomeLote: Record<string, DocAchatado[]> = {};
+    for (const d of docsLote) {
+      const nm = nomeNorm(d.customer_business_name);
+      if (nm) (porNomeLote[nm] ??= []).push(d);
+    }
+    for (const linha of tesRows) {
+      const idTes = String((linha as Record<string, unknown>).id ?? "");
+      if (!idTes || tesResolvido[idTes]) continue;
+      const nomeLinha = nomeNorm((linha as Record<string, unknown>).cliente);
+      const cands = porNomeLote[nomeLinha];
+      if (!cands || !cands.length) continue;
+      const valorLinha = numGenerico((linha as Record<string, unknown>).total ?? (linha as Record<string, unknown>).valorRecebido);
+      const porValor = cands.find((d) => Math.abs(d.gross_total - valorLinha) < 0.5);
+      if (!porValor) {
+        tesResolvido[idTes] = { tipo: "divergencia_valor", detalhe: { cliente: (linha as Record<string, unknown>).cliente as unknown as Record<string, unknown>, crm_total: valorLinha, toconline_candidatos: cands.map((d) => d.gross_total) } as unknown as Record<string, unknown> };
+        continue;
+      }
+      const estadoLinha = val((linha as Record<string, unknown>).estado);
+      const liquidadoToc = porValor.pending_total <= 0.005 && !porValor.voided_reason;
+      const estadoBate = (estadoLinha === "Recebido" && liquidadoToc) || (estadoLinha !== "Recebido" && !liquidadoToc);
+      tesResolvido[idTes] = estadoBate
+        ? { tipo: "match", detalhe: { cliente: (linha as Record<string, unknown>).cliente, toconline_document_no: porValor.document_no } as unknown as Record<string, unknown> }
+        : { tipo: "divergencia_status", detalhe: { cliente: (linha as Record<string, unknown>).cliente, crm_estado: estadoLinha, toconline_pending_total: porValor.pending_total, toconline_document_no: porValor.document_no } as unknown as Record<string, unknown> };
+    }
+
+    ckpt.paginas_processadas++;
+    paginaAtual++;
+    if (lote.length < PAGE_SIZE) { terminou = true; break; }
+    if (Date.now() - inicioChamada > 90000) break; // orcamento de tempo por chamada, rede de seguranca
+  }
+
+  ckpt.next_page = paginaAtual;
+  ckpt.contagem = idsVistos.size;
+  ckpt.ids_vistos = [...idsVistos];
+  ckpt.periodo = { desde, ate };
+  ckpt.include_escolhido = escolhido;
+  ckpt.tentativas_include = tentativasInclude;
+
+  await guardarNaBase(CHAVE_INVOICES_CKPT, ckpt);
+
+  if (!terminou) {
+    return {
+      concluido: false, paginacao_completa: false,
+      next_page: ckpt.next_page, paginas_processadas: ckpt.paginas_processadas,
+      contagem: ckpt.contagem, duplicados_neste_lote: duplicadosNesteLote,
+      nota: "Lote gravado no checkpoint (toc-finance-audit-invoices-checkpoint). Chame de novo resource=finance_audit&parte=invoices para continuar.",
+    };
+  }
+
+  // Ultima pagina: fecha os TES que nunca apareceram em nenhum lote como
+  // "sem match" e consolida o relatorio final na mesma chave de sempre.
+  let semMatch = 0, comMatch = 0, divValor = 0, divStatus = 0;
+  const amostraSemMatch: unknown[] = [], amostraDivValor: unknown[] = [], amostraDivStatus: unknown[] = [];
+  for (const linha of tesRows) {
+    const idTes = String((linha as Record<string, unknown>).id ?? "");
+    const r = idTes ? tesResolvido[idTes] : undefined;
+    if (!r) {
+      semMatch++;
+      if (amostraSemMatch.length < 50) amostraSemMatch.push({ id: idTes, cliente: (linha as Record<string, unknown>).cliente });
+      continue;
+    }
+    if (r.tipo === "match") comMatch++;
+    else if (r.tipo === "divergencia_valor") { divValor++; if (amostraDivValor.length < 50) amostraDivValor.push({ id: idTes, ...r.detalhe }); }
+    else if (r.tipo === "divergencia_status") { divStatus++; if (amostraDivStatus.length < 50) amostraDivStatus.push({ id: idTes, ...r.detalhe }); }
+  }
+
+  const usersLista = Object.entries(usersMapa).map(([k, u]) => {
+    const at = u.atributos;
+    const nomeBruto = val(at.name) || val(at.full_name) || val(at.email) || "";
+    const match = NOMES_COMERCIAIS_CONHECIDOS.find((n) => nomeNorm(n) === nomeNorm(nomeBruto));
+    return { id: k.split(":")[1] ?? k, type: u.type, freq: u.freq, nome_bruto: nomeBruto || "(sem atributos legíveis no included)", correspondencia: match ?? VENDEDOR_NAO_CONFIRMADO };
+  }).sort((a, b) => b.freq - a.freq);
+  const freqConfirmados = usersLista.filter((u) => u.correspondencia !== VENDEDOR_NAO_CONFIRMADO).reduce((s, u) => s + u.freq, 0);
+
+  const relatorio = {
+    ts: new Date().toISOString(), parte: "invoices", modo: "lotes",
+    duracao_total_ms: Date.now() - Date.parse(ckpt.iniciado_em),
+    paginacao_completa: true, paginas_processadas: ckpt.paginas_processadas,
+    contagens: { invoices: ckpt.contagem, credit_notes: 0, receipts: 0 },
+    periodo_coberto: ckpt.periodo,
+    totais_faturas: totais, totais_notas_credito: totaisVazios(),
+    duplicados_toconline: { invoices: idsVistos.size < ckpt.contagem ? ckpt.contagem - idsVistos.size : 0, credit_notes: 0, receipts: 0 },
+    users_toconline: usersLista,
+    vendedores_confirmados: usersLista.filter((u) => u.correspondencia !== VENDEDOR_NAO_CONFIRMADO).length,
+    documentos_sem_vendedor_confirmado: ckpt.contagem - freqConfirmados,
+    match_tes_receber: { total_tes_no_periodo: tesRows.length, com_match: comMatch, sem_match: semMatch, divergencias_valor: divValor, divergencias_status: divStatus },
+    amostra_sem_match: amostraSemMatch, amostra_divergencias_valor: amostraDivValor, amostra_divergencias_status: amostraDivStatus,
+    amostra_documentos: { invoices: amostra, credit_notes: [], receipts: [] },
+    tentativas_include: { invoices: ckpt.tentativas_include },
+    nota: "SOMENTE LEITURA, modo lotes com checkpoint (resource=finance_audit&parte=invoices&paginas=N). credit_notes e receipts nao foram consultados nesta corrida — ver toc-finance-audit-credit_notes / toc-finance-audit-receipts para essas partes.",
+  };
+  await guardarNaBase(`${CHAVE_FINANCE_AUDIT}-invoices`, relatorio);
+  return {
+    concluido: true, paginacao_completa: true, paginas_processadas: ckpt.paginas_processadas,
+    contagem: ckpt.contagem, periodo_coberto: ckpt.periodo, match_tes_receber: relatorio.match_tes_receber,
+    duplicados_toconline_invoices: relatorio.duplicados_toconline.invoices,
+    vendedores_confirmados: relatorio.vendedores_confirmados,
+    documentos_sem_vendedor_confirmado: relatorio.documentos_sem_vendedor_confirmado,
+  };
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
   if (req.method !== "GET") return json({ error: "Apenas GET e suportado." }, 405);
@@ -1076,8 +1311,21 @@ Deno.serve(async (req: Request) => {
     // Fase C — auditoria financeira, somente leitura (ver bloco acima).
     // ?parte=invoices|credit_notes|receipts corre so essa parte (util se o
     // orcamento de tempo de uma corrida "tudo" nao chegar para as tres).
+    // parte=invoices e um caso especial: usa o modo em lotes com checkpoint
+    // (auditoriaFaturasLote) em vez de buscar as 6086 faturas de uma vez —
+    // essa corrida "tudo numa chamada" rebentou com WORKER_RESOURCE_LIMIT.
+    // ?paginas=N (default 15) controla quantas paginas do TOConline uma
+    // chamada processa; ?reiniciar=1 ignora o checkpoint e comeca do zero.
     if (pedido === "finance_audit") {
-      return json(await auditoriaFinanceira(url.searchParams.get("parte") ?? "tudo"), 200);
+      const parteParam = url.searchParams.get("parte") ?? "tudo";
+      if (parteParam === "invoices") {
+        const paginasParam = Number(url.searchParams.get("paginas"));
+        const paginas = Number.isFinite(paginasParam) && paginasParam > 0
+          ? Math.min(50, Math.floor(paginasParam)) : PAGINAS_POR_LOTE_DEFAULT;
+        const reiniciar = url.searchParams.get("reiniciar") === "1";
+        return json(await auditoriaFaturasLote(paginas, reiniciar), 200);
+      }
+      return json(await auditoriaFinanceira(parteParam), 200);
     }
     if (pedido === "finance_audit_estado") {
       return json(await lerDaBase(CHAVE_FINANCE_AUDIT) ?? { nunca: true }, 200);
