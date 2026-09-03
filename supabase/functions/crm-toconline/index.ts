@@ -53,8 +53,11 @@ const STATE_TTL_MS = 15 * 60 * 1000;
 // Nesta conta (api2) o caminho valido das faturas e /commercial_sales_documents:
 // /api/v1/commercial_sales_documents devolve HTTP 400 para document_type=FT.
 // A ordem abaixo mantem-se porque resolverPath ja cai no segundo caminho, e
-// noutras contas o /api/v1 e o que responde. A recolha integral do historico
-// (>=5000 faturas, tecto da paginacao) fica para uma fase posterior.
+// noutras contas o /api/v1 e o que responde. Os endpoints diretos abaixo
+// (resource=invoices/credit_notes/receipts) e o snapshot do callback OAuth
+// continuam limitados por MAX_PAGES (recolha rapida/leve, comportamento
+// inalterado). A recolha integral do historico, sem esse teto, e feita à
+// parte por resource=finance_audit (ver buscarDocumentosCompletos).
 const RECURSOS: Record<string, { paths: string[]; query?: string }> = {
   customers:    { paths: ["/api/customers", "/customers"] },
   invoices:     { paths: ["/api/v1/commercial_sales_documents", "/commercial_sales_documents"], query: "filter[document_type]=FT" },
@@ -164,6 +167,12 @@ const CHAVE_OAUTH = "toc-oauth";
 const CHAVE_SNAPSHOT = "toc-snapshot";
 const CHAVE_SYNC = "toc-sync-estado";
 const CHAVE_CLIENTES = "ob-clients";
+// Fase C — auditoria financeira, SOMENTE LEITURA. CHAVE_FINANCE_AUDIT e uma
+// chave nova, propria desta auditoria: nunca e lida por Financeiro, Ranking,
+// Historico de Faturacao nem Dashboard CFO. CHAVE_TES_RECEBER e so lida aqui
+// (para comparar), nunca escrita.
+const CHAVE_FINANCE_AUDIT = "toc-finance-audit";
+const CHAVE_TES_RECEBER = "ob-tes-receber";
 
 function sbCfg(): { url: string; key: string } | null {
   const url = Deno.env.get("SUPABASE_URL");
@@ -419,6 +428,72 @@ async function buscarClientes(token: string) {
   return { data, included, include: escolhido, tentativas, path };
 }
 
+// ── Documentos comerciais (faturas/notas/recibos), paginacao completa ──────
+// Usada SO pela auditoria financeira (resource=finance_audit). Os endpoints
+// diretos (resource=invoices/credit_notes/receipts) e o snapshot do callback
+// continuam a usar buscarTudo()/MAX_PAGES, tal como antes — nada aqui muda o
+// comportamento existente.
+//
+// Duas seguranças em vez de um numero fixo de paginas:
+//  1. Para de paginar quando uma pagina vem mais curta que PAGE_SIZE (fim
+//     real dos dados) — igual ao buscarTudo().
+//  2. Um orcamento de tempo por recurso (prazoMs): se for excedido, para e
+//     marca parcial=true em vez de continuar as cegas ou rebentar no limite
+//     de execucao da function. TETO_PAGINAS e so uma rede de seguranca
+//     contra loop infinito (nao e um limite de negocio).
+const DOC_INCLUDES = ["user", "issuer", "current_company_users", ""];
+
+async function buscarDocumentosCompletos(
+  recurso: "invoices" | "credit_notes" | "receipts",
+  token: string,
+  prazoMs: number,
+): Promise<{ data: Record<string, unknown>[]; included: Record<string, unknown>[]; include: string; paginas: number; parcial: boolean; tentativas: string[] }> {
+  const cfg = RECURSOS[recurso];
+  const path = await resolverPath(recurso, token);
+  const tentativas: string[] = [];
+  let escolhido = "";
+  // Recibos: sem tentativa de include (relacao com o emissor interessa-nos
+  // em faturas/notas; se os recibos tambem a tiverem, fica para depois).
+  const candidatos = recurso === "receipts" ? [""] : DOC_INCLUDES;
+  for (const inc of candidatos) {
+    const qs = [cfg.query, inc ? `include=${encodeURIComponent(inc)}` : "", "page[size]=1", "page[number]=1"]
+      .filter(Boolean).join("&");
+    const r = await tocGet(`${path}?${qs}`, token);
+    tentativas.push(`${inc || "(sem include)"} -> HTTP ${r.status}`);
+    if (r.ok) { escolhido = inc; break; }
+  }
+
+  const data: Record<string, unknown>[] = [];
+  const included: Record<string, unknown>[] = [];
+  const vistos = new Set<string>();
+  const inicio = Date.now();
+  let pagina = 1;
+  let parcial = false;
+  const TETO_PAGINAS = 3000;
+  for (; pagina <= TETO_PAGINAS; pagina++) {
+    if (Date.now() - inicio > prazoMs) { parcial = true; break; }
+    const qs = [cfg.query, escolhido ? `include=${encodeURIComponent(escolhido)}` : "", `page[size]=${PAGE_SIZE}`, `page[number]=${pagina}`]
+      .filter(Boolean).join("&");
+    const res = await tocGet(`${path}?${qs}`, token);
+    if (!res.ok) {
+      if (pagina === 1) throw new HttpError(502, `TOConline devolveu HTTP ${res.status} em ${path}`);
+      break;
+    }
+    let payload: Record<string, unknown>;
+    try { payload = await res.json(); } catch { break; }
+    const lote = extrairLista(payload);
+    if (!lote.length) break;
+    data.push(...(lote as Record<string, unknown>[]));
+    for (const r of (Array.isArray(payload.included) ? payload.included : [])) {
+      const o = r as Record<string, unknown>;
+      const k = `${o.type}:${o.id}`;
+      if (!vistos.has(k)) { vistos.add(k); included.push(o); }
+    }
+    if (lote.length < PAGE_SIZE) break;
+  }
+  return { data, included, include: escolhido, paginas: pagina, parcial, tentativas };
+}
+
 /** Diagnóstico: só metadados e códigos de estado. Nunca dados, nunca tokens. */
 async function diagnostico(tokenJaObtido?: string) {
   const out: Record<string, unknown> = {
@@ -657,6 +732,164 @@ async function sincronizarClientes(seco: boolean, via: string) {
   return estado;
 }
 
+// ══ FASE C — AUDITORIA FINANCEIRA (SOMENTE LEITURA, resource=finance_audit) ═
+// Objetivo: dry-run com dados reais do TOConline, para decidir depois como
+// alimentar Financeiro/CFO/Historico/Ranking. Nao escreve em ob-tes-receber,
+// ob_orcamentos, ob-clients, nem em nada usado por essas paginas — so lê
+// ob-tes-receber (para comparar) e persiste o proprio relatorio numa chave
+// nova (CHAVE_FINANCE_AUDIT). Nao cria, nao emite, nao anula, nao cancela
+// nada no TOConline: e so GET.
+//
+// "user" em relationships de uma fatura/nota e o utilizador da CONTA
+// TOConline que emitiu o documento — NAO se assume que seja o comercial de
+// campo. So se marca `vendedor_confirmado` quando o nome/email devolvido
+// pelo `included` bate, apos normalizacao, com um dos 4 nomes conhecidos.
+// Caso contrario fica exatamente como pedido: "VENDEDOR NÃO CONFIRMADO — NÃO
+// USAR NO RANKING".
+const VENDEDOR_NAO_CONFIRMADO = "VENDEDOR NÃO CONFIRMADO — NÃO USAR NO RANKING";
+const NOMES_COMERCIAIS_CONHECIDOS = ["Paulo Faria", "Rui Mota", "Humberto Estrelinha", "André Nolasco"];
+
+function achatarDocumento(c: Record<string, unknown>) {
+  const a = (c.attributes ?? {}) as Record<string, unknown>;
+  const rel = (c.relationships ?? {}) as Record<string, { data?: { id?: string; type?: string } }>;
+  const userRel = rel.user?.data;
+  const num = (x: unknown) => (typeof x === "number" ? x : parseFloat(String(x ?? "")) || 0);
+  return {
+    id: String(c.id), document_no: val(a.document_no), document_type: val(a.document_type),
+    date: val(a.date), due_date: val(a.due_date),
+    net_total: num(a.net_total), gross_total: num(a.gross_total), tax_payable: num(a.tax_payable),
+    pending_total: num(a.pending_total),
+    receipts_ids: Array.isArray(a.receipts_ids) ? a.receipts_ids as unknown[] : [],
+    customer_business_name: val(a.customer_business_name),
+    customer_tax_registration_number: val(a.customer_tax_registration_number),
+    voided_reason: val(a.voided_reason), status_bruto: a.status ?? null,
+    user_id: userRel?.id ? String(userRel.id) : "", user_type: userRel?.type ? String(userRel.type) : "",
+  };
+}
+type DocAchatado = ReturnType<typeof achatarDocumento>;
+
+async function auditoriaFinanceira(parte: string): Promise<Record<string, unknown>> {
+  const inicio = Date.now();
+  const token = await getAccessToken();
+  const ORCAMENTO_TOTAL_MS = 100000; // rede de seguranca global (<< limite de execucao da function)
+  const PRAZO_POR_RECURSO_MS = 40000;
+
+  const todasPartes: ("invoices" | "credit_notes" | "receipts")[] = ["invoices", "credit_notes", "receipts"];
+  const partes = todasPartes.includes(parte as "invoices") ? [parte as "invoices"] : todasPartes;
+
+  const brutos: Record<string, DocAchatado[]> = { invoices: [], credit_notes: [], receipts: [] };
+  const includedTodos: Record<string, unknown>[] = [];
+  const paginasPorRecurso: Record<string, number> = {};
+  const parcialPorRecurso: Record<string, boolean> = {};
+  const tentativasPorRecurso: Record<string, string[]> = {};
+
+  for (const r of partes) {
+    const restante = ORCAMENTO_TOTAL_MS - (Date.now() - inicio);
+    if (restante < 5000) { parcialPorRecurso[r] = true; tentativasPorRecurso[r] = ["ignorado: orcamento de tempo global esgotado"]; continue; }
+    const { data, included, paginas, parcial, tentativas } = await buscarDocumentosCompletos(r, token, Math.min(PRAZO_POR_RECURSO_MS, restante));
+    brutos[r] = data.map(achatarDocumento);
+    includedTodos.push(...included);
+    paginasPorRecurso[r] = paginas;
+    parcialPorRecurso[r] = parcial;
+    tentativasPorRecurso[r] = tentativas;
+  }
+  const paginacaoCompleta = partes.every((r) => !parcialPorRecurso[r]);
+
+  // ── Utilizadores TOConline associados a documentos (faturas + notas) ─────
+  const usersMapa: Record<string, { id: string; type: string; atributos: Record<string, unknown>; freq: number }> = {};
+  for (const grupo of ["invoices", "credit_notes"] as const) {
+    for (const d of brutos[grupo]) {
+      if (!d.user_id) continue;
+      const k = `${d.user_type}:${d.user_id}`;
+      if (!usersMapa[k]) {
+        const inc = includedTodos.find((x) => (x as Record<string, unknown>).type === d.user_type && String((x as Record<string, unknown>).id) === d.user_id);
+        usersMapa[k] = { id: d.user_id, type: d.user_type, atributos: ((inc as Record<string, unknown>)?.attributes as Record<string, unknown>) ?? {}, freq: 0 };
+      }
+      usersMapa[k].freq++;
+    }
+  }
+  const usersLista = Object.values(usersMapa).map((u) => {
+    const at = u.atributos as Record<string, unknown>;
+    const nomeBruto = val(at.name) || val(at.full_name) || val(at.email) || "";
+    const match = NOMES_COMERCIAIS_CONHECIDOS.find((n) => nomeNorm(n) === nomeNorm(nomeBruto));
+    return { ...u, nome_bruto: nomeBruto || "(sem atributos legíveis no included)", correspondencia: match ?? VENDEDOR_NAO_CONFIRMADO };
+  }).sort((a, b) => b.freq - a.freq);
+  const vendedorPorUserId: Record<string, string> = {};
+  for (const u of usersLista) vendedorPorUserId[u.id] = u.correspondencia === VENDEDOR_NAO_CONFIRMADO ? "" : u.correspondencia;
+
+  // ── Totais e classificacao de estado (heuristica, documentada — nao vem do TOConline) ─
+  const hojeISO = new Date().toISOString().slice(0, 10);
+  const somar = (grupo: DocAchatado[]) => {
+    const ac = { net: 0, iva: 0, gross: 0, liquidadas: 0, emAberto: 0, vencidas: 0, parciais: 0, anuladas: 0, recebido: 0, aReceber: 0, vencidoValor: 0 };
+    for (const d of grupo) {
+      if (d.voided_reason) { ac.anuladas++; continue; }
+      ac.net += d.net_total; ac.iva += d.tax_payable; ac.gross += d.gross_total;
+      ac.recebido += (d.gross_total - d.pending_total); ac.aReceber += d.pending_total;
+      if (d.pending_total <= 0.005) ac.liquidadas++;
+      else if (d.pending_total >= d.gross_total - 0.005) {
+        if (d.due_date && d.due_date < hojeISO) { ac.vencidas++; ac.vencidoValor += d.pending_total; } else ac.emAberto++;
+      } else {
+        ac.parciais++;
+        if (d.due_date && d.due_date < hojeISO) ac.vencidoValor += d.pending_total;
+      }
+    }
+    return ac;
+  };
+  const totaisFaturas = somar(brutos.invoices);
+  const totaisNotas = somar(brutos.credit_notes);
+
+  const datas = [...brutos.invoices, ...brutos.credit_notes].map((d) => d.date).filter(Boolean).sort();
+  const periodoCoberto = { desde: datas[0] ?? null, ate: datas[datas.length - 1] ?? null };
+
+  const duplicadosToconline = (grupo: DocAchatado[]) => grupo.length - new Set(grupo.map((d) => d.id)).size;
+
+  // ── Match heuristico com ob-tes-receber (SO LEITURA — nunca escreve la) ──
+  const tes = (await lerDaBase(CHAVE_TES_RECEBER)) as Record<string, unknown>[] | null;
+  const tesRows = Array.isArray(tes) ? tes : [];
+  const dentroDoPeriodo = (data: string) => !periodoCoberto.desde || !data || (data >= periodoCoberto.desde && data <= periodoCoberto.ate!);
+  const candidatosMatch = [...brutos.invoices, ...brutos.credit_notes];
+  const semMatch: unknown[] = [], divergenciasValor: unknown[] = [], divergenciasStatus: unknown[] = [];
+  let comMatch = 0;
+  for (const linha of tesRows) {
+    const dataLinha = val((linha as Record<string, unknown>).dataEmissao) || val((linha as Record<string, unknown>).data);
+    if (!dentroDoPeriodo(dataLinha)) continue; // fora do periodo que a auditoria conseguiu cobrir — nao e "sem match", e "nao auditado"
+    const nomeLinha = nomeNorm((linha as Record<string, unknown>).cliente);
+    const valorLinha = num((linha as Record<string, unknown>).total ?? (linha as Record<string, unknown>).valorRecebido);
+    const cands = candidatosMatch.filter((d) => nomeNorm(d.customer_business_name) === nomeLinha);
+    if (!cands.length) { semMatch.push({ id: (linha as Record<string, unknown>).id, cliente: (linha as Record<string, unknown>).cliente, data: dataLinha, total: valorLinha }); continue; }
+    const porValor = cands.find((d) => Math.abs(d.gross_total - valorLinha) < 0.5);
+    if (!porValor) {
+      divergenciasValor.push({ id: (linha as Record<string, unknown>).id, cliente: (linha as Record<string, unknown>).cliente, crm_total: valorLinha, toconline_candidatos: cands.map((d) => d.gross_total) });
+      continue;
+    }
+    comMatch++;
+    const estadoLinha = val((linha as Record<string, unknown>).estado);
+    const liquidadoToc = porValor.pending_total <= 0.005 && !porValor.voided_reason;
+    const estadoBate = (estadoLinha === "Recebido" && liquidadoToc) || (estadoLinha !== "Recebido" && !liquidadoToc);
+    if (!estadoBate) divergenciasStatus.push({ id: (linha as Record<string, unknown>).id, cliente: (linha as Record<string, unknown>).cliente, crm_estado: estadoLinha, toconline_pending_total: porValor.pending_total, toconline_document_no: porValor.document_no });
+  }
+  function num(x: unknown): number { return typeof x === "number" ? x : parseFloat(String(x ?? "")) || 0; }
+
+  const relatorio = {
+    ts: new Date().toISOString(), parte: partes.join(","), duracao_ms: Date.now() - inicio,
+    paginacao_completa: paginacaoCompleta, paginas_por_recurso: paginasPorRecurso, parcial_por_recurso: parcialPorRecurso,
+    contagens: { invoices: brutos.invoices.length, credit_notes: brutos.credit_notes.length, receipts: brutos.receipts.length },
+    periodo_coberto: periodoCoberto,
+    totais_faturas: totaisFaturas, totais_notas_credito: totaisNotas,
+    duplicados_toconline: { invoices: duplicadosToconline(brutos.invoices), credit_notes: duplicadosToconline(brutos.credit_notes), receipts: duplicadosToconline(brutos.receipts) },
+    users_toconline: usersLista,
+    vendedores_confirmados: usersLista.filter((u) => u.correspondencia !== VENDEDOR_NAO_CONFIRMADO).length,
+    documentos_sem_vendedor_confirmado: [...brutos.invoices, ...brutos.credit_notes].filter((d) => !d.user_id || !vendedorPorUserId[d.user_id]).length,
+    match_tes_receber: { total_tes_no_periodo: comMatch + semMatch.length + divergenciasValor.length, com_match: comMatch, sem_match: semMatch.length, divergencias_valor: divergenciasValor.length, divergencias_status: divergenciasStatus.length },
+    amostra_sem_match: semMatch.slice(0, 50), amostra_divergencias_valor: divergenciasValor.slice(0, 50), amostra_divergencias_status: divergenciasStatus.slice(0, 50),
+    amostra_documentos: { invoices: brutos.invoices.slice(0, 50), credit_notes: brutos.credit_notes.slice(0, 50), receipts: brutos.receipts.slice(0, 50) },
+    tentativas_include: tentativasPorRecurso,
+    nota: "SOMENTE LEITURA: nenhum dado foi escrito em ob-tes-receber, ob_orcamentos ou ob-clients. 'status_bruto' e o codigo numerico do TOConline, ainda nao documentado — a classificacao liquidada/em_aberto/vencida/parcial e heuristica, baseada em pending_total e due_date.",
+  };
+  await guardarNaBase(CHAVE_FINANCE_AUDIT, relatorio);
+  return relatorio;
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
   if (req.method !== "GET") return json({ error: "Apenas GET e suportado." }, 405);
@@ -813,6 +1046,16 @@ Deno.serve(async (req: Request) => {
 
     if (pedido === "diag") return json(await diagnostico(), 200);
 
+    // Fase C — auditoria financeira, somente leitura (ver bloco acima).
+    // ?parte=invoices|credit_notes|receipts corre so essa parte (util se o
+    // orcamento de tempo de uma corrida "tudo" nao chegar para as tres).
+    if (pedido === "finance_audit") {
+      return json(await auditoriaFinanceira(url.searchParams.get("parte") ?? "tudo"), 200);
+    }
+    if (pedido === "finance_audit_estado") {
+      return json(await lerDaBase(CHAVE_FINANCE_AUDIT) ?? { nunca: true }, 200);
+    }
+
     if (pedido === "token") {
       await getAccessToken();
       return json({ ok: true, grant_type: "refresh_token",
@@ -826,7 +1069,7 @@ Deno.serve(async (req: Request) => {
       return json({ resource: pedido, resolved: recurso, path: pathCache[recurso], count: data.length, data }, 200);
     }
 
-    return json({ error: "resource invalido. Use: sync | estado | customers | clients | invoices | credit_notes | receipts | token | diag | auth" }, 400);
+    return json({ error: "resource invalido. Use: sync | estado | customers | clients | invoices | credit_notes | receipts | token | diag | auth | finance_audit | finance_audit_estado" }, 400);
   } catch (e) {
     if (e instanceof HttpError) {
       // So o callback devolve HTML (e uma pagina para pessoa ler). O auth
