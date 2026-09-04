@@ -22167,6 +22167,68 @@ function sincFinReconciliar(tipoTes, existentesRows, tocDocs){
   return { tipo: tipoTes, existentes: existentesDoTipo.length, matches: matches, novos: novos, ambiguidades: ambiguidades, placeholders_excluidos_toc: placeholdersExcluidosToc };
 }
 
+// Aplica o merge da Sheet "Vendas 2026" a uma CÓPIA local imutável de
+// ob-tes-receber — nunca ao global mutável TES_RECEBER. Réplica fiel da
+// regra de sheetMergeReceber() (atualiza/deduplica por _sheetId; só
+// acrescenta linhas realmente novas da Sheet), mas sem tocar em DOM,
+// localStorage nem no global — por isso não desencadeia
+// tesRenderReceber()/tesRenderRecebidos(), que é o caminho pelo qual o
+// cache legado TocOnline (tocoMergeFaturasCacheReceber, chave
+// ob-toconline-faturas, todos os anos, marcador _tocoId) acabava
+// contaminando a reconciliação da Central (incidente 04/09). Devolve um
+// array novo; existentesSupabase nunca é mutado.
+function sincFinAplicarSheetPura(existentesSupabase, sheetRows){
+  var base = (existentesSupabase || []).map(function(r){ return Object.assign({}, r); });
+  var porSheetId = {};
+  base.forEach(function(r){ if(r._sheetId) porSheetId[r._sheetId] = r; });
+  (sheetRows || []).forEach(function(r){
+    var sid = String(r.numero || '').trim();
+    if(!sid) return; // mesma regra de sheetMergeReceber: sem número, ignora
+    var total = r.total || 0;
+    if(!total) return; // mesma regra: sem valor, ignora
+    var liq = total / 1.23;
+    var stLow = String(r.status || '').toLowerCase();
+    var recebido = r.recebido || 0;
+    var aReceber = r.aReceber || 0;
+    var pago = stLow.indexOf('pag') !== -1 || stLow.indexOf('receb') !== -1 || (aReceber === 0 && recebido > 0);
+    var estado = pago ? 'Recebido' : 'Pendente';
+    var dataEmissao = r.data || '';
+    var vencimento = '';
+    if(dataEmissao){
+      var dm = dataEmissao.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+      if(dm){
+        var dtV = new Date(parseInt(dm[3]), parseInt(dm[2]) - 1, parseInt(dm[1]));
+        dtV.setDate(dtV.getDate() + 30);
+        vencimento = dtV.toLocaleDateString('pt-PT');
+      }
+    }
+    var vendedorLinha = r.vendedor || (typeof tesResolverVendedor === 'function' ? tesResolverVendedor(r.nome) : '');
+    var existente = porSheetId[sid];
+    if(existente){
+      // Atualiza em memória local — nunca a linha original de existentesSupabase
+      // (já copiada acima), nunca o global TES_RECEBER.
+      existente.total = total; existente.valorLiq = liq;
+      if(estado === 'Recebido' && existente.estado !== 'Recebido'){
+        existente.estado = 'Recebido';
+        existente.dataRec = existente.dataRec || new Date().toLocaleDateString('pt-PT');
+      }
+      if(!existente.vendedor && vendedorLinha) existente.vendedor = vendedorLinha;
+    } else {
+      var novo = {
+        id: 'SHEET-' + sid, _sheetId: sid, tipo: 'FT',
+        data: dataEmissao, descricao: 'Fatura ' + sid,
+        cliente: r.nome || '—', vendedor: vendedorLinha, projeto: '',
+        valorLiq: liq, ivaPct: 23, total: total,
+        vencimento: vencimento, dataEmissao: dataEmissao, estado: estado,
+        dataRec: pago ? (r.dataRec || dataEmissao) : undefined,
+      };
+      base.push(novo);
+      porSheetId[sid] = novo; // evita duplicar se a mesma Sheet trouxer o mesmo número 2x
+    }
+  });
+  return base;
+}
+
 // Entre os documentos com correspondência segura (matches), reporta — mas
 // nunca corrige sozinho — divergências de vendedor (tesResolverVendedor()
 // nunca lê o "user" do TOConline, mesma regra da Fase C) e de estado
@@ -22246,8 +22308,10 @@ function sincFinRenderPainel(state){
     + '</div>'
     + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:9px">'
     + cartao('Total atual ob-tes-receber', r.total_atual_ob_tes_receber != null ? r.total_atual_ob_tes_receber : '—')
+    + cartao('Snapshot Supabase (imutável)', r.tamanho_snapshot_supabase != null ? r.tamanho_snapshot_supabase : '—')
     + cartao('Google Sheets', r.sheets_ok ? '✓ atualizado' : '✗ falhou', r.sheets_ok ? '#34c759' : '#ff453a')
     + cartao('Linhas Sheet carregadas', r.linhas_sheet_carregadas != null ? r.linhas_sheet_carregadas : '—')
+    + cartao('Base trabalho pós-Sheet', r.tamanho_base_trabalho_pos_sheet != null ? r.tamanho_base_trabalho_pos_sheet : '—')
     + cartao('Faturas TOConline', r.faturas_toconline != null ? r.faturas_toconline : '—')
     + cartao('Notas de Crédito', r.notas_credito != null ? r.notas_credito : '—')
     + cartao('Recibos', r.recibos != null ? r.recibos : '—')
@@ -22327,6 +22391,7 @@ async function sincronizarFinanceiroCentral(){
     ts: new Date().toISOString(), ok: false, gravado: false,
     motivo_nao_gravado: 'modo dry-run — gravação desativada até aprovação da reconciliação',
     total_atual_ob_tes_receber: null, sheets_ok: false, linhas_sheet_carregadas: null,
+    tamanho_snapshot_supabase: null, tamanho_base_trabalho_pos_sheet: null,
     faturas_toconline: 0, notas_credito: 0, recibos: 0, clientes: 0,
     paginacao_completa: { invoices: null, credit_notes: null, receipts: null },
     ft: null, nc: null, conflitos: 0, conflitos_vendedor: 0, conflitos_status: 0,
@@ -22343,35 +22408,51 @@ async function sincronizarFinanceiroCentral(){
     if(remoto.error) throw new Error('Falha a ler dados atuais: ' + remoto.error.message);
     var existentes = (remoto.data && remoto.data.dados) || [];
     resumo.total_atual_ob_tes_receber = existentes.length;
+    // Snapshot IMUTÁVEL do estado real do Supabase neste momento — a ÚNICA
+    // base que a Central usa para reconciliar. Nada depois deste ponto
+    // (Sheets, renderizações de UI, cache legado TocOnline) pode alterar
+    // este array; sincFinAplicarSheetPura() abaixo só lê dele, nunca escreve.
+    var existentesSupabase = (typeof structuredClone === 'function')
+      ? structuredClone(existentes)
+      : JSON.parse(JSON.stringify(existentes));
+    resumo.tamanho_snapshot_supabase = existentesSupabase.length;
 
     // 2) Backup — sempre descarregado antes de qualquer reconciliação,
     // mesmo em dry-run (nada é gravado, mas a regra é incondicional). Se
     // falhar, aborta.
-    if(!sincFinBaixarBackup(existentes)){
+    if(!sincFinBaixarBackup(existentesSupabase)){
       throw new Error('Backup de ob-tes-receber falhou — dry-run abortado antes de qualquer reconciliação.');
     }
 
     // 3) Google Sheets "Vendas 2026" — se falhar, bloqueia TODO o dry-run:
     // reconciliar contra um estado desatualizado tornaria "novos reais" e
-    // "matches" pouco fiáveis. sheetMergeReceber() (chamado dentro desta
-    // função) mescla no TES_RECEBER local (memória/localStorage) — nunca
-    // grava na cloud (obSbPush já falha por RLS para esta chave, como
-    // sempre falhou); usamos esse resultado local como base "existentes"
-    // para a reconciliação seguinte, exatamente como uma corrida real usaria.
+    // "matches" pouco fiáveis.
+    //
+    // IMPORTANTE (correção do incidente 04/09 — base contaminada): chamamos
+    // avSyncVendedoresSheet() só para obter window.AV_SHEET_ROWS e a
+    // confirmação de sucesso em #av-sb-ts. A Central NUNCA mais lê de volta
+    // o global TES_RECEBER depois desta chamada — internamente,
+    // avSyncVendedoresSheet() chama sheetMergeReceber(), que no fim chama
+    // tesRenderReceber()/tesRenderRecebidos() (só UI), e essas duas chamam
+    // tocoMergeFaturasCacheReceber(), que injeta no TES_RECEBER global o
+    // cache legado ob-toconline-faturas (_tocoId, todos os anos, 2013+) —
+    // foi exatamente isso que inflou "existentes" de 480 para milhares no
+    // dry-run anterior. Em vez de reaproveitar TES_RECEBER, aplicamos a
+    // mesma regra de merge da Sheet (sincFinAplicarSheetPura, réplica pura
+    // de sheetMergeReceber) a uma CÓPIA local de existentesSupabase — nunca
+    // ao global, nunca tocando em DOM/localStorage/cache legado.
     //
     // DETEÇÃO DE SUCESSO: avSyncVendedoresSheet() nunca lança exceção (todos
     // os erros — CORS/fetch, CSV vazio, colunas em falta, 0 linhas de 2026 —
     // são apanhados internamente na própria função) e nunca devolve valor
     // nenhum (é sempre undefined, por desenho — não há "return" com dados em
-    // caminho nenhum). A versão anterior desta central inferia sucesso só
-    // por identidade de referência de window.AV_SHEET_ROWS antes/depois —
-    // funciona para distinguir sucesso de falha, mas ao falhar nunca mostrava
-    // a RAZÃO real, só a mensagem genérica desta central. A própria função já
-    // escreve essa razão em #av-sb-ts ('✅ Sheets · N faturas · M vendedores'
-    // em sucesso; '⚠️ Sheets: <erro real>' em falha) — ler esse texto é o
-    // sinal fiável e informativo, sem alterar avSyncVendedoresSheet().
+    // caminho nenhum). A própria função já escreve a razão real em
+    // #av-sb-ts ('✅ Sheets · N faturas · M vendedores' em sucesso;
+    // '⚠️ Sheets: <erro real>' em falha) — ler esse texto é o sinal fiável.
     sincFinRenderPainel({ a_correr:true, passo:'A sincronizar Google Sheets…' });
-    TES_RECEBER = existentes;
+    // Só para a UI da Tesouraria (fora da Central) partir de um estado
+    // limpo — a Central não volta a ler TES_RECEBER depois disto.
+    TES_RECEBER = existentesSupabase.slice();
     var tsElSheets = document.getElementById('av-sb-ts');
     try{ await avSyncVendedoresSheet(); }
     catch(eSheet){ resumo.erros.push('Google Sheets (exceção inesperada): ' + eSheet.message); }
@@ -22383,7 +22464,9 @@ async function sincronizarFinanceiroCentral(){
       throw new Error('Google Sheets falhou — dry-run abortado (nenhuma reconciliação feita). Ver razão real em "Erros".');
     }
     resumo.linhas_sheet_carregadas = (window.AV_SHEET_ROWS && window.AV_SHEET_ROWS.length) || 0;
-    existentes = TES_RECEBER;
+    // Base de trabalho PURA e local — nunca o global TES_RECEBER.
+    var baseTrabalho = sincFinAplicarSheetPura(existentesSupabase, window.AV_SHEET_ROWS || []);
+    resumo.tamanho_base_trabalho_pos_sheet = baseTrabalho.length;
 
     // 4) TOConline — FT + NC + recibos, paginação completa via sync_docs.
     // Se qualquer recurso não completar, aborta — sem paginação completa
@@ -22409,8 +22492,8 @@ async function sincronizarFinanceiroCentral(){
     // não geram linhas em ob-tes-receber (só contados acima) — mantém-se a
     // leitura completa pedida, sem inventar reconciliação nova para eles.
     sincFinRenderPainel({ a_correr:true, passo:'A reconciliar contra as linhas existentes…' });
-    var recFt = sincFinReconciliar('FT', existentes, resInv.dados);
-    var recNc = sincFinReconciliar('NC', existentes, resNc.dados);
+    var recFt = sincFinReconciliar('FT', baseTrabalho, resInv.dados);
+    var recNc = sincFinReconciliar('NC', baseTrabalho, resNc.dados);
     resumo.ft = { existentes: recFt.existentes, matches: recFt.matches.length, novos_reais: recFt.novos.length, ambiguidades: recFt.ambiguidades.length, placeholders_excluidos_toc: recFt.placeholders_excluidos_toc };
     resumo.nc = { existentes: recNc.existentes, matches: recNc.matches.length, novos_reais: recNc.novos.length, ambiguidades: recNc.ambiguidades.length, placeholders_excluidos_toc: recNc.placeholders_excluidos_toc };
     var conflitosFt = sincFinConflitosEmMatches(recFt.matches);
@@ -22419,7 +22502,9 @@ async function sincronizarFinanceiroCentral(){
     resumo.conflitos = todosConflitos.length;
     resumo.conflitos_vendedor = todosConflitos.filter(function(c){ return c.motivo === 'vendedor divergente'; }).length;
     resumo.conflitos_status = todosConflitos.filter(function(c){ return c.motivo === 'estado divergente'; }).length;
-    resumo.total_final_esperado = existentes.length + recFt.novos.length + recNc.novos.length;
+    // baseTrabalho, não TES_RECEBER: é a base local controlada (Supabase +
+    // merge puro da Sheet), imune ao cache legado TocOnline.
+    resumo.total_final_esperado = baseTrabalho.length + recFt.novos.length + recNc.novos.length;
     resumo.amostra_ambiguidades = recFt.ambiguidades.concat(recNc.ambiguidades).slice(0, 30);
     resumo.amostra_conflitos = todosConflitos.slice(0, 30);
 
