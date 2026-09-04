@@ -1512,8 +1512,10 @@ window.afExportarExcel = afExportarExcel;
 // Colunas: Data | Número | Nome | Total líquido | IVA TOTAL | Total com IVA |
 // Mês/Ano | Valor Recebido | Saldo a Receber | Data Recebimento | Status | Vendedor
 // URL publicado via "Ficheiro → Publicar na Web → CSV" (sem autenticação, sem CORS)
-var AV_VEND_SHEET_PUB_ID = '2PACX-1vSwbKHLzynLEsyVvgnglVIfXSB2wzvJAUwn-LzIrHbk1cePzSN9bOm-E3CAGYoPnQ';
-var AV_VEND_SHEET_GID = '1837232023';
+// Republicado 04/09 — o link anterior (pub id ...cePzSN9bOm-E3CAGYoPnQ)
+// estava a devolver HTTP 410 Gone (publicação expirada/revogada).
+var AV_VEND_SHEET_PUB_ID = '2PACX-1vQerK5QKGIG7JKHC8FmrF7z7WQRnBLXXD9f8OG9FQYYsDeTaAvuDyC_8s22fr3WXsPyBH-7VYrx7xzb';
+var AV_VEND_SHEET_GID = '1231149814';
 var AV_VEND_SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/' + AV_VEND_SHEET_PUB_ID + '/pub?output=csv&gid=' + AV_VEND_SHEET_GID;
 
 function avParseCSV(text){
