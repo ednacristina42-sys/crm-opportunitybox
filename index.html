@@ -22381,6 +22381,35 @@ function sincFinRenderPainel(state){
     lista.forEach(function(x){ h += '<div style="padding:5px 9px;border-bottom:1px solid var(--border);font-size:12px">' + cols(x) + '</div>'; });
     return h + '</div>';
   };
+  // ── Diagnóstico temporário NC — data bruta (instrumentação pedida por
+  // Edna para achar por que NC elegíveis 2026 = 0 mesmo com 27 NC reais).
+  // Mostra os dados exatamente como resNc.dados os traz, ANTES de qualquer
+  // filtro — nunca corrige nada aqui, só expõe. ──
+  var adNc = r.auditoria_datas_nc || {};
+  var cdu = r.nc_campo_data_usado || {};
+  if(r.amostra_nc_toconline_bruta && r.amostra_nc_toconline_bruta.length){
+    var ncTotal = r.nc_toconline_total_historico || 0;
+    var ncSemData = adNc.sem_data_valida != null ? adNc.sem_data_valida : '—';
+    var ncComData = (ncTotal && adNc.sem_data_valida != null) ? (ncTotal - adNc.sem_data_valida) : '—';
+    var anosNcTxt = adNc.por_ano ? Object.keys(adNc.por_ano).sort().map(function(a){ return a + ':' + adNc.por_ano[a]; }).join(' · ') : '—';
+    html += '<div style="font-weight:600;font-size:12.5px;margin:14px 0 6px">Diagnóstico NC — data bruta (temporário, não altera matching)</div>'
+      + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:9px;margin-bottom:8px">'
+      + cartao('NC 2026 via `date`', cdu.via_date != null ? cdu.via_date : '—')
+      + cartao('NC 2026 via due_date (fallback)', cdu.via_due_date != null ? cdu.via_due_date : '—', cdu.via_due_date ? '#f5a623' : 'var(--muted)')
+      + cartao('NC com data preenchida (`date`, qualquer ano)', ncComData)
+      + cartao('NC com `date` vazia/inválida', ncSemData, ncSemData ? '#ff453a' : 'var(--muted)')
+      + '</div>'
+      + '<div style="font-size:12px;color:var(--muted);margin-bottom:8px">Distribuição por ano (campo `date`, todas as 260 NC): ' + esc0(anosNcTxt) + '</div>'
+      + '<div style="max-height:220px;overflow:auto;border:1px solid var(--border);border-radius:8px;font-size:11.5px">'
+      + '<table style="width:100%;border-collapse:collapse"><thead><tr style="text-align:left;color:var(--muted)">'
+      + ['id','doc_no','tipo','date','date→ISO','due_date','due→ISO','gross_total','net_total','cliente'].map(function(h){ return '<th style="padding:4px 7px;border-bottom:1px solid var(--border)">' + h + '</th>'; }).join('')
+      + '</tr></thead><tbody>'
+      + r.amostra_nc_toconline_bruta.map(function(x){
+          return '<tr>' + [x.id, x.doc_no, x.document_type, x.date, x.date_iso, x.due_date, x.due_date_iso, x.gross_total, x.net_total, x.customer_name]
+            .map(function(v){ return '<td style="padding:4px 7px;border-bottom:1px solid var(--border)">' + esc0(v) + '</td>'; }).join('') + '</tr>';
+        }).join('')
+      + '</tbody></table></div>';
+  }
   html += tabelaAmostra('Ambiguidades (linha existente mantida, nada inserido)', (r.amostra_ambiguidades||[]), function(x){
     return '<b>' + esc0(x.doc_no) + '</b> · ' + esc0(x.cliente) + ' · €' + esc0(x.valor) + ' · ' + esc0(x.data) + ' — <span style="color:var(--muted)">' + esc0(x.motivo) + '</span>';
   });
@@ -22425,7 +22454,7 @@ async function sincronizarFinanceiroCentral(){
     ft_toconline_total_historico: null, ft_toconline_elegiveis_2026: null,
     nc_toconline_total_historico: null, nc_toconline_elegiveis_2026: null,
     auditoria_datas_ft: null, auditoria_datas_nc: null, amostra_nc_toconline_2026: [],
-    amostra_nc_toconline_bruta: [],
+    amostra_nc_toconline_bruta: [], nc_campo_data_usado: null,
     paginacao_completa: { invoices: null, credit_notes: null, receipts: null },
     ft: null, nc: null, conflitos: 0, conflitos_vendedor: 0, conflitos_status: 0,
     total_final_esperado: null,
@@ -22535,11 +22564,30 @@ async function sincronizarFinanceiroCentral(){
     // 2026); universo de recibos preservado integralmente.
     function sincFinAno(doc){ return sincFinDataISO(doc.date).slice(0, 4); }
     var tocFt2026 = resInv.dados.filter(function(d){ return sincFinAno(d) === '2026'; });
-    var tocNc2026 = resNc.dados.filter(function(d){ return sincFinAno(d) === '2026'; });
+    // NC: fallback temporário SÓ nesta Central (nunca na Edge Function/
+    // sync_docs) — se `date` vier vazio, tenta `due_date`, o único outro
+    // campo de data que já existe no objeto achatado (achatarDocumento() já
+    // o extrai; nada de novo é pedido ao TOConline). FT nunca usa este
+    // fallback — sincFinAno() para FT continua a olhar só para `date`.
+    var ncViaDate = 0, ncViaDueDate = 0, ncSemNenhumaData = 0;
+    var tocNc2026 = resNc.dados.filter(function(d){
+      var anoDate = sincFinAno(d);
+      if(anoDate === '2026'){ ncViaDate++; return true; }
+      // Fallback SÓ quando `date` está genuinamente vazio/inválido — nunca
+      // quando `date` já tem um valor real de outro ano (isso deixaria uma
+      // NC de, p.ex., 2025 entrar por engano via due_date).
+      if(!anoDate){
+        var anoDueDate = sincFinDataISO(d.due_date).slice(0, 4);
+        if(anoDueDate === '2026'){ ncViaDueDate++; return true; }
+        if(!anoDueDate) ncSemNenhumaData++;
+      }
+      return false;
+    });
     resumo.ft_toconline_total_historico = resInv.dados.length;
     resumo.ft_toconline_elegiveis_2026 = tocFt2026.length;
     resumo.nc_toconline_total_historico = resNc.dados.length;
     resumo.nc_toconline_elegiveis_2026 = tocNc2026.length;
+    resumo.nc_campo_data_usado = { via_date: ncViaDate, via_due_date: ncViaDueDate, sem_data_nenhum_campo: ncSemNenhumaData };
     // Auditoria de datas (para reportar, nunca para corrigir automaticamente):
     // distribuição por ano + contagem de datas ausentes/inválidas, FT e NC
     // separados.
@@ -22569,8 +22617,10 @@ async function sincronizarFinanceiroCentral(){
     // devolvidos por achatarDocumento() na Edge Function.
     resumo.amostra_nc_toconline_bruta = (resNc.dados || []).slice(0, 10).map(function(d){
       return {
-        doc_no: d.document_no, date: d.date, due_date: d.due_date,
-        date_iso: sincFinDataISO(d.date), gross_total: d.gross_total, net_total: d.net_total,
+        id: d.id, doc_no: d.document_no, document_type: d.document_type,
+        date: d.date, due_date: d.due_date, date_iso: sincFinDataISO(d.date),
+        due_date_iso: sincFinDataISO(d.due_date),
+        gross_total: d.gross_total, net_total: d.net_total,
         customer_name: d.customer_business_name, voided_reason: d.voided_reason || '',
       };
     });
