@@ -1546,27 +1546,46 @@ function avParseNumPT(s){
 }
 
 async function avFetchVendSheetCSV(){
-  // URL publicado via "Publicar na Web" → acesso direto sem CORS nem autenticação
-  var urls = [
-    AV_VEND_SHEET_URL,                                                                      // direto (deve funcionar)
+  // URL publicado via "Publicar na Web" → acesso direto sem CORS nem autenticação.
+  //
+  // Diagnóstico 04/09: erro real no browser foi "Failed to fetch" — TypeError
+  // do próprio fetch() (bloqueio de rede/CORS), não uma resposta HTTP com
+  // erro (essas nem chegavam a ficar registadas: se resp.ok era false, o
+  // código anterior não guardava nada — lastErr só era escrito em exceção ou
+  // em HTML-em-vez-de-CSV, por isso a causa real nunca chegava à mensagem
+  // final). Cada tentativa fica agora registada (url, HTTP status quando há
+  // resposta, e a razão exacta da falha) — o erro final lista todas, em vez
+  // da mensagem genérica de antes.
+  var candidatos = [
+    AV_VEND_SHEET_URL,                                                                    // direto (deve funcionar sempre que "Publicar na Web" estiver activo)
+    AV_VEND_SHEET_URL + '&single=true',                                                   // variante por vezes exigida para link de uma aba só
     'https://api.allorigins.win/raw?url=' + encodeURIComponent(AV_VEND_SHEET_URL),         // proxy fallback
     'https://corsproxy.io/?' + encodeURIComponent(AV_VEND_SHEET_URL),
+    'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(AV_VEND_SHEET_URL),   // 3º proxy, caso os dois de cima estejam em baixo
   ];
-  var lastErr = null;
-  for(var i=0; i<urls.length; i++){
+  var tentativas = [];
+  for(var i=0; i<candidatos.length; i++){
+    var diag = { n: i+1, url: candidatos[i] };
     try{
-      var resp = await fetch(urls[i], {cache:'no-store'});
+      var resp = await fetch(candidatos[i], {cache:'no-store'});
+      diag.status = resp.status;
       if(resp.ok){
         var text = await resp.text();
+        diag.tamanho = text.length;
         if(text && text.length > 100 && !text.trim().startsWith('<')){
-          console.log('[GSheets] CSV obtido (tentativa '+(i+1)+') tamanho:', text.length, 'bytes');
+          console.log('[GSheets] CSV obtido (tentativa '+diag.n+'/'+candidatos.length+'):', candidatos[i], '· tamanho:', text.length, 'bytes');
           return text;
         }
-        if(text.trim().startsWith('<')) lastErr = new Error('Google devolveu HTML em vez de CSV — verifica se publicaste a folha "Vendas 2026" e não o documento inteiro');
+        diag.erro = text.trim().startsWith('<') ? 'devolveu HTML em vez de CSV (verificar se "Publicar na Web" continua activo para esta aba)' : 'resposta demasiado curta/vazia';
+      } else {
+        diag.erro = 'HTTP ' + resp.status;
       }
-    }catch(e){ lastErr = e; }
+    }catch(e){ diag.erro = (e.name || 'Erro') + ': ' + e.message; }
+    tentativas.push(diag);
+    console.warn('[GSheets] tentativa '+diag.n+'/'+candidatos.length+' falhou:', diag);
   }
-  throw lastErr || new Error('Não foi possível obter o CSV do Google Sheets após 3 tentativas');
+  var resumoTentativas = tentativas.map(function(t){ return t.n + '. ' + t.erro; }).join(' | ');
+  throw new Error('Não foi possível obter o CSV do Google Sheets após ' + candidatos.length + ' tentativas — ' + resumoTentativas);
 }
 
 // Normaliza o header CSV removendo acentos e espaços extra para matching robusto
