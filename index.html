@@ -22139,9 +22139,13 @@ function sincFinReconciliar(tipoTes, existentesRows, tocDocs){
   });
 
   var usados = {};
-  var matches = [], novos = [], ambiguidades = [], placeholdersExcluidosToc = 0;
+  var matches = [], novos = [], ambiguidades = [], placeholdersExcluidosToc = 0, voidedExcluidosToc = 0;
   (tocDocs||[]).forEach(function(doc){
-    if(doc.voided_reason) return; // documentos anulados não entram na reconciliação
+    // Documentos anulados não entram na reconciliação — mas ficam CONTADOS
+    // (antes só eram descartados em silêncio, sem métrica nenhuma; isso
+    // deixava matches+novos+ambiguidades sem fechar contra o total elegível
+    // 2026, sem forma de auditar a diferença).
+    if(doc.voided_reason){ voidedExcluidosToc++; return; }
     if(sincFinEhPlaceholder(doc.customer_business_name, doc.customer_tax_registration_number)){ placeholdersExcluidosToc++; return; }
     var nm = sincFinNomeNorm(doc.customer_business_name);
     var d = sincFinDataISO(doc.date);
@@ -22164,7 +22168,14 @@ function sincFinReconciliar(tipoTes, existentesRows, tocDocs){
     }
   });
 
-  return { tipo: tipoTes, existentes: existentesDoTipo.length, matches: matches, novos: novos, ambiguidades: ambiguidades, placeholders_excluidos_toc: placeholdersExcluidosToc };
+  // Auditoria de fecho: matches + novos + ambiguidades + placeholders_excluidos_toc
+  // + voided_excluidos_toc + (docs sem candidato indexável, já cobertos em
+  // novos) deve fechar exatamente contra tocDocs.length de entrada.
+  return {
+    tipo: tipoTes, existentes: existentesDoTipo.length, matches: matches, novos: novos,
+    ambiguidades: ambiguidades, placeholders_excluidos_toc: placeholdersExcluidosToc,
+    voided_excluidos_toc: voidedExcluidosToc,
+  };
 }
 
 // Aplica o merge da Sheet "Vendas 2026" a uma CÓPIA local imutável de
@@ -22403,6 +22414,7 @@ async function sincronizarFinanceiroCentral(){
     ft_toconline_total_historico: null, ft_toconline_elegiveis_2026: null,
     nc_toconline_total_historico: null, nc_toconline_elegiveis_2026: null,
     auditoria_datas_ft: null, auditoria_datas_nc: null, amostra_nc_toconline_2026: [],
+    amostra_nc_toconline_bruta: [],
     paginacao_completa: { invoices: null, credit_notes: null, receipts: null },
     ft: null, nc: null, conflitos: 0, conflitos_vendedor: 0, conflitos_status: 0,
     total_final_esperado: null,
@@ -22537,6 +22549,20 @@ async function sincronizarFinanceiroCentral(){
     resumo.amostra_nc_toconline_2026 = tocNc2026.slice(0, 5).map(function(d){
       return { doc_no: d.document_no, data: d.date, gross_total: d.gross_total, net_total: d.net_total, cliente: d.customer_business_name };
     });
+    // Amostra BRUTA (antes do filtro de ano) de resNc.dados — necessária
+    // porque, se o filtro 2026 devolver 0 (como reportado), a amostra acima
+    // fica sempre vazia e não ajuda a diagnosticar a causa. Inclui due_date
+    // (o único outro campo de data existente no objeto achatado, além de
+    // date) para confirmar se é mesmo `date` que vem vazio ou se há um
+    // campo alternativo populado. Nenhum token/credencial — só os campos já
+    // devolvidos por achatarDocumento() na Edge Function.
+    resumo.amostra_nc_toconline_bruta = (resNc.dados || []).slice(0, 10).map(function(d){
+      return {
+        doc_no: d.document_no, date: d.date, due_date: d.due_date,
+        date_iso: sincFinDataISO(d.date), gross_total: d.gross_total, net_total: d.net_total,
+        customer_name: d.customer_business_name, voided_reason: d.voided_reason || '',
+      };
+    });
 
     // 5) Reconciliação — FT e NC sempre separadas, nunca cruzadas, e agora
     // só contra o universo TOConline elegível de 2026 (tocFt2026/tocNc2026).
@@ -22546,8 +22572,10 @@ async function sincronizarFinanceiroCentral(){
     sincFinRenderPainel({ a_correr:true, passo:'A reconciliar contra as linhas existentes…' });
     var recFt = sincFinReconciliar('FT', baseTrabalho, tocFt2026);
     var recNc = sincFinReconciliar('NC', baseTrabalho, tocNc2026);
-    resumo.ft = { existentes: recFt.existentes, matches: recFt.matches.length, novos_reais: recFt.novos.length, ambiguidades: recFt.ambiguidades.length, placeholders_excluidos_toc: recFt.placeholders_excluidos_toc };
-    resumo.nc = { existentes: recNc.existentes, matches: recNc.matches.length, novos_reais: recNc.novos.length, ambiguidades: recNc.ambiguidades.length, placeholders_excluidos_toc: recNc.placeholders_excluidos_toc };
+    resumo.ft = { existentes: recFt.existentes, matches: recFt.matches.length, novos_reais: recFt.novos.length, ambiguidades: recFt.ambiguidades.length, placeholders_excluidos_toc: recFt.placeholders_excluidos_toc, voided_excluidos_toc: recFt.voided_excluidos_toc,
+      soma_fecho: recFt.matches.length + recFt.novos.length + recFt.ambiguidades.length + recFt.placeholders_excluidos_toc + recFt.voided_excluidos_toc };
+    resumo.nc = { existentes: recNc.existentes, matches: recNc.matches.length, novos_reais: recNc.novos.length, ambiguidades: recNc.ambiguidades.length, placeholders_excluidos_toc: recNc.placeholders_excluidos_toc, voided_excluidos_toc: recNc.voided_excluidos_toc,
+      soma_fecho: recNc.matches.length + recNc.novos.length + recNc.ambiguidades.length + recNc.placeholders_excluidos_toc + recNc.voided_excluidos_toc };
     var conflitosFt = sincFinConflitosEmMatches(recFt.matches);
     var conflitosNc = sincFinConflitosEmMatches(recNc.matches);
     var todosConflitos = conflitosFt.concat(conflitosNc);
