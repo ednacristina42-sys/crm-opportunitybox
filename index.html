@@ -22097,6 +22097,24 @@ function sincFinDataISO(x){
   return '';
 }
 
+// Mesma regra da Fase B/Fase C (Edge Function crm-toconline: ehPlaceholder):
+// "Cliente Final"/"Consumidor Final" e NIF genérico 999999990 NUNCA são uma
+// identidade de cliente real — vários registos diferentes usam-nos. Fica
+// de fora da reconciliação por completo, dos dois lados: nunca conta como
+// existente, nunca gera match, nunca entra em ambiguidade, nunca é tratado
+// como "novo real" a inserir. Faltava esta exclusão no lado do browser
+// (só existia na Edge Function) — adicionada antes de qualquer dry-run.
+var SINC_FIN_NIF_GENERICO = '999999990';
+function sincFinEhPlaceholder(nome, nif){
+  var n = sincFinNomeNorm(nome);
+  if(n.indexOf('CLIENTE FINAL') !== -1 || n === 'CONSUMIDOR FINAL') return true;
+  if(nif !== undefined && nif !== null && String(nif).trim() !== ''){
+    var d = String(nif).replace(/\D/g,'');
+    if(d.length === 9 && d === SINC_FIN_NIF_GENERICO) return true;
+  }
+  return false;
+}
+
 // Reconcilia documentos TOConline (já achatados, paginação completa) contra
 // linhas EXISTENTES em ob-tes-receber do MESMO tipo (FT ou NC — nunca
 // cruzados). Identidade segura = cliente normalizado + data exata
@@ -22105,8 +22123,12 @@ function sincFinDataISO(x){
 // ser reivindicada por UM documento; se mais que um documento aponta para
 // a mesma linha, ou mais que uma linha corresponde ao mesmo documento, fica
 // como ambiguidade — a linha existente nunca é tocada, nada é inserido.
+// Placeholders (Cliente Final / NIF genérico) são excluídos por completo,
+// dos dois lados, antes de indexar/comparar — nunca usados para identidade.
 function sincFinReconciliar(tipoTes, existentesRows, tocDocs){
-  var existentesDoTipo = (existentesRows||[]).filter(function(r){ return String(r.tipo||'FT') === tipoTes; });
+  var existentesDoTipo = (existentesRows||[]).filter(function(r){
+    return String(r.tipo||'FT') === tipoTes && !sincFinEhPlaceholder(r.cliente, r.nif);
+  });
   var idx = {};
   existentesDoTipo.forEach(function(r){
     var d = sincFinDataISO(r.dataEmissao || r.data);
@@ -22117,9 +22139,10 @@ function sincFinReconciliar(tipoTes, existentesRows, tocDocs){
   });
 
   var usados = {};
-  var matches = [], novos = [], ambiguidades = [];
+  var matches = [], novos = [], ambiguidades = [], placeholdersExcluidosToc = 0;
   (tocDocs||[]).forEach(function(doc){
     if(doc.voided_reason) return; // documentos anulados não entram na reconciliação
+    if(sincFinEhPlaceholder(doc.customer_business_name, doc.customer_tax_registration_number)){ placeholdersExcluidosToc++; return; }
     var nm = sincFinNomeNorm(doc.customer_business_name);
     var d = sincFinDataISO(doc.date);
     var k = nm + '|' + d;
@@ -22141,7 +22164,7 @@ function sincFinReconciliar(tipoTes, existentesRows, tocDocs){
     }
   });
 
-  return { tipo: tipoTes, existentes: existentesDoTipo.length, matches: matches, novos: novos, ambiguidades: ambiguidades };
+  return { tipo: tipoTes, existentes: existentesDoTipo.length, matches: matches, novos: novos, ambiguidades: ambiguidades, placeholders_excluidos_toc: placeholdersExcluidosToc };
 }
 
 // Entre os documentos com correspondência segura (matches), reporta — mas
@@ -22210,6 +22233,11 @@ function sincFinRenderPainel(state){
   var badgePag = function(v){ return v === true ? '✓' : (v === false ? '✗' : '—'); };
   var badgeCor = function(v){ return v === true ? '#34c759' : (v === false ? '#ff453a' : 'var(--muted)'); };
   var ft = r.ft || {}, nc = r.nc || {};
+  var linhaPlaceholders = function(tipoResumo){
+    return tipoResumo && tipoResumo.placeholders_excluidos_toc
+      ? '<div style="font-size:11px;color:var(--muted);margin:2px 0 8px">' + tipoResumo.placeholders_excluidos_toc + ' documento(s) TOConline "Cliente Final"/NIF genérico excluído(s) da reconciliação — nunca usados como identidade</div>'
+      : '';
+  };
   var html = '<div style="background:rgba(245,166,35,.12);border:1px solid rgba(245,166,35,.4);border-radius:8px;padding:8px 12px;margin-bottom:12px;font-size:12.5px;font-weight:600;color:#f5a623">'
     + '⚠ MODO DRY-RUN — nenhuma escrita em ob-tes-receber. Este relatório mostra o que uma sincronização real faria; nada foi gravado.'
     + '</div>'
@@ -22217,14 +22245,18 @@ function sincFinRenderPainel(state){
     + ' <span style="color:#f5a623">— dry-run, não gravado' + (r.motivo_nao_gravado ? ' (' + r.motivo_nao_gravado + ')' : '') + '</span>'
     + '</div>'
     + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:9px">'
+    + cartao('Total atual ob-tes-receber', r.total_atual_ob_tes_receber != null ? r.total_atual_ob_tes_receber : '—')
     + cartao('Google Sheets', r.sheets_ok ? '✓ atualizado' : '✗ falhou', r.sheets_ok ? '#34c759' : '#ff453a')
+    + cartao('Linhas Sheet carregadas', r.linhas_sheet_carregadas != null ? r.linhas_sheet_carregadas : '—')
     + cartao('Faturas TOConline', r.faturas_toconline != null ? r.faturas_toconline : '—')
     + cartao('Notas de Crédito', r.notas_credito != null ? r.notas_credito : '—')
     + cartao('Recibos', r.recibos != null ? r.recibos : '—')
     + cartao('Clientes TOConline', r.clientes != null ? r.clientes : '—')
-    + cartao('Conflitos (matches)', r.conflitos != null ? r.conflitos : '—', r.conflitos ? '#f5a623' : 'var(--muted)')
+    + cartao('Conflitos · vendedor', r.conflitos_vendedor != null ? r.conflitos_vendedor : '—', r.conflitos_vendedor ? '#f5a623' : 'var(--muted)')
+    + cartao('Conflitos · estado', r.conflitos_status != null ? r.conflitos_status : '—', r.conflitos_status ? '#f5a623' : 'var(--muted)')
     + cartao('Erros', (r.erros||[]).length, r.erros && r.erros.length ? '#ff453a' : 'var(--muted)')
     + cartao('Total final esperado', r.total_final_esperado != null ? r.total_final_esperado : '—', '#60a5fa')
+    + cartao('Escritas executadas', r.escritas_executadas != null ? r.escritas_executadas : '—', '#34c759')
     + '</div>'
     + '<div style="font-weight:600;font-size:12.5px;margin:14px 0 6px">Paginação completa (TOConline)</div>'
     + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:9px">'
@@ -22239,13 +22271,15 @@ function sincFinRenderPainel(state){
     + cartao('Novos reais', ft.novos_reais != null ? ft.novos_reais : '—', '#f5a623')
     + cartao('Ambiguidades', ft.ambiguidades != null ? ft.ambiguidades : '—', ft.ambiguidades ? '#ff453a' : 'var(--muted)')
     + '</div>'
+    + linhaPlaceholders(ft)
     + '<div style="font-weight:600;font-size:12.5px;margin:14px 0 6px">Reconciliação — Notas de Crédito (NC)</div>'
     + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:9px">'
     + cartao('Existentes', nc.existentes != null ? nc.existentes : '—')
     + cartao('Matches', nc.matches != null ? nc.matches : '—', '#34c759')
     + cartao('Novos reais', nc.novos_reais != null ? nc.novos_reais : '—', '#f5a623')
     + cartao('Ambiguidades', nc.ambiguidades != null ? nc.ambiguidades : '—', nc.ambiguidades ? '#ff453a' : 'var(--muted)')
-    + '</div>';
+    + '</div>'
+    + linhaPlaceholders(nc);
   var esc0 = function(x){ return String(x==null?'':x).replace(/[&<>"]/g, function(c){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]; }); };
   var tabelaAmostra = function(titulo, lista, cols){
     if(!lista || !lista.length) return '';
@@ -22292,10 +22326,13 @@ async function sincronizarFinanceiroCentral(){
   var resumo = {
     ts: new Date().toISOString(), ok: false, gravado: false,
     motivo_nao_gravado: 'modo dry-run — gravação desativada até aprovação da reconciliação',
-    sheets_ok: false, faturas_toconline: 0, notas_credito: 0, recibos: 0, clientes: 0,
+    total_atual_ob_tes_receber: null, sheets_ok: false, linhas_sheet_carregadas: null,
+    faturas_toconline: 0, notas_credito: 0, recibos: 0, clientes: 0,
     paginacao_completa: { invoices: null, credit_notes: null, receipts: null },
-    ft: null, nc: null, conflitos: 0, total_final_esperado: null,
+    ft: null, nc: null, conflitos: 0, conflitos_vendedor: 0, conflitos_status: 0,
+    total_final_esperado: null,
     amostra_ambiguidades: [], amostra_conflitos: [], erros: [],
+    escritas_executadas: 0, // este modo NUNCA escreve — nenhuma chamada de upsert/insert/update existe neste caminho de código, esta constante nunca muda
   };
   try{
     // 1) Estado remoto ATUAL de ob-tes-receber — só leitura.
@@ -22305,6 +22342,7 @@ async function sincronizarFinanceiroCentral(){
     var remoto = await sb.from('ob_crm_dados').select('dados').eq('chave','ob-tes-receber').maybeSingle();
     if(remoto.error) throw new Error('Falha a ler dados atuais: ' + remoto.error.message);
     var existentes = (remoto.data && remoto.data.dados) || [];
+    resumo.total_atual_ob_tes_receber = existentes.length;
 
     // 2) Backup — sempre descarregado antes de qualquer reconciliação,
     // mesmo em dry-run (nada é gravado, mas a regra é incondicional). Se
@@ -22344,6 +22382,7 @@ async function sincronizarFinanceiroCentral(){
         '(sem confirmação — elemento av-sb-ts não encontrado; abra a página Análise de Vendas pelo menos uma vez nesta sessão e tente novamente)'));
       throw new Error('Google Sheets falhou — dry-run abortado (nenhuma reconciliação feita). Ver razão real em "Erros".');
     }
+    resumo.linhas_sheet_carregadas = (window.AV_SHEET_ROWS && window.AV_SHEET_ROWS.length) || 0;
     existentes = TES_RECEBER;
 
     // 4) TOConline — FT + NC + recibos, paginação completa via sync_docs.
@@ -22372,14 +22411,17 @@ async function sincronizarFinanceiroCentral(){
     sincFinRenderPainel({ a_correr:true, passo:'A reconciliar contra as linhas existentes…' });
     var recFt = sincFinReconciliar('FT', existentes, resInv.dados);
     var recNc = sincFinReconciliar('NC', existentes, resNc.dados);
-    resumo.ft = { existentes: recFt.existentes, matches: recFt.matches.length, novos_reais: recFt.novos.length, ambiguidades: recFt.ambiguidades.length };
-    resumo.nc = { existentes: recNc.existentes, matches: recNc.matches.length, novos_reais: recNc.novos.length, ambiguidades: recNc.ambiguidades.length };
+    resumo.ft = { existentes: recFt.existentes, matches: recFt.matches.length, novos_reais: recFt.novos.length, ambiguidades: recFt.ambiguidades.length, placeholders_excluidos_toc: recFt.placeholders_excluidos_toc };
+    resumo.nc = { existentes: recNc.existentes, matches: recNc.matches.length, novos_reais: recNc.novos.length, ambiguidades: recNc.ambiguidades.length, placeholders_excluidos_toc: recNc.placeholders_excluidos_toc };
     var conflitosFt = sincFinConflitosEmMatches(recFt.matches);
     var conflitosNc = sincFinConflitosEmMatches(recNc.matches);
-    resumo.conflitos = conflitosFt.length + conflitosNc.length;
+    var todosConflitos = conflitosFt.concat(conflitosNc);
+    resumo.conflitos = todosConflitos.length;
+    resumo.conflitos_vendedor = todosConflitos.filter(function(c){ return c.motivo === 'vendedor divergente'; }).length;
+    resumo.conflitos_status = todosConflitos.filter(function(c){ return c.motivo === 'estado divergente'; }).length;
     resumo.total_final_esperado = existentes.length + recFt.novos.length + recNc.novos.length;
     resumo.amostra_ambiguidades = recFt.ambiguidades.concat(recNc.ambiguidades).slice(0, 30);
-    resumo.amostra_conflitos = conflitosFt.concat(conflitosNc).slice(0, 30);
+    resumo.amostra_conflitos = todosConflitos.slice(0, 30);
 
     // 6) Clientes TOConline → CRM (Fase B, já em produção, sem ligação a
     // ob-tes-receber — mantém-se exatamente como estava).
