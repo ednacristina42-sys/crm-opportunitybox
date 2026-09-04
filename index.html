@@ -22150,8 +22150,19 @@ function sincFinReconciliar(tipoTes, existentesRows, tocDocs){
     var nm = sincFinNomeNorm(doc.customer_business_name);
     var d = sincFinDataISO(doc.date);
     var k = nm + '|' + d;
+    // NC: valores em ob-tes-receber são guardados negativos (convenção local
+    // confirmada por leitura direta da base — as 27 NC reais têm total/
+    // valorLiq negativos), enquanto o TOConline devolve gross_total como
+    // magnitude (sinal não confirmado ao vivo). Normalizar por magnitude
+    // (Math.abs de cada lado) SÓ para NC, nunca alterando os dados
+    // originais — só a comparação de igualdade usada no matching. FT
+    // continua exatamente como estava (376 matches já corretos).
     var candidatos = (idx[k] || []).filter(function(r){
-      return Math.abs((parseFloat(r.total)||0) - doc.gross_total) < 0.5;
+      var existenteVal = parseFloat(r.total) || 0;
+      var tocVal = doc.gross_total || 0;
+      return tipoTes === 'NC'
+        ? Math.abs(Math.abs(existenteVal) - Math.abs(tocVal)) < 0.5
+        : Math.abs(existenteVal - tocVal) < 0.5;
     });
     if(!candidatos.length){
       novos.push(doc);
