@@ -22387,27 +22387,41 @@ function sincFinRenderPainel(state){
   // filtro — nunca corrige nada aqui, só expõe. ──
   var adNc = r.auditoria_datas_nc || {};
   var cdu = r.nc_campo_data_usado || {};
-  if(r.amostra_nc_toconline_bruta && r.amostra_nc_toconline_bruta.length){
-    var ncTotal = r.nc_toconline_total_historico || 0;
+  // Renderiza sempre que há um resumo de alguma corrida (r.ts existe) — a
+  // versão anterior só desenhava esta secção quando
+  // amostra_nc_toconline_bruta já vinha com itens, o que a escondia por
+  // completo (sem nenhum aviso) sempre que esse array chegava vazio/
+  // indefinido por qualquer motivo. Agora mostra sempre, com "—" nos campos
+  // que faltarem, e uma linha explícita quando não há amostra.
+  if(r.ts){
+    var amostraNc = r.amostra_nc_toconline_bruta || [];
+    var ncTotal = r.nc_toconline_total_historico != null ? r.nc_toconline_total_historico : '—';
     var ncSemData = adNc.sem_data_valida != null ? adNc.sem_data_valida : '—';
-    var ncComData = (ncTotal && adNc.sem_data_valida != null) ? (ncTotal - adNc.sem_data_valida) : '—';
-    var anosNcTxt = adNc.por_ano ? Object.keys(adNc.por_ano).sort().map(function(a){ return a + ':' + adNc.por_ano[a]; }).join(' · ') : '—';
+    var ncComData = (r.nc_toconline_total_historico != null && adNc.sem_data_valida != null)
+      ? (r.nc_toconline_total_historico - adNc.sem_data_valida) : '—';
+    var anosNcTxt = (adNc.por_ano && Object.keys(adNc.por_ano).length)
+      ? Object.keys(adNc.por_ano).sort().map(function(a){ return a + ':' + adNc.por_ano[a]; }).join(' · ')
+      : '—';
     html += '<div style="font-weight:600;font-size:12.5px;margin:14px 0 6px">Diagnóstico NC — data bruta (temporário, não altera matching)</div>'
       + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:9px;margin-bottom:8px">'
+      + cartao('NC total histórico', ncTotal)
+      + cartao('NC elegíveis 2026', r.nc_toconline_elegiveis_2026 != null ? r.nc_toconline_elegiveis_2026 : '—')
       + cartao('NC 2026 via `date`', cdu.via_date != null ? cdu.via_date : '—')
       + cartao('NC 2026 via due_date (fallback)', cdu.via_due_date != null ? cdu.via_due_date : '—', cdu.via_due_date ? '#f5a623' : 'var(--muted)')
       + cartao('NC com data preenchida (`date`, qualquer ano)', ncComData)
-      + cartao('NC com `date` vazia/inválida', ncSemData, ncSemData ? '#ff453a' : 'var(--muted)')
+      + cartao('NC com `date` vazia/inválida', ncSemData, (typeof ncSemData === 'number' && ncSemData > 0) ? '#ff453a' : 'var(--muted)')
       + '</div>'
-      + '<div style="font-size:12px;color:var(--muted);margin-bottom:8px">Distribuição por ano (campo `date`, todas as 260 NC): ' + esc0(anosNcTxt) + '</div>'
+      + '<div style="font-size:12px;color:var(--muted);margin-bottom:8px">Distribuição por ano (campo `date`' + (ncTotal !== '—' ? ', todas as ' + ncTotal + ' NC' : '') + '): ' + esc0(anosNcTxt) + '</div>'
       + '<div style="max-height:220px;overflow:auto;border:1px solid var(--border);border-radius:8px;font-size:11.5px">'
       + '<table style="width:100%;border-collapse:collapse"><thead><tr style="text-align:left;color:var(--muted)">'
       + ['id','doc_no','tipo','date','date→ISO','due_date','due→ISO','gross_total','net_total','cliente'].map(function(h){ return '<th style="padding:4px 7px;border-bottom:1px solid var(--border)">' + h + '</th>'; }).join('')
       + '</tr></thead><tbody>'
-      + r.amostra_nc_toconline_bruta.map(function(x){
-          return '<tr>' + [x.id, x.doc_no, x.document_type, x.date, x.date_iso, x.due_date, x.due_date_iso, x.gross_total, x.net_total, x.customer_name]
-            .map(function(v){ return '<td style="padding:4px 7px;border-bottom:1px solid var(--border)">' + esc0(v) + '</td>'; }).join('') + '</tr>';
-        }).join('')
+      + (amostraNc.length
+          ? amostraNc.map(function(x){
+              return '<tr>' + [x.id, x.doc_no, x.document_type, x.date, x.date_iso, x.due_date, x.due_date_iso, x.gross_total, x.net_total, x.customer_name]
+                .map(function(v){ return '<td style="padding:4px 7px;border-bottom:1px solid var(--border)">' + esc0(v) + '</td>'; }).join('') + '</tr>';
+            }).join('')
+          : '<tr><td colspan="10" style="padding:8px 7px;color:var(--muted)">Sem amostra disponível nesta corrida.</td></tr>')
       + '</tbody></table></div>';
   }
   html += tabelaAmostra('Ambiguidades (linha existente mantida, nada inserido)', (r.amostra_ambiguidades||[]), function(x){
