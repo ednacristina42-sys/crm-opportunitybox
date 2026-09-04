@@ -22322,6 +22322,13 @@ function sincFinRenderPainel(state){
     + cartao('Total final esperado', r.total_final_esperado != null ? r.total_final_esperado : '—', '#60a5fa')
     + cartao('Escritas executadas', r.escritas_executadas != null ? r.escritas_executadas : '—', '#34c759')
     + '</div>'
+    + '<div style="font-weight:600;font-size:12.5px;margin:14px 0 6px">Universo TOConline — histórico vs. elegível 2026 (só 2026 entra na reconciliação)</div>'
+    + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:9px">'
+    + cartao('FT total histórico', r.ft_toconline_total_historico != null ? r.ft_toconline_total_historico : '—')
+    + cartao('FT elegíveis 2026', r.ft_toconline_elegiveis_2026 != null ? r.ft_toconline_elegiveis_2026 : '—', '#34c759')
+    + cartao('NC total histórico', r.nc_toconline_total_historico != null ? r.nc_toconline_total_historico : '—')
+    + cartao('NC elegíveis 2026', r.nc_toconline_elegiveis_2026 != null ? r.nc_toconline_elegiveis_2026 : '—', '#34c759')
+    + '</div>'
     + '<div style="font-weight:600;font-size:12.5px;margin:14px 0 6px">Paginação completa (TOConline)</div>'
     + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:9px">'
     + cartao('Faturas (FT)', badgePag(pc.invoices), badgeCor(pc.invoices))
@@ -22393,6 +22400,9 @@ async function sincronizarFinanceiroCentral(){
     total_atual_ob_tes_receber: null, sheets_ok: false, linhas_sheet_carregadas: null,
     tamanho_snapshot_supabase: null, tamanho_base_trabalho_pos_sheet: null,
     faturas_toconline: 0, notas_credito: 0, recibos: 0, clientes: 0,
+    ft_toconline_total_historico: null, ft_toconline_elegiveis_2026: null,
+    nc_toconline_total_historico: null, nc_toconline_elegiveis_2026: null,
+    auditoria_datas_ft: null, auditoria_datas_nc: null, amostra_nc_toconline_2026: [],
     paginacao_completa: { invoices: null, credit_notes: null, receipts: null },
     ft: null, nc: null, conflitos: 0, conflitos_vendedor: 0, conflitos_status: 0,
     total_final_esperado: null,
@@ -22488,12 +22498,54 @@ async function sincronizarFinanceiroCentral(){
       throw new Error('Paginação TOConline incompleta — dry-run abortado (ver Paginação completa abaixo).');
     }
 
-    // 5) Reconciliação — FT e NC sempre separadas, nunca cruzadas. Recibos
-    // não geram linhas em ob-tes-receber (só contados acima) — mantém-se a
-    // leitura completa pedida, sem inventar reconciliação nova para eles.
+    // 4b) Filtro de ano-fiscal 2026 — SÓ NESTA CENTRAL. ob-tes-receber/Vendas
+    // 2026 representa o exercício de 2026; sync_docs em si continua a trazer
+    // todo o histórico TOConline sem alteração nenhuma (outros módulos podem
+    // continuar a consumi-lo por completo). Campo canónico: `date`
+    // (attributes.date da API TOConline, JSON:API — achatarDocumento() na
+    // Edge Function usa o mesmo campo para invoices E credit_notes, nunca o
+    // número do documento). Documentos de outros anos ficam de fora do
+    // matching/novos-reais/ambiguidades desta reconciliação, mas continuam
+    // presentes em resInv.dados/resNc.dados para quem precisar do histórico
+    // completo. Recibos NÃO são filtrados aqui — a relação recibo↔fatura
+    // ainda não foi auditada (um recibo doutro ano pode liquidar uma fatura
+    // 2026); universo de recibos preservado integralmente.
+    function sincFinAno(doc){ return sincFinDataISO(doc.date).slice(0, 4); }
+    var tocFt2026 = resInv.dados.filter(function(d){ return sincFinAno(d) === '2026'; });
+    var tocNc2026 = resNc.dados.filter(function(d){ return sincFinAno(d) === '2026'; });
+    resumo.ft_toconline_total_historico = resInv.dados.length;
+    resumo.ft_toconline_elegiveis_2026 = tocFt2026.length;
+    resumo.nc_toconline_total_historico = resNc.dados.length;
+    resumo.nc_toconline_elegiveis_2026 = tocNc2026.length;
+    // Auditoria de datas (para reportar, nunca para corrigir automaticamente):
+    // distribuição por ano + contagem de datas ausentes/inválidas, FT e NC
+    // separados.
+    function sincFinAuditoriaAnos(docs){
+      var porAno = {}, semData = 0;
+      (docs||[]).forEach(function(d){
+        var a = sincFinAno(d);
+        if(!a){ semData++; return; }
+        porAno[a] = (porAno[a] || 0) + 1;
+      });
+      return { por_ano: porAno, sem_data_valida: semData };
+    }
+    resumo.auditoria_datas_ft = sincFinAuditoriaAnos(resInv.dados);
+    resumo.auditoria_datas_nc = sincFinAuditoriaAnos(resNc.dados);
+    // Amostra crua de NC 2026 tal como o TOConline devolve — só para
+    // auditar sinal/campo de valor antes de qualquer alteração ao matching
+    // de NC (matches=0 reportado com 27 NC existentes). Não corrige nada.
+    resumo.amostra_nc_toconline_2026 = tocNc2026.slice(0, 5).map(function(d){
+      return { doc_no: d.document_no, data: d.date, gross_total: d.gross_total, net_total: d.net_total, cliente: d.customer_business_name };
+    });
+
+    // 5) Reconciliação — FT e NC sempre separadas, nunca cruzadas, e agora
+    // só contra o universo TOConline elegível de 2026 (tocFt2026/tocNc2026).
+    // Recibos não geram linhas em ob-tes-receber (só contados acima) —
+    // mantém-se a leitura completa pedida, sem inventar reconciliação nova
+    // para eles.
     sincFinRenderPainel({ a_correr:true, passo:'A reconciliar contra as linhas existentes…' });
-    var recFt = sincFinReconciliar('FT', baseTrabalho, resInv.dados);
-    var recNc = sincFinReconciliar('NC', baseTrabalho, resNc.dados);
+    var recFt = sincFinReconciliar('FT', baseTrabalho, tocFt2026);
+    var recNc = sincFinReconciliar('NC', baseTrabalho, tocNc2026);
     resumo.ft = { existentes: recFt.existentes, matches: recFt.matches.length, novos_reais: recFt.novos.length, ambiguidades: recFt.ambiguidades.length, placeholders_excluidos_toc: recFt.placeholders_excluidos_toc };
     resumo.nc = { existentes: recNc.existentes, matches: recNc.matches.length, novos_reais: recNc.novos.length, ambiguidades: recNc.ambiguidades.length, placeholders_excluidos_toc: recNc.placeholders_excluidos_toc };
     var conflitosFt = sincFinConflitosEmMatches(recFt.matches);
