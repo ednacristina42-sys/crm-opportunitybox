@@ -22337,6 +22337,30 @@ function sincFinDocParaLinhaTes(doc, tipoTes){
   };
 }
 
+// Fonte ÚNICA da verdade do vínculo entre o resumo do último dry-run e a
+// execução real — usada tanto no painel (botão) como em
+// sincFinPrepararConfirmacaoEscrita(), para nunca haver dois sítios a
+// decidir isto de forma diferente. Nunca recalcula "novos" de outra forma
+// — lê exatamente novos_reais/novos_docs já produzidos pelo dry-run.
+//
+// CAUSA DO BUG "0 linhas novas" com FT novas reais=73/NC novas reais=8 no
+// mesmo resumo: novos_docs (a coleção bruta usada para montar as linhas a
+// inserir) só passou a ser guardada no resumo a partir desta função de
+// escrita real (commit 31c26ce). Um resumo de um dry-run CORRIDO ANTES
+// desse commit, ainda guardado em localStorage, tem novos_reais correto
+// mas nunca teve novos_docs — o bloco antigo lia só
+// (r.ft.novos_docs||[]).length, que dá 0 nesse caso específico, sem
+// explicar a causa. Esta função distingue os dois casos explicitamente.
+function sincFinEstadoExecucaoReal(r){
+  var totalReaisFt = (r.ft && r.ft.novos_reais) || 0;
+  var totalReaisNc = (r.nc && r.nc.novos_reais) || 0;
+  var totalReais = totalReaisFt + totalReaisNc;
+  var docsFt = (r.ft && Array.isArray(r.ft.novos_docs)) ? r.ft.novos_docs : null;
+  var docsNc = (r.nc && Array.isArray(r.nc.novos_docs)) ? r.nc.novos_docs : null;
+  var docsDisponiveis = !!docsFt && !!docsNc && docsFt.length === totalReaisFt && docsNc.length === totalReaisNc;
+  return { totalReaisFt: totalReaisFt, totalReaisNc: totalReaisNc, totalReais: totalReais, docsDisponiveis: docsDisponiveis };
+}
+
 // Ponto de entrada do botão "Confirmar escrita real": lê o ÚLTIMO dry-run
 // aprovado (localStorage — o mesmo já usado por sincFinAbrirPainel), monta
 // as linhas exatas a inserir, mostra a confirmação final obrigatória e só
@@ -22354,13 +22378,18 @@ function sincFinPrepararConfirmacaoEscrita(){
     alert('Só contas Admin ou Financeiro podem executar a escrita real.');
     return;
   }
-  var linhasFt = ((resumo.ft && resumo.ft.novos_docs) || []).map(function(d){ return sincFinDocParaLinhaTes(d, 'FT'); });
-  var linhasNc = ((resumo.nc && resumo.nc.novos_docs) || []).map(function(d){ return sincFinDocParaLinhaTes(d, 'NC'); });
-  var total = linhasFt.length + linhasNc.length;
-  if(!total){
+  var estadoExec = sincFinEstadoExecucaoReal(resumo);
+  if(estadoExec.totalReais === 0){
     alert('Não há nenhuma linha nova a inserir (0 FT + 0 NC) neste dry-run. Nada a fazer.');
     return;
   }
+  if(!estadoExec.docsDisponiveis){
+    alert('Este dry-run tem ' + estadoExec.totalReais + ' linhas novas (' + estadoExec.totalReaisFt + ' FT + ' + estadoExec.totalReaisNc + ' NC), mas não guardou as coleções completas necessárias para escrever (dry-run anterior a esta função, ou dados inconsistentes). Repita "Correr dry-run" antes de confirmar a escrita real.');
+    return;
+  }
+  var linhasFt = resumo.ft.novos_docs.map(function(d){ return sincFinDocParaLinhaTes(d, 'FT'); });
+  var linhasNc = resumo.nc.novos_docs.map(function(d){ return sincFinDocParaLinhaTes(d, 'NC'); });
+  var total = linhasFt.length + linhasNc.length;
   var texto = 'Serão inseridas ' + total + ' linhas novas. 0 linhas existentes serão alteradas.\n\n'
     + '(' + linhasFt.length + ' FT + ' + linhasNc.length + ' NC — só INSERT, nunca UPDATE/DELETE.\n'
     + 'Matches, ambiguidades, placeholders e documentos voided/anulados NÃO são tocados.)';
@@ -22700,17 +22729,24 @@ function sincFinRenderPainel(state){
   // apaga nenhuma linha existente. A escrita em si só corre depois de um
   // confirm() manual explícito em sincFinPrepararConfirmacaoEscrita(). ──
   if(r.ts && r.ok && !(r.erros && r.erros.length) && r.ft && r.nc){
-    var totalNovasFt = (r.ft.novos_docs || []).length, totalNovasNc = (r.nc.novos_docs || []).length;
-    var totalNovas = totalNovasFt + totalNovasNc;
+    // Fonte única da verdade (sincFinEstadoExecucaoReal) — nunca recalcula
+    // "novos" de outra forma; distingue "genuinamente 0 novas" de "há N
+    // novas mas esta corrida não guardou as coleções completas" (dry-run
+    // anterior a esta função ainda em localStorage), que era a causa exata
+    // do bloco antigo mostrar sempre "0 linhas novas" nesse segundo caso.
+    var estadoExec = sincFinEstadoExecucaoReal(r);
     html += '<div style="margin-top:16px;padding:12px;border:1px solid rgba(255,69,58,.4);background:rgba(255,69,58,.08);border-radius:10px">'
       + '<div style="font-weight:600;font-size:13px;margin-bottom:6px;color:#ff453a">⚠ Execução real controlada — grava em produção</div>';
-    if(totalNovas > 0){
-      html += '<div style="font-size:12.5px;margin-bottom:10px">Serão inseridas <b>' + totalNovas + '</b> linhas novas ('
-        + totalNovasFt + ' FT + ' + totalNovasNc + ' NC). <b>0</b> linhas existentes serão alteradas.<br>'
+    if(estadoExec.totalReais === 0){
+      html += '<div style="font-size:12.5px;color:var(--muted)">0 linhas novas neste dry-run — nada para escrever.</div>';
+    } else if(estadoExec.docsDisponiveis){
+      html += '<div style="font-size:12.5px;margin-bottom:10px"><b>' + estadoExec.totalReais + ' linhas novas neste dry-run</b> ('
+        + estadoExec.totalReaisFt + ' FT + ' + estadoExec.totalReaisNc + ' NC). <b>0</b> linhas existentes serão alteradas.<br>'
         + '<span style="color:var(--muted)">Matches, ambiguidades, placeholders e documentos voided/anulados não são tocados. Backup automático antes de escrever. Confirmação manual obrigatória.</span></div>'
         + '<button onclick="sincFinPrepararConfirmacaoEscrita()" style="background:#ff453a;border:none;color:#fff;border-radius:8px;padding:9px 18px;cursor:pointer;font-size:13px;font-weight:600">⚠ Confirmar escrita real (insert-only)</button>';
     } else {
-      html += '<div style="font-size:12.5px;color:var(--muted)">0 linhas novas neste dry-run — nada para escrever.</div>';
+      html += '<div style="font-size:12.5px;color:#f5a623">⚠ ' + estadoExec.totalReais + ' linhas novas neste dry-run ('
+        + estadoExec.totalReaisFt + ' FT + ' + estadoExec.totalReaisNc + ' NC), mas esta corrida não guardou as coleções completas necessárias para escrever — provavelmente um dry-run anterior a esta função, ainda guardado. <b>Repita "Correr dry-run"</b> antes de poder confirmar a escrita real.</div>';
     }
     html += '</div>';
   }
