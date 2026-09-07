@@ -22046,7 +22046,9 @@ function tocoAtualizarTesourariaComFaturas(){
 // sessão/JWT já exigida para o resto do CRM) e reportar erro em vez de
 // falhar em silêncio — nunca voltar ao caminho antigo.
 var SINC_FIN_ULT_KEY = 'ob-sinc-financeiro-ultima';
+var SINC_FIN_ESCRITA_ULT_KEY = 'ob-sinc-financeiro-escrita-ultima';
 var SINC_FIN_EM_CURSO = false;
+var SINC_FIN_ESCRITA_EM_CURSO = false;
 
 // Backup local antes de qualquer reconciliação que altere ob-tes-receber —
 // não existe hoje nenhum mecanismo de versão/backup para esta chave no
@@ -22290,6 +22292,202 @@ function sincFinConflitosEmMatches(matches){
   return conflitos;
 }
 
+// ══ EXECUÇÃO REAL CONTROLADA (aprovada) ═════════════════════════════════
+// Tudo a partir daqui só é usado depois de um dry-run aprovado, com
+// confirmação manual explícita — nunca corre sozinho. Insert-only: nunca
+// atualiza nem apaga nenhuma linha existente em ob-tes-receber.
+
+// Converte um documento TOConline "novo real" (já aprovado pela
+// reconciliação — nunca um match, ambiguidade, placeholder ou voided, que
+// nem chegam a existir no array `novos`) para o mesmo formato de linha já
+// usado pelas linhas novas vindas do Sheet (sincFinAplicarSheetPura) —
+// _tocoId em vez de _sheetId como marca de proveniência (só para
+// diagnóstico/guarda contra duplicados; a reconciliação em si continua a
+// ser sempre por identidade cliente+data+valor, nunca por esta marca).
+// NC: total/valorLiq gravados NEGATIVOS — mesma convenção já confirmada por
+// leitura direta da base (27 NC reais existentes têm total negativo) e já
+// usada na normalização Math.abs do matching (aqui só reaplicada aos dados
+// novos, nunca alterando nenhum dado já existente). Vendedor: SEMPRE via
+// tesResolverVendedor(cliente) — nunca lê "user"/vendedor do TOConline
+// (mesma regra da Fase C: só os 4 reps conhecidos entram, caso contrário
+// fica por resolver).
+function sincFinDocParaLinhaTes(doc, tipoTes){
+  var dataISO = sincFinDataISO(doc.date);
+  var dataPt = dataISO ? new Date(dataISO + 'T00:00:00').toLocaleDateString('pt-PT') : '';
+  var vencimento = '';
+  if(dataISO){
+    var dt = new Date(dataISO + 'T00:00:00');
+    dt.setDate(dt.getDate() + 30);
+    vencimento = dt.toLocaleDateString('pt-PT');
+  }
+  var totalBruto = doc.gross_total || 0;
+  var totalAssinado = tipoTes === 'NC' ? -Math.abs(totalBruto) : totalBruto;
+  var liq = totalAssinado / 1.23;
+  var pago = (doc.pending_total <= 0.005) && !doc.voided_reason;
+  var estado = pago ? 'Recebido' : 'Pendente';
+  var vendedorLinha = typeof tesResolverVendedor === 'function' ? (tesResolverVendedor(doc.customer_business_name) || '') : '';
+  return {
+    id: 'TOC-' + tipoTes + '-' + doc.id, _tocoId: String(doc.id), tipo: tipoTes,
+    data: dataPt, descricao: (tipoTes === 'NC' ? 'Nota de Crédito ' : 'Fatura ') + (doc.document_no || doc.id),
+    cliente: doc.customer_business_name || '—', nif: doc.customer_tax_registration_number || '',
+    vendedor: vendedorLinha, projeto: '',
+    valorLiq: liq, ivaPct: 23, total: totalAssinado,
+    vencimento: vencimento, dataEmissao: dataPt, estado: estado,
+    dataRec: pago ? dataPt : undefined,
+  };
+}
+
+// Ponto de entrada do botão "Confirmar escrita real": lê o ÚLTIMO dry-run
+// aprovado (localStorage — o mesmo já usado por sincFinAbrirPainel), monta
+// as linhas exatas a inserir, mostra a confirmação final obrigatória e só
+// avança para sincFinExecutarEscritaReal() depois de um confirm() manual
+// explícito. Nunca corre sozinho — só por clique direto do utilizador.
+function sincFinPrepararConfirmacaoEscrita(){
+  if(SINC_FIN_ESCRITA_EM_CURSO){ return; }
+  var resumo;
+  try{ resumo = JSON.parse(localStorage.getItem(SINC_FIN_ULT_KEY) || 'null'); }catch(e){ resumo = null; }
+  if(!resumo || !resumo.ok || (resumo.erros||[]).length){
+    alert('Não há nenhum dry-run aprovado (sem erros) para executar. Corra "Correr dry-run" primeiro.');
+    return;
+  }
+  if(!(typeof CU !== 'undefined' && CU && (CU.admin === true || CU.role === 'financeiro'))){
+    alert('Só contas Admin ou Financeiro podem executar a escrita real.');
+    return;
+  }
+  var linhasFt = ((resumo.ft && resumo.ft.novos_docs) || []).map(function(d){ return sincFinDocParaLinhaTes(d, 'FT'); });
+  var linhasNc = ((resumo.nc && resumo.nc.novos_docs) || []).map(function(d){ return sincFinDocParaLinhaTes(d, 'NC'); });
+  var total = linhasFt.length + linhasNc.length;
+  if(!total){
+    alert('Não há nenhuma linha nova a inserir (0 FT + 0 NC) neste dry-run. Nada a fazer.');
+    return;
+  }
+  var texto = 'Serão inseridas ' + total + ' linhas novas. 0 linhas existentes serão alteradas.\n\n'
+    + '(' + linhasFt.length + ' FT + ' + linhasNc.length + ' NC — só INSERT, nunca UPDATE/DELETE.\n'
+    + 'Matches, ambiguidades, placeholders e documentos voided/anulados NÃO são tocados.)';
+  if(!confirm(texto)){ console.warn('[SincFin] Escrita real cancelada pelo utilizador na confirmação.'); return; }
+  sincFinExecutarEscritaReal(resumo, linhasFt, linhasNc);
+}
+window.sincFinPrepararConfirmacaoEscrita = sincFinPrepararConfirmacaoEscrita;
+
+// Escrita real, insert-only, controlada. Só é chamada depois da confirmação
+// manual explícita acima. Cada etapa pode abortar (resultado.ok=false) sem
+// nunca repetir sozinha — falhar aqui é sempre reportar e parar, nunca
+// tentar de novo automaticamente.
+async function sincFinExecutarEscritaReal(resumoDryRun, linhasFt, linhasNc){
+  if(SINC_FIN_ESCRITA_EM_CURSO) return;
+  SINC_FIN_ESCRITA_EM_CURSO = true;
+  var resultado = {
+    ts: new Date().toISOString(), ok: false, etapa: null,
+    backup_gerado: false,
+    esperado_inserir_ft: linhasFt.length, esperado_inserir_nc: linhasNc.length,
+    esperado_inserir_total: linhasFt.length + linhasNc.length,
+    total_antes: null, total_depois_esperado: null, total_depois_real: null,
+    ft_inseridas_confirmadas: 0, nc_inseridas_confirmadas: 0,
+    updates_confirmados: 0, deletes_confirmados: 0, erros: [],
+  };
+  try{
+    if(!(typeof CU !== 'undefined' && CU && (CU.admin === true || CU.role === 'financeiro'))){
+      throw new Error('Só contas Admin ou Financeiro podem executar a escrita real.');
+    }
+    var sb = crmSBClient();
+    if(!sb) throw new Error('Supabase indisponível no browser.');
+
+    // 1) Leitura FRESCA — não a do dry-run — imediatamente antes de
+    // escrever. Ancora tanto o backup como a escrita condicional abaixo.
+    resultado.etapa = 'leitura_pre_escrita';
+    var pre = await sb.from('ob_crm_dados').select('dados,updated_at').eq('chave','ob-tes-receber').maybeSingle();
+    if(pre.error) throw new Error('Falha a ler estado atual antes de escrever: ' + pre.error.message);
+    var antes = (pre.data && pre.data.dados) || [];
+    var antesUpdatedAt = pre.data && pre.data.updated_at;
+    resultado.total_antes = antes.length;
+
+    // 2) Deteção de deriva: a reconciliação aprovada foi calculada sobre um
+    // snapshot com resumoDryRun.tamanho_snapshot_supabase linhas. Se o
+    // tamanho remoto mudou entretanto, a reconciliação já não é fiável —
+    // PARA sem escrever nada, sem repetir sozinho.
+    resultado.etapa = 'verificacao_deriva';
+    if(resumoDryRun.tamanho_snapshot_supabase != null && antes.length !== resumoDryRun.tamanho_snapshot_supabase){
+      throw new Error('A base mudou desde o dry-run aprovado (esperado ' + resumoDryRun.tamanho_snapshot_supabase + ' linhas, encontrado ' + antes.length + ' agora). A reconciliação já não é fiável — repita o dry-run antes de escrever.');
+    }
+
+    // 3) Backup FRESCO (não o do dry-run) do estado exatamente antes desta
+    // escrita — obrigatório antes de qualquer gravação real.
+    resultado.etapa = 'backup';
+    resultado.backup_gerado = sincFinBaixarBackup(antes);
+    if(!resultado.backup_gerado) throw new Error('Backup falhou — escrita real abortada antes de qualquer gravação.');
+
+    // 4) Guarda contra duplicação: se alguma das linhas novas já existir
+    // (por _tocoId) na base atual, uma corrida anterior já a inseriu — não
+    // inserir de novo, não repetir sozinho.
+    resultado.etapa = 'verificacao_duplicados';
+    var idsExistentes = {};
+    antes.forEach(function(r){ if(r._tocoId) idsExistentes[String(r.tipo||'') + '|' + String(r._tocoId)] = true; });
+    var todasNovas = linhasFt.concat(linhasNc);
+    var duplicadas = todasNovas.filter(function(l){ return idsExistentes[String(l.tipo) + '|' + String(l._tocoId)]; });
+    if(duplicadas.length){
+      throw new Error(duplicadas.length + ' das linhas novas já existem na base atual (por _tocoId) — provável escrita anterior parcial. Escrita abortada sem inserir nada; verificar manualmente antes de repetir.');
+    }
+
+    // 5) Escrita condicional — só INSERT: novo array = antes.concat(novas),
+    // nenhum elemento existente é removido, alterado ou reordenado. PATCH
+    // condicional em updated_at (mesma proteção de concorrência já usada em
+    // obSbPushClientesInterno para ob-clients) — se outro utilizador
+    // escreveu entretanto, aborta sem escrever por cima.
+    resultado.etapa = 'escrita';
+    var depois = antes.concat(todasNovas);
+    resultado.total_depois_esperado = depois.length;
+    var patch = await sb.from('ob_crm_dados')
+      .update({ dados: depois, updated_at: new Date().toISOString() })
+      .eq('chave', 'ob-tes-receber')
+      .eq('updated_at', antesUpdatedAt)
+      .select('dados');
+    if(patch.error) throw new Error('Escrita falhou: ' + patch.error.message);
+    if(!patch.data || !patch.data.length){
+      throw new Error('Escrita bloqueada: outro utilizador alterou ob-tes-receber entre a leitura e esta escrita (conflito de concorrência). Nada foi gravado — repita o processo desde o dry-run.');
+    }
+
+    // 6) Confirmação — releitura DIRETA e independente do Supabase (nunca
+    // assume o resultado do PATCH), exatamente como pedido.
+    resultado.etapa = 'releitura_confirmacao';
+    var pos = await sb.from('ob_crm_dados').select('dados').eq('chave','ob-tes-receber').maybeSingle();
+    if(pos.error) throw new Error('Escrita PODE ter sido gravada, mas a releitura de confirmação falhou: ' + pos.error.message + '. Verificar manualmente antes de repetir.');
+    var final = (pos.data && pos.data.dados) || [];
+    resultado.total_depois_real = final.length;
+
+    var porTocoId = {};
+    final.forEach(function(r){ if(r._tocoId) porTocoId[String(r.tipo||'') + '|' + String(r._tocoId)] = r; });
+    resultado.ft_inseridas_confirmadas = linhasFt.filter(function(l){ return !!porTocoId[String(l.tipo) + '|' + String(l._tocoId)]; }).length;
+    resultado.nc_inseridas_confirmadas = linhasNc.filter(function(l){ return !!porTocoId[String(l.tipo) + '|' + String(l._tocoId)]; }).length;
+
+    // updates/deletes: toda linha PRÉ-EXISTENTE (identificada por id) deve
+    // continuar presente e byte-idêntica (JSON) na leitura final.
+    var idsFinal = {}; final.forEach(function(r){ idsFinal[r.id] = r; });
+    var deletados = antes.filter(function(r){ return !idsFinal[r.id]; });
+    var alterados = antes.filter(function(r){ return idsFinal[r.id] && JSON.stringify(idsFinal[r.id]) !== JSON.stringify(r); });
+    resultado.deletes_confirmados = deletados.length;
+    resultado.updates_confirmados = alterados.length;
+
+    var fechouCerto = resultado.total_depois_real === antes.length + todasNovas.length
+      && resultado.ft_inseridas_confirmadas === linhasFt.length
+      && resultado.nc_inseridas_confirmadas === linhasNc.length
+      && resultado.deletes_confirmados === 0
+      && resultado.updates_confirmados === 0;
+    if(!fechouCerto){
+      throw new Error('A releitura de confirmação NÃO bate certo com o esperado — ver números em detalhe. A escrita já aconteceu; NÃO repetir automaticamente, investigar manualmente antes de qualquer nova ação.');
+    }
+    resultado.ok = true;
+  }catch(eGeral){
+    resultado.ok = false;
+    resultado.erros.push((resultado.etapa ? '[' + resultado.etapa + '] ' : '') + eGeral.message);
+  }finally{
+    SINC_FIN_ESCRITA_EM_CURSO = false;
+    try{ localStorage.setItem(SINC_FIN_ESCRITA_ULT_KEY, JSON.stringify(resultado)); }catch(e){}
+    sincFinRenderPainel({ a_correr:false, resumo: resumoDryRun, resultado_escrita: resultado });
+  }
+  return resultado;
+}
+window.sincFinExecutarEscritaReal = sincFinExecutarEscritaReal;
+
 // Busca um recurso TOConline por completo via resource=sync_docs (crm-toconline
 // v20) — paginação real por lotes, sem o teto de 5.000 documentos do antigo
 // resource=invoices/credit_notes/receipts (buscarTudo()/MAX_PAGES=50, que
@@ -22323,6 +22521,7 @@ function sincFinRenderPainel(state){
     return;
   }
   var r = state.resumo || {};
+  var re = state.resultado_escrita || null;
   var cartao = function(rot, val, cor){
     return '<div style="background:var(--bg3);border:1px solid var(--border);border-radius:9px;padding:9px 11px">'
       + '<div style="font-size:19px;font-weight:600;color:' + (cor||'var(--fg)') + '">' + val + '</div>'
@@ -22495,6 +22694,44 @@ function sincFinRenderPainel(state){
       + '<div style="border:1px solid var(--border);border-radius:8px;overflow:hidden">'
       + r.erros.map(function(m){ return '<div style="padding:6px 9px;border-bottom:1px solid var(--border);font-size:12px;color:#ff453a">' + esc(m) + '</div>'; }).join('')
       + '</div></div>';
+  }
+  // ── Execução real controlada (aprovada) — só aparece depois de um
+  // dry-run limpo (ok:true, sem erros). Insert-only: nunca atualiza nem
+  // apaga nenhuma linha existente. A escrita em si só corre depois de um
+  // confirm() manual explícito em sincFinPrepararConfirmacaoEscrita(). ──
+  if(r.ts && r.ok && !(r.erros && r.erros.length) && r.ft && r.nc){
+    var totalNovasFt = (r.ft.novos_docs || []).length, totalNovasNc = (r.nc.novos_docs || []).length;
+    var totalNovas = totalNovasFt + totalNovasNc;
+    html += '<div style="margin-top:16px;padding:12px;border:1px solid rgba(255,69,58,.4);background:rgba(255,69,58,.08);border-radius:10px">'
+      + '<div style="font-weight:600;font-size:13px;margin-bottom:6px;color:#ff453a">⚠ Execução real controlada — grava em produção</div>';
+    if(totalNovas > 0){
+      html += '<div style="font-size:12.5px;margin-bottom:10px">Serão inseridas <b>' + totalNovas + '</b> linhas novas ('
+        + totalNovasFt + ' FT + ' + totalNovasNc + ' NC). <b>0</b> linhas existentes serão alteradas.<br>'
+        + '<span style="color:var(--muted)">Matches, ambiguidades, placeholders e documentos voided/anulados não são tocados. Backup automático antes de escrever. Confirmação manual obrigatória.</span></div>'
+        + '<button onclick="sincFinPrepararConfirmacaoEscrita()" style="background:#ff453a;border:none;color:#fff;border-radius:8px;padding:9px 18px;cursor:pointer;font-size:13px;font-weight:600">⚠ Confirmar escrita real (insert-only)</button>';
+    } else {
+      html += '<div style="font-size:12.5px;color:var(--muted)">0 linhas novas neste dry-run — nada para escrever.</div>';
+    }
+    html += '</div>';
+  }
+  if(re && re.ts){
+    var okCor = re.ok ? '#34c759' : '#ff453a';
+    html += '<div style="margin-top:16px;padding:12px;border:1px solid ' + okCor + ';background:' + (re.ok ? 'rgba(52,199,89,.08)' : 'rgba(255,69,58,.08)') + ';border-radius:10px">'
+      + '<div style="font-weight:600;font-size:13px;margin-bottom:6px;color:' + okCor + '">' + (re.ok ? '✓ Escrita real concluída e confirmada' : '✗ Escrita real PAROU — ver erro abaixo (nunca repetida automaticamente)') + '</div>'
+      + '<div style="font-size:11.5px;color:var(--muted);margin-bottom:8px">Última tentativa: ' + new Date(re.ts).toLocaleString('pt-PT') + ' · etapa: ' + esc0(re.etapa || '—') + '</div>'
+      + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:9px">'
+      + cartao('Backup gerado', re.backup_gerado ? '✓' : '✗', re.backup_gerado ? '#34c759' : '#ff453a')
+      + cartao('Total antes (releitura)', re.total_antes != null ? re.total_antes : '—')
+      + cartao('Total depois (releitura)', re.total_depois_real != null ? re.total_depois_real : '—', '#60a5fa')
+      + cartao('FT inseridas confirmadas', re.ft_inseridas_confirmadas + ' / ' + re.esperado_inserir_ft, re.ft_inseridas_confirmadas === re.esperado_inserir_ft ? '#34c759' : '#ff453a')
+      + cartao('NC inseridas confirmadas', re.nc_inseridas_confirmadas + ' / ' + re.esperado_inserir_nc, re.nc_inseridas_confirmadas === re.esperado_inserir_nc ? '#34c759' : '#ff453a')
+      + cartao('Updates confirmados', re.updates_confirmados, re.updates_confirmados === 0 ? '#34c759' : '#ff453a')
+      + cartao('Deletes confirmados', re.deletes_confirmados, re.deletes_confirmados === 0 ? '#34c759' : '#ff453a')
+      + '</div>';
+    if(re.erros && re.erros.length){
+      html += '<div style="margin-top:10px;font-size:12px;color:#ff453a">' + re.erros.map(esc0).join('<br>') + '</div>';
+    }
+    html += '</div>';
   }
   wrap.innerHTML = html;
 }
@@ -22714,10 +22951,16 @@ async function sincronizarFinanceiroCentral(){
     var fechoNc = recNc.matches.length + recNc.novos.length + recNc.ambiguidades.length + recNc.placeholders_excluidos_toc + recNc.voided_excluidos_toc;
     resumo.ft = { existentes: recFt.existentes, matches: recFt.matches.length, novos_reais: recFt.novos.length, ambiguidades: recFt.ambiguidades.length, placeholders_excluidos_toc: recFt.placeholders_excluidos_toc, voided_excluidos_toc: recFt.voided_excluidos_toc,
       soma_fecho: fechoFt, elegiveis_2026: tocFt2026.length, outros_motivos_exclusao: tocFt2026.length - fechoFt,
-      placeholders_docs: recFt.placeholders_docs, voided_docs: recFt.voided_docs };
+      placeholders_docs: recFt.placeholders_docs, voided_docs: recFt.voided_docs,
+      // Documentos TOConline "novos reais" (raw, já achatados) — guardados
+      // aqui só para a execução real controlada (insert-only) poder
+      // construir as linhas exatas a inserir sem ter de ler TOConline outra
+      // vez; nunca usados para alterar a reconciliação em si.
+      novos_docs: recFt.novos };
     resumo.nc = { existentes: recNc.existentes, matches: recNc.matches.length, novos_reais: recNc.novos.length, ambiguidades: recNc.ambiguidades.length, placeholders_excluidos_toc: recNc.placeholders_excluidos_toc, voided_excluidos_toc: recNc.voided_excluidos_toc,
       soma_fecho: fechoNc, elegiveis_2026: tocNc2026.length, outros_motivos_exclusao: tocNc2026.length - fechoNc,
-      placeholders_docs: recNc.placeholders_docs, voided_docs: recNc.voided_docs };
+      placeholders_docs: recNc.placeholders_docs, voided_docs: recNc.voided_docs,
+      novos_docs: recNc.novos };
     var conflitosFt = sincFinConflitosEmMatches(recFt.matches);
     conflitosFt.forEach(function(c){ c.tipo = 'FT'; });
     var conflitosNc = sincFinConflitosEmMatches(recNc.matches);
@@ -22764,7 +23007,8 @@ function sincFinAbrirPainel(){
   if(modal) modal.style.display = 'flex';
   try{
     var guardado = JSON.parse(localStorage.getItem(SINC_FIN_ULT_KEY) || 'null');
-    sincFinRenderPainel({ a_correr:false, resumo: guardado || {} });
+    var guardadaEscrita = JSON.parse(localStorage.getItem(SINC_FIN_ESCRITA_ULT_KEY) || 'null');
+    sincFinRenderPainel({ a_correr:false, resumo: guardado || {}, resultado_escrita: guardadaEscrita || null });
   }catch(e){ sincFinRenderPainel({ a_correr:false, resumo:{} }); }
 }
 window.sincFinAbrirPainel = sincFinAbrirPainel;
@@ -30890,7 +31134,8 @@ window.tocoSyncAgora = tocoSyncAgora;
     </div>
     <div style="font-size:12.5px;color:var(--muted);margin-bottom:14px">
       Google Sheets "Vendas 2026" + TOConline (faturas, notas de crédito, clientes) — leitura completa e reconciliação contra o que já existe em ob-tes-receber.
-      <b>Modo dry-run: esta corrida NUNCA grava nada</b> — só mostra existentes, matches, novos reais, conflitos, ambiguidades e o total final que uma sincronização real produziria. FT e NC são sempre reconciliadas em separado, nunca cruzadas; uma linha existente ambígua nunca é tocada. Só leitura do TOConline (nunca cria/anula documentos, nunca CRM→TOConline). Só Admin/Financeiro podem correr.
+      <b>"Correr dry-run" NUNCA grava nada</b> — só mostra existentes, matches, novos reais, conflitos, ambiguidades e o total final que uma sincronização real produziria. FT e NC são sempre reconciliadas em separado, nunca cruzadas; uma linha existente ambígua nunca é tocada. Só leitura do TOConline (nunca cria/anula documentos, nunca CRM→TOConline). Só Admin/Financeiro podem correr.
+      Depois de um dry-run aprovado (sem erros), aparece um segundo botão "Confirmar escrita real" — insert-only, só insere os novos reais já reconciliados, nunca altera/apaga linhas existentes, exige confirmação manual explícita antes de gravar.
     </div>
     <div style="display:flex;gap:10px;align-items:center;margin-bottom:14px;flex-wrap:wrap">
       <button id="sinc-fin-btn" onclick="sincronizarFinanceiroCentral()" style="background:var(--accent);border:none;color:#fff;border-radius:8px;padding:9px 18px;cursor:pointer;font-size:13px;font-weight:600">Correr dry-run</button>
