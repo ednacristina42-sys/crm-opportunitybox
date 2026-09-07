@@ -22140,13 +22140,28 @@ function sincFinReconciliar(tipoTes, existentesRows, tocDocs){
 
   var usados = {};
   var matches = [], novos = [], ambiguidades = [], placeholdersExcluidosToc = 0, voidedExcluidosToc = 0;
+  // Diagnóstico (não altera nenhuma decisão de matching): captura o detalhe
+  // de cada documento excluído por anulação/placeholder, para poder mostrar
+  // exatamente QUAIS documentos ficam de fora de matches+novos+ambiguidades
+  // — pedido por Edna depois de "NC elegíveis 2026 = 29" mas "matches+novos+
+  // ambiguidades = 27" (as duas contagens já existiam; só não tinham o
+  // detalhe por documento nem eram somadas/mostradas no painel).
+  var voidedDocs = [], placeholdersDocs = [];
   (tocDocs||[]).forEach(function(doc){
     // Documentos anulados não entram na reconciliação — mas ficam CONTADOS
     // (antes só eram descartados em silêncio, sem métrica nenhuma; isso
     // deixava matches+novos+ambiguidades sem fechar contra o total elegível
     // 2026, sem forma de auditar a diferença).
-    if(doc.voided_reason){ voidedExcluidosToc++; return; }
-    if(sincFinEhPlaceholder(doc.customer_business_name, doc.customer_tax_registration_number)){ placeholdersExcluidosToc++; return; }
+    if(doc.voided_reason){
+      voidedExcluidosToc++;
+      voidedDocs.push({ id: doc.id, doc_no: doc.document_no, cliente: doc.customer_business_name, data: doc.date, valor: doc.gross_total, motivo: 'anulada no TOConline (' + doc.voided_reason + ')' });
+      return;
+    }
+    if(sincFinEhPlaceholder(doc.customer_business_name, doc.customer_tax_registration_number)){
+      placeholdersExcluidosToc++;
+      placeholdersDocs.push({ id: doc.id, doc_no: doc.document_no, cliente: doc.customer_business_name, data: doc.date, valor: doc.gross_total, motivo: 'cliente placeholder (Cliente Final/NIF genérico) — nunca usado como identidade' });
+      return;
+    }
     var nm = sincFinNomeNorm(doc.customer_business_name);
     var d = sincFinDataISO(doc.date);
     var k = nm + '|' + d;
@@ -22186,6 +22201,7 @@ function sincFinReconciliar(tipoTes, existentesRows, tocDocs){
     tipo: tipoTes, existentes: existentesDoTipo.length, matches: matches, novos: novos,
     ambiguidades: ambiguidades, placeholders_excluidos_toc: placeholdersExcluidosToc,
     voided_excluidos_toc: voidedExcluidosToc,
+    placeholders_docs: placeholdersDocs, voided_docs: voidedDocs,
   };
 }
 
@@ -22340,6 +22356,10 @@ function sincFinRenderPainel(state){
     + cartao('Clientes TOConline', r.clientes != null ? r.clientes : '—')
     + cartao('Conflitos · vendedor', r.conflitos_vendedor != null ? r.conflitos_vendedor : '—', r.conflitos_vendedor ? '#f5a623' : 'var(--muted)')
     + cartao('Conflitos · estado', r.conflitos_status != null ? r.conflitos_status : '—', r.conflitos_status ? '#f5a623' : 'var(--muted)')
+    + cartao('Conflitos vendedor · FT', r.conflitos_vendedor_ft != null ? r.conflitos_vendedor_ft : '—', r.conflitos_vendedor_ft ? '#f5a623' : 'var(--muted)')
+    + cartao('Conflitos vendedor · NC', r.conflitos_vendedor_nc != null ? r.conflitos_vendedor_nc : '—', r.conflitos_vendedor_nc ? '#f5a623' : 'var(--muted)')
+    + cartao('Conflitos estado · FT', r.conflitos_estado_ft != null ? r.conflitos_estado_ft : '—', r.conflitos_estado_ft ? '#f5a623' : 'var(--muted)')
+    + cartao('Conflitos estado · NC', r.conflitos_estado_nc != null ? r.conflitos_estado_nc : '—', r.conflitos_estado_nc ? '#f5a623' : 'var(--muted)')
     + cartao('Erros', (r.erros||[]).length, r.erros && r.erros.length ? '#ff453a' : 'var(--muted)')
     + cartao('Total final esperado', r.total_final_esperado != null ? r.total_final_esperado : '—', '#60a5fa')
     + cartao('Escritas executadas', r.escritas_executadas != null ? r.escritas_executadas : '—', '#34c759')
@@ -22374,6 +22394,43 @@ function sincFinRenderPainel(state){
     + '</div>'
     + linhaPlaceholders(nc);
   var esc0 = function(x){ return String(x==null?'':x).replace(/[&<>"]/g, function(c){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]; }); };
+  // ── Diagnóstico de fecho NC (pedido por Edna: elegíveis 2026 = 29, mas
+  // matches+novos+ambiguidades só somavam 27 — faltavam 2). soma_fecho já
+  // inclui placeholders_excluidos_toc + voided_excluidos_toc (a árvore de
+  // decisão em sincFinReconciliar() é exaustiva: todo documento cai em
+  // exatamente um destes 5 grupos) — esta secção só EXPÕE os números e os
+  // documentos exatos que já eram contados; nunca altera nenhuma decisão de
+  // matching/reconciliação. ──
+  if(r.ts && nc.elegiveis_2026 != null){
+    var fechoOk = nc.outros_motivos_exclusao === 0 && nc.soma_fecho === nc.elegiveis_2026;
+    html += '<div style="font-weight:600;font-size:12.5px;margin:14px 0 6px">Diagnóstico de fecho — Notas de Crédito (temporário, não altera matching)</div>'
+      + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:9px;margin-bottom:8px">'
+      + cartao('NC elegíveis 2026', nc.elegiveis_2026)
+      + cartao('Matches', nc.matches, '#34c759')
+      + cartao('Novas reais', nc.novos_reais, '#f5a623')
+      + cartao('Ambiguidades', nc.ambiguidades, nc.ambiguidades ? '#ff453a' : 'var(--muted)')
+      + cartao('Placeholders excluídos', nc.placeholders_excluidos_toc, nc.placeholders_excluidos_toc ? '#f5a623' : 'var(--muted)')
+      + cartao('Voided/anuladas excluídas', nc.voided_excluidos_toc, nc.voided_excluidos_toc ? '#f5a623' : 'var(--muted)')
+      + cartao('Outros motivos de exclusão', nc.outros_motivos_exclusao, nc.outros_motivos_exclusao ? '#ff453a' : 'var(--muted)')
+      + cartao('Soma de fecho', nc.soma_fecho, fechoOk ? '#34c759' : '#ff453a')
+      + '</div>'
+      + '<div style="font-size:12px;color:var(--muted);margin-bottom:8px">' + (fechoOk
+          ? '✓ Fecho confirmado: soma_fecho (' + nc.soma_fecho + ') = NC elegíveis 2026 (' + nc.elegiveis_2026 + ').'
+          : '⚠ Fecho NÃO confirmado: soma_fecho (' + nc.soma_fecho + ') ≠ NC elegíveis 2026 (' + nc.elegiveis_2026 + ') — ver "Outros motivos de exclusão" acima.') + '</div>';
+    var docsExcluidosNc = (nc.placeholders_docs||[]).concat(nc.voided_docs||[]);
+    html += '<div style="font-size:12px;font-weight:600;margin:6px 0 4px">NC que não entram em match/novo/ambiguidade (' + docsExcluidosNc.length + ')</div>'
+      + '<div style="max-height:180px;overflow:auto;border:1px solid var(--border);border-radius:8px;font-size:11.5px">'
+      + '<table style="width:100%;border-collapse:collapse"><thead><tr style="text-align:left;color:var(--muted)">'
+      + ['id','doc_no','cliente','data','valor','motivo'].map(function(h){ return '<th style="padding:4px 7px;border-bottom:1px solid var(--border)">' + h + '</th>'; }).join('')
+      + '</tr></thead><tbody>'
+      + (docsExcluidosNc.length
+          ? docsExcluidosNc.map(function(x){
+              return '<tr>' + [x.id, x.doc_no, x.cliente, x.data, x.valor, x.motivo]
+                .map(function(v){ return '<td style="padding:4px 7px;border-bottom:1px solid var(--border)">' + esc0(v) + '</td>'; }).join('') + '</tr>';
+            }).join('')
+          : '<tr><td colspan="6" style="padding:8px 7px;color:var(--muted)">Nenhuma NC excluída por placeholder/anulação nesta corrida.</td></tr>')
+      + '</tbody></table></div>';
+  }
   var tabelaAmostra = function(titulo, lista, cols){
     if(!lista || !lista.length) return '';
     var h = '<div style="margin-top:12px;font-weight:600;font-size:12.5px">' + titulo + ' (amostra de ' + lista.length + ')</div>'
@@ -22471,6 +22528,7 @@ async function sincronizarFinanceiroCentral(){
     amostra_nc_toconline_bruta: [], nc_campo_data_usado: null,
     paginacao_completa: { invoices: null, credit_notes: null, receipts: null },
     ft: null, nc: null, conflitos: 0, conflitos_vendedor: 0, conflitos_status: 0,
+    conflitos_vendedor_ft: 0, conflitos_vendedor_nc: 0, conflitos_estado_ft: 0, conflitos_estado_nc: 0,
     total_final_esperado: null,
     amostra_ambiguidades: [], amostra_conflitos: [], erros: [],
     escritas_executadas: 0, // este modo NUNCA escreve — nenhuma chamada de upsert/insert/update existe neste caminho de código, esta constante nunca muda
@@ -22647,16 +22705,31 @@ async function sincronizarFinanceiroCentral(){
     sincFinRenderPainel({ a_correr:true, passo:'A reconciliar contra as linhas existentes…' });
     var recFt = sincFinReconciliar('FT', baseTrabalho, tocFt2026);
     var recNc = sincFinReconciliar('NC', baseTrabalho, tocNc2026);
+    // soma_fecho (já existia): matches+novos+ambiguidades+placeholders+voided
+    // deve fechar exatamente contra elegiveis_2026 — a árvore de decisão em
+    // sincFinReconciliar() é exaustiva (todo documento cai em exatamente um
+    // destes 5 grupos), por isso outros_motivos_exclusao deve ser sempre 0;
+    // fica calculado e mostrado para AUDITAR isso, nunca para corrigir nada.
+    var fechoFt = recFt.matches.length + recFt.novos.length + recFt.ambiguidades.length + recFt.placeholders_excluidos_toc + recFt.voided_excluidos_toc;
+    var fechoNc = recNc.matches.length + recNc.novos.length + recNc.ambiguidades.length + recNc.placeholders_excluidos_toc + recNc.voided_excluidos_toc;
     resumo.ft = { existentes: recFt.existentes, matches: recFt.matches.length, novos_reais: recFt.novos.length, ambiguidades: recFt.ambiguidades.length, placeholders_excluidos_toc: recFt.placeholders_excluidos_toc, voided_excluidos_toc: recFt.voided_excluidos_toc,
-      soma_fecho: recFt.matches.length + recFt.novos.length + recFt.ambiguidades.length + recFt.placeholders_excluidos_toc + recFt.voided_excluidos_toc };
+      soma_fecho: fechoFt, elegiveis_2026: tocFt2026.length, outros_motivos_exclusao: tocFt2026.length - fechoFt,
+      placeholders_docs: recFt.placeholders_docs, voided_docs: recFt.voided_docs };
     resumo.nc = { existentes: recNc.existentes, matches: recNc.matches.length, novos_reais: recNc.novos.length, ambiguidades: recNc.ambiguidades.length, placeholders_excluidos_toc: recNc.placeholders_excluidos_toc, voided_excluidos_toc: recNc.voided_excluidos_toc,
-      soma_fecho: recNc.matches.length + recNc.novos.length + recNc.ambiguidades.length + recNc.placeholders_excluidos_toc + recNc.voided_excluidos_toc };
+      soma_fecho: fechoNc, elegiveis_2026: tocNc2026.length, outros_motivos_exclusao: tocNc2026.length - fechoNc,
+      placeholders_docs: recNc.placeholders_docs, voided_docs: recNc.voided_docs };
     var conflitosFt = sincFinConflitosEmMatches(recFt.matches);
+    conflitosFt.forEach(function(c){ c.tipo = 'FT'; });
     var conflitosNc = sincFinConflitosEmMatches(recNc.matches);
+    conflitosNc.forEach(function(c){ c.tipo = 'NC'; });
     var todosConflitos = conflitosFt.concat(conflitosNc);
     resumo.conflitos = todosConflitos.length;
     resumo.conflitos_vendedor = todosConflitos.filter(function(c){ return c.motivo === 'vendedor divergente'; }).length;
     resumo.conflitos_status = todosConflitos.filter(function(c){ return c.motivo === 'estado divergente'; }).length;
+    resumo.conflitos_vendedor_ft = conflitosFt.filter(function(c){ return c.motivo === 'vendedor divergente'; }).length;
+    resumo.conflitos_vendedor_nc = conflitosNc.filter(function(c){ return c.motivo === 'vendedor divergente'; }).length;
+    resumo.conflitos_estado_ft = conflitosFt.filter(function(c){ return c.motivo === 'estado divergente'; }).length;
+    resumo.conflitos_estado_nc = conflitosNc.filter(function(c){ return c.motivo === 'estado divergente'; }).length;
     // baseTrabalho, não TES_RECEBER: é a base local controlada (Supabase +
     // merge puro da Sheet), imune ao cache legado TocOnline.
     resumo.total_final_esperado = baseTrabalho.length + recFt.novos.length + recNc.novos.length;
