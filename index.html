@@ -22354,11 +22354,14 @@ function sincFinDocParaLinhaTes(doc, tipoTes){
 function sincFinEstadoExecucaoReal(r){
   var totalReaisFt = (r.ft && r.ft.novos_reais) || 0;
   var totalReaisNc = (r.nc && r.nc.novos_reais) || 0;
-  var totalReais = totalReaisFt + totalReaisNc;
+  var totalReaisSheet = r.sheet_novas || 0;
+  var totalReais = totalReaisSheet + totalReaisFt + totalReaisNc;
   var docsFt = (r.ft && Array.isArray(r.ft.novos_docs)) ? r.ft.novos_docs : null;
   var docsNc = (r.nc && Array.isArray(r.nc.novos_docs)) ? r.nc.novos_docs : null;
-  var docsDisponiveis = !!docsFt && !!docsNc && docsFt.length === totalReaisFt && docsNc.length === totalReaisNc;
-  return { totalReaisFt: totalReaisFt, totalReaisNc: totalReaisNc, totalReais: totalReais, docsDisponiveis: docsDisponiveis };
+  var docsSheet = Array.isArray(r.sheet_novas_docs) ? r.sheet_novas_docs : null;
+  var docsDisponiveis = !!docsFt && !!docsNc && !!docsSheet
+    && docsFt.length === totalReaisFt && docsNc.length === totalReaisNc && docsSheet.length === totalReaisSheet;
+  return { totalReaisFt: totalReaisFt, totalReaisNc: totalReaisNc, totalReaisSheet: totalReaisSheet, totalReais: totalReais, docsDisponiveis: docsDisponiveis };
 }
 
 // Ponto de entrada do botão "Confirmar escrita real": lê o ÚLTIMO dry-run
@@ -22380,21 +22383,24 @@ function sincFinPrepararConfirmacaoEscrita(){
   }
   var estadoExec = sincFinEstadoExecucaoReal(resumo);
   if(estadoExec.totalReais === 0){
-    alert('Não há nenhuma linha nova a inserir (0 FT + 0 NC) neste dry-run. Nada a fazer.');
+    alert('Não há nenhuma linha nova a inserir (0 Sheet + 0 FT + 0 NC) neste dry-run. Nada a fazer.');
     return;
   }
   if(!estadoExec.docsDisponiveis){
-    alert('Este dry-run tem ' + estadoExec.totalReais + ' linhas novas (' + estadoExec.totalReaisFt + ' FT + ' + estadoExec.totalReaisNc + ' NC), mas não guardou as coleções completas necessárias para escrever (dry-run anterior a esta função, ou dados inconsistentes). Repita "Correr dry-run" antes de confirmar a escrita real.');
+    alert('Este dry-run tem ' + estadoExec.totalReais + ' linhas novas (' + estadoExec.totalReaisSheet + ' Sheet + ' + estadoExec.totalReaisFt + ' FT + ' + estadoExec.totalReaisNc + ' NC), mas não guardou as coleções completas necessárias para escrever (dry-run anterior a esta função, ou dados inconsistentes). Repita "Correr dry-run" antes de confirmar a escrita real.');
     return;
   }
+  // Sheet-only já vem no formato de linha ob-tes-receber (sincFinAplicarSheetPura
+  // já a construiu assim) — nunca reprocessada aqui, só copiada do resumo.
+  var linhasSheet = (resumo.sheet_novas_docs || []).slice();
   var linhasFt = resumo.ft.novos_docs.map(function(d){ return sincFinDocParaLinhaTes(d, 'FT'); });
   var linhasNc = resumo.nc.novos_docs.map(function(d){ return sincFinDocParaLinhaTes(d, 'NC'); });
-  var total = linhasFt.length + linhasNc.length;
+  var total = linhasSheet.length + linhasFt.length + linhasNc.length;
   var texto = 'Serão inseridas ' + total + ' linhas novas. 0 linhas existentes serão alteradas.\n\n'
-    + '(' + linhasFt.length + ' FT + ' + linhasNc.length + ' NC — só INSERT, nunca UPDATE/DELETE.\n'
+    + '(' + linhasSheet.length + ' Sheet + ' + linhasFt.length + ' FT + ' + linhasNc.length + ' NC — só INSERT, nunca UPDATE/DELETE.\n'
     + 'Matches, ambiguidades, placeholders e documentos voided/anulados NÃO são tocados.)';
   if(!confirm(texto)){ console.warn('[SincFin] Escrita real cancelada pelo utilizador na confirmação.'); return; }
-  sincFinExecutarEscritaReal(resumo, linhasFt, linhasNc);
+  sincFinExecutarEscritaReal(resumo, linhasSheet, linhasFt, linhasNc);
 }
 window.sincFinPrepararConfirmacaoEscrita = sincFinPrepararConfirmacaoEscrita;
 
@@ -22402,16 +22408,16 @@ window.sincFinPrepararConfirmacaoEscrita = sincFinPrepararConfirmacaoEscrita;
 // manual explícita acima. Cada etapa pode abortar (resultado.ok=false) sem
 // nunca repetir sozinha — falhar aqui é sempre reportar e parar, nunca
 // tentar de novo automaticamente.
-async function sincFinExecutarEscritaReal(resumoDryRun, linhasFt, linhasNc){
+async function sincFinExecutarEscritaReal(resumoDryRun, linhasSheet, linhasFt, linhasNc){
   if(SINC_FIN_ESCRITA_EM_CURSO) return;
   SINC_FIN_ESCRITA_EM_CURSO = true;
   var resultado = {
     ts: new Date().toISOString(), ok: false, etapa: null,
     backup_gerado: false,
-    esperado_inserir_ft: linhasFt.length, esperado_inserir_nc: linhasNc.length,
-    esperado_inserir_total: linhasFt.length + linhasNc.length,
+    esperado_inserir_sheet: linhasSheet.length, esperado_inserir_ft: linhasFt.length, esperado_inserir_nc: linhasNc.length,
+    esperado_inserir_total: linhasSheet.length + linhasFt.length + linhasNc.length,
     total_antes: null, total_depois_esperado: null, total_depois_real: null,
-    ft_inseridas_confirmadas: 0, nc_inseridas_confirmadas: 0,
+    sheet_inseridas_confirmadas: 0, ft_inseridas_confirmadas: 0, nc_inseridas_confirmadas: 0,
     updates_confirmados: 0, deletes_confirmados: 0, erros: [],
   };
   try{
@@ -22445,16 +22451,22 @@ async function sincFinExecutarEscritaReal(resumoDryRun, linhasFt, linhasNc){
     resultado.backup_gerado = sincFinBaixarBackup(antes);
     if(!resultado.backup_gerado) throw new Error('Backup falhou — escrita real abortada antes de qualquer gravação.');
 
-    // 4) Guarda contra duplicação: se alguma das linhas novas já existir
-    // (por _tocoId) na base atual, uma corrida anterior já a inseriu — não
-    // inserir de novo, não repetir sozinho.
+    // 4) Guarda contra duplicação: se alguma das linhas novas já existir na
+    // base atual, uma corrida anterior já a inseriu — não inserir de novo,
+    // não repetir sozinho. FT/NC identificam-se por _tocoId (tipo+id);
+    // Sheet-only por _sheetId — mesma marca de proveniência usada em
+    // sincFinAplicarSheetPura()/o merge da Sheet, nunca outra.
     resultado.etapa = 'verificacao_duplicados';
-    var idsExistentes = {};
-    antes.forEach(function(r){ if(r._tocoId) idsExistentes[String(r.tipo||'') + '|' + String(r._tocoId)] = true; });
-    var todasNovas = linhasFt.concat(linhasNc);
-    var duplicadas = todasNovas.filter(function(l){ return idsExistentes[String(l.tipo) + '|' + String(l._tocoId)]; });
+    var idsTocExistentes = {};
+    antes.forEach(function(r){ if(r._tocoId) idsTocExistentes[String(r.tipo||'') + '|' + String(r._tocoId)] = true; });
+    var idsSheetExistentes = {};
+    antes.forEach(function(r){ if(r._sheetId) idsSheetExistentes[r._sheetId] = true; });
+    var todasNovas = linhasSheet.concat(linhasFt, linhasNc);
+    var duplicadasToc = linhasFt.concat(linhasNc).filter(function(l){ return idsTocExistentes[String(l.tipo) + '|' + String(l._tocoId)]; });
+    var duplicadasSheet = linhasSheet.filter(function(l){ return l._sheetId && idsSheetExistentes[l._sheetId]; });
+    var duplicadas = duplicadasToc.concat(duplicadasSheet);
     if(duplicadas.length){
-      throw new Error(duplicadas.length + ' das linhas novas já existem na base atual (por _tocoId) — provável escrita anterior parcial. Escrita abortada sem inserir nada; verificar manualmente antes de repetir.');
+      throw new Error(duplicadas.length + ' das linhas novas já existem na base atual (por _tocoId/_sheetId) — provável escrita anterior parcial. Escrita abortada sem inserir nada; verificar manualmente antes de repetir.');
     }
 
     // 5) Escrita condicional — só INSERT: novo array = antes.concat(novas),
@@ -22485,6 +22497,9 @@ async function sincFinExecutarEscritaReal(resumoDryRun, linhasFt, linhasNc){
 
     var porTocoId = {};
     final.forEach(function(r){ if(r._tocoId) porTocoId[String(r.tipo||'') + '|' + String(r._tocoId)] = r; });
+    var porSheetId = {};
+    final.forEach(function(r){ if(r._sheetId) porSheetId[r._sheetId] = r; });
+    resultado.sheet_inseridas_confirmadas = linhasSheet.filter(function(l){ return l._sheetId && !!porSheetId[l._sheetId]; }).length;
     resultado.ft_inseridas_confirmadas = linhasFt.filter(function(l){ return !!porTocoId[String(l.tipo) + '|' + String(l._tocoId)]; }).length;
     resultado.nc_inseridas_confirmadas = linhasNc.filter(function(l){ return !!porTocoId[String(l.tipo) + '|' + String(l._tocoId)]; }).length;
 
@@ -22496,7 +22511,15 @@ async function sincFinExecutarEscritaReal(resumoDryRun, linhasFt, linhasNc){
     resultado.deletes_confirmados = deletados.length;
     resultado.updates_confirmados = alterados.length;
 
+    // total_depois_real tem de bater tanto com a conta local (antes+novas)
+    // como com total_final_esperado já mostrado no dry-run aprovado (570 =
+    // 487 base pós-Sheet + 75 FT + 8 NC) — as duas contas são a mesma soma
+    // vistas de dois ângulos; exigir as duas apanha qualquer divergência
+    // entre o que o dry-run prometeu e o que a escrita real produziu.
+    var esperadoNoDryRun = resumoDryRun.total_final_esperado;
     var fechouCerto = resultado.total_depois_real === antes.length + todasNovas.length
+      && (esperadoNoDryRun == null || resultado.total_depois_real === esperadoNoDryRun)
+      && resultado.sheet_inseridas_confirmadas === linhasSheet.length
       && resultado.ft_inseridas_confirmadas === linhasFt.length
       && resultado.nc_inseridas_confirmadas === linhasNc.length
       && resultado.deletes_confirmados === 0
@@ -22787,12 +22810,12 @@ function sincFinRenderPainel(state){
       html += '<div style="font-size:12.5px;color:var(--muted)">0 linhas novas neste dry-run — nada para escrever.</div>';
     } else if(estadoExec.docsDisponiveis){
       html += '<div style="font-size:12.5px;margin-bottom:10px"><b>' + estadoExec.totalReais + ' linhas novas neste dry-run</b> ('
-        + estadoExec.totalReaisFt + ' FT + ' + estadoExec.totalReaisNc + ' NC). <b>0</b> linhas existentes serão alteradas.<br>'
+        + estadoExec.totalReaisSheet + ' Sheet + ' + estadoExec.totalReaisFt + ' FT + ' + estadoExec.totalReaisNc + ' NC). <b>0</b> linhas existentes serão alteradas.<br>'
         + '<span style="color:var(--muted)">Matches, ambiguidades, placeholders e documentos voided/anulados não são tocados. Backup automático antes de escrever. Confirmação manual obrigatória.</span></div>'
         + '<button onclick="sincFinPrepararConfirmacaoEscrita()" style="background:#ff453a;border:none;color:#fff;border-radius:8px;padding:9px 18px;cursor:pointer;font-size:13px;font-weight:600">⚠ Confirmar escrita real (insert-only)</button>';
     } else {
       html += '<div style="font-size:12.5px;color:#f5a623">⚠ ' + estadoExec.totalReais + ' linhas novas neste dry-run ('
-        + estadoExec.totalReaisFt + ' FT + ' + estadoExec.totalReaisNc + ' NC), mas esta corrida não guardou as coleções completas necessárias para escrever — provavelmente um dry-run anterior a esta função, ainda guardado. <b>Repita "Correr dry-run"</b> antes de poder confirmar a escrita real.</div>';
+        + estadoExec.totalReaisSheet + ' Sheet + ' + estadoExec.totalReaisFt + ' FT + ' + estadoExec.totalReaisNc + ' NC), mas esta corrida não guardou as coleções completas necessárias para escrever — provavelmente um dry-run anterior a esta função, ainda guardado. <b>Repita "Correr dry-run"</b> antes de poder confirmar a escrita real.</div>';
     }
     html += '</div>';
   }
@@ -22805,8 +22828,10 @@ function sincFinRenderPainel(state){
       + cartao('Backup gerado', re.backup_gerado ? '✓' : '✗', re.backup_gerado ? '#34c759' : '#ff453a')
       + cartao('Total antes (releitura)', re.total_antes != null ? re.total_antes : '—')
       + cartao('Total depois (releitura)', re.total_depois_real != null ? re.total_depois_real : '—', '#60a5fa')
+      + cartao('Sheet inseridas confirmadas', re.sheet_inseridas_confirmadas + ' / ' + re.esperado_inserir_sheet, re.sheet_inseridas_confirmadas === re.esperado_inserir_sheet ? '#34c759' : '#ff453a')
       + cartao('FT inseridas confirmadas', re.ft_inseridas_confirmadas + ' / ' + re.esperado_inserir_ft, re.ft_inseridas_confirmadas === re.esperado_inserir_ft ? '#34c759' : '#ff453a')
       + cartao('NC inseridas confirmadas', re.nc_inseridas_confirmadas + ' / ' + re.esperado_inserir_nc, re.nc_inseridas_confirmadas === re.esperado_inserir_nc ? '#34c759' : '#ff453a')
+      + cartao('Total inserido', (re.sheet_inseridas_confirmadas + re.ft_inseridas_confirmadas + re.nc_inseridas_confirmadas) + ' / ' + re.esperado_inserir_total, (re.sheet_inseridas_confirmadas + re.ft_inseridas_confirmadas + re.nc_inseridas_confirmadas) === re.esperado_inserir_total ? '#34c759' : '#ff453a')
       + cartao('Updates confirmados', re.updates_confirmados, re.updates_confirmados === 0 ? '#34c759' : '#ff453a')
       + cartao('Deletes confirmados', re.deletes_confirmados, re.deletes_confirmados === 0 ? '#34c759' : '#ff453a')
       + '</div>';
@@ -22918,8 +22943,20 @@ async function sincronizarFinanceiroCentral(){
     }
     resumo.linhas_sheet_carregadas = (window.AV_SHEET_ROWS && window.AV_SHEET_ROWS.length) || 0;
     // Base de trabalho PURA e local — nunca o global TES_RECEBER.
+    var idsSheetAntesDoMerge = {};
+    existentesSupabase.forEach(function(r){ if(r._sheetId) idsSheetAntesDoMerge[r._sheetId] = true; });
     var baseTrabalho = sincFinAplicarSheetPura(existentesSupabase, window.AV_SHEET_ROWS || []);
     resumo.tamanho_base_trabalho_pos_sheet = baseTrabalho.length;
+    // Linhas Sheet-only: exatamente as que sincFinAplicarSheetPura() ACRESCENTOU
+    // a existentesSupabase (nunca recalculadas por outro critério) — identificadas
+    // pela mesma marca _sheetId que a própria função usa para distinguir "já
+    // existia" de "é nova" (linhas atualizadas em linhas já existentes não têm
+    // _sheetId novo, por isso ficam de fora). Guardadas aqui, já no formato de
+    // linha ob-tes-receber, para a execução real controlada as poder inserir sem
+    // reprocessar a Sheet outra vez.
+    var sheetNovasDocs = baseTrabalho.filter(function(r){ return r._sheetId && !idsSheetAntesDoMerge[r._sheetId]; });
+    resumo.sheet_novas_docs = sheetNovasDocs;
+    resumo.sheet_novas = sheetNovasDocs.length;
 
     // 4) TOConline — FT + NC + recibos, paginação completa via sync_docs.
     // Se qualquer recurso não completar, aborta — sem paginação completa
