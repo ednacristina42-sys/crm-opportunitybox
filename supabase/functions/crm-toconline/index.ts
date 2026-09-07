@@ -778,40 +778,6 @@ function achatarDocumento(c: Record<string, unknown>) {
 }
 type DocAchatado = ReturnType<typeof achatarDocumento>;
 
-// ── Hidratação de NC incompletas (sync_docs&tipo=credit_notes) ────────────
-// Confirmado em 07/09: auth/paginação/FT/receipts/clients funcionam bem
-// (514 FT elegíveis, 4385 recibos, 1297 clientes) — só a LISTAGEM de
-// credit_notes devolve objetos resumidos (attributes essencialmente vazios:
-// date/document_no/gross_total/net_total/customer_business_name em falta).
-// Correção cirúrgica, só para credit_notes: quando um documento da listagem
-// vem incompleto, busca o detalhe pelo próprio `id` no mesmo endpoint
-// resolvido (commercial_sales_documents/{id}) ANTES de achatar — nunca
-// altera invoices, receipts, clients, OAuth, matching ou o Supabase.
-function documentoIncompleto(d: DocAchatado): boolean {
-  return !d.date || !d.document_no || !d.gross_total || !d.net_total || !d.customer_business_name;
-}
-// Extrai o objeto único (JSON:API {data:{...}} ou {data:[...]}[0], ou o
-// próprio objeto se já vier sem envelope) de uma resposta de detalhe.
-function extrairUnico(payload: unknown): Record<string, unknown> | null {
-  if (!payload || typeof payload !== "object") return null;
-  const p = payload as Record<string, unknown>;
-  if (p.data && typeof p.data === "object" && !Array.isArray(p.data)) return p.data as Record<string, unknown>;
-  if (Array.isArray(p.data) && p.data.length) return p.data[0] as Record<string, unknown>;
-  if (p.id || p.attributes) return p;
-  return null;
-}
-async function buscarDetalheDocumento(path: string, id: string, token: string): Promise<DocAchatado | null> {
-  try {
-    const r = await tocGet(`${path}/${encodeURIComponent(id)}`, token);
-    if (!r.ok) return null;
-    let payload: unknown;
-    try { payload = await r.json(); } catch { return null; }
-    const obj = extrairUnico(payload);
-    if (!obj) return null;
-    return achatarDocumento(obj);
-  } catch { return null; }
-}
-
 async function auditoriaFinanceira(parte: string): Promise<Record<string, unknown>> {
   const inicio = Date.now();
   const token = await getAccessToken();
@@ -1462,10 +1428,6 @@ async function sincDocsLote(
   let terminou = false; // fim real da paginação (página curta ou vazia) — nunca escreve nada, só leitura
   let parcial = false;  // parou por orçamento de tempo desta chamada, sem chegar ao fim
 
-  // Diagnóstico temporário — só populado para credit_notes.
-  let ncHidratadasTentativas = 0, ncHidratadasOk = 0, ncHidratadasFalha = 0;
-  const ncAmostraHidratadas: Record<string, unknown>[] = [];
-
   for (; paginasProcessadas < paginasPorChamada; paginasProcessadas++) {
     if (Date.now() - inicioChamada > 90000) { parcial = true; break; }
     const qs = [cfg.query, escolhido ? `include=${encodeURIComponent(escolhido)}` : "", `page[size]=${PAGE_SIZE}`, `page[number]=${pagina}`]
@@ -1479,46 +1441,38 @@ async function sincDocsLote(
     try { payload = await res.json(); } catch { terminou = true; break; }
     const lote = extrairLista(payload);
     if (!lote.length) { terminou = true; break; }
-    for (const doc of lote as Record<string, unknown>[]) {
-      let flat = achatarDocumento(doc);
-      if (recurso === "credit_notes" && documentoIncompleto(flat)) {
-        ncHidratadasTentativas++;
-        const hidratado = await buscarDetalheDocumento(path, flat.id, token);
-        if (hidratado) {
-          ncHidratadasOk++;
-          flat = hidratado;
-          if (ncAmostraHidratadas.length < 3) {
-            ncAmostraHidratadas.push({
-              id: flat.id, document_no: flat.document_no, date: flat.date,
-              gross_total: flat.gross_total, net_total: flat.net_total,
-              cliente: flat.customer_business_name,
-            });
-          }
-        } else {
-          ncHidratadasFalha++;
-        }
-      }
-      data.push(flat);
-    }
+    for (const doc of lote as Record<string, unknown>[]) data.push(achatarDocumento(doc));
     pagina++;
     if (lote.length < PAGE_SIZE) { terminou = true; break; }
     // `payload`/`lote` saem de scope aqui — nada retem os campos brutos.
   }
 
-  const resultado: Record<string, unknown> = {
+  return {
     tipo: recurso, pagina_inicio: paginaInicio, pagina_seguinte: pagina,
     paginas_processadas: paginasProcessadas, contagem: data.length,
     paginacao_completa: terminou, parcial,
     include_escolhido: escolhido, tentativas_include: tentativas,
     data,
   };
-  if (recurso === "credit_notes") {
-    resultado.diagnostico_nc_hidratacao = {
-      tentativas: ncHidratadasTentativas, sucesso: ncHidratadasOk, falha: ncHidratadasFalha,
-      amostra: ncAmostraHidratadas,
-    };
-  }
-  return resultado;
+}
+
+// ── DIAGNÓSTICO TEMPORÁRIO — resource=nc_raw_probe&id=<id> ─────────────────
+// Só leitura, exige autenticação normal (JWT/x-api-key), nunca escreve nada.
+// A hidratação de NC (v21) foi revertida em v22 por ter reduzido o universo
+// de 260 para 100 NC — causa não confirmada sem ver o JSON bruto real do
+// TOConline. Este resource devolve o corpo bruto (SEM achatarDocumento) de
+// UM documento, pelo `id` real (obtido em sync_docs&tipo=credit_notes),
+// para confirmar o nome real dos campos antes de qualquer nova tentativa de
+// correção. Remover depois de diagnosticado. Nunca expõe tokens/segredos —
+// só o que o próprio TOConline devolve para esse documento.
+async function ncRawProbe(id: string): Promise<Record<string, unknown>> {
+  const token = await getAccessToken();
+  const path = await resolverPath("credit_notes", token);
+  const r = await tocGet(`${path}/${encodeURIComponent(id)}`, token);
+  const texto = await r.text();
+  let corpo: unknown;
+  try { corpo = JSON.parse(texto); } catch { corpo = texto; }
+  return { endpoint: `${apiBase()}${path}/${id}`, http_status: r.status, corpo_bruto: corpo };
 }
 
 Deno.serve(async (req: Request) => {
@@ -1677,6 +1631,14 @@ Deno.serve(async (req: Request) => {
 
     if (pedido === "diag") return json(await diagnostico(), 200);
 
+    // Diagnóstico temporário (ver comentário acima de ncRawProbe). Devolve o
+    // JSON bruto de UM documento de credit_notes, pelo id real.
+    if (pedido === "nc_raw_probe") {
+      const id = url.searchParams.get("id") ?? "";
+      if (!id) return json({ error: "Falta ?id=<id real de uma NC, obtido em sync_docs&tipo=credit_notes>" }, 400);
+      return json(await ncRawProbe(id), 200);
+    }
+
     // Fase C — auditoria financeira, somente leitura (ver bloco acima).
     // ?parte=invoices|credit_notes|receipts corre so essa parte (util se o
     // orcamento de tempo de uma corrida "tudo" nao chegar para as tres).
@@ -1747,7 +1709,7 @@ Deno.serve(async (req: Request) => {
       return json({ resource: pedido, resolved: recurso, path: pathCache[recurso], count: data.length, data }, 200);
     }
 
-    return json({ error: "resource invalido. Use: sync | estado | customers | clients | invoices | credit_notes | receipts | token | diag | auth | finance_audit | finance_audit_estado | finance_reconcile | finance_reconcile_estado | sync_docs" }, 400);
+    return json({ error: "resource invalido. Use: sync | estado | customers | clients | invoices | credit_notes | receipts | token | diag | auth | finance_audit | finance_audit_estado | finance_reconcile | finance_reconcile_estado | sync_docs | nc_raw_probe" }, 400);
   } catch (e) {
     if (e instanceof HttpError) {
       // So o callback devolve HTML (e uma pagina para pessoa ler). O auth
