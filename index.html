@@ -22525,16 +22525,62 @@ window.sincFinExecutarEscritaReal = sincFinExecutarEscritaReal;
 // ou o limite de segurança de chamadas abaixo, que nunca deveria ser
 // atingido com paginas=15 — 61 páginas de faturas cabem em 5 chamadas),
 // devolve completo:false — quem chama decide não gravar ob-tes-receber.
+//
+// receipts (só receipts — FT/NC continuam exactamente como acima, paginas=15,
+// sem retry): o histórico de recibos (~4386, a crescer) faz `paginas=15`
+// (1500 recibos/chamada) ultrapassar o tempo de execução da Edge Function e
+// devolver 504 antes de responder — confirmado: `paginas=1` responde bem
+// (100 registos, pagina_seguinte=2), `paginas=15` não. Correcção, só para
+// este tipo: lotes de RECEIPTS_PAGINAS_POR_CHAMADA páginas por chamada HTTP
+// (bem dentro do tempo de resposta) e retry limitado só em 502/504
+// (tipicamente transitórios), sem nunca reprocessar nem descartar páginas já
+// acumuladas em `dados` — só se avança `pagina` depois de uma chamada bem
+// sucedida. `pagina_seguinte` é sempre validada antes de continuar, para
+// nunca repetir nem saltar páginas por uma resposta inesperada.
+var RECEIPTS_PAGINAS_POR_CHAMADA = 4;
+var RECEIPTS_MAX_TENTATIVAS = 3;
+var RECEIPTS_MAX_CHAMADAS = 120; // mesmo orçamento de páginas que FT/NC (15*30), em lotes menores
+function sincFinEsperaMs(ms){ return new Promise(function(resolve){ setTimeout(resolve, ms); }); }
+
 async function sincFinBuscarRecursoCompleto(tipo){
+  var ehReceipts = tipo === 'receipts';
+  var paginasPorChamada = ehReceipts ? RECEIPTS_PAGINAS_POR_CHAMADA : 15;
+  var maxChamadas = ehReceipts ? RECEIPTS_MAX_CHAMADAS : 30;
   var pagina = 1, dados = [], chamadas = 0, completo = false;
   while(true){
     chamadas++;
-    var j = await tocoEF('sync_docs', 'tipo=' + encodeURIComponent(tipo) + '&pagina=' + pagina + '&paginas=15');
-    if(j.error) throw new Error(tipo + ': ' + j.error);
+    var j = null, erroChamada = null;
+    var maxTentativas = ehReceipts ? RECEIPTS_MAX_TENTATIVAS : 1;
+    for(var tentativa = 1; tentativa <= maxTentativas; tentativa++){
+      try{
+        j = await tocoEF('sync_docs', 'tipo=' + encodeURIComponent(tipo) + '&pagina=' + pagina + '&paginas=' + paginasPorChamada);
+        if(j.error) throw new Error(j.error);
+        erroChamada = null;
+        break;
+      }catch(eChamada){
+        j = null;
+        erroChamada = eChamada;
+        var transitorio = ehReceipts && /HTTP 50[24]/.test(String(eChamada && eChamada.message));
+        if(transitorio && tentativa < maxTentativas){
+          await sincFinEsperaMs(1500 * tentativa);
+          continue;
+        }
+        break;
+      }
+    }
+    if(!j) throw new Error(tipo + ': ' + (erroChamada ? erroChamada.message : 'falha desconhecida') +
+      (ehReceipts ? ' (após ' + maxTentativas + ' tentativa(s), páginas ' + pagina + '-' + (pagina + paginasPorChamada - 1) + ')' : ''));
     dados = dados.concat(j.data || []);
-    pagina = j.pagina_seguinte;
+    // Validação de pagina_seguinte: sem isto, uma resposta inesperada podia
+    // repetir a mesma página (contagem duplicada) ou saltar páginas (recibos
+    // perdidos em silêncio) sem que nada o detectasse.
+    var proxima = Number(j.pagina_seguinte);
+    if(!j.paginacao_completa && !(Number.isFinite(proxima) && proxima > pagina)){
+      throw new Error(tipo + ': pagina_seguinte inválida (' + JSON.stringify(j.pagina_seguinte) + ') depois da página ' + pagina + ' — a parar para não repetir nem saltar páginas.');
+    }
+    pagina = proxima;
     if(j.paginacao_completa){ completo = true; break; }
-    if(chamadas > 30){ console.warn('[SincFin] ' + tipo + ': mais de 30 chamadas sem completar, a parar.'); break; }
+    if(chamadas > maxChamadas){ console.warn('[SincFin] ' + tipo + ': mais de ' + maxChamadas + ' chamadas sem completar, a parar.'); break; }
   }
   return { tipo: tipo, dados: dados, completo: completo, chamadas: chamadas };
 }
