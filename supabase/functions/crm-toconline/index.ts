@@ -759,13 +759,22 @@ async function sincronizarClientes(seco: boolean, via: string) {
 const VENDEDOR_NAO_CONFIRMADO = "VENDEDOR NÃO CONFIRMADO — NÃO USAR NO RANKING";
 const NOMES_COMERCIAIS_CONHECIDOS = ["Paulo Faria", "Rui Mota", "Humberto Estrelinha", "André Nolasco"];
 
+// Confirmado em 07/09 com JSON real (nc_raw_probe, 3 documentos reais):
+// a listagem (filter[document_type]=NC) devolve JSON:API normal
+// (attributes/relationships, como sempre para invoices/receipts), mas o
+// endpoint de DETALHE (commercial_sales_documents/{id}) devolve o
+// documento como objeto direto — document_no/date/gross_total/net_total/
+// customer_business_name direto no topo, sem envelope attributes. `a = c.attributes
+// ?? c` aceita os dois formatos sem mudar nada para invoices/receipts
+// (que sempre têm `attributes` definido — o fallback só ativa quando
+// `attributes` está genuinamente ausente).
 function achatarDocumento(c: Record<string, unknown>) {
-  const a = (c.attributes ?? {}) as Record<string, unknown>;
+  const a = (c.attributes ?? c) as Record<string, unknown>;
   const rel = (c.relationships ?? {}) as Record<string, { data?: { id?: string; type?: string } }>;
   const userRel = rel.user?.data;
   const num = (x: unknown) => (typeof x === "number" ? x : parseFloat(String(x ?? "")) || 0);
   return {
-    id: String(c.id), document_no: val(a.document_no), document_type: val(a.document_type),
+    id: String(c.id ?? a.id ?? ""), document_no: val(a.document_no), document_type: val(a.document_type),
     date: val(a.date), due_date: val(a.due_date),
     net_total: num(a.net_total), gross_total: num(a.gross_total), tax_payable: num(a.tax_payable),
     pending_total: num(a.pending_total),
@@ -777,6 +786,76 @@ function achatarDocumento(c: Record<string, unknown>) {
   };
 }
 type DocAchatado = ReturnType<typeof achatarDocumento>;
+
+// ── Hidratação de NC incompletas (sync_docs&tipo=credit_notes) ────────────
+// Causa confirmada em 07/09 com JSON real: a listagem de credit_notes vem
+// com attributes essencialmente vazios; o endpoint de detalhe
+// (commercial_sales_documents/{id}) tem os dados reais, num formato
+// diferente (já suportado por achatarDocumento() acima). A v21 tentou
+// hidratar sequencialmente (~100 chamadas extra por página) e isso
+// derrubou a paginação de 260 para 100 NC — corrigido aqui com
+// concorrência limitada (lotes de 8, Promise.allSettled), nunca 100
+// chamadas seguidas. Só ativa para credit_notes; nunca altera invoices,
+// receipts, clients, OAuth, matching ou o Supabase.
+function documentoIncompleto(d: DocAchatado): boolean {
+  return !d.date || !d.document_no || !d.gross_total || !d.net_total || !d.customer_business_name;
+}
+function extrairUnico(payload: unknown): Record<string, unknown> | null {
+  if (!payload || typeof payload !== "object") return null;
+  const p = payload as Record<string, unknown>;
+  if (p.data && typeof p.data === "object" && !Array.isArray(p.data)) return p.data as Record<string, unknown>;
+  if (Array.isArray(p.data) && p.data.length) return p.data[0] as Record<string, unknown>;
+  if (p.id || p.attributes) return p;
+  return null;
+}
+async function buscarDetalheDocumento(path: string, id: string, token: string): Promise<DocAchatado | null> {
+  try {
+    const r = await tocGet(`${path}/${encodeURIComponent(id)}`, token);
+    if (!r.ok) return null;
+    let payload: unknown;
+    try { payload = await r.json(); } catch { return null; }
+    const obj = extrairUnico(payload);
+    if (!obj) return null;
+    return achatarDocumento(obj);
+  } catch { return null; }
+}
+const NC_HIDRATACAO_LOTE = 8;
+// Hidrata os documentos incompletos de UMA página de credit_notes, em lotes
+// de NC_HIDRATACAO_LOTE (Promise.allSettled — nunca sequencial). Se o
+// detalhe falhar, o documento original (incompleto) é mantido em `flats`
+// tal como veio da listagem — nunca descartado, nunca substitui a página
+// inteira. Muta `flats` in-place e devolve as métricas desta página.
+async function hidratarPaginaNc(
+  flats: DocAchatado[], path: string, token: string,
+  amostra: Record<string, unknown>[],
+): Promise<{ tentativas: number; sucesso: number; falha: number }> {
+  const idxIncompletos: number[] = [];
+  flats.forEach((f, i) => { if (documentoIncompleto(f)) idxIncompletos.push(i); });
+  let sucesso = 0, falha = 0;
+  for (let ini = 0; ini < idxIncompletos.length; ini += NC_HIDRATACAO_LOTE) {
+    const grupo = idxIncompletos.slice(ini, ini + NC_HIDRATACAO_LOTE);
+    const resultados = await Promise.allSettled(
+      grupo.map((idx) => buscarDetalheDocumento(path, flats[idx].id, token)));
+    resultados.forEach((r, gi) => {
+      const idx = grupo[gi];
+      if (r.status === "fulfilled" && r.value) {
+        sucesso++;
+        flats[idx] = r.value;
+        if (amostra.length < 3) {
+          const f = flats[idx];
+          amostra.push({
+            id: f.id, document_no: f.document_no, date: f.date,
+            gross_total: f.gross_total, net_total: f.net_total, cliente: f.customer_business_name,
+          });
+        }
+      } else {
+        falha++;
+        // flats[idx] já é o documento original incompleto — mantém-se.
+      }
+    });
+  }
+  return { tentativas: idxIncompletos.length, sucesso, falha };
+}
 
 async function auditoriaFinanceira(parte: string): Promise<Record<string, unknown>> {
   const inicio = Date.now();
@@ -1428,6 +1507,10 @@ async function sincDocsLote(
   let terminou = false; // fim real da paginação (página curta ou vazia) — nunca escreve nada, só leitura
   let parcial = false;  // parou por orçamento de tempo desta chamada, sem chegar ao fim
 
+  // Diagnóstico — só populado para credit_notes.
+  let ncListadas = 0, ncHidratadasTentativas = 0, ncHidratadasOk = 0, ncHidratadasFalha = 0;
+  const ncAmostraHidratadas: Record<string, unknown>[] = [];
+
   for (; paginasProcessadas < paginasPorChamada; paginasProcessadas++) {
     if (Date.now() - inicioChamada > 90000) { parcial = true; break; }
     const qs = [cfg.query, escolhido ? `include=${encodeURIComponent(escolhido)}` : "", `page[size]=${PAGE_SIZE}`, `page[number]=${pagina}`]
@@ -1441,19 +1524,40 @@ async function sincDocsLote(
     try { payload = await res.json(); } catch { terminou = true; break; }
     const lote = extrairLista(payload);
     if (!lote.length) { terminou = true; break; }
-    for (const doc of lote as Record<string, unknown>[]) data.push(achatarDocumento(doc));
+    if (recurso === "credit_notes") {
+      // Achata a página inteira primeiro (nunca perde nenhum documento),
+      // depois hidrata só os incompletos, em lotes concorrentes — nunca
+      // sequencial, nunca substitui a coleção da página.
+      const flats = (lote as Record<string, unknown>[]).map(achatarDocumento);
+      ncListadas += flats.length;
+      const r = await hidratarPaginaNc(flats, path, token, ncAmostraHidratadas);
+      ncHidratadasTentativas += r.tentativas;
+      ncHidratadasOk += r.sucesso;
+      ncHidratadasFalha += r.falha;
+      for (const f of flats) data.push(f);
+    } else {
+      for (const doc of lote as Record<string, unknown>[]) data.push(achatarDocumento(doc));
+    }
     pagina++;
     if (lote.length < PAGE_SIZE) { terminou = true; break; }
     // `payload`/`lote` saem de scope aqui — nada retem os campos brutos.
   }
 
-  return {
+  const resultado: Record<string, unknown> = {
     tipo: recurso, pagina_inicio: paginaInicio, pagina_seguinte: pagina,
     paginas_processadas: paginasProcessadas, contagem: data.length,
     paginacao_completa: terminou, parcial,
     include_escolhido: escolhido, tentativas_include: tentativas,
     data,
   };
+  if (recurso === "credit_notes") {
+    resultado.diagnostico_nc_hidratacao = {
+      listadas: ncListadas, tentativas: ncHidratadasTentativas,
+      sucesso: ncHidratadasOk, falha: ncHidratadasFalha,
+      amostra: ncAmostraHidratadas,
+    };
+  }
+  return resultado;
 }
 
 // ── DIAGNÓSTICO TEMPORÁRIO — resource=nc_raw_probe&id=<id> ─────────────────
