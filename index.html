@@ -1371,6 +1371,23 @@ async function afLoad(){
     afSet('af-kpi-desp-aprovar', String(nDespAprovar));
   } catch(e){ console.warn('[AF] Despesas:', e); }
 
+  // ── 2b. Massa Salarial — fonte central finMassaSalarialMes() ────
+  // Antes: campo nunca escrito por nenhum código (placeholder "—"
+  // permanente, texto "disponível após TOConline" nunca substituído).
+  // Nunca soma Fecho de Ordenados E a conta já enviada à Tesouraria —
+  // só uma das duas fontes, nunca as duas. Só existe dado líquido; nunca
+  // finge encargos patronais/custo total empresa.
+  try {
+    var msRes = (typeof finMassaSalarialMes==='function') ? finMassaSalarialMes(agr.getFullYear(), agr.getMonth()+1) : null;
+    if(msRes){
+      afSet('af-kpi-salarios', afFmt(msRes.valor) + ' líq.');
+      afSet('af-kpi-salarios-sub', (msRes.fonte==='tesouraria' ? 'Tesouraria' : 'Fecho de Ordenados') + ' · ' + nomeMes);
+    } else {
+      afSet('af-kpi-salarios', '—');
+      afSet('af-kpi-salarios-sub', 'sem Fecho de Ordenados nem envio à Tesouraria este mês');
+    }
+  } catch(e){ console.warn('[AF] Massa Salarial:', e); }
+
   // ── 3. Horas Ponto hoje + Faltas pendentes (app de campo) ───
   try {
     if(ecSupabase){
@@ -9685,7 +9702,7 @@ tbody tr:hover{background:rgba(255,203,45,.05)}
         <div class="af-kpi">
           <div class="lbl">👥 Massa Salarial</div>
           <div class="val" id="af-kpi-salarios">—</div>
-          <div class="sub">disponível após TOConline</div>
+          <div class="sub" id="af-kpi-salarios-sub">sem Fecho de Ordenados nem envio à Tesouraria este mês</div>
         </div>
         <div class="af-kpi blue">
           <div class="lbl">⏱️ Horas Ponto (hoje)</div>
@@ -18510,32 +18527,34 @@ function tocoFaturasCache(){
 }
 function renderDashboardCFO(){
   var set=function(id,v){ var e=document.getElementById(id); if(e) e.textContent=v; };
-  var docs = tocoFaturasCache();
   var hoje = new Date();
-  var mesAtual = hoje.toISOString().slice(0,7);
-  var mesAnterior = new Date(hoje.getFullYear(), hoje.getMonth()-1, 1).toISOString().slice(0,7);
-  var dataDoc = function(d){ return d.Date||d.DocumentDate||d.CreatedAt||''; };
-  var valorDoc = function(d){ return parseFloat(d.TotalAmount||d.Total||d.Amount||0)||0; };
-  var faturasValidas = docs.filter(function(d){ return (d._tipo||d.DocumentType)==='FT'; });
-  var receitaMes = faturasValidas.filter(function(d){ return String(dataDoc(d)).slice(0,7)===mesAtual; }).reduce(function(s,d){return s+valorDoc(d);},0);
-  var receitaMesAnt = faturasValidas.filter(function(d){ return String(dataDoc(d)).slice(0,7)===mesAnterior; }).reduce(function(s,d){return s+valorDoc(d);},0);
-  // Fallback para AV_ANOS 2026 quando TocOnline não tem dados
-  if(!receitaMes && typeof AV_ANOS!=='undefined'){
+  var anoAtual=hoje.getFullYear(), mesAtualNum=hoje.getMonth()+1;
+  var dAnt = new Date(hoje.getFullYear(), hoje.getMonth()-1, 1);
+  var anoAnt=dAnt.getFullYear(), mesAntNum=dAnt.getMonth()+1;
+
+  // Fonte canónica: finTotaisMesReal() (TES_RECEBER líquido + TES_CONTAS
+  // pagas + FIN_DESPESAS aprovadas) — a mesma função usada pelo gráfico
+  // revChart, para nunca haver duas lógicas divergentes. Substitui
+  // tocoFaturasCache()/AV_ANOS como fonte preferencial de receita e
+  // TES_LOG_DESPESAS+TES_CONTAS(Paga) como custo (esse par duplicava a
+  // mesma despesa de logística assim que a conta espelho era paga —
+  // bug confirmado na auditoria; finTotaisMesReal nunca lê
+  // TES_LOG_DESPESAS).
+  var totAtual = (typeof finTotaisMesReal==='function') ? finTotaisMesReal(anoAtual, mesAtualNum) : {receita:0,custo:0,temReceberCarregado:false};
+  var totAnt   = (typeof finTotaisMesReal==='function') ? finTotaisMesReal(anoAnt, mesAntNum) : {receita:0,custo:0,temReceberCarregado:false};
+  var receitaMes = totAtual.receita, custoMes = totAtual.custo;
+  var receitaMesAnt = totAnt.receita, custoMesAnt = totAnt.custo;
+
+  // AV_ANOS: legado histórico visual, só quando TES_RECEBER nunca foi
+  // carregado nesta sessão (temReceberCarregado===false) — nunca
+  // substitui um mês real com receita genuinamente zero.
+  if(!totAtual.temReceberCarregado && !totAnt.temReceberCarregado && typeof AV_ANOS!=='undefined'){
     var ano2026=AV_ANOS.find(function(a){return a.ano===2026;});
     if(ano2026&&ano2026.meses){
-      var mAtualIdx=parseInt(mesAtual.slice(5))-1;
-      var mAntIdx=parseInt(mesAnterior.slice(5))-1;
-      if(mesAtual.startsWith('2026') && ano2026.meses[mAtualIdx]) receitaMes=ano2026.meses[mAtualIdx];
-      if(mesAnterior.startsWith('2026') && ano2026.meses[mAntIdx]) receitaMesAnt=ano2026.meses[mAntIdx];
+      if(anoAtual===2026 && ano2026.meses[mesAtualNum-1]) receitaMes=ano2026.meses[mesAtualNum-1];
+      if(anoAnt===2026 && ano2026.meses[mesAntNum-1]) receitaMesAnt=ano2026.meses[mesAntNum-1];
     }
   }
-
-  var contas = (typeof TES_CONTAS!=='undefined'?TES_CONTAS:[]);
-  var log = (typeof TES_LOG_DESPESAS!=='undefined'?TES_LOG_DESPESAS:[]);
-  var custoMes = log.filter(function(d){return d.data && d.data.slice(0,7)===mesAtual;}).reduce(function(s,d){return s+(d.valor||0);},0)
-               + contas.filter(function(c){return c.estado==='Paga' && c.data && c.data.slice(0,7)===mesAtual;}).reduce(function(s,c){return s+(c.valor||0);},0);
-  var custoMesAnt = log.filter(function(d){return d.data && d.data.slice(0,7)===mesAnterior;}).reduce(function(s,d){return s+(d.valor||0);},0)
-               + contas.filter(function(c){return c.estado==='Paga' && c.data && c.data.slice(0,7)===mesAnterior;}).reduce(function(s,c){return s+(c.valor||0);},0);
 
   var orcAll = (typeof orcData!=='undefined'?orcData:[]);
   var projetosActivos = orcAll.filter(function(o){return o.st==='Aprovado'||o.st==='Em Produção'||o.st==='Concluído';});
@@ -18545,9 +18564,19 @@ function renderDashboardCFO(){
     return v>0 && cTotal/v>0.85;
   }).length;
 
-  var vencidas = faturasValidas.filter(function(d){ return tocoGetEstado(d)==='Vencido'; });
-  var totalVencido = vencidas.reduce(function(s,d){return s+valorDoc(d);},0);
+  // A receber vencido: TES_RECEBER (só saldo ainda aberto/vencido) —
+  // antes vinha de tocoFaturasCache()/tocoGetEstado(), agora a mesma
+  // fonte canónica usada em toda a Central Financeira.
+  var receberArr = (typeof TES_RECEBER!=='undefined'?TES_RECEBER:[]);
+  var vencidas = receberArr.filter(function(f){
+    if(f.estado==='Recebido') return false;
+    var d = (typeof parseVencTes==='function') ? parseVencTes(f.vencimento) : new Date(NaN);
+    return !isNaN(d) && d < hoje;
+  });
+  var totalVencido = vencidas.reduce(function(s,f){return s+(parseFloat(f.total||f.valorLiq||0)||0);},0);
 
+  // Margem: só calculada quando há receita real no mês (evita 0/0
+  // enganoso); nunca preenchida com demo/Math.random()/valor fixo.
   var margem = receitaMes>0 ? (receitaMes-custoMes)/receitaMes*100 : 0;
   var margemAnt = receitaMesAnt>0 ? (receitaMesAnt-custoMesAnt)/receitaMesAnt*100 : 0;
 
@@ -18555,17 +18584,17 @@ function renderDashboardCFO(){
   var deltaReceita = deltaPct(receitaMes, receitaMesAnt);
   var deltaCusto = deltaPct(custoMes, custoMesAnt);
 
-  set('dash-kpi-receita-lbl','Receita ' + hoje.toLocaleDateString('pt-PT',{month:'short',year:'2-digit'}));
+  set('dash-kpi-receita-lbl','Receita líq. ' + hoje.toLocaleDateString('pt-PT',{month:'short',year:'2-digit'}));
   set('dash-kpi-receita-val', fmt(receitaMes));
   set('dash-kpi-receita-dlt', deltaReceita===null ? '—' : ((deltaReceita>=0?'↑ ':'↓ ')+Math.abs(deltaReceita).toFixed(1)+'% vs mês anterior'));
-  set('dash-kpi-receita-sub', faturasValidas.length ? (faturasValidas.length+' faturas sincronizadas') : (receitaMes?'Comparativo de Vendas 2026':'Sem dados sincronizados do TocOnline'));
+  set('dash-kpi-receita-sub', totAtual.temReceberCarregado ? 'ob-tes-receber (líquido)' : (receitaMes?'Comparativo de Vendas 2026':'Sem dados carregados'));
 
   set('dash-kpi-margem-val', margem.toFixed(1)+'%');
   set('dash-kpi-margem-dlt', (margemAnt===0 && margem===0) ? '—' : ((margem>=margemAnt?'↑ ':'↓ ')+Math.abs(margem-margemAnt).toFixed(1)+'pp'));
 
   set('dash-kpi-custo-val', fmt(custoMes));
   set('dash-kpi-custo-dlt', deltaCusto===null ? '—' : ((deltaCusto>=0?'↑ ':'↓ ')+Math.abs(deltaCusto).toFixed(1)+'%'));
-  set('dash-kpi-custo-sub', custoMes ? 'Despesas + contas pagas este mês' : 'Sem despesas registadas');
+  set('dash-kpi-custo-sub', custoMes ? 'Contas pagas + despesas aprovadas este mês' : 'Sem custos registados este mês');
 
   set('dash-kpi-projetos-val', projetosActivos.length);
   set('dash-kpi-projetos-dlt', projetosActivos.length ? (emRisco+' em risco') : '—');
@@ -18916,18 +18945,34 @@ function initCharts(){
     const existing=Chart.getChart(ctx);if(existing)existing.destroy();
     return new Chart(ctx,{type,data,options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{display:data.datasets.length>1,labels:{boxWidth:10,padding:14,color:'#606068'}}},...opts}});
   };
-  // revChart — Faturação mensal 2026 (AV_ANOS) + despesas aprovadas reais
+  // revChart — Receita vs Custo, 6 meses. Fonte canónica: finTotaisMesReal()
+  // (TES_RECEBER líquido + TES_CONTAS pagas + FIN_DESPESAS aprovadas) — a
+  // mesma função usada por renderDashboardCFO(), para as duas nunca
+  // divergirem. AV_ANOS só entra como legado histórico visual quando
+  // TES_RECEBER nunca foi carregado nesta sessão (nunca substitui dados
+  // reais já disponíveis, mesmo que um mês específico dê receita real 0).
   (function(){
     var canvasEl=document.getElementById('revChart'); if(!canvasEl) return;
-    var ano2026=(typeof AV_ANOS!=='undefined'?AV_ANOS:[]).find(function(a){return a.ano===2026;});
-    var mLabels=['Jan','Fev','Mar','Abr','Mai','Jun'];
-    var receitas=mLabels.map(function(_,i){ return ano2026&&ano2026.meses[i]?ano2026.meses[i]:0; });
-    var temReceita=receitas.some(function(v){return v>0;});
-    var despAll=(typeof FIN_DESPESAS!=='undefined'?FIN_DESPESAS:[]);
-    var custos=mLabels.map(function(_,i){
-      var m='2026-'+(i+1<10?'0':'')+(i+1);
-      return despAll.filter(function(d){return d.estado==='Aprovada'&&String(d.data||'').slice(0,7)===m;}).reduce(function(s,d){return s+(d.valor||0);},0);
+    var hoje=new Date();
+    var meses=[];
+    for(var i=5;i>=0;i--){
+      var d=new Date(hoje.getFullYear(), hoje.getMonth()-i, 1);
+      meses.push({ ano:d.getFullYear(), mes:d.getMonth()+1, label:d.toLocaleDateString('pt-PT',{month:'short'}) });
+    }
+    var mLabels=meses.map(function(m){return m.label;});
+    var receitas=[], custos=[], temReceberCarregado=false;
+    meses.forEach(function(m){
+      var tot=(typeof finTotaisMesReal==='function')?finTotaisMesReal(m.ano,m.mes):{receita:0,custo:0,temReceberCarregado:false};
+      receitas.push(tot.receita); custos.push(tot.custo);
+      if(tot.temReceberCarregado) temReceberCarregado=true;
     });
+    if(!temReceberCarregado && typeof AV_ANOS!=='undefined'){
+      var ano2026=AV_ANOS.find(function(a){return a.ano===2026;});
+      if(ano2026&&ano2026.meses){
+        receitas=meses.map(function(m){ return m.ano===2026 ? (ano2026.meses[m.mes-1]||0) : 0; });
+      }
+    }
+    var temReceita=receitas.some(function(v){return v>0;});
     if(!temReceita){ var ex=Chart.getChart(canvasEl); if(ex)ex.destroy(); return; }
     mk('revChart','bar',{labels:mLabels,datasets:[
       {label:'Faturação',data:receitas,backgroundColor:YEL,borderRadius:4},
@@ -18988,29 +19033,24 @@ function initCharts(){
     }
   })();
 
-  // Fluxo de Caixa — 90 dias: entradas reais (faturas TocOnline ou Comparativo AV_ANOS) e saídas (despesas aprovadas).
+  // Fluxo de Caixa — 90 dias. Fonte canónica: finCalcularFluxoCaixaSemanal()
+  // (a MESMA função usada por finPrevRender()/"Previsão de Tesouraria" —
+  // TES_RECEBER como entradas, TES_CONTAS como saídas, por data real de
+  // vencimento, vencidos no bucket 0) — as duas nunca voltam a divergir.
+  // Antes: 3 meses civis (não 90 dias reais), entradas de faturas
+  // TOConline com fallback para AV_ANOS, saídas de FIN_DESPESAS — nunca
+  // usado como proxy de "todas as saídas da empresa" a partir de agora.
   (function(){
     var canvasEl = document.getElementById('cashChart');
     var emptyEl = document.getElementById('cashChart-empty');
-    var docs = (typeof tocoFaturasCache==='function') ? tocoFaturasCache() : [];
-    var despesas = (typeof FIN_DESPESAS!=='undefined') ? FIN_DESPESAS : [];
-    var hoje = new Date();
-    var meses=[], labels=[];
-    for(var i=2;i>=0;i--){ var d=new Date(hoje.getFullYear(),hoje.getMonth()-i,1); meses.push(d.toISOString().slice(0,7)); labels.push(d.toLocaleDateString('pt-PT',{month:'short',year:'2-digit'})); }
-    var valorDoc = function(d){ return parseFloat(d.TotalAmount||d.Total||d.Amount||0)||0; };
-    var dataDoc = function(d){ return d.Date||d.DocumentDate||d.CreatedAt||''; };
-    var entradas = meses.map(function(m){ return docs.filter(function(d){ return (d._tipo||d.DocumentType)==='FT' && String(dataDoc(d)).slice(0,7)===m; }).reduce(function(s,d){return s+valorDoc(d);},0); });
-    var saidas = meses.map(function(m){ return despesas.filter(function(d){ return d.estado==='Aprovada' && String(d.data||'').slice(0,7)===m; }).reduce(function(s,d){return s+(d.valor||0);},0); });
-    // Fallback: se TocOnline sem dados, usa valores mensais do Comparativo de Vendas (AV_ANOS 2026)
-    if(!entradas.some(function(v){return v>0;}) && typeof AV_ANOS!=='undefined'){
-      var ano2026 = AV_ANOS.find(function(a){return a.ano===2026;});
-      if(ano2026 && ano2026.meses){
-        entradas = meses.map(function(m){
-          var mes = parseInt(m.slice(5))-1; // 0-based
-          return (ano2026.meses[mes]||0);
-        });
-      }
+    if(typeof finCalcularFluxoCaixaSemanal!=='function'){
+      var existing0 = canvasEl && Chart.getChart(canvasEl); if(existing0) existing0.destroy();
+      if(canvasEl) canvasEl.style.display='none';
+      if(emptyEl) emptyEl.style.display='block';
+      return;
     }
+    var r = finCalcularFluxoCaixaSemanal();
+    var labels=r.labels, entradas=r.entradas, saidas=r.saidas;
     var temDados = entradas.some(function(v){return v>0;}) || saidas.some(function(v){return v>0;});
     if(!temDados){
       var existing = canvasEl && Chart.getChart(canvasEl); if(existing) existing.destroy();
@@ -19021,8 +19061,8 @@ function initCharts(){
     if(canvasEl) canvasEl.style.display='block';
     if(emptyEl) emptyEl.style.display='none';
     mk('cashChart','line',{labels:labels,datasets:[
-      {label:'Faturação',data:entradas,borderColor:YEL,backgroundColor:'rgba(245,196,0,.06)',tension:.4,fill:true,pointBackgroundColor:YEL},
-      {label:'Despesas',data:saidas,borderColor:'rgba(77,148,219,.8)',backgroundColor:'rgba(77,148,219,.04)',tension:.4,fill:true},
+      {label:'Entradas previstas',data:entradas,borderColor:YEL,backgroundColor:'rgba(245,196,0,.06)',tension:.4,fill:true,pointBackgroundColor:YEL},
+      {label:'Saídas previstas',data:saidas,borderColor:'rgba(77,148,219,.8)',backgroundColor:'rgba(77,148,219,.04)',tension:.4,fill:true},
     ]},{plugins:{legend:{display:true}},scales:{y:{grid:{color:GC},ticks:{callback:function(v){return '€'+v.toLocaleString('pt-PT');}}}}});
   })();
 
@@ -30452,6 +30492,122 @@ function finParseVenc(s){
   return isNaN(d)?null:d;
 }
 
+// ── FONTE CANÓNICA: Massa Salarial de um mês (ano, mes 1-based) ────────
+// Nunca soma Fecho de Ordenados E a conta já enviada à Tesouraria ao
+// mesmo tempo — evita duplicar o mesmo salário. Prioridade: 1) se já
+// existe uma conta "Salários — <Mês Ano>" em TES_CONTAS (a mesma
+// descrição exata criada por foEnviarTesouraria() acima), essa É a fonte
+// financeira canónica — o fecho já foi confirmado e enviado; 2) só na
+// ausência dessa conta, e só se o Fecho de Ordenados estiver ATUALMENTE
+// carregado (FO_DADOS) para ESSE mês exato (comparado com o valor do
+// seletor #fo-mes — FO_DADOS não guarda o mês em cada item, é recriado a
+// cada carregamento), usa o total líquido do fecho; 3) sem nenhuma das
+// duas, devolve null — nunca inventa um valor. Só existe dado líquido
+// (salLiquido) nesta base; nunca finge encargos patronais/custo total
+// empresa, que não estão registados em lado nenhum.
+function finMassaSalarialMes(ano, mes){
+  var mesNome = FIN_MESES[mes-1] + ' ' + ano;
+  var desc = 'Salários — ' + mesNome;
+  var contas = (typeof TES_CONTAS !== 'undefined') ? TES_CONTAS : [];
+  var contaTesouraria = contas.find(function(c){ return c.descricao === desc; });
+  if(contaTesouraria){
+    return { valor: parseFloat(contaTesouraria.valor) || 0, fonte: 'tesouraria', liquido: true, estado: contaTesouraria.estado, mesNome: mesNome };
+  }
+  var mesInput = (document.getElementById('fo-mes') || {}).value || '';
+  var mesAlvo = ano + '-' + String(mes).padStart(2,'0');
+  if(mesInput === mesAlvo && typeof FO_DADOS !== 'undefined' && FO_DADOS.length){
+    var total = FO_DADOS.reduce(function(s,d){ return s + (d.salLiquido || 0); }, 0);
+    return { valor: Math.round(total*100)/100, fonte: 'fecho', liquido: true, estado: null, mesNome: mesNome };
+  }
+  return null;
+}
+window.finMassaSalarialMes = finMassaSalarialMes;
+
+// ── FONTE CANÓNICA: fluxo de caixa semanal a 90 dias (13 semanas) ──────
+// A MESMA regra usada por finPrevRender() (Previsão de Tesouraria) e por
+// cashChart (initCharts) — extraída para aqui para as duas nunca
+// divergirem. Entradas de TES_RECEBER (exclui estado==='Recebido'),
+// saídas de TES_CONTAS (exclui tudo que não seja 'Pendente' — contas já
+// pagas nunca entram), por data real de vencimento; vencidos entram
+// sempre no bucket 0 (1ª semana). Nunca usa AV_ANOS/tocoFaturasCache/
+// FIN_DESPESAS.
+function finCalcularFluxoCaixaSemanal(){
+  var hoje=new Date(); hoje.setHours(0,0,0,0);
+  var N=13, MS_SEM=7*86400000;
+  var labels=[], ent=[], sai=[];
+  for(var i=0;i<N;i++){
+    var d=new Date(hoje.getTime()+i*MS_SEM);
+    labels.push(String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0'));
+    ent.push(0); sai.push(0);
+  }
+  function bucket(d){
+    if(d<hoje) return 0;
+    var idx=Math.floor((d-hoje)/MS_SEM);
+    return idx<N?idx:-1;
+  }
+  (typeof TES_RECEBER!=='undefined'?TES_RECEBER:[]).forEach(function(f){
+    if(f.estado==='Recebido') return;
+    var d=finParseVenc(f.vencimento); if(!d) return;
+    var b=bucket(d); if(b>=0) ent[b]+=parseFloat(f.total||f.valorLiq||0)||0;
+  });
+  (typeof TES_CONTAS!=='undefined'?TES_CONTAS:[]).forEach(function(c){
+    if(c.estado!=='Pendente') return;
+    var d=finParseVenc(c.vencimento); if(!d) return;
+    var b=bucket(d); if(b>=0) sai[b]+=parseFloat(c.valor||0)||0;
+  });
+  return { labels: labels, entradas: ent, saidas: sai, N: N };
+}
+window.finCalcularFluxoCaixaSemanal = finCalcularFluxoCaixaSemanal;
+
+// ── FONTE CANÓNICA: totais reais de um mês (ano, mes 1-based) ──────────
+// Receita líquida de TES_RECEBER (valorLiq — FT positivas e NC negativas
+// já se compensam corretamente, mesma convenção usada na reconciliação
+// financeira), por data de emissão (dataEmissao||data). Custo = TES_CONTAS
+// pagas (dataPagamento, com fallback para data quando dataPagamento não
+// existe) + FIN_DESPESAS aprovadas (despesas de funcionários) — NUNCA
+// inclui TES_LOG_DESPESAS: cada injeção de logística já cria um espelho
+// em TES_CONTAS com o mesmo valor (tesInjectarLogisticaOrçamento), somar
+// as duas tabelas duplicava essa despesa assim que a conta espelho fosse
+// marcada paga (bug confirmado na auditoria). Usada por
+// renderDashboardCFO() e pelo gráfico revChart, para nunca terem duas
+// lógicas divergentes do mesmo cálculo. temReceberCarregado indica se
+// TES_RECEBER tem QUALQUER dado (não só este mês) — só quando for false
+// é legítimo recorrer a AV_ANOS como legado histórico; um mês real com
+// receita genuína = 0 nunca deve cair no fallback.
+function finTotaisMesReal(ano, mes){
+  var alvo = ano + '-' + String(mes).padStart(2,'0');
+  var mesChave = function(d){ return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0'); };
+  var receber = (typeof TES_RECEBER !== 'undefined') ? TES_RECEBER : [];
+  var contas = (typeof TES_CONTAS !== 'undefined') ? TES_CONTAS : [];
+  var despFunc = (typeof FIN_DESPESAS !== 'undefined') ? FIN_DESPESAS : [];
+  var receita = 0;
+  receber.forEach(function(f){
+    var d = finParseVenc(f.dataEmissao || f.data);
+    if(!d || mesChave(d) !== alvo) return;
+    receita += parseFloat(f.valorLiq || 0) || 0;
+  });
+  var custoContas = 0;
+  contas.forEach(function(c){
+    if(c.estado !== 'Paga') return;
+    var d = finParseVenc(c.dataPagamento || c.data);
+    if(!d || mesChave(d) !== alvo) return;
+    custoContas += parseFloat(c.valor || 0) || 0;
+  });
+  var custoDespesas = 0;
+  despFunc.forEach(function(dp){
+    if(dp.estado !== 'Aprovada') return;
+    var d = finParseVenc(dp.data);
+    if(!d || mesChave(d) !== alvo) return;
+    custoDespesas += parseFloat(dp.valor || 0) || 0;
+  });
+  return {
+    receita: receita, custo: custoContas + custoDespesas,
+    custoContas: custoContas, custoDespesas: custoDespesas,
+    temReceberCarregado: receber.length > 0
+  };
+}
+window.finTotaisMesReal = finTotaisMesReal;
+
 // ── 1. SALÁRIOS DO MÊS → TESOURARIA ─────────────────────────────────
 window.foEnviarTesouraria=function(){
   if(typeof FO_DADOS==='undefined'||!FO_DADOS.length){
@@ -30501,29 +30657,11 @@ function finPrevRender(){
   var canvas=document.getElementById('finPrevChart');
   var empty=document.getElementById('finPrevChart-empty');
   if(!canvas||typeof Chart==='undefined') return;
-  var hoje=new Date(); hoje.setHours(0,0,0,0);
-  var N=13, MS_SEM=7*86400000;
-  var labels=[], ent=[], sai=[];
-  for(var i=0;i<N;i++){
-    var d=new Date(hoje.getTime()+i*MS_SEM);
-    labels.push(String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0'));
-    ent.push(0); sai.push(0);
-  }
-  function bucket(d){
-    if(d<hoje) return 0;
-    var idx=Math.floor((d-hoje)/MS_SEM);
-    return idx<N?idx:-1;
-  }
-  (typeof TES_RECEBER!=='undefined'?TES_RECEBER:[]).forEach(function(f){
-    if(f.estado==='Recebido') return;
-    var d=finParseVenc(f.vencimento); if(!d) return;
-    var b=bucket(d); if(b>=0) ent[b]+=parseFloat(f.total||f.valorLiq||0)||0;
-  });
-  (typeof TES_CONTAS!=='undefined'?TES_CONTAS:[]).forEach(function(c){
-    if(c.estado!=='Pendente') return;
-    var d=finParseVenc(c.vencimento); if(!d) return;
-    var b=bucket(d); if(b>=0) sai[b]+=parseFloat(c.valor||0)||0;
-  });
+  // Cálculo extraído para finCalcularFluxoCaixaSemanal() — a mesma
+  // função é usada pelo cashChart (initCharts), para nunca haver duas
+  // lógicas financeiras divergentes do mesmo "fluxo de caixa 90 dias".
+  var r=finCalcularFluxoCaixaSemanal();
+  var labels=r.labels, ent=r.entradas, sai=r.saidas, N=r.N;
   var temDados=ent.some(function(v){return v>0;})||sai.some(function(v){return v>0;});
   var existente=Chart.getChart(canvas);
   if(existente) existente.destroy();
