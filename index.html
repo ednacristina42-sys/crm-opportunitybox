@@ -2183,6 +2183,29 @@ function tesToggleCartao(){
   }
 }
 
+// Popula o <select> "Projeto / Orçamento" do modal de Contas a Pagar com
+// os orçamentos REAIS existentes em orcData (número + cliente) — antes era
+// um <input> de texto livre, sem qualquer validação/ligação a um projeto
+// real (auditoria confirmou zero uso desse campo em qualquer cálculo).
+// Estrutura mínima para permitir, a partir de agora, ligar uma conta a
+// pagar a um orçamento real; nunca migra/reescreve entradas já guardadas
+// com o valor antigo (texto livre). Primeira opção "sem projeto/orçamento"
+// mantém-se sempre disponível — nem toda despesa (rendas, seguros,
+// impostos) está ligada a um projeto específico.
+function tesPopularSelectProjeto(){
+  var sel = document.getElementById('tes-m-proj');
+  if(!sel) return;
+  var lista = (typeof orcData !== 'undefined' && Array.isArray(orcData)) ? orcData.slice() : [];
+  lista.sort(function(a,b){ return String((b&&b.num)||'').localeCompare(String((a&&a.num)||'')); });
+  var esc = function(x){ return String(x==null?'':x).replace(/[&<>"]/g, function(c){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]; }); };
+  sel.innerHTML = '<option value="">— Sem projeto/orçamento —</option>'
+    + lista.map(function(o){
+        var num = (o && o.num) || '';
+        var label = num + (o && o.cli ? ' — ' + o.cli : '');
+        return '<option value="' + esc(num) + '">' + esc(label) + '</option>';
+      }).join('');
+}
+
 function tesAbrirModal(id) {
   var modal = document.getElementById('tes-modal');
   if (!modal) return;
@@ -2190,9 +2213,10 @@ function tesAbrirModal(id) {
   // nunca impeça o modal de abrir (era o que acontecia antes: uma excepção aqui
   // travava a função a meio, antes de chegar ao display:flex, em silêncio).
   try{
-    ['tes-m-desc','tes-m-tec','tes-m-venc','tes-m-proj','tes-m-notas','tes-m-liq','tes-m-pagref'].forEach(function(fid) {
+    ['tes-m-desc','tes-m-tec','tes-m-venc','tes-m-notas','tes-m-liq','tes-m-pagref'].forEach(function(fid) {
       var el = document.getElementById(fid); if(el) el.value = '';
     });
+    if(typeof tesPopularSelectProjeto === 'function') tesPopularSelectProjeto();
     var valEl = document.getElementById('tes-m-valor'); if(valEl) valEl.value = '';
     var liqEl = document.getElementById('tes-m-liq'); if(liqEl) liqEl.value = '';
     var ivaEl = document.getElementById('tes-m-iva'); if(ivaEl) ivaEl.value = '23';
@@ -10125,7 +10149,9 @@ tbody tr:hover{background:rgba(255,203,45,.05)}
       </div>
       <div class="form-group">
         <label class="form-label">Projeto / Orcamento</label>
-        <input id="tes-m-proj" class="form-input" placeholder="ex: ORC-2026-001"/>
+        <select id="tes-m-proj" class="form-input">
+          <option value="">— Sem projeto/orçamento —</option>
+        </select>
       </div>
     </div>
 
@@ -23337,7 +23363,14 @@ function tesInjectarLogisticaOrçamento(orc) {
   TES_LOG_DESPESAS.unshift(lancamento);
   tesLogSave();
 
-  // Também registar nas Contas a Pagar gerais
+  // Também registar nas Contas a Pagar gerais. Vencimento: data de
+  // aprovação + 30 dias — mesma convenção de prazo já usada no ficheiro
+  // para linhas sem data de vencimento própria do fornecedor (ver
+  // sincFinAplicarSheetPura). Antes ficava '' (vazio), o que fazia esta
+  // despesa REAL nunca aparecer na Previsão de Tesouraria — 90 dias
+  // (finPrevRender/parseVencTes ignora linhas sem data parseável).
+  var vencLog = new Date();
+  vencLog.setDate(vencLog.getDate() + 30);
   TES_CONTAS.unshift({
     id: lancamento.id + '-cp',
     data: lancamento.data,
@@ -23346,7 +23379,7 @@ function tesInjectarLogisticaOrçamento(orc) {
     tecnico: lancamento.tecnico,
     projeto: orc.num,
     valor: custoLog,
-    vencimento: '',
+    vencimento: vencLog.toLocaleDateString('pt-PT'),
     estado: 'Pendente'
   });
   tesSave();
