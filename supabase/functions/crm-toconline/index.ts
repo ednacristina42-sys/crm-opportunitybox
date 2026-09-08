@@ -53,8 +53,11 @@ const STATE_TTL_MS = 15 * 60 * 1000;
 // Nesta conta (api2) o caminho valido das faturas e /commercial_sales_documents:
 // /api/v1/commercial_sales_documents devolve HTTP 400 para document_type=FT.
 // A ordem abaixo mantem-se porque resolverPath ja cai no segundo caminho, e
-// noutras contas o /api/v1 e o que responde. A recolha integral do historico
-// (>=5000 faturas, tecto da paginacao) fica para uma fase posterior.
+// noutras contas o /api/v1 e o que responde. Os endpoints diretos abaixo
+// (resource=invoices/credit_notes/receipts) e o snapshot do callback OAuth
+// continuam limitados por MAX_PAGES (recolha rapida/leve, comportamento
+// inalterado). A recolha integral do historico, sem esse teto, e feita à
+// parte por resource=finance_audit (ver buscarDocumentosCompletos).
 const RECURSOS: Record<string, { paths: string[]; query?: string }> = {
   customers:    { paths: ["/api/customers", "/customers"] },
   invoices:     { paths: ["/api/v1/commercial_sales_documents", "/commercial_sales_documents"], query: "filter[document_type]=FT" },
@@ -164,6 +167,12 @@ const CHAVE_OAUTH = "toc-oauth";
 const CHAVE_SNAPSHOT = "toc-snapshot";
 const CHAVE_SYNC = "toc-sync-estado";
 const CHAVE_CLIENTES = "ob-clients";
+// Fase C — auditoria financeira, SOMENTE LEITURA. CHAVE_FINANCE_AUDIT e uma
+// chave nova, propria desta auditoria: nunca e lida por Financeiro, Ranking,
+// Historico de Faturacao nem Dashboard CFO. CHAVE_TES_RECEBER e so lida aqui
+// (para comparar), nunca escrita.
+const CHAVE_FINANCE_AUDIT = "toc-finance-audit";
+const CHAVE_TES_RECEBER = "ob-tes-receber";
 
 function sbCfg(): { url: string; key: string } | null {
   const url = Deno.env.get("SUPABASE_URL");
@@ -419,6 +428,82 @@ async function buscarClientes(token: string) {
   return { data, included, include: escolhido, tentativas, path };
 }
 
+// ── Documentos comerciais (faturas/notas/recibos), paginacao completa ──────
+// Usada SO pela auditoria financeira (resource=finance_audit). Os endpoints
+// diretos (resource=invoices/credit_notes/receipts) e o snapshot do callback
+// continuam a usar buscarTudo()/MAX_PAGES, tal como antes — nada aqui muda o
+// comportamento existente.
+//
+// Duas seguranças em vez de um numero fixo de paginas:
+//  1. Para de paginar quando uma pagina vem mais curta que PAGE_SIZE (fim
+//     real dos dados) — igual ao buscarTudo().
+//  2. Um orcamento de tempo por recurso (prazoMs): se for excedido, para e
+//     marca parcial=true em vez de continuar as cegas ou rebentar no limite
+//     de execucao da function. TETO_PAGINAS e so uma rede de seguranca
+//     contra loop infinito (nao e um limite de negocio).
+//
+// Eficiencia (02/09, corrida real com 6086 faturas deu WORKER_RESOURCE_LIMIT):
+// cada documento bruto do TOConline traz ~80 campos, muitos deles pesados
+// (document_hash_sum em base64, series de campos nulos, etc.) — reter os
+// 6086 objectos brutos ate ao fim da paginacao para so entao achatar era o
+// pico de memoria. Agora achata-se pagina a pagina (achatarDocumento, ja
+// definida mais abaixo — function declaration, hoisted) e so o resultado
+// magro (~12 campos) fica em memoria; o payload bruto de cada pagina sai de
+// scope e fica livre para recolha assim que a iteracao termina.
+const DOC_INCLUDES = ["user", "issuer", "current_company_users", ""];
+
+async function buscarDocumentosCompletos(
+  recurso: "invoices" | "credit_notes" | "receipts",
+  token: string,
+  prazoMs: number,
+): Promise<{ data: DocAchatado[]; included: Record<string, unknown>[]; include: string; paginas: number; parcial: boolean; tentativas: string[] }> {
+  const cfg = RECURSOS[recurso];
+  const path = await resolverPath(recurso, token);
+  const tentativas: string[] = [];
+  let escolhido = "";
+  // Recibos: sem tentativa de include (relacao com o emissor interessa-nos
+  // em faturas/notas; se os recibos tambem a tiverem, fica para depois).
+  const candidatos = recurso === "receipts" ? [""] : DOC_INCLUDES;
+  for (const inc of candidatos) {
+    const qs = [cfg.query, inc ? `include=${encodeURIComponent(inc)}` : "", "page[size]=1", "page[number]=1"]
+      .filter(Boolean).join("&");
+    const r = await tocGet(`${path}?${qs}`, token);
+    tentativas.push(`${inc || "(sem include)"} -> HTTP ${r.status}`);
+    if (r.ok) { escolhido = inc; break; }
+  }
+
+  const data: DocAchatado[] = [];
+  const included: Record<string, unknown>[] = [];
+  const vistos = new Set<string>();
+  const inicio = Date.now();
+  let pagina = 1;
+  let parcial = false;
+  const TETO_PAGINAS = 3000;
+  for (; pagina <= TETO_PAGINAS; pagina++) {
+    if (Date.now() - inicio > prazoMs) { parcial = true; break; }
+    const qs = [cfg.query, escolhido ? `include=${encodeURIComponent(escolhido)}` : "", `page[size]=${PAGE_SIZE}`, `page[number]=${pagina}`]
+      .filter(Boolean).join("&");
+    const res = await tocGet(`${path}?${qs}`, token);
+    if (!res.ok) {
+      if (pagina === 1) throw new HttpError(502, `TOConline devolveu HTTP ${res.status} em ${path}`);
+      break;
+    }
+    let payload: Record<string, unknown>;
+    try { payload = await res.json(); } catch { break; }
+    const lote = extrairLista(payload);
+    if (!lote.length) break;
+    for (const doc of lote as Record<string, unknown>[]) data.push(achatarDocumento(doc));
+    for (const r of (Array.isArray(payload.included) ? payload.included : [])) {
+      const o = r as Record<string, unknown>;
+      const k = `${o.type}:${o.id}`;
+      if (!vistos.has(k)) { vistos.add(k); included.push(o); }
+    }
+    if (lote.length < PAGE_SIZE) break;
+    // `payload`/`lote` saem de scope aqui — nada retem os campos brutos.
+  }
+  return { data, included, include: escolhido, paginas: pagina, parcial, tentativas };
+}
+
 /** Diagnóstico: só metadados e códigos de estado. Nunca dados, nunca tokens. */
 async function diagnostico(tokenJaObtido?: string) {
   const out: Record<string, unknown> = {
@@ -502,7 +587,7 @@ const telNorm = (x: unknown) => {
   return d.length >= 9 ? d : "";
 };
 const semAcento = (x: unknown) =>
-  val(x).toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  val(x).toUpperCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
 const chaveTexto = (x: unknown) => semAcento(x).replace(/[^A-Z0-9]/g, "");
 const nomeNorm = (x: unknown) => semAcento(x)
   .replace(/[^A-Z0-9 ]/g, " ")
@@ -655,6 +740,843 @@ async function sincronizarClientes(seco: boolean, via: string) {
   };
   if (!seco) await guardarNaBase(CHAVE_SYNC, estado);
   return estado;
+}
+
+// ══ FASE C — AUDITORIA FINANCEIRA (SOMENTE LEITURA, resource=finance_audit) ═
+// Objetivo: dry-run com dados reais do TOConline, para decidir depois como
+// alimentar Financeiro/CFO/Historico/Ranking. Nao escreve em ob-tes-receber,
+// ob_orcamentos, ob-clients, nem em nada usado por essas paginas — so lê
+// ob-tes-receber (para comparar) e persiste o proprio relatorio numa chave
+// nova (CHAVE_FINANCE_AUDIT). Nao cria, nao emite, nao anula, nao cancela
+// nada no TOConline: e so GET.
+//
+// "user" em relationships de uma fatura/nota e o utilizador da CONTA
+// TOConline que emitiu o documento — NAO se assume que seja o comercial de
+// campo. So se marca `vendedor_confirmado` quando o nome/email devolvido
+// pelo `included` bate, apos normalizacao, com um dos 4 nomes conhecidos.
+// Caso contrario fica exatamente como pedido: "VENDEDOR NÃO CONFIRMADO — NÃO
+// USAR NO RANKING".
+const VENDEDOR_NAO_CONFIRMADO = "VENDEDOR NÃO CONFIRMADO — NÃO USAR NO RANKING";
+const NOMES_COMERCIAIS_CONHECIDOS = ["Paulo Faria", "Rui Mota", "Humberto Estrelinha", "André Nolasco"];
+
+// Confirmado em 07/09 com JSON real (nc_raw_probe, 3 documentos reais):
+// a listagem (filter[document_type]=NC) devolve JSON:API normal
+// (attributes/relationships, como sempre para invoices/receipts), mas o
+// endpoint de DETALHE (commercial_sales_documents/{id}) devolve o
+// documento como objeto direto — document_no/date/gross_total/net_total/
+// customer_business_name direto no topo, sem envelope attributes. `a = c.attributes
+// ?? c` aceita os dois formatos sem mudar nada para invoices/receipts
+// (que sempre têm `attributes` definido — o fallback só ativa quando
+// `attributes` está genuinamente ausente).
+function achatarDocumento(c: Record<string, unknown>) {
+  const a = (c.attributes ?? c) as Record<string, unknown>;
+  const rel = (c.relationships ?? {}) as Record<string, { data?: { id?: string; type?: string } }>;
+  const userRel = rel.user?.data;
+  const num = (x: unknown) => (typeof x === "number" ? x : parseFloat(String(x ?? "")) || 0);
+  return {
+    id: String(c.id ?? a.id ?? ""), document_no: val(a.document_no), document_type: val(a.document_type),
+    date: val(a.date), due_date: val(a.due_date),
+    net_total: num(a.net_total), gross_total: num(a.gross_total), tax_payable: num(a.tax_payable),
+    pending_total: num(a.pending_total),
+    receipts_ids: Array.isArray(a.receipts_ids) ? a.receipts_ids as unknown[] : [],
+    customer_business_name: val(a.customer_business_name),
+    customer_tax_registration_number: val(a.customer_tax_registration_number),
+    voided_reason: val(a.voided_reason), status_bruto: a.status ?? null,
+    user_id: userRel?.id ? String(userRel.id) : "", user_type: userRel?.type ? String(userRel.type) : "",
+  };
+}
+type DocAchatado = ReturnType<typeof achatarDocumento>;
+
+// ── Hidratação de NC incompletas (sync_docs&tipo=credit_notes) ────────────
+// Causa confirmada em 07/09 com JSON real: a listagem de credit_notes vem
+// com attributes essencialmente vazios; o endpoint de detalhe
+// (commercial_sales_documents/{id}) tem os dados reais, num formato
+// diferente (já suportado por achatarDocumento() acima). A v21 tentou
+// hidratar sequencialmente (~100 chamadas extra por página) e isso
+// derrubou a paginação de 260 para 100 NC — corrigido aqui com
+// concorrência limitada (lotes de 8, Promise.allSettled), nunca 100
+// chamadas seguidas. Só ativa para credit_notes; nunca altera invoices,
+// receipts, clients, OAuth, matching ou o Supabase.
+function documentoIncompleto(d: DocAchatado): boolean {
+  return !d.date || !d.document_no || !d.gross_total || !d.net_total || !d.customer_business_name;
+}
+function extrairUnico(payload: unknown): Record<string, unknown> | null {
+  if (!payload || typeof payload !== "object") return null;
+  const p = payload as Record<string, unknown>;
+  if (p.data && typeof p.data === "object" && !Array.isArray(p.data)) return p.data as Record<string, unknown>;
+  if (Array.isArray(p.data) && p.data.length) return p.data[0] as Record<string, unknown>;
+  if (p.id || p.attributes) return p;
+  return null;
+}
+async function buscarDetalheDocumento(path: string, id: string, token: string): Promise<DocAchatado | null> {
+  try {
+    const r = await tocGet(`${path}/${encodeURIComponent(id)}`, token);
+    if (!r.ok) return null;
+    let payload: unknown;
+    try { payload = await r.json(); } catch { return null; }
+    const obj = extrairUnico(payload);
+    if (!obj) return null;
+    return achatarDocumento(obj);
+  } catch { return null; }
+}
+const NC_HIDRATACAO_LOTE = 8;
+// Hidrata os documentos incompletos de UMA página de credit_notes, em lotes
+// de NC_HIDRATACAO_LOTE (Promise.allSettled — nunca sequencial). Se o
+// detalhe falhar, o documento original (incompleto) é mantido em `flats`
+// tal como veio da listagem — nunca descartado, nunca substitui a página
+// inteira. Muta `flats` in-place e devolve as métricas desta página.
+async function hidratarPaginaNc(
+  flats: DocAchatado[], path: string, token: string,
+  amostra: Record<string, unknown>[],
+): Promise<{ tentativas: number; sucesso: number; falha: number }> {
+  const idxIncompletos: number[] = [];
+  flats.forEach((f, i) => { if (documentoIncompleto(f)) idxIncompletos.push(i); });
+  let sucesso = 0, falha = 0;
+  for (let ini = 0; ini < idxIncompletos.length; ini += NC_HIDRATACAO_LOTE) {
+    const grupo = idxIncompletos.slice(ini, ini + NC_HIDRATACAO_LOTE);
+    const resultados = await Promise.allSettled(
+      grupo.map((idx) => buscarDetalheDocumento(path, flats[idx].id, token)));
+    resultados.forEach((r, gi) => {
+      const idx = grupo[gi];
+      if (r.status === "fulfilled" && r.value) {
+        sucesso++;
+        flats[idx] = r.value;
+        if (amostra.length < 3) {
+          const f = flats[idx];
+          amostra.push({
+            id: f.id, document_no: f.document_no, date: f.date,
+            gross_total: f.gross_total, net_total: f.net_total, cliente: f.customer_business_name,
+          });
+        }
+      } else {
+        falha++;
+        // flats[idx] já é o documento original incompleto — mantém-se.
+      }
+    });
+  }
+  return { tentativas: idxIncompletos.length, sucesso, falha };
+}
+
+async function auditoriaFinanceira(parte: string): Promise<Record<string, unknown>> {
+  const inicio = Date.now();
+  const token = await getAccessToken();
+  const ORCAMENTO_TOTAL_MS = 100000; // rede de seguranca global (<< limite de execucao da function)
+  const PRAZO_POR_RECURSO_MS = 40000;
+
+  const todasPartes: ("invoices" | "credit_notes" | "receipts")[] = ["invoices", "credit_notes", "receipts"];
+  const partes = todasPartes.includes(parte as "invoices") ? [parte as "invoices"] : todasPartes;
+
+  const brutos: Record<string, DocAchatado[]> = { invoices: [], credit_notes: [], receipts: [] };
+  const includedTodos: Record<string, unknown>[] = [];
+  const paginasPorRecurso: Record<string, number> = {};
+  const parcialPorRecurso: Record<string, boolean> = {};
+  const tentativasPorRecurso: Record<string, string[]> = {};
+
+  for (const r of partes) {
+    const restante = ORCAMENTO_TOTAL_MS - (Date.now() - inicio);
+    if (restante < 5000) { parcialPorRecurso[r] = true; tentativasPorRecurso[r] = ["ignorado: orcamento de tempo global esgotado"]; continue; }
+    const { data, included, paginas, parcial, tentativas } = await buscarDocumentosCompletos(r, token, Math.min(PRAZO_POR_RECURSO_MS, restante));
+    brutos[r] = data; // ja vem achatado pagina a pagina (ver buscarDocumentosCompletos)
+    includedTodos.push(...included);
+    paginasPorRecurso[r] = paginas;
+    parcialPorRecurso[r] = parcial;
+    tentativasPorRecurso[r] = tentativas;
+  }
+  const paginacaoCompleta = partes.every((r) => !parcialPorRecurso[r]);
+
+  // ── Utilizadores TOConline associados a documentos (faturas + notas) ─────
+  const usersMapa: Record<string, { id: string; type: string; atributos: Record<string, unknown>; freq: number }> = {};
+  for (const grupo of ["invoices", "credit_notes"] as const) {
+    for (const d of brutos[grupo]) {
+      if (!d.user_id) continue;
+      const k = `${d.user_type}:${d.user_id}`;
+      if (!usersMapa[k]) {
+        const inc = includedTodos.find((x) => (x as Record<string, unknown>).type === d.user_type && String((x as Record<string, unknown>).id) === d.user_id);
+        usersMapa[k] = { id: d.user_id, type: d.user_type, atributos: ((inc as Record<string, unknown>)?.attributes as Record<string, unknown>) ?? {}, freq: 0 };
+      }
+      usersMapa[k].freq++;
+    }
+  }
+  const usersLista = Object.values(usersMapa).map((u) => {
+    const at = u.atributos as Record<string, unknown>;
+    const nomeBruto = val(at.name) || val(at.full_name) || val(at.email) || "";
+    const match = NOMES_COMERCIAIS_CONHECIDOS.find((n) => nomeNorm(n) === nomeNorm(nomeBruto));
+    return { ...u, nome_bruto: nomeBruto || "(sem atributos legíveis no included)", correspondencia: match ?? VENDEDOR_NAO_CONFIRMADO };
+  }).sort((a, b) => b.freq - a.freq);
+  const vendedorPorUserId: Record<string, string> = {};
+  for (const u of usersLista) vendedorPorUserId[u.id] = u.correspondencia === VENDEDOR_NAO_CONFIRMADO ? "" : u.correspondencia;
+
+  // ── Totais e classificacao de estado (heuristica, documentada — nao vem do TOConline) ─
+  const hojeISO = new Date().toISOString().slice(0, 10);
+  const somar = (grupo: DocAchatado[]) => {
+    const ac = { net: 0, iva: 0, gross: 0, liquidadas: 0, emAberto: 0, vencidas: 0, parciais: 0, anuladas: 0, recebido: 0, aReceber: 0, vencidoValor: 0 };
+    for (const d of grupo) {
+      if (d.voided_reason) { ac.anuladas++; continue; }
+      ac.net += d.net_total; ac.iva += d.tax_payable; ac.gross += d.gross_total;
+      ac.recebido += (d.gross_total - d.pending_total); ac.aReceber += d.pending_total;
+      if (d.pending_total <= 0.005) ac.liquidadas++;
+      else if (d.pending_total >= d.gross_total - 0.005) {
+        if (d.due_date && d.due_date < hojeISO) { ac.vencidas++; ac.vencidoValor += d.pending_total; } else ac.emAberto++;
+      } else {
+        ac.parciais++;
+        if (d.due_date && d.due_date < hojeISO) ac.vencidoValor += d.pending_total;
+      }
+    }
+    return ac;
+  };
+  const totaisFaturas = somar(brutos.invoices);
+  const totaisNotas = somar(brutos.credit_notes);
+
+  const datas = [...brutos.invoices, ...brutos.credit_notes].map((d) => d.date).filter(Boolean).sort();
+  const periodoCoberto = { desde: datas[0] ?? null, ate: datas[datas.length - 1] ?? null };
+
+  const duplicadosToconline = (grupo: DocAchatado[]) => grupo.length - new Set(grupo.map((d) => d.id)).size;
+
+  // ── Match heuristico com ob-tes-receber (SO LEITURA — nunca escreve la) ──
+  // ob-tes-receber grava datas como texto "DD/MM/AAAA" (import da Sheet); o
+  // TOConline devolve "date" em ISO "AAAA-MM-DD". Comparar as duas strings
+  // directamente (alfabeticamente) dava sempre falso e descartava as 474
+  // linhas como "fora do periodo" mesmo quando estavam dentro — por isso a
+  // normalizacao para ISO antes de qualquer comparacao de data.
+  const dataParaISO = (x: unknown): string => {
+    const t = val(x);
+    if (!t) return "";
+    const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(t);
+    if (m) return `${m[3]}-${m[2]}-${m[1]}`;
+    if (/^\d{4}-\d{2}-\d{2}/.test(t)) return t.slice(0, 10);
+    return "";
+  };
+  const tes = (await lerDaBase(CHAVE_TES_RECEBER)) as Record<string, unknown>[] | null;
+  const tesRows = Array.isArray(tes) ? tes : [];
+  const dentroDoPeriodo = (dataISO: string) => !periodoCoberto.desde || !dataISO || (dataISO >= periodoCoberto.desde && dataISO <= periodoCoberto.ate!);
+  const candidatosMatch = [...brutos.invoices, ...brutos.credit_notes];
+  const semMatch: unknown[] = [], divergenciasValor: unknown[] = [], divergenciasStatus: unknown[] = [];
+  let comMatch = 0;
+  for (const linha of tesRows) {
+    const dataLinha = val((linha as Record<string, unknown>).dataEmissao) || val((linha as Record<string, unknown>).data);
+    if (!dentroDoPeriodo(dataParaISO(dataLinha))) continue; // fora do periodo que a auditoria conseguiu cobrir — nao e "sem match", e "nao auditado"
+    const nomeLinha = nomeNorm((linha as Record<string, unknown>).cliente);
+    const valorLinha = num((linha as Record<string, unknown>).total ?? (linha as Record<string, unknown>).valorRecebido);
+    const cands = candidatosMatch.filter((d) => nomeNorm(d.customer_business_name) === nomeLinha);
+    if (!cands.length) { semMatch.push({ id: (linha as Record<string, unknown>).id, cliente: (linha as Record<string, unknown>).cliente, data: dataLinha, total: valorLinha }); continue; }
+    const porValor = cands.find((d) => Math.abs(d.gross_total - valorLinha) < 0.5);
+    if (!porValor) {
+      divergenciasValor.push({ id: (linha as Record<string, unknown>).id, cliente: (linha as Record<string, unknown>).cliente, crm_total: valorLinha, toconline_candidatos: cands.map((d) => d.gross_total) });
+      continue;
+    }
+    comMatch++;
+    const estadoLinha = val((linha as Record<string, unknown>).estado);
+    const liquidadoToc = porValor.pending_total <= 0.005 && !porValor.voided_reason;
+    const estadoBate = (estadoLinha === "Recebido" && liquidadoToc) || (estadoLinha !== "Recebido" && !liquidadoToc);
+    if (!estadoBate) divergenciasStatus.push({ id: (linha as Record<string, unknown>).id, cliente: (linha as Record<string, unknown>).cliente, crm_estado: estadoLinha, toconline_pending_total: porValor.pending_total, toconline_document_no: porValor.document_no });
+  }
+  function num(x: unknown): number { return typeof x === "number" ? x : parseFloat(String(x ?? "")) || 0; }
+
+  const relatorio = {
+    ts: new Date().toISOString(), parte: partes.join(","), duracao_ms: Date.now() - inicio,
+    paginacao_completa: paginacaoCompleta, paginas_por_recurso: paginasPorRecurso, parcial_por_recurso: parcialPorRecurso,
+    contagens: { invoices: brutos.invoices.length, credit_notes: brutos.credit_notes.length, receipts: brutos.receipts.length },
+    periodo_coberto: periodoCoberto,
+    totais_faturas: totaisFaturas, totais_notas_credito: totaisNotas,
+    duplicados_toconline: { invoices: duplicadosToconline(brutos.invoices), credit_notes: duplicadosToconline(brutos.credit_notes), receipts: duplicadosToconline(brutos.receipts) },
+    users_toconline: usersLista,
+    vendedores_confirmados: usersLista.filter((u) => u.correspondencia !== VENDEDOR_NAO_CONFIRMADO).length,
+    documentos_sem_vendedor_confirmado: [...brutos.invoices, ...brutos.credit_notes].filter((d) => !d.user_id || !vendedorPorUserId[d.user_id]).length,
+    match_tes_receber: { total_tes_no_periodo: comMatch + semMatch.length + divergenciasValor.length, com_match: comMatch, sem_match: semMatch.length, divergencias_valor: divergenciasValor.length, divergencias_status: divergenciasStatus.length },
+    amostra_sem_match: semMatch.slice(0, 50), amostra_divergencias_valor: divergenciasValor.slice(0, 50), amostra_divergencias_status: divergenciasStatus.slice(0, 50),
+    amostra_documentos: { invoices: brutos.invoices.slice(0, 50), credit_notes: brutos.credit_notes.slice(0, 50), receipts: brutos.receipts.slice(0, 50) },
+    tentativas_include: tentativasPorRecurso,
+    nota: "SOMENTE LEITURA: nenhum dado foi escrito em ob-tes-receber, ob_orcamentos ou ob-clients. 'status_bruto' e o codigo numerico do TOConline, ainda nao documentado — a classificacao liquidada/em_aberto/vencida/parcial e heuristica, baseada em pending_total e due_date.",
+  };
+  // Cada corrida grava na sua propria chave (nunca pisa uma corrida anterior
+  // de outra "parte"); a corrida "tudo" tambem grava na chave simples, para
+  // ser a leitura por omissao.
+  await guardarNaBase(`${CHAVE_FINANCE_AUDIT}-${partes.join("-")}`, relatorio);
+  if (partes.length === todasPartes.length) await guardarNaBase(CHAVE_FINANCE_AUDIT, relatorio);
+  return relatorio;
+}
+
+// ══ FASE C — FATURAS EM LOTES, COM CHECKPOINT (SOMENTE LEITURA) ════════════
+// auditoriaFinanceira("invoices") busca as 6086 faturas de uma vez so numa
+// chamada — e isso rebentou com HTTP 546 WORKER_RESOURCE_LIMIT (03/09). Este
+// modo processa um numero limitado de paginas do TOConline por chamada HTTP
+// e persiste um checkpoint (CHAVE_INVOICES_CKPT) com SO os acumuladores
+// (totais, periodo, utilizadores, TES ja resolvidos, amostra de ate 50
+// documentos) — nunca a colecao completa de faturas. A chamada seguinte
+// (mesmo resource=finance_audit&parte=invoices) le o checkpoint e continua
+// de "next_page" em diante. So GET ao TOConline, so leitura de
+// ob-tes-receber; escreve so no checkpoint e, na ultima pagina, no relatorio
+// final toc-finance-audit-invoices (a mesma chave de sempre). Nao consulta
+// credit_notes nem receipts nesta corrida — usar os relatorios ja existentes
+// para essas partes. Nunca toca em Financeiro/Ranking/Historico/CFO/
+// ob-tes-receber/ob_orcamentos.
+const CHAVE_INVOICES_CKPT = "toc-finance-audit-invoices-checkpoint";
+const PAGINAS_POR_LOTE_DEFAULT = 15;
+
+type TotaisAc = { net: number; iva: number; gross: number; liquidadas: number; emAberto: number; vencidas: number; parciais: number; anuladas: number; recebido: number; aReceber: number; vencidoValor: number };
+const totaisVazios = (): TotaisAc => ({ net: 0, iva: 0, gross: 0, liquidadas: 0, emAberto: 0, vencidas: 0, parciais: 0, anuladas: 0, recebido: 0, aReceber: 0, vencidoValor: 0 });
+function somarUm(ac: TotaisAc, d: DocAchatado, hojeISO: string) {
+  if (d.voided_reason) { ac.anuladas++; return; }
+  ac.net += d.net_total; ac.iva += d.tax_payable; ac.gross += d.gross_total;
+  ac.recebido += (d.gross_total - d.pending_total); ac.aReceber += d.pending_total;
+  if (d.pending_total <= 0.005) ac.liquidadas++;
+  else if (d.pending_total >= d.gross_total - 0.005) {
+    if (d.due_date && d.due_date < hojeISO) { ac.vencidas++; ac.vencidoValor += d.pending_total; } else ac.emAberto++;
+  } else {
+    ac.parciais++;
+    if (d.due_date && d.due_date < hojeISO) ac.vencidoValor += d.pending_total;
+  }
+}
+
+interface CheckpointFaturas {
+  next_page: number;
+  paginas_processadas: number;
+  ids_vistos: string[];
+  contagem: number;
+  totais: TotaisAc;
+  periodo: { desde: string | null; ate: string | null };
+  include_escolhido: string;
+  tentativas_include: string[];
+  users_mapa: Record<string, { type: string; atributos: Record<string, unknown>; freq: number }>;
+  tes_resolvido: Record<string, { tipo: "match" | "divergencia_valor" | "divergencia_status"; detalhe: Record<string, unknown> }>;
+  amostra_documentos: DocAchatado[];
+  iniciado_em: string;
+}
+
+async function auditoriaFaturasLote(paginasPorChamada: number, reiniciar: boolean): Promise<Record<string, unknown>> {
+  const inicioChamada = Date.now();
+  const token = await getAccessToken();
+  const hojeISO = new Date().toISOString().slice(0, 10);
+  const numGenerico = (x: unknown): number => (typeof x === "number" ? x : parseFloat(String(x ?? "")) || 0);
+
+  let ckpt = reiniciar ? null : (await lerDaBase(CHAVE_INVOICES_CKPT)) as CheckpointFaturas | null;
+
+  const path = await resolverPath("invoices", token);
+  const cfg = RECURSOS["invoices"];
+
+  let escolhido = ckpt?.include_escolhido ?? "";
+  const tentativasInclude = ckpt?.tentativas_include ?? [];
+  if (!ckpt) {
+    for (const inc of DOC_INCLUDES) {
+      const qs = [cfg.query, inc ? `include=${encodeURIComponent(inc)}` : "", "page[size]=1", "page[number]=1"].filter(Boolean).join("&");
+      const r = await tocGet(`${path}?${qs}`, token);
+      tentativasInclude.push(`${inc || "(sem include)"} -> HTTP ${r.status}`);
+      if (r.ok) { escolhido = inc; break; }
+    }
+  }
+
+  if (!ckpt) {
+    ckpt = {
+      next_page: 1, paginas_processadas: 0, ids_vistos: [], contagem: 0,
+      totais: totaisVazios(), periodo: { desde: null, ate: null },
+      include_escolhido: escolhido, tentativas_include: tentativasInclude,
+      users_mapa: {}, tes_resolvido: {}, amostra_documentos: [],
+      iniciado_em: new Date().toISOString(),
+    };
+  }
+
+  const idsVistos = new Set(ckpt.ids_vistos);
+  const usersMapa = ckpt.users_mapa;
+  const tesResolvido = ckpt.tes_resolvido;
+  const amostra = ckpt.amostra_documentos;
+  const totais = ckpt.totais;
+  let desde = ckpt.periodo.desde, ate = ckpt.periodo.ate;
+  let duplicadosNesteLote = 0;
+
+  const tes = (await lerDaBase(CHAVE_TES_RECEBER)) as Record<string, unknown>[] | null;
+  const tesRows = Array.isArray(tes) ? tes : [];
+
+  let paginasNesteLote = 0;
+  let terminou = false;
+  let paginaAtual = ckpt.next_page;
+
+  for (; paginasNesteLote < paginasPorChamada; paginasNesteLote++) {
+    const qs = [cfg.query, escolhido ? `include=${encodeURIComponent(escolhido)}` : "", `page[size]=${PAGE_SIZE}`, `page[number]=${paginaAtual}`]
+      .filter(Boolean).join("&");
+    const res = await tocGet(`${path}?${qs}`, token);
+    if (!res.ok) {
+      if (paginaAtual === 1 && ckpt.paginas_processadas === 0) throw new HttpError(502, `TOConline devolveu HTTP ${res.status} em ${path}`);
+      terminou = true; break;
+    }
+    let payload: Record<string, unknown>;
+    try { payload = await res.json(); } catch { terminou = true; break; }
+    const lote = extrairLista(payload);
+    if (!lote.length) { terminou = true; break; }
+
+    const incluidosPagina: Record<string, unknown>[] = Array.isArray(payload.included)
+      ? (payload.included as Record<string, unknown>[]) : [];
+
+    const docsLote: DocAchatado[] = [];
+    for (const docBruto of lote as Record<string, unknown>[]) {
+      const d = achatarDocumento(docBruto);
+      docsLote.push(d);
+      if (idsVistos.has(d.id)) duplicadosNesteLote++; else idsVistos.add(d.id);
+      somarUm(totais, d, hojeISO);
+      if (d.date) {
+        if (!desde || d.date < desde) desde = d.date;
+        if (!ate || d.date > ate) ate = d.date;
+      }
+      if (d.user_id) {
+        const k = `${d.user_type}:${d.user_id}`;
+        if (!usersMapa[k]) {
+          const inc = incluidosPagina.find((x) => x.type === d.user_type && String(x.id) === d.user_id);
+          usersMapa[k] = { type: d.user_type, atributos: ((inc as Record<string, unknown>)?.attributes as Record<string, unknown>) ?? {}, freq: 0 };
+        }
+        usersMapa[k].freq++;
+      }
+      if (amostra.length < 50) amostra.push(d);
+    }
+
+    // Resolve TES ainda pendentes contra este lote (nome + valor, so faturas).
+    // Um TES por resolver que nao aparece neste lote fica pendente para o
+    // proximo — so e dado como "sem match" na ultima pagina.
+    const porNomeLote: Record<string, DocAchatado[]> = {};
+    for (const d of docsLote) {
+      const nm = nomeNorm(d.customer_business_name);
+      if (nm) (porNomeLote[nm] ??= []).push(d);
+    }
+    for (const linha of tesRows) {
+      const idTes = String((linha as Record<string, unknown>).id ?? "");
+      if (!idTes || tesResolvido[idTes]) continue;
+      const nomeLinha = nomeNorm((linha as Record<string, unknown>).cliente);
+      const cands = porNomeLote[nomeLinha];
+      if (!cands || !cands.length) continue;
+      const valorLinha = numGenerico((linha as Record<string, unknown>).total ?? (linha as Record<string, unknown>).valorRecebido);
+      const porValor = cands.find((d) => Math.abs(d.gross_total - valorLinha) < 0.5);
+      if (!porValor) {
+        tesResolvido[idTes] = { tipo: "divergencia_valor", detalhe: { cliente: (linha as Record<string, unknown>).cliente as unknown as Record<string, unknown>, crm_total: valorLinha, toconline_candidatos: cands.map((d) => d.gross_total) } as unknown as Record<string, unknown> };
+        continue;
+      }
+      const estadoLinha = val((linha as Record<string, unknown>).estado);
+      const liquidadoToc = porValor.pending_total <= 0.005 && !porValor.voided_reason;
+      const estadoBate = (estadoLinha === "Recebido" && liquidadoToc) || (estadoLinha !== "Recebido" && !liquidadoToc);
+      tesResolvido[idTes] = estadoBate
+        ? { tipo: "match", detalhe: { cliente: (linha as Record<string, unknown>).cliente, toconline_document_no: porValor.document_no } as unknown as Record<string, unknown> }
+        : { tipo: "divergencia_status", detalhe: { cliente: (linha as Record<string, unknown>).cliente, crm_estado: estadoLinha, toconline_pending_total: porValor.pending_total, toconline_document_no: porValor.document_no } as unknown as Record<string, unknown> };
+    }
+
+    ckpt.paginas_processadas++;
+    paginaAtual++;
+    if (lote.length < PAGE_SIZE) { terminou = true; break; }
+    if (Date.now() - inicioChamada > 90000) break; // orcamento de tempo por chamada, rede de seguranca
+  }
+
+  ckpt.next_page = paginaAtual;
+  ckpt.contagem = idsVistos.size;
+  ckpt.ids_vistos = [...idsVistos];
+  ckpt.periodo = { desde, ate };
+  ckpt.include_escolhido = escolhido;
+  ckpt.tentativas_include = tentativasInclude;
+
+  await guardarNaBase(CHAVE_INVOICES_CKPT, ckpt);
+
+  if (!terminou) {
+    return {
+      concluido: false, paginacao_completa: false,
+      next_page: ckpt.next_page, paginas_processadas: ckpt.paginas_processadas,
+      contagem: ckpt.contagem, duplicados_neste_lote: duplicadosNesteLote,
+      nota: "Lote gravado no checkpoint (toc-finance-audit-invoices-checkpoint). Chame de novo resource=finance_audit&parte=invoices para continuar.",
+    };
+  }
+
+  // Ultima pagina: fecha os TES que nunca apareceram em nenhum lote como
+  // "sem match" e consolida o relatorio final na mesma chave de sempre.
+  let semMatch = 0, comMatch = 0, divValor = 0, divStatus = 0;
+  const amostraSemMatch: unknown[] = [], amostraDivValor: unknown[] = [], amostraDivStatus: unknown[] = [];
+  for (const linha of tesRows) {
+    const idTes = String((linha as Record<string, unknown>).id ?? "");
+    const r = idTes ? tesResolvido[idTes] : undefined;
+    if (!r) {
+      semMatch++;
+      if (amostraSemMatch.length < 50) amostraSemMatch.push({ id: idTes, cliente: (linha as Record<string, unknown>).cliente });
+      continue;
+    }
+    if (r.tipo === "match") comMatch++;
+    else if (r.tipo === "divergencia_valor") { divValor++; if (amostraDivValor.length < 50) amostraDivValor.push({ id: idTes, ...r.detalhe }); }
+    else if (r.tipo === "divergencia_status") { divStatus++; if (amostraDivStatus.length < 50) amostraDivStatus.push({ id: idTes, ...r.detalhe }); }
+  }
+
+  const usersLista = Object.entries(usersMapa).map(([k, u]) => {
+    const at = u.atributos;
+    const nomeBruto = val(at.name) || val(at.full_name) || val(at.email) || "";
+    const match = NOMES_COMERCIAIS_CONHECIDOS.find((n) => nomeNorm(n) === nomeNorm(nomeBruto));
+    return { id: k.split(":")[1] ?? k, type: u.type, freq: u.freq, nome_bruto: nomeBruto || "(sem atributos legíveis no included)", correspondencia: match ?? VENDEDOR_NAO_CONFIRMADO };
+  }).sort((a, b) => b.freq - a.freq);
+  const freqConfirmados = usersLista.filter((u) => u.correspondencia !== VENDEDOR_NAO_CONFIRMADO).reduce((s, u) => s + u.freq, 0);
+
+  const relatorio = {
+    ts: new Date().toISOString(), parte: "invoices", modo: "lotes",
+    duracao_total_ms: Date.now() - Date.parse(ckpt.iniciado_em),
+    paginacao_completa: true, paginas_processadas: ckpt.paginas_processadas,
+    contagens: { invoices: ckpt.contagem, credit_notes: 0, receipts: 0 },
+    periodo_coberto: ckpt.periodo,
+    totais_faturas: totais, totais_notas_credito: totaisVazios(),
+    duplicados_toconline: { invoices: idsVistos.size < ckpt.contagem ? ckpt.contagem - idsVistos.size : 0, credit_notes: 0, receipts: 0 },
+    users_toconline: usersLista,
+    vendedores_confirmados: usersLista.filter((u) => u.correspondencia !== VENDEDOR_NAO_CONFIRMADO).length,
+    documentos_sem_vendedor_confirmado: ckpt.contagem - freqConfirmados,
+    match_tes_receber: { total_tes_no_periodo: tesRows.length, com_match: comMatch, sem_match: semMatch, divergencias_valor: divValor, divergencias_status: divStatus },
+    amostra_sem_match: amostraSemMatch, amostra_divergencias_valor: amostraDivValor, amostra_divergencias_status: amostraDivStatus,
+    amostra_documentos: { invoices: amostra, credit_notes: [], receipts: [] },
+    tentativas_include: { invoices: ckpt.tentativas_include },
+    nota: "SOMENTE LEITURA, modo lotes com checkpoint (resource=finance_audit&parte=invoices&paginas=N). credit_notes e receipts nao foram consultados nesta corrida — ver toc-finance-audit-credit_notes / toc-finance-audit-receipts para essas partes.",
+  };
+  await guardarNaBase(`${CHAVE_FINANCE_AUDIT}-invoices`, relatorio);
+  return {
+    concluido: true, paginacao_completa: true, paginas_processadas: ckpt.paginas_processadas,
+    contagem: ckpt.contagem, periodo_coberto: ckpt.periodo, match_tes_receber: relatorio.match_tes_receber,
+    duplicados_toconline_invoices: relatorio.duplicados_toconline.invoices,
+    vendedores_confirmados: relatorio.vendedores_confirmados,
+    documentos_sem_vendedor_confirmado: relatorio.documentos_sem_vendedor_confirmado,
+  };
+}
+
+// ══ FASE C — RECONCILIACAO AGREGADA POR CLIENTE (SOMENTE LEITURA) ══════════
+// Objetivo (autorizado depois do diagnostico das 292 divergencias de valor):
+// reconciliar TOConline vs ob-tes-receber por SOMA por cliente, nao por
+// linha — o diagnostico mostrou que 86% das linhas do ob-tes-receber
+// pertencem a clientes com mais de uma linha (projectos/tranches), enquanto
+// o TOConline fatura por documento; comparar linha-a-linha por valor estava
+// destinado a falhar na maioria dos casos. FT e NC sao tratados e somados
+// SEPARADAMENTE dos dois lados, nunca comparados um com o outro. Placeholders
+// (Cliente Final / NIF 999999990) sao excluidos por completo, dos dois
+// lados, antes de somar. So GET ao TOConline, so leitura de ob-tes-receber;
+// escreve so no checkpoint proprio e no relatorio final (toc-finance-
+// reconcile), nunca em ob-tes-receber/ob_orcamentos/Financeiro/Ranking/
+// Historico/CFO. Vendedor TOConline continua NAO CONFIRMADO — nao usado
+// aqui, nao usado no Ranking.
+const CHAVE_RECONCILE = "toc-finance-reconcile";
+const CHAVE_RECONCILE_CKPT = "toc-finance-reconcile-checkpoint";
+
+interface ClienteTocAc {
+  nome_exemplo: string;
+  toc_ft_bruto: number; toc_ft_count: number; toc_ft_pendente: number; toc_ft_anuladas: number;
+  toc_nc_bruto: number; toc_nc_count: number; toc_nc_anuladas: number;
+}
+interface CheckpointReconcile {
+  next_page_invoices: number;
+  paginas_processadas_invoices: number;
+  credit_notes_concluido: boolean;
+  include_escolhido_invoices: string;
+  clientes: Record<string, ClienteTocAc>;
+  placeholders_excluidos_toc: number;
+  iniciado_em: string;
+}
+
+// Mesma regra da Fase B (NIF_GENERICO / "Consumidor Final"), alargada ao
+// padrao "Cliente Final" encontrado no ob-tes-receber (pedido explicito).
+const ehPlaceholder = (nome: unknown, nif?: unknown): boolean => {
+  const n = nomeNorm(nome);
+  if (n.includes("CLIENTE FINAL") || n === "CONSUMIDOR FINAL") return true;
+  if (nif !== undefined && nif !== "" && nifNorm(nif) === NIF_GENERICO) return true;
+  return false;
+};
+
+function acumularDocReconcile(clientes: Record<string, ClienteTocAc>, d: DocAchatado, tipo: "ft" | "nc"): boolean {
+  if (ehPlaceholder(d.customer_business_name, d.customer_tax_registration_number)) return true;
+  const nm = nomeNorm(d.customer_business_name) || "(SEM NOME)";
+  if (!clientes[nm]) {
+    clientes[nm] = { nome_exemplo: d.customer_business_name || nm, toc_ft_bruto: 0, toc_ft_count: 0, toc_ft_pendente: 0, toc_ft_anuladas: 0, toc_nc_bruto: 0, toc_nc_count: 0, toc_nc_anuladas: 0 };
+  }
+  const c = clientes[nm];
+  if (tipo === "ft") {
+    if (d.voided_reason) c.toc_ft_anuladas++;
+    else { c.toc_ft_bruto += d.gross_total; c.toc_ft_count++; c.toc_ft_pendente += d.pending_total; }
+  } else {
+    if (d.voided_reason) c.toc_nc_anuladas++;
+    else { c.toc_nc_bruto += Math.abs(d.gross_total); c.toc_nc_count++; }
+  }
+  return false;
+}
+
+async function auditoriaReconciliacaoAgregada(paginasPorChamada: number, reiniciar: boolean): Promise<Record<string, unknown>> {
+  const inicioChamada = Date.now();
+  const token = await getAccessToken();
+  const numGenerico = (x: unknown): number => (typeof x === "number" ? x : parseFloat(String(x ?? "")) || 0);
+
+  let ckpt = reiniciar ? null : (await lerDaBase(CHAVE_RECONCILE_CKPT)) as CheckpointReconcile | null;
+  if (!ckpt) {
+    ckpt = {
+      next_page_invoices: 1, paginas_processadas_invoices: 0, credit_notes_concluido: false,
+      include_escolhido_invoices: "", clientes: {}, placeholders_excluidos_toc: 0,
+      iniciado_em: new Date().toISOString(),
+    };
+  }
+  const clientes = ckpt.clientes;
+
+  // Notas de credito: so ~260 documentos / poucas paginas — cabem inteiras
+  // numa chamada, sem checkpoint proprio. Reutiliza buscarDocumentosCompletos
+  // (mesma funcao ja usada e testada em toc-finance-audit-credit_notes).
+  if (!ckpt.credit_notes_concluido) {
+    const { data: ncDocs } = await buscarDocumentosCompletos("credit_notes", token, 40000);
+    for (const d of ncDocs) if (acumularDocReconcile(clientes, d, "nc")) ckpt.placeholders_excluidos_toc++;
+    ckpt.credit_notes_concluido = true;
+  }
+
+  // Faturas: em lotes, mesma rede de seguranca da auditoriaFaturasLote
+  // (6086 faturas de uma vez ja rebentou com WORKER_RESOURCE_LIMIT).
+  const path = await resolverPath("invoices", token);
+  const cfg = RECURSOS["invoices"];
+  let escolhido = ckpt.include_escolhido_invoices;
+  if (!escolhido && ckpt.paginas_processadas_invoices === 0) {
+    for (const inc of DOC_INCLUDES) {
+      const qs = [cfg.query, inc ? `include=${encodeURIComponent(inc)}` : "", "page[size]=1", "page[number]=1"].filter(Boolean).join("&");
+      const r = await tocGet(`${path}?${qs}`, token);
+      if (r.ok) { escolhido = inc; break; }
+    }
+  }
+
+  let paginasNesteLote = 0, terminouInvoices = false, paginaAtual = ckpt.next_page_invoices;
+  for (; paginasNesteLote < paginasPorChamada; paginasNesteLote++) {
+    const qs = [cfg.query, escolhido ? `include=${encodeURIComponent(escolhido)}` : "", `page[size]=${PAGE_SIZE}`, `page[number]=${paginaAtual}`]
+      .filter(Boolean).join("&");
+    const res = await tocGet(`${path}?${qs}`, token);
+    if (!res.ok) {
+      if (paginaAtual === 1 && ckpt.paginas_processadas_invoices === 0) throw new HttpError(502, `TOConline devolveu HTTP ${res.status} em ${path}`);
+      terminouInvoices = true; break;
+    }
+    let payload: Record<string, unknown>;
+    try { payload = await res.json(); } catch { terminouInvoices = true; break; }
+    const lote = extrairLista(payload);
+    if (!lote.length) { terminouInvoices = true; break; }
+    for (const docBruto of lote as Record<string, unknown>[]) {
+      const d = achatarDocumento(docBruto);
+      if (acumularDocReconcile(clientes, d, "ft")) ckpt.placeholders_excluidos_toc++;
+    }
+    ckpt.paginas_processadas_invoices++;
+    paginaAtual++;
+    if (lote.length < PAGE_SIZE) { terminouInvoices = true; break; }
+    if (Date.now() - inicioChamada > 90000) break; // orcamento de tempo por chamada
+  }
+
+  ckpt.next_page_invoices = paginaAtual;
+  ckpt.include_escolhido_invoices = escolhido;
+  await guardarNaBase(CHAVE_RECONCILE_CKPT, ckpt);
+
+  if (!terminouInvoices) {
+    return {
+      concluido: false,
+      next_page_invoices: ckpt.next_page_invoices, paginas_processadas_invoices: ckpt.paginas_processadas_invoices,
+      clientes_toconline_ate_agora: Object.keys(clientes).length,
+      nota: "Lote gravado (toc-finance-reconcile-checkpoint). Chame de novo resource=finance_reconcile para continuar.",
+    };
+  }
+
+  // Lado CRM: ob-tes-receber completo, agregado por cliente, FT/NC separado.
+  const tes = (await lerDaBase(CHAVE_TES_RECEBER)) as Record<string, unknown>[] | null;
+  const tesRows = Array.isArray(tes) ? tes : [];
+  let placeholdersExcluidosCrm = 0;
+  const crmMap: Record<string, { nome_exemplo: string; ft_total: number; ft_count: number; ft_recebido: number; ft_naorecebido: number; nc_total: number; nc_count: number }> = {};
+  for (const linhaRaw of tesRows) {
+    const linha = linhaRaw as Record<string, unknown>;
+    const clienteNome = linha.cliente;
+    if (ehPlaceholder(clienteNome, linha.nif)) { placeholdersExcluidosCrm++; continue; }
+    const nm = nomeNorm(clienteNome) || "(SEM NOME)";
+    if (!crmMap[nm]) crmMap[nm] = { nome_exemplo: val(clienteNome) || nm, ft_total: 0, ft_count: 0, ft_recebido: 0, ft_naorecebido: 0, nc_total: 0, nc_count: 0 };
+    const c = crmMap[nm];
+    const valor = numGenerico(linha.total ?? linha.valorRecebido);
+    const tipo = val(linha.tipo);
+    const estado = val(linha.estado);
+    if (tipo === "NC") { c.nc_total += Math.abs(valor); c.nc_count++; }
+    else { c.ft_total += valor; c.ft_count++; if (estado === "Recebido") c.ft_recebido++; else c.ft_naorecebido++; }
+  }
+
+  // Fusao por nome normalizado + categorizacao.
+  const todosNomes = new Set([...Object.keys(clientes), ...Object.keys(crmMap)]);
+  type LinhaReconcile = {
+    cliente: string; toc_ft_bruto: number; toc_nc_bruto: number; toc_saldo_liquido: number; toc_ft_pendente: number;
+    crm_ft_total: number; crm_nc_total: number; crm_saldo_liquido: number;
+    diferenca: number; diferenca_abs: number;
+    crm_estado_agregado: string; toc_liquidado: boolean;
+    parcial: boolean; crm_recebido_toc_pendente: boolean; crm_naorecebido_toc_liquidado: boolean;
+  };
+  const linhas: LinhaReconcile[] = [];
+  for (const nm of todosNomes) {
+    const t = clientes[nm], c = crmMap[nm];
+    const toc_ft_bruto = t?.toc_ft_bruto ?? 0, toc_nc_bruto = t?.toc_nc_bruto ?? 0, toc_ft_pendente = t?.toc_ft_pendente ?? 0;
+    const crm_ft_total = c?.ft_total ?? 0, crm_nc_total = c?.nc_total ?? 0;
+    const toc_saldo_liquido = toc_ft_bruto - toc_nc_bruto, crm_saldo_liquido = crm_ft_total - crm_nc_total;
+    const diferenca = toc_saldo_liquido - crm_saldo_liquido;
+    const crm_estado_agregado = !c || c.ft_count === 0 ? "sem_dados_crm"
+      : c.ft_recebido > 0 && c.ft_naorecebido === 0 ? "Recebido"
+      : c.ft_naorecebido > 0 && c.ft_recebido === 0 ? "Não Recebido" : "Misto";
+    const toc_liquidado = toc_ft_pendente <= 0.5;
+    linhas.push({
+      cliente: t?.nome_exemplo || c?.nome_exemplo || nm,
+      toc_ft_bruto, toc_nc_bruto, toc_saldo_liquido, toc_ft_pendente,
+      crm_ft_total, crm_nc_total, crm_saldo_liquido,
+      diferenca, diferenca_abs: Math.abs(diferenca),
+      crm_estado_agregado, toc_liquidado,
+      parcial: crm_estado_agregado === "Misto" || (toc_ft_pendente > 0.5 && toc_ft_pendente < toc_ft_bruto - 0.5),
+      crm_recebido_toc_pendente: crm_estado_agregado === "Recebido" && !toc_liquidado && (t?.toc_ft_count ?? 0) > 0,
+      crm_naorecebido_toc_liquidado: crm_estado_agregado === "Não Recebido" && toc_liquidado && (t?.toc_ft_count ?? 0) > 0,
+    });
+  }
+
+  const reconciliados = linhas.filter((l) => l.diferenca_abs <= 0.5);
+  const divergentes = linhas.filter((l) => l.diferenca_abs > 0.5);
+  const parciais = linhas.filter((l) => l.parcial);
+  const casosRecebidoPendente = linhas.filter((l) => l.crm_recebido_toc_pendente);
+  const casosNaoRecebidoLiquidado = linhas.filter((l) => l.crm_naorecebido_toc_liquidado);
+  const diferencaTotalSinalizada = linhas.reduce((s, l) => s + l.diferenca, 0);
+  const diferencaTotalAbsoluta = linhas.reduce((s, l) => s + l.diferenca_abs, 0);
+  const maiores20 = [...linhas].sort((a, b) => b.diferenca_abs - a.diferenca_abs).slice(0, 20);
+
+  const clientesComNcCrm = Object.entries(crmMap).filter(([, c]) => c.nc_count > 0);
+  const nc27ComNcToc = clientesComNcCrm.filter(([nm]) => (clientes[nm]?.toc_nc_count ?? 0) > 0).length;
+
+  const relatorio = {
+    ts: new Date().toISOString(), modo: "reconciliacao_agregada_por_cliente",
+    duracao_total_ms: Date.now() - Date.parse(ckpt.iniciado_em),
+    paginas_processadas_invoices: ckpt.paginas_processadas_invoices,
+    clientes_analisados: linhas.length,
+    clientes_reconciliados_diferenca_ate_050: reconciliados.length,
+    clientes_divergencia_real_acima_050: divergentes.length,
+    placeholders_excluidos: { toconline: ckpt.placeholders_excluidos_toc, crm: placeholdersExcluidosCrm },
+    impacto_27_nc: {
+      linhas_nc_no_crm: 27, clientes_com_nc_no_crm: clientesComNcCrm.length,
+      desses_com_nc_tambem_no_toconline: nc27ComNcToc,
+      total_nc_crm: clientesComNcCrm.reduce((s, [, c]) => s + c.nc_total, 0),
+      total_nc_toconline: Object.values(clientes).reduce((s, c) => s + c.toc_nc_bruto, 0),
+    },
+    casos_pagamento_parcial: parciais.length,
+    casos_crm_recebido_toc_pendente: casosRecebidoPendente.length,
+    casos_crm_naorecebido_toc_liquidado: casosNaoRecebidoLiquidado.length,
+    diferenca_total_euros_sinalizada: diferencaTotalSinalizada,
+    diferenca_total_euros_absoluta: diferencaTotalAbsoluta,
+    amostra_maiores_20_desvios: maiores20,
+    amostra_pagamento_parcial: parciais.slice(0, 30),
+    amostra_crm_recebido_toc_pendente: casosRecebidoPendente.slice(0, 30),
+    amostra_crm_naorecebido_toc_liquidado: casosNaoRecebidoLiquidado.slice(0, 30),
+    nota: "SOMENTE LEITURA. Reconciliacao por soma agregada por cliente (nao exige 1:1 linha-documento). Placeholders (Cliente Final / NIF 999999990) excluidos de ambos os lados antes de somar. FT e NC tratados e somados separadamente dos dois lados, nunca comparados um com o outro. Vendedor TOConline continua NAO CONFIRMADO — nao usado aqui nem no Ranking. Nao escreveu em ob-tes-receber, ob_orcamentos, Financeiro, Ranking, Historico ou CFO.",
+  };
+  await guardarNaBase(CHAVE_RECONCILE, relatorio);
+  return {
+    concluido: true,
+    clientes_analisados: relatorio.clientes_analisados,
+    clientes_reconciliados_diferenca_ate_050: relatorio.clientes_reconciliados_diferenca_ate_050,
+    clientes_divergencia_real_acima_050: relatorio.clientes_divergencia_real_acima_050,
+    diferenca_total_euros_sinalizada: relatorio.diferenca_total_euros_sinalizada,
+    diferenca_total_euros_absoluta: relatorio.diferenca_total_euros_absoluta,
+  };
+}
+
+// ══ SYNC_DOCS — paginação completa por lotes, SEM CHECKPOINT (SOMENTE LEITURA) ══
+// A Central de Sincronização Financeira do CRM (preview) chamava directamente
+// resource=invoices/credit_notes/receipts, que usa buscarTudo()/MAX_PAGES=50
+// (teto histórico de 5.000 documentos, pensado para o snapshot leve do
+// callback OAuth) — insuficiente com 6.086 faturas reais. Este recurso novo
+// devolve paginação completa, um lote de páginas TOConline por chamada, tal
+// como auditoriaFaturasLote()/auditoriaReconciliacaoAgregada(), mas SEM
+// persistir nenhum checkpoint em ob_crm_dados: cada chamada é independente,
+// devolve pagina_seguinte, e é o CHAMADOR (o browser) que decide repetir a
+// chamada até paginacao_completa:true, acumulando o resultado do seu lado.
+// Isto evita criar mais uma chave de checkpoint na base só para um proxy
+// paginado — o volume por chamada já fica pequeno (achatarDocumento por
+// página, igual a buscarDocumentosCompletos(), nunca a colecção bruta
+// inteira em memória).
+// Compatibilidade: resource=invoices/credit_notes/receipts (buscarTudo(),
+// MAX_PAGES) e o snapshot do callback OAuth continuam exactamente como
+// estavam — nada aqui os altera. Só GET ao TOConline; nunca cria, altera ou
+// cancela documentos; nunca escreve em ob-tes-receber, ob_orcamentos,
+// ob-clients, Financeiro, Ranking, Histórico ou CFO.
+async function sincDocsLote(
+  recurso: "invoices" | "credit_notes" | "receipts",
+  paginaInicio: number,
+  paginasPorChamada: number,
+): Promise<Record<string, unknown>> {
+  const inicioChamada = Date.now();
+  const token = await getAccessToken();
+  const path = await resolverPath(recurso, token);
+  const cfg = RECURSOS[recurso];
+
+  const candidatos = recurso === "receipts" ? [""] : DOC_INCLUDES;
+  const tentativas: string[] = [];
+  let escolhido = "";
+  for (const inc of candidatos) {
+    const qs = [cfg.query, inc ? `include=${encodeURIComponent(inc)}` : "", "page[size]=1", "page[number]=1"]
+      .filter(Boolean).join("&");
+    const r = await tocGet(`${path}?${qs}`, token);
+    tentativas.push(`${inc || "(sem include)"} -> HTTP ${r.status}`);
+    if (r.ok) { escolhido = inc; break; }
+  }
+
+  const data: DocAchatado[] = [];
+  let pagina = paginaInicio;
+  let paginasProcessadas = 0;
+  let terminou = false; // fim real da paginação (página curta ou vazia) — nunca escreve nada, só leitura
+  let parcial = false;  // parou por orçamento de tempo desta chamada, sem chegar ao fim
+
+  // Diagnóstico — só populado para credit_notes.
+  let ncListadas = 0, ncHidratadasTentativas = 0, ncHidratadasOk = 0, ncHidratadasFalha = 0;
+  const ncAmostraHidratadas: Record<string, unknown>[] = [];
+
+  for (; paginasProcessadas < paginasPorChamada; paginasProcessadas++) {
+    if (Date.now() - inicioChamada > 90000) { parcial = true; break; }
+    const qs = [cfg.query, escolhido ? `include=${encodeURIComponent(escolhido)}` : "", `page[size]=${PAGE_SIZE}`, `page[number]=${pagina}`]
+      .filter(Boolean).join("&");
+    const res = await tocGet(`${path}?${qs}`, token);
+    if (!res.ok) {
+      if (pagina === paginaInicio && paginasProcessadas === 0) throw new HttpError(502, `TOConline devolveu HTTP ${res.status} em ${path}`);
+      terminou = true; break;
+    }
+    let payload: Record<string, unknown>;
+    try { payload = await res.json(); } catch { terminou = true; break; }
+    const lote = extrairLista(payload);
+    if (!lote.length) { terminou = true; break; }
+    if (recurso === "credit_notes") {
+      // Achata a página inteira primeiro (nunca perde nenhum documento),
+      // depois hidrata só os incompletos, em lotes concorrentes — nunca
+      // sequencial, nunca substitui a coleção da página.
+      const flats = (lote as Record<string, unknown>[]).map(achatarDocumento);
+      ncListadas += flats.length;
+      const r = await hidratarPaginaNc(flats, path, token, ncAmostraHidratadas);
+      ncHidratadasTentativas += r.tentativas;
+      ncHidratadasOk += r.sucesso;
+      ncHidratadasFalha += r.falha;
+      for (const f of flats) data.push(f);
+    } else {
+      for (const doc of lote as Record<string, unknown>[]) data.push(achatarDocumento(doc));
+    }
+    pagina++;
+    if (lote.length < PAGE_SIZE) { terminou = true; break; }
+    // `payload`/`lote` saem de scope aqui — nada retem os campos brutos.
+  }
+
+  const resultado: Record<string, unknown> = {
+    tipo: recurso, pagina_inicio: paginaInicio, pagina_seguinte: pagina,
+    paginas_processadas: paginasProcessadas, contagem: data.length,
+    paginacao_completa: terminou, parcial,
+    include_escolhido: escolhido, tentativas_include: tentativas,
+    data,
+  };
+  if (recurso === "credit_notes") {
+    resultado.diagnostico_nc_hidratacao = {
+      listadas: ncListadas, tentativas: ncHidratadasTentativas,
+      sucesso: ncHidratadasOk, falha: ncHidratadasFalha,
+      amostra: ncAmostraHidratadas,
+    };
+  }
+  return resultado;
+}
+
+// ── DIAGNÓSTICO TEMPORÁRIO — resource=nc_raw_probe&id=<id> ─────────────────
+// Só leitura, exige autenticação normal (JWT/x-api-key), nunca escreve nada.
+// A hidratação de NC (v21) foi revertida em v22 por ter reduzido o universo
+// de 260 para 100 NC — causa não confirmada sem ver o JSON bruto real do
+// TOConline. Este resource devolve o corpo bruto (SEM achatarDocumento) de
+// UM documento, pelo `id` real (obtido em sync_docs&tipo=credit_notes),
+// para confirmar o nome real dos campos antes de qualquer nova tentativa de
+// correção. Remover depois de diagnosticado. Nunca expõe tokens/segredos —
+// só o que o próprio TOConline devolve para esse documento.
+async function ncRawProbe(id: string): Promise<Record<string, unknown>> {
+  const token = await getAccessToken();
+  const path = await resolverPath("credit_notes", token);
+  const r = await tocGet(`${path}/${encodeURIComponent(id)}`, token);
+  const texto = await r.text();
+  let corpo: unknown;
+  try { corpo = JSON.parse(texto); } catch { corpo = texto; }
+  return { endpoint: `${apiBase()}${path}/${id}`, http_status: r.status, corpo_bruto: corpo };
 }
 
 Deno.serve(async (req: Request) => {
@@ -813,6 +1735,71 @@ Deno.serve(async (req: Request) => {
 
     if (pedido === "diag") return json(await diagnostico(), 200);
 
+    // Diagnóstico temporário (ver comentário acima de ncRawProbe). Devolve o
+    // JSON bruto de UM documento de credit_notes, pelo id real.
+    if (pedido === "nc_raw_probe") {
+      const id = url.searchParams.get("id") ?? "";
+      if (!id) return json({ error: "Falta ?id=<id real de uma NC, obtido em sync_docs&tipo=credit_notes>" }, 400);
+      return json(await ncRawProbe(id), 200);
+    }
+
+    // Fase C — auditoria financeira, somente leitura (ver bloco acima).
+    // ?parte=invoices|credit_notes|receipts corre so essa parte (util se o
+    // orcamento de tempo de uma corrida "tudo" nao chegar para as tres).
+    // parte=invoices e um caso especial: usa o modo em lotes com checkpoint
+    // (auditoriaFaturasLote) em vez de buscar as 6086 faturas de uma vez —
+    // essa corrida "tudo numa chamada" rebentou com WORKER_RESOURCE_LIMIT.
+    // ?paginas=N (default 15) controla quantas paginas do TOConline uma
+    // chamada processa; ?reiniciar=1 ignora o checkpoint e comeca do zero.
+    if (pedido === "finance_audit") {
+      const parteParam = url.searchParams.get("parte") ?? "tudo";
+      if (parteParam === "invoices") {
+        const paginasParam = Number(url.searchParams.get("paginas"));
+        const paginas = Number.isFinite(paginasParam) && paginasParam > 0
+          ? Math.min(50, Math.floor(paginasParam)) : PAGINAS_POR_LOTE_DEFAULT;
+        const reiniciar = url.searchParams.get("reiniciar") === "1";
+        return json(await auditoriaFaturasLote(paginas, reiniciar), 200);
+      }
+      return json(await auditoriaFinanceira(parteParam), 200);
+    }
+    if (pedido === "finance_audit_estado") {
+      return json(await lerDaBase(CHAVE_FINANCE_AUDIT) ?? { nunca: true }, 200);
+    }
+
+    // Reconciliacao agregada por cliente (ver bloco acima). Mesmo esquema de
+    // lotes/checkpoint de finance_audit&parte=invoices: ?paginas=N (default
+    // 15), ?reiniciar=1 para comecar do zero.
+    if (pedido === "finance_reconcile") {
+      const paginasParam = Number(url.searchParams.get("paginas"));
+      const paginas = Number.isFinite(paginasParam) && paginasParam > 0
+        ? Math.min(50, Math.floor(paginasParam)) : PAGINAS_POR_LOTE_DEFAULT;
+      const reiniciar = url.searchParams.get("reiniciar") === "1";
+      return json(await auditoriaReconciliacaoAgregada(paginas, reiniciar), 200);
+    }
+    if (pedido === "finance_reconcile_estado") {
+      return json(await lerDaBase(CHAVE_RECONCILE) ?? { nunca: true }, 200);
+    }
+
+    // Paginação completa por lotes, sem checkpoint (ver bloco acima). Usado
+    // pela Central de Sincronização Financeira do CRM em vez do
+    // resource=invoices/credit_notes/receipts (esses continuam capados em
+    // MAX_PAGES=50/5.000 documentos, inalterados, para compatibilidade).
+    // ?tipo=invoices|credit_notes|receipts (obrigatório), ?pagina=N (default
+    // 1, primeira página desta chamada), ?paginas=N (default 15, quantas
+    // páginas TOConline processar nesta chamada).
+    if (pedido === "sync_docs") {
+      const tipoParam = url.searchParams.get("tipo") ?? "";
+      if (tipoParam !== "invoices" && tipoParam !== "credit_notes" && tipoParam !== "receipts") {
+        return json({ error: "tipo invalido. Use: invoices | credit_notes | receipts" }, 400);
+      }
+      const paginaParam = Number(url.searchParams.get("pagina"));
+      const paginaInicio = Number.isFinite(paginaParam) && paginaParam > 0 ? Math.floor(paginaParam) : 1;
+      const paginasParam = Number(url.searchParams.get("paginas"));
+      const paginas = Number.isFinite(paginasParam) && paginasParam > 0
+        ? Math.min(50, Math.floor(paginasParam)) : PAGINAS_POR_LOTE_DEFAULT;
+      return json(await sincDocsLote(tipoParam, paginaInicio, paginas), 200);
+    }
+
     if (pedido === "token") {
       await getAccessToken();
       return json({ ok: true, grant_type: "refresh_token",
@@ -826,7 +1813,7 @@ Deno.serve(async (req: Request) => {
       return json({ resource: pedido, resolved: recurso, path: pathCache[recurso], count: data.length, data }, 200);
     }
 
-    return json({ error: "resource invalido. Use: sync | estado | customers | clients | invoices | credit_notes | receipts | token | diag | auth" }, 400);
+    return json({ error: "resource invalido. Use: sync | estado | customers | clients | invoices | credit_notes | receipts | token | diag | auth | finance_audit | finance_audit_estado | finance_reconcile | finance_reconcile_estado | sync_docs | nc_raw_probe" }, 400);
   } catch (e) {
     if (e instanceof HttpError) {
       // So o callback devolve HTML (e uma pagina para pessoa ler). O auth
