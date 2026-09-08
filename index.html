@@ -2192,18 +2192,39 @@ function tesToggleCartao(){
 // com o valor antigo (texto livre). Primeira opção "sem projeto/orçamento"
 // mantém-se sempre disponível — nem toda despesa (rendas, seguros,
 // impostos) está ligada a um projeto específico.
-function tesPopularSelectProjeto(){
+//
+// valorAtual (opcional): projeto já gravado numa conta existente (uso
+// preparado para quando existir edição de conta a pagar — hoje o modal só
+// cria contas novas, tesAbrirModal() nunca é chamado com um id real). Se
+// vier preenchido e NÃO corresponder a nenhum orçamento atual em orcData,
+// é preservado numa option "Legado — <valor>" e essa option fica
+// selecionada — nunca se perde nem se reescreve o valor original só por
+// abrir o formulário; só muda se o utilizador escolher outra opção.
+//
+// Deduplicação: orcData pode conter mais de um registo com o mesmo número
+// de orçamento (ex. rascunho + versão final) — só a primeira ocorrência
+// (já ordenada, mais recente primeiro) gera uma option; nunca duplica.
+function tesPopularSelectProjeto(valorAtual){
   var sel = document.getElementById('tes-m-proj');
   if(!sel) return;
   var lista = (typeof orcData !== 'undefined' && Array.isArray(orcData)) ? orcData.slice() : [];
   lista.sort(function(a,b){ return String((b&&b.num)||'').localeCompare(String((a&&a.num)||'')); });
   var esc = function(x){ return String(x==null?'':x).replace(/[&<>"]/g, function(c){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]; }); };
-  sel.innerHTML = '<option value="">— Sem projeto/orçamento —</option>'
-    + lista.map(function(o){
-        var num = (o && o.num) || '';
-        var label = num + (o && o.cli ? ' — ' + o.cli : '');
-        return '<option value="' + esc(num) + '">' + esc(label) + '</option>';
-      }).join('');
+  var vistos = {};
+  var opcoesHtml = lista.filter(function(o){
+    var num = String((o && o.num) || '');
+    if(!num || vistos[num]) return false;
+    vistos[num] = true;
+    return true;
+  }).map(function(o){
+    var num = String(o.num);
+    var label = num + (o.cli ? ' — ' + o.cli : '');
+    return '<option value="' + esc(num) + '">' + esc(label) + '</option>';
+  }).join('');
+  var valor = valorAtual || '';
+  var legadoHtml = (valor && !vistos[valor]) ? ('<option value="' + esc(valor) + '">Legado — ' + esc(valor) + '</option>') : '';
+  sel.innerHTML = '<option value="">— Sem projeto/orçamento —</option>' + opcoesHtml + legadoHtml;
+  sel.value = valor;
 }
 
 function tesAbrirModal(id) {
@@ -23363,13 +23384,19 @@ function tesInjectarLogisticaOrçamento(orc) {
   TES_LOG_DESPESAS.unshift(lancamento);
   tesLogSave();
 
-  // Também registar nas Contas a Pagar gerais. Vencimento: data de
-  // aprovação + 30 dias — mesma convenção de prazo já usada no ficheiro
-  // para linhas sem data de vencimento própria do fornecedor (ver
-  // sincFinAplicarSheetPura). Antes ficava '' (vazio), o que fazia esta
-  // despesa REAL nunca aparecer na Previsão de Tesouraria — 90 dias
-  // (finPrevRender/parseVencTes ignora linhas sem data parseável).
-  var vencLog = new Date();
+  // Também registar nas Contas a Pagar gerais. Vencimento: data REAL do
+  // lançamento (lancamento.data, já gravada acima) + 30 dias — mesma
+  // convenção de prazo já usada no ficheiro para linhas sem data de
+  // vencimento própria do fornecedor (ver sincFinAplicarSheetPura). Usa
+  // parseVencTes() (já existente, usada no resto da Tesouraria) para
+  // reaproveitar exatamente a mesma data de aprovação — new Date() só
+  // entra como fallback se essa data vier vazia/ilegível. Antes o
+  // vencimento ficava sempre '' (vazio), o que fazia esta despesa REAL
+  // nunca aparecer na Previsão de Tesouraria — 90 dias (finPrevRender/
+  // parseVencTes ignora linhas sem data parseável).
+  var vencBase = (typeof parseVencTes === 'function') ? parseVencTes(lancamento.data) : new Date(NaN);
+  if(!(vencBase instanceof Date) || isNaN(vencBase.getTime())) vencBase = new Date();
+  var vencLog = new Date(vencBase.getTime());
   vencLog.setDate(vencLog.getDate() + 30);
   TES_CONTAS.unshift({
     id: lancamento.id + '-cp',
