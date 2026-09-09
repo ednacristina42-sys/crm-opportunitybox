@@ -12870,6 +12870,7 @@ function crmDrop(e, colKey){
         crmAddAtividade(lead.id, 'nota', 'Motivo de perda: '+mot, 'Sistema');
       }
     }
+    if(typeof crmRegistarOperacaoLead==='function') crmRegistarOperacaoLead('upsert', lead.id);
     saveCrmLeads();
     crmRenderAll();
   }
@@ -13407,6 +13408,10 @@ function crmSaveLead(){
     const autor = (typeof CU!=='undefined'&&CU&&CU.name)?CU.name:'Sistema';
     crmAddAtividade(data.id, 'criado', `Lead criado${data.origem?' — Origem: '+data.origem:''}`, autor);
   }
+  // crmEditingId (edição) ou data.id (criação, atribuído acima) — data.id
+  // fica undefined no caminho de edição (o spread {...existing,...data}
+  // preserva o id de existing), por isso nunca usar só data.id aqui.
+  if(typeof crmRegistarOperacaoLead==='function') crmRegistarOperacaoLead('upsert', crmEditingId || data.id);
   saveCrmLeads();
   crmRenderAll();
   crmCloseLeadModal();
@@ -13679,6 +13684,7 @@ function crmDeleteLead(){
   if(!crmEditingId) return;
   if(!confirm('Eliminar este lead?')) return;
   crmLeads = crmLeads.filter(l=>l.id!==crmEditingId);
+  if(typeof crmRegistarOperacaoLead==='function') crmRegistarOperacaoLead('delete', crmEditingId);
   saveCrmLeads();
   crmRenderAll();
   crmCloseLeadModal();
@@ -17347,6 +17353,7 @@ function crmSubmeterAdjudicacao(){
   // Marca a lead como Ganha — dispara a criação automática do Cliente
   lead.st = 'Ganho ✓';
   if(!lead.dtFecho) lead.dtFecho = new Date().toISOString().split('T')[0];
+  if(typeof crmRegistarOperacaoLead==='function') crmRegistarOperacaoLead('upsert', leadId);
   if(typeof saveCrmLeads==='function') saveCrmLeads();
   if(typeof crmRenderAll==='function') crmRenderAll();
 
@@ -30103,6 +30110,141 @@ async function obSbPushClientesInterno(dados){
 }
 window.obSbPushClientesInterno = obSbPushClientesInterno;
 
+// ════════════════════════════════════════════════════════════════
+// PUSH SEGURO DE ob-leads — correção definitiva (09/09/2026)
+// ════════════════════════════════════════════════════════════════
+// CAUSA RAIZ confirmada em produção: obSbPush('ob-leads') enviava sempre o
+// array local INTEIRO (localStorage['ob-leads']). Um browser com cache
+// desatualizada (ex.: ainda com os 8 leads fictícios de seed, já
+// removidos da base remota por uma limpeza feita noutro dispositivo)
+// reintroduzia essa contaminação inteira no Supabase só por editar UM
+// lead real — confirmado ao vivo: um lead real foi editado, e os 6 leads
+// fictícios apagados horas antes voltaram todos, com o conteúdo original
+// intacto. localStorage nunca pode voltar a ser a autoridade que substitui
+// o blob remoto inteiro — só pode continuar como cache/UI.
+//
+// Fila de operações pendentes: cada mutação real a UM lead (criar/editar/
+// apagar) regista aqui exatamente o que mudou, por ID — nunca mais se
+// assume "o array local inteiro" como a verdade a enviar. Fica vazia a
+// maior parte do tempo; só tem conteúdo entre uma mutação e o próximo
+// push (debounced, 2.5s) a consumir.
+window._crmOperacoesLeadsPendentes = [];
+function crmRegistarOperacaoLead(tipo, id){
+  if(id==null) return;
+  window._crmOperacoesLeadsPendentes.push({ tipo: tipo, id: id });
+}
+window.crmRegistarOperacaoLead = crmRegistarOperacaoLead;
+
+// Lê {dados,updated_at} de uma chave em ob_crm_dados, sem tocar em mais
+// nada — mesmo princípio de obClientsLerRemotoComVersao(), generalizado.
+// undefined = falha de leitura (nunca tratar como "vazio"); null = linha
+// ainda não existe remotamente (primeira gravação).
+async function obLerRemotoComVersao(chave){
+  if(typeof _ORC_SB_URL==='undefined'||typeof _ORC_SB_KEY==='undefined') return undefined;
+  try{
+    var r=await fetch(_ORC_SB_URL+'/rest/v1/ob_crm_dados?chave=eq.'+encodeURIComponent(chave)+'&select=dados,updated_at',{
+      headers:{'apikey':_ORC_SB_KEY,'Authorization':'Bearer '+_ORC_SB_KEY}
+    });
+    if(!r.ok) return undefined;
+    var rows=await r.json();
+    if(!rows.length) return null;
+    return { dados: rows[0].dados, updated_at: rows[0].updated_at };
+  }catch(e){ return undefined; }
+}
+window.obLerRemotoComVersao = obLerRemotoComVersao;
+
+// Aplica UMA operação {tipo:'upsert'|'delete', id} sobre uma cópia do
+// array REMOTO (nunca sobre o array local inteiro). 'upsert' substitui o
+// elemento com o mesmo id pela versão local mais recente desse lead
+// (crmLeads) ou acrescenta-o se ainda não existir remotamente (criação) —
+// nunca duplica, porque procura sempre por id antes de decidir substituir
+// ou acrescentar. 'delete' remove só esse id. Todos os outros leads do
+// array remoto (incluindo os criados por outras sessões ou pela
+// integração WhatsApp/Leonor entretanto) passam intactos.
+function crmAplicarOperacaoLeadSobreRemoto(remotoArr, op){
+  var arr = (remotoArr||[]).slice();
+  if(op.tipo==='delete'){
+    return arr.filter(function(l){ return l && l.id!==op.id; });
+  }
+  var leadLocal = (typeof crmLeads!=='undefined' ? crmLeads : []).find(function(l){ return l && l.id===op.id; });
+  if(!leadLocal) return arr; // já não existe localmente (ex.: apagado logo a seguir) — nada a fazer
+  var idx = arr.findIndex(function(l){ return l && l.id===op.id; });
+  if(idx>=0) arr[idx]=leadLocal; else arr.push(leadLocal);
+  return arr;
+}
+
+// Push seguro e definitivo de ob-leads — nunca envia o array local
+// inteiro. Lê sempre a versão remota mais recente, aplica só as operações
+// pendentes (uma por lead alterado), preserva todos os outros leads
+// remotos, e grava com concorrência otimista (PATCH condicional por
+// updated_at — mesmo princípio já testado em obSbPushClientesInterno()):
+// se outra escrita aconteceu entre a leitura e esta escrita, tenta
+// novamente UMA vez com uma leitura fresca; nunca força. Fila vazia
+// (ex.: chamada de rotina no arranque, sem edição real deste browser)
+// -> não escreve nada.
+async function obSbPushLeadsSeguro(){
+  var operacoes = window._crmOperacoesLeadsPendentes.splice(0, window._crmOperacoesLeadsPendentes.length);
+  if(!operacoes.length) return;
+  if(typeof _ORC_SB_URL==='undefined'||typeof _ORC_SB_KEY==='undefined') return;
+
+  for(var tentativa=0; tentativa<2; tentativa++){
+    var versao = await obLerRemotoComVersao('ob-leads');
+    if(versao===undefined){
+      console.error('[SB-LEADS] Push BLOQUEADO: não foi possível ler a versão remota atual de ob-leads antes de gravar. Nada foi enviado — a alteração fica só local até à próxima tentativa.');
+      window._crmOperacoesLeadsPendentes = operacoes.concat(window._crmOperacoesLeadsPendentes);
+      return;
+    }
+    var baseRemota = versao===null ? [] : (Array.isArray(versao.dados) ? versao.dados : []);
+    var resultado = operacoes.reduce(crmAplicarOperacaoLeadSobreRemoto, baseRemota);
+
+    try{
+      var headers = {'Content-Type':'application/json','apikey':_ORC_SB_KEY,'Authorization':'Bearer '+_ORC_SB_KEY,'Prefer':'return=representation'};
+      var r;
+      if(versao===null){
+        r = await fetch(_ORC_SB_URL+'/rest/v1/ob_crm_dados?on_conflict=chave', {
+          method:'POST', headers: Object.assign({}, headers, {'Prefer':'resolution=merge-duplicates,return=representation'}),
+          body: JSON.stringify({ chave:'ob-leads', dados: resultado, updated_at: new Date().toISOString() })
+        });
+      } else {
+        r = await fetch(_ORC_SB_URL+'/rest/v1/ob_crm_dados?chave=eq.ob-leads&updated_at=eq.'+encodeURIComponent(versao.updated_at), {
+          method:'PATCH', headers: headers, body: JSON.stringify({ dados: resultado, updated_at: new Date().toISOString() })
+        });
+      }
+      if(!r.ok){
+        console.error('[SB-LEADS] Push BLOQUEADO: gravação condicional falhou (HTTP '+r.status+').');
+        window._crmOperacoesLeadsPendentes = operacoes.concat(window._crmOperacoesLeadsPendentes);
+        return;
+      }
+      var linhas = await r.json();
+      if(!linhas.length){
+        // Conflito real: outra gravação aconteceu entre a nossa leitura e
+        // esta escrita — a condição updated_at=eq.<versão lida> deixou de
+        // bater certo, nada foi alterado. Tenta mais uma vez com leitura
+        // fresca; nunca força.
+        if(tentativa===0){ console.warn('[SB-LEADS] Conflito de concorrência em ob-leads — outra gravação aconteceu entretanto. A tentar novamente com a versão mais recente.'); continue; }
+        console.error('[SB-LEADS] Push BLOQUEADO após 2ª tentativa: conflito de concorrência persistente em ob-leads. Nada foi alterado remotamente — a alteração fica só local.');
+        window._crmOperacoesLeadsPendentes = operacoes.concat(window._crmOperacoesLeadsPendentes);
+        return;
+      }
+      // Sucesso — o local converge para o que ficou confirmado no
+      // Supabase (inclui leads criados/alterados entretanto por outras
+      // sessões ou pela Leonor).
+      var confirmado = Array.isArray(linhas[0].dados) ? linhas[0].dados : resultado;
+      if(typeof crmLeads!=='undefined'){
+        crmLeads = confirmado;
+        if(typeof leads!=='undefined') leads = confirmado;
+        localStorage.setItem('ob-leads', JSON.stringify(confirmado));
+      }
+      return;
+    }catch(e){
+      console.error('[SB-LEADS] Push BLOQUEADO: erro de rede.', e);
+      window._crmOperacoesLeadsPendentes = operacoes.concat(window._crmOperacoesLeadsPendentes);
+      return;
+    }
+  }
+}
+window.obSbPushLeadsSeguro = obSbPushLeadsSeguro;
+
 function obSbPush(chave){
   if(typeof _ORC_SB_URL==='undefined'||typeof _ORC_SB_KEY==='undefined') return;
   // 'ob-clients': nunca envia antes de a leitura remota no arranque ter
@@ -30116,27 +30258,20 @@ function obSbPush(chave){
   clearTimeout(_obSbTimers[chave]);
   _obSbTimers[chave]=setTimeout(async function(){
     try{
-      var dados=JSON.parse(localStorage.getItem(chave)||'[]');
       if(chave==='ob-clients'){
-        await obSbPushClientesInterno(dados);
+        var dadosClientes=JSON.parse(localStorage.getItem(chave)||'[]');
+        await obSbPushClientesInterno(dadosClientes);
         return;
       }
-      // Leads: qualquer gravação local (mesmo sem relação nenhuma com o
-      // WhatsApp) reenvia sempre a cópia inteira. Sem isto, uma foto/
-      // conversa recebida da Leonor depois do arranque deste browser era
-      // apagada assim que o utilizador fizesse a próxima gravação local.
-      if(chave==='ob-leads'&&typeof obSbLerRemoto==='function'&&typeof obSbMesclarCamposLeonor==='function'){
-        try{
-          var remoto=await obSbLerRemoto('ob-leads');
-          var mesclado=obSbMesclarCamposLeonor(dados, remoto);
-          if(mesclado!==dados){
-            dados=mesclado;
-            localStorage.setItem('ob-leads', JSON.stringify(dados));
-            if(typeof crmLeads!=='undefined'){ crmLeads=dados; if(typeof leads!=='undefined') leads=dados; }
-            if(typeof crmRenderAll==='function') crmRenderAll();
-          }
-        }catch(e){}
+      // Leads: correção definitiva (09/09/2026) — já não envia o array
+      // local inteiro (ver obSbPushLeadsSeguro() acima, causa raiz
+      // documentada ali). Chamada de rotina (ex.: OB_SB_SYNC_KEYS no
+      // arranque) sem nenhuma operação pendente não escreve nada.
+      if(chave==='ob-leads'){
+        await obSbPushLeadsSeguro();
+        return;
       }
+      var dados=JSON.parse(localStorage.getItem(chave)||'[]');
       fetch(_ORC_SB_URL+'/rest/v1/ob_crm_dados?on_conflict=chave',{
         method:'POST',
         headers:{'Content-Type':'application/json','apikey':_ORC_SB_KEY,'Authorization':'Bearer '+_ORC_SB_KEY,'Prefer':'resolution=merge-duplicates'},
