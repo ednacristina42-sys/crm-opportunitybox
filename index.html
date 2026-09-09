@@ -8696,9 +8696,13 @@ tbody tr:hover{background:rgba(255,203,45,.05)}
         <button class="tbtn" onclick="tesExportar()">⬇ Exportar</button>
       </div>
     </div>
+    <!-- Estado da hidratação canónica (tesHidratarCanonico(), correção
+         09/09/2026) — nunca deixa "zero dados" e "ainda a carregar/erro"
+         parecerem a mesma coisa. Escondido quando tudo carregou bem. -->
+    <div id="tes-hidratacao-status" style="display:none;font-size:12.5px;padding:7px 12px;border-radius:7px;margin-top:8px"></div>
   </div>
   <div class="admin-page">
-  
+
 
     <!-- KPIs dinâmicos (mudam com a tab activa) -->
     <div class="g4" style="margin-bottom:18px" id="tes-kpis">
@@ -21967,6 +21971,19 @@ function tesIvaRender(){
   var info = document.getElementById('tes-iva-sync-info');
   if(info && TES_IVA_DATA.ultimaSync) info.textContent = 'Última sincronização: ' + TES_IVA_DATA.ultimaSync;
 
+  // Correção (09/09/2026, item 6): "Sem dados. Configure o webhook e
+  // sincronize." era mostrado sempre que TES_IVA_DATA vinha vazio — mesmo
+  // quando a Tesouraria ainda estava a carregar (confundia "a meio" com
+  // "vazio") ou quando TES_RECEBER/TES_CONTAS já tinham carregado e
+  // realmente não há faturação/despesas com IVA conhecido no ano corrente
+  // (base real vazia, não falta de sincronização). tesRenderTudoPosHidratacao()
+  // já recalcula TES_IVA_DATA por tesIvaCalcularReal() assim que a
+  // hidratação termina — só falta a mensagem certa para cada caso.
+  var aindaACarregar = (window._tesReceberEstado==='loading' || window._tesContasEstado==='loading');
+  var msgVazio = aindaACarregar
+    ? 'A carregar dados reais da Tesouraria…'
+    : 'Sem faturação nem despesas com IVA conhecido no ano corrente — base real vazia (não é falta de sincronização).';
+
   if(ivaBody){
     if(TES_IVA_DATA.iva && TES_IVA_DATA.iva.length){
       var totalPago = TES_IVA_DATA.iva.reduce(function(s,r){return s+(parseFloat(r.valorPago)||0);},0);
@@ -21977,7 +21994,7 @@ function tesIvaRender(){
       }).join('') + '<tr><td colspan="4" style="text-align:right;font-weight:700">Total Pago</td><td style="font-weight:700">'+tesIvaFmt(totalPago)+'</td></tr>'
         + (algumIncompletoIva ? '<tr><td colspan="5" style="text-align:center;color:var(--a);font-size:12px;padding:8px">⚠️ IVA suportado incompleto — faltam documentos de compra com IVA conhecido nos meses assinalados (contas como Salários não têm IVA, por natureza; outras podem ainda não ter o IVA registado)</td></tr>' : '');
     } else {
-      ivaBody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:20px">Sem dados. Configure o webhook e sincronize.</td></tr>';
+      ivaBody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:20px">'+msgVazio+'</td></tr>';
     }
   }
 
@@ -21990,7 +22007,7 @@ function tesIvaRender(){
       }).join('')
         + (algumIncompletoRes ? '<tr><td colspan="7" style="text-align:center;color:var(--a);font-size:12px;padding:8px">⚠️ IVA suportado incompleto — faltam documentos de compra com IVA conhecido nos meses assinalados</td></tr>' : '');
     } else {
-      resBody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:20px">Sem dados. Configure o webhook e sincronize.</td></tr>';
+      resBody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:20px">'+msgVazio+'</td></tr>';
     }
   }
 }
@@ -22160,6 +22177,138 @@ function tesMudarFiltroAno(valor){
   if(typeof tesRenderCharts==='function') tesRenderCharts(tabAtiva);
 }
 window.tesMudarFiltroAno = tesMudarFiltroAno;
+
+// ════════════════════════════════════════════════════════════════
+// HIDRATAÇÃO CANÓNICA DA TESOURARIA — correção final (09/09/2026)
+// ════════════════════════════════════════════════════════════════
+// Bug confirmado no browser: A Pagar/A Receber/IVA apareciam vazios e
+// Recebidos mostrava faturas antigas (2022-2024) com dataRec=hoje. Causa
+// real: TES_RECEBER/TES_CONTAS só eram atualizados pelo obSbBoot()
+// genérico (linha ~30026), que só adota a leitura remota QUANDO O LOCAL JÁ
+// ESTAVA VAZIO — nunca substitui uma cópia local existente, por mais
+// antiga/contaminada que seja — e mesmo quando adota, nunca manda a
+// Tesouraria voltar a desenhar-se. goPage('tesouraria') só chamava
+// tesRender() de imediato, lendo o que já estivesse em memória nesse
+// instante: uma corrida contra o fetch assíncrono do obSbBoot(), quase
+// sempre perdida (por isso "A Pagar/A Receber" apareciam vazios mesmo com
+// dados reais no Supabase — não era falta de dados, era hidratação nunca
+// concluída a tempo). Confirmado por leitura direta ao Supabase (só
+// leitura, 09/09): a base remota ob-tes-receber (571 linhas) NÃO TEM
+// nenhum registo com dataRec='08/09/2026' nem '09/09/2026' — a
+// contaminação em "Recebidos" é só do browser (cache local antiga, de
+// antes de tocoMergeFaturasCacheReceber() ter sido desativada), nunca da
+// base canónica.
+//
+// Esta função passa a ser a ÚNICA fonte de verdade para estas duas
+// chaves:
+//  - leitura remota bem-sucedida SUBSTITUI TES_RECEBER/TES_CONTAS por
+//    inteiro — nunca faz merge com o que estava em memória, elimina
+//    automaticamente qualquer contaminação só local;
+//  - localStorage só serve de fallback se a leitura remota falhar (nunca
+//    o contrário);
+//  - nunca escreve de volta ao Supabase — só lê;
+//  - só manda a Tesouraria (tabelas, KPIs, gráficos, IVA) desenhar-se
+//    DEPOIS de a hidratação terminar, nunca antes.
+window._tesReceberEstado = 'loading'; // 'loading' | 'carregado' | 'vazio' | 'erro'
+window._tesContasEstado  = 'loading';
+var _tesHidratacaoPromise = null;
+
+function _tesAtualizarStatusUI(){
+  var el = document.getElementById('tes-hidratacao-status');
+  if(!el) return;
+  var re = window._tesReceberEstado, ce = window._tesContasEstado;
+  if(re==='loading' || ce==='loading'){
+    el.style.display='block'; el.style.background='rgba(245,196,0,.12)'; el.style.color='var(--y)';
+    el.textContent='⏳ A carregar dados reais da Tesouraria (Supabase)…';
+  } else if(re==='erro' || ce==='erro'){
+    el.style.display='block'; el.style.background='rgba(224,85,85,.12)'; el.style.color='var(--r)';
+    el.textContent='⚠️ Falha a ligar ao Supabase — a mostrar a última cópia local guardada neste browser (pode estar desatualizada).';
+  } else {
+    el.style.display='none';
+  }
+}
+window._tesAtualizarStatusUI = _tesAtualizarStatusUI;
+
+// Lê ob-tes-receber/ob-tes-contas diretamente do Supabase (crmSBClient(),
+// mesma técnica já usada por _hfEnsureData()) e SUBSTITUI TES_RECEBER/
+// TES_CONTAS quando tiver sucesso. Nunca escreve ao Supabase. Idempotente
+// por chamada em curso (mesma proteção de _hfEnsureData()/_mvEnsureTesData()
+// — nunca duas leituras em paralelo por navegação rápida entre páginas).
+async function tesHidratarCanonico(){
+  if(_tesHidratacaoPromise) return _tesHidratacaoPromise;
+  _tesHidratacaoPromise = (async function(){
+    window._tesReceberEstado = 'loading';
+    window._tesContasEstado = 'loading';
+    _tesAtualizarStatusUI();
+    var sb = (typeof crmSBClient==='function') ? crmSBClient() : null;
+    if(!sb){
+      window._tesReceberEstado = 'erro';
+      window._tesContasEstado = 'erro';
+      _tesAtualizarStatusUI();
+      tesRenderTudoPosHidratacao();
+      return;
+    }
+    var resReceber, resContas;
+    try{ resReceber = await sb.from('ob_crm_dados').select('dados,updated_at').eq('chave','ob-tes-receber').maybeSingle(); }
+    catch(e){ resReceber = { error: e }; }
+    try{ resContas = await sb.from('ob_crm_dados').select('dados,updated_at').eq('chave','ob-tes-contas').maybeSingle(); }
+    catch(e){ resContas = { error: e }; }
+
+    if(resReceber && !resReceber.error){
+      var dadosR = (resReceber.data && Array.isArray(resReceber.data.dados)) ? resReceber.data.dados : [];
+      TES_RECEBER = dadosR; // substitui sempre — nunca merge com cache local antiga
+      try{ localStorage.setItem('ob-tes-receber', JSON.stringify(TES_RECEBER)); }catch(e){}
+      window._tesReceberEstado = dadosR.length ? 'carregado' : 'vazio';
+    } else {
+      console.warn('[Tesouraria] Falha a ler ob-tes-receber remoto — mantém a cópia local como fallback (nunca inventa dados).', resReceber && resReceber.error);
+      window._tesReceberEstado = 'erro';
+    }
+
+    if(resContas && !resContas.error){
+      var dadosC = (resContas.data && Array.isArray(resContas.data.dados)) ? resContas.data.dados : [];
+      TES_CONTAS = dadosC;
+      try{ localStorage.setItem('ob-tes-contas', JSON.stringify(TES_CONTAS)); }catch(e){}
+      window._tesContasEstado = dadosC.length ? 'carregado' : 'vazio';
+    } else {
+      console.warn('[Tesouraria] Falha a ler ob-tes-contas remoto — mantém a cópia local como fallback (nunca inventa dados).', resContas && resContas.error);
+      window._tesContasEstado = 'erro';
+    }
+
+    _tesAtualizarStatusUI();
+    tesRenderTudoPosHidratacao();
+  })();
+  return _tesHidratacaoPromise;
+}
+window.tesHidratarCanonico = tesHidratarCanonico;
+
+// Redesenha TUDO na Tesouraria de uma vez, sempre pela mesma ordem, sempre
+// depois da hidratação (sucesso, vazio real, ou erro/fallback — nunca a
+// meio). IVA & Resumo só calcula depois das duas fontes terminarem, e usa
+// sempre tesIvaCalcularReal() sobre a fonte já hidratada — nunca espera um
+// clique manual em "Sincronizar" para deixar de mostrar "Sem dados". Não
+// persiste (localStorage/Supabase): isso continua exclusivo do botão
+// manual tesIvaSincronizar().
+function tesRenderTudoPosHidratacao(){
+  try{ if(typeof tesRender==='function') tesRender(); }catch(e){}
+  try{ if(typeof tesRenderReceber==='function') tesRenderReceber(); }catch(e){}
+  try{ if(typeof tesRenderRecebidos==='function') tesRenderRecebidos(); }catch(e){}
+  var tabAtiva = 'pagar';
+  try{
+    tabAtiva = ['pagar','pagas','receber','recebidos','log','iva'].find(function(t){
+      var p = document.getElementById('tes-panel-'+t); return p && p.style.display!=='none';
+    }) || 'pagar';
+    if(typeof tesUpdateKPIs==='function') tesUpdateKPIs(tabAtiva);
+    if(typeof tesRenderCharts==='function') tesRenderCharts(tabAtiva);
+  }catch(e){}
+  if(window._tesReceberEstado!=='loading' && window._tesContasEstado!=='loading'){
+    try{
+      var calc = (typeof tesIvaCalcularReal==='function') ? tesIvaCalcularReal() : {iva:[],resumo:[]};
+      TES_IVA_DATA = { iva: calc.iva, resumo: calc.resumo, ultimaSync: (typeof TES_IVA_DATA!=='undefined' && TES_IVA_DATA) ? TES_IVA_DATA.ultimaSync : null };
+      if(typeof tesIvaRender==='function') tesIvaRender();
+    }catch(e){}
+  }
+}
+window.tesRenderTudoPosHidratacao = tesRenderTudoPosHidratacao;
 
 // Resolve o comercial responsável por um registo de TES_RECEBER a partir do
 // nome do cliente — nunca por nome fixo/hardcoded. Ordem: 1) orçamento mais
@@ -24749,7 +24898,12 @@ function initNovosModulos() {
   if (typeof finFetchDespesasRemoto === 'function') finFetchDespesasRemoto().then(function(){
     if (typeof finIniciarRealtime === 'function') finIniciarRealtime();
   });
-  tesRender();
+  // Correção final (09/09/2026): tesRender() sozinho só pinta o que já
+  // estivesse em memória nesse instante — TES_RECEBER/TES_CONTAS têm agora
+  // hidratação canónica própria (tesHidratarCanonico()), que substitui a
+  // memória pela base remota e só então manda a Tesouraria desenhar-se.
+  tesRender(); // pintura imediata com o que já houver em memória, sem esperar a rede
+  if (typeof tesHidratarCanonico === 'function') tesHidratarCanonico();
 }
 
 // Integrar no goPage para renderizar ao navegar
@@ -24758,7 +24912,7 @@ window.goPage = function(id) {
   if (_origGoPage) _origGoPage(id);
   if (id === 'stock') { setTimeout(stockRender, 50); }
   if (id === 'financeiro') { setTimeout(finRenderDespesas, 50); }
-  if (id === 'tesouraria') { setTimeout(tesRender, 50); }
+  if (id === 'tesouraria') { setTimeout(function(){ tesRender(); if(typeof tesHidratarCanonico==='function') tesHidratarCanonico(); }, 50); }
   if (id === 'design-ficheiros') { setTimeout(function(){ if(typeof ARTES_VIEW!=='undefined'&&ARTES_VIEW==='kanban'&&typeof artesRenderKanban==='function') artesRenderKanban(); }, 100); }
   if (id === 'admin-analise-vendas') {
     setTimeout(function(){
@@ -30037,6 +30191,15 @@ async function obSbBoot(){
         // 'ob-uni-items' tem agora a sua própria sincronização por item (ver
         // _sbUniItemUpsert/_uniInitFromSB) — ignorado aqui para não competir com ela.
         if(row.chave==='ob-uni-items') return;
+        // 'ob-tes-receber'/'ob-tes-contas' têm agora hidratação canónica
+        // própria (tesHidratarCanonico(), correção final 09/09/2026) — mesmo
+        // motivo do 'ob-uni-items' acima: o bloco genérico logo a seguir só
+        // adota a leitura remota quando o localStorage já estava vazio
+        // (nunca substitui cache local antiga/contaminada) e nunca manda a
+        // Tesouraria voltar a desenhar-se depois de adotar. Era exatamente
+        // esse gate que deixava A Pagar/A Receber vazios e Recebidos preso
+        // em cache local contaminada mesmo com a base remota correta.
+        if(row.chave==='ob-tes-receber'||row.chave==='ob-tes-contas') return;
         var localRaw=localStorage.getItem(row.chave);
         var localVazio=!localRaw||localRaw==='[]'||localRaw==='{}'||localRaw==='null';
         var remotoTem=row.dados&&(row.dados.length||Object.keys(row.dados).length);
@@ -30066,8 +30229,8 @@ async function obSbBoot(){
             if(row.chave==='ob-crm-historico'&&typeof crmHistorico!=='undefined'){ crmHistorico=row.dados; }
             if(row.chave==='ob-fo-ausencias'&&typeof FO_AUSENCIAS!=='undefined'){ FO_AUSENCIAS=row.dados; }
             if(row.chave==='ob-rh-colabs'&&typeof rhColabs!=='undefined'){ rhColabs=row.dados; }
-            if(row.chave==='ob-tes-contas'&&typeof TES_CONTAS!=='undefined'){ TES_CONTAS=row.dados; }
-            if(row.chave==='ob-tes-receber'&&typeof TES_RECEBER!=='undefined'){ TES_RECEBER=row.dados; }
+            // 'ob-tes-contas'/'ob-tes-receber' já não chegam aqui — filtradas
+            // acima, cobertas por tesHidratarCanonico().
             if(row.chave==='ob-tes-log'&&typeof TES_LOG_DESPESAS!=='undefined'){ TES_LOG_DESPESAS=row.dados; }
             if(row.chave==='ob-tes-cartoes'&&typeof TES_CARTOES!=='undefined'){ TES_CARTOES=row.dados; }
             if(row.chave==='ob-fin-despesas'&&typeof FIN_DESPESAS!=='undefined'){ FIN_DESPESAS=row.dados; }
