@@ -13982,17 +13982,19 @@ var UNI_DEFAULTS = {
 
 function uniGetItems(page){
   const all = uniItems.filter(i=>i.page===page);
-  // Correção pontual (Etapa 8A): a Agenda ('admin-agenda') já tem dados reais
-  // geridos por RLS/owner_id — 0 itens é um estado real e válido (ex.: um
-  // comercial sem eventos atribuídos), nunca "página nunca semeada". Semear
-  // UNI_DEFAULTS aqui mostrava 4 eventos fictícios em vez de uma agenda
-  // vazia. As restantes páginas uni* continuam a semear normalmente.
-  if(all.length===0 && page!=='admin-agenda' && UNI_DEFAULTS[page]){
-    const defs = UNI_DEFAULTS[page].map((d,idx)=>({...d,id:Date.now()+idx,page,dt:new Date().toLocaleDateString('pt-PT',{day:'2-digit',month:'2-digit',year:'numeric'})}));
-    uniItems = [...uniItems, ...defs];
-    saveUniItems();
-    return defs;
-  }
+  // Correção pontual (Etapa 8A) alargada a TODAS as páginas uni* (auditoria
+  // global 08/09): a Agenda ('admin-agenda') já tinha sido corrigida para
+  // não semear UNI_DEFAULTS — 0 itens é um estado real e válido (ex.: um
+  // comercial sem eventos atribuídos), nunca "página nunca semeada". A
+  // mesma razão vale para 'design-tarefas', 'design-ficheiros',
+  // 'fabrica-producao' e 'fabrica-instalacoes': todas têm sync real e
+  // dedicado a ob_uni_items (_sbUniItemUpsert/_uniInitFromSB), e
+  // _uniInitFromSB() faz upload incondicional para o Supabase do que
+  // encontrar em uniItems quando a tabela remota vier vazia — sem esta
+  // correção, os itens fictícios de UNI_DEFAULTS podiam ser promovidos a
+  // dados reais na primeira vez que a página fosse aberta antes da leitura
+  // remota. UNI_DEFAULTS deixa de ser semeado para qualquer página; fica
+  // só como referência histórica.
   return all;
 }
 function saveUniItems(){ localStorage.setItem('ob-uni-items',JSON.stringify(uniItems)); }
@@ -16860,6 +16862,81 @@ _uniInitFromSB();
     localStorage.setItem('ob-limpeza-ficticios-v1', '1');
     console.log('[OB] Limpeza de dados de teste concluída: clientes', antesCli, '→', cliData.length, '| orçamentos', antesOrc, '→', orcData.length);
   }catch(e){ console.error('[OB] Erro na limpeza de dados de teste:', e); }
+})();
+
+// ADD (auditoria global 08/09): a mesma limpeza acima nunca cobriu o
+// Pipeline — crmLeads (linha ~12799) tem um fallback hardcoded de 8 leads
+// fictícios que entra sempre que 'ob-leads' está vazio/inexistente (primeira
+// visita, novo browser, ou falha de leitura remota), sem qualquer remoção
+// equivalente à de cliData/orcData/fatData. Ao contrário desses três campos,
+// os nomes de empresa dos leads fictícios não batem sempre, palavra por
+// palavra, com OB_CLIENTES_FICTICIOS (ex.: "Clínica D&S" vs "Clínica Dente &
+// Saúde"), por isso a remoção aqui não usa esse array — usa a impressão
+// digital exata {id,n,emp} dos 8 registos tal como estão escritos no próprio
+// código-fonte (linhas 12800-12807), o único critério 100% preciso, sem
+// heurística. Flag própria (não reaproveita 'ob-limpeza-ficticios-v1') para
+// correr uma vez em instalações onde a limpeza de clientes/orçamentos já
+// tinha corrido antes desta correção existir.
+(function obLimparLeadsFicticiosUmaVez(){
+  try{
+    if(localStorage.getItem('ob-limpeza-leads-ficticios-v1')) return;
+    var SEED_LEADS_FICTICIOS = [
+      {id:1, n:'Letras 3D Fachada', emp:'Restaurante O Farol'},
+      {id:2, n:'Reclamo LED Ginásio', emp:'Fit Studio Lisboa'},
+      {id:3, n:'Totem Entrada Hotel', emp:'Hotel Serra da Lua'},
+      {id:4, n:'Sinalética Clínica', emp:'Clínica D&S'},
+      {id:5, n:'Painel LED CC Mira', emp:'CC Mira Sintra'},
+      {id:6, n:'Neon Lounge', emp:'Bar Nox Cascais'},
+      {id:7, n:'Caixa Luz Farmácia', emp:'Farmácia Terrugem'},
+      {id:8, n:'Letras Hotel Boa Vista', emp:'Hotel Boa Vista'}
+    ];
+    var eFicticio = function(l){
+      return SEED_LEADS_FICTICIOS.some(function(s){ return s.id===l.id && s.n===l.n && s.emp===l.emp; });
+    };
+    var antesLeads = (typeof crmLeads!=='undefined' && crmLeads) ? crmLeads.length : 0;
+    if(typeof crmLeads!=='undefined' && crmLeads){
+      var leadsLimpos = crmLeads.filter(function(l){ return !eFicticio(l); });
+      if(leadsLimpos.length !== antesLeads){
+        crmLeads = leadsLimpos;
+        leads = crmLeads;
+        localStorage.setItem('ob-leads', JSON.stringify(crmLeads));
+        console.log('[OB] Limpeza de leads fictícios concluída: leads', antesLeads, '→', crmLeads.length);
+      }
+    }
+    localStorage.setItem('ob-limpeza-leads-ficticios-v1', '1');
+  }catch(e){ console.error('[OB] Erro na limpeza de leads fictícios:', e); }
+})();
+
+// ADD (auditoria global 08/09): mesma limpeza para uniItems (Design/Produção/
+// Instalações/Agenda) — antes desta correção, uniGetItems() podia semear
+// UNI_DEFAULTS num browser novo e _uniInitFromSB() (linha ~16813) fazia
+// upload incondicional de TODO o uniItems local para o Supabase sempre que
+// a tabela remota viesse vazia, sem distinguir semente fictícia de dados
+// reais. uniGetItems() já deixou de semear (ver correção acima); esta
+// limpeza cobre instalações onde a semente já tinha sido gravada antes
+// dessa correção existir. Fingerprint exato {page,n,client} tal como está
+// escrito em UNI_DEFAULTS (linhas ~13945-13980) — sem heurística, cada
+// entrada só é removida se corresponder byte a byte a uma linha do próprio
+// seed original.
+(function obLimparUniItemsFicticiosUmaVez(){
+  try{
+    if(localStorage.getItem('ob-limpeza-uni-ficticios-v1')) return;
+    if(typeof uniItems==='undefined' || !uniItems){ localStorage.setItem('ob-limpeza-uni-ficticios-v1','1'); return; }
+    var fingerprints = {};
+    Object.keys(UNI_DEFAULTS).forEach(function(pg){
+      UNI_DEFAULTS[pg].forEach(function(d){ fingerprints[pg+'||'+d.n+'||'+d.client] = true; });
+    });
+    var antesUni = uniItems.length;
+    var uniLimpos = uniItems.filter(function(it){
+      return !fingerprints[it.page+'||'+it.n+'||'+it.client];
+    });
+    if(uniLimpos.length !== antesUni){
+      uniItems = uniLimpos;
+      saveUniItems();
+      console.log('[OB] Limpeza de itens uni* fictícios concluída: itens', antesUni, '→', uniItems.length);
+    }
+    localStorage.setItem('ob-limpeza-uni-ficticios-v1', '1');
+  }catch(e){ console.error('[OB] Erro na limpeza de itens uni* fictícios:', e); }
 })();
 
 function orcFmt(n){
@@ -20073,7 +20150,12 @@ if(typeof initNovosModulos==='function') setTimeout(initNovosModulos, 200);
 // ════════════════════════════════════════════════════════════════════════
 // MÓDULO: STOCK / MATERIAIS INTELIGENTE
 // ════════════════════════════════════════════════════════════════════════
-var STK_STOCK = JSON.parse(localStorage.getItem('ob-stock') || 'null') || [
+// _stkRawLocal: guarda o valor CRU lido de localStorage, antes do fallback
+// abaixo entrar em jogo — usado por _stkInitFromSB() para distinguir "havia
+// stock real persistido neste browser" de "caiu para a demonstração porque
+// não havia nada gravado" (auditoria global 08/09 — ver correção abaixo).
+var _stkRawLocal; try{ _stkRawLocal = JSON.parse(localStorage.getItem('ob-stock') || 'null'); }catch(e){ _stkRawLocal = null; }
+var STK_STOCK = _stkRawLocal || [
   {id:'s1',ref:'ACR-3mm-TRN',nome:'Acrílico Transparente 3mm',cat:'Acrílico',qty:48.5,qtyMin:10,un:'m²',preco:18.50,forn:'AcrylicPT, Lda'},
   {id:'s2',ref:'ACR-3mm-BCO',nome:'Acrílico Branco Leitoso 3mm',cat:'Acrílico',qty:32.0,qtyMin:10,un:'m²',preco:19.00,forn:'AcrylicPT, Lda'},
   {id:'s3',ref:'ACR-5mm-TRN',nome:'Acrílico Transparente 5mm',cat:'Acrílico',qty:8.0,qtyMin:5,un:'m²',preco:24.00,forn:'AcrylicPT, Lda'},
@@ -20136,10 +20218,22 @@ async function _sbStkLoadAll() {
     STK_STOCK = sbData;
     localStorage.setItem('ob-stock', JSON.stringify(STK_STOCK));
     if (typeof stockRender === 'function') stockRender();
-  } else {
-    // Migrar stock local/demo para Supabase
+  } else if (_stkRawLocal && _stkRawLocal.length > 0) {
+    // Havia stock REAL persistido neste browser (_stkRawLocal, capturado
+    // antes do fallback de demonstração) — este sim pode subir para o
+    // Supabase, mesmo com a tabela remota vazia.
     for (var i = 0; i < STK_STOCK.length; i++) { await _sbStkUpsert(STK_STOCK[i]); }
     console.log('[SB-STK] ' + STK_STOCK.length + ' itens de stock migrados para Supabase.');
+  } else {
+    // Nem Supabase nem localStorage tinham stock real — STK_STOCK é só o
+    // array de demonstração (fallback acima). Auditoria global 08/09:
+    // nunca promover essa demonstração a dado real só porque a tabela
+    // remota estava vazia (era exatamente isso que este bloco fazia antes).
+    // Base vazia é um estado válido (Edna, regra 9) — mostra stock
+    // genuinamente vazio até existir stock a sério.
+    STK_STOCK = [];
+    localStorage.setItem('ob-stock', JSON.stringify(STK_STOCK));
+    if (typeof stockRender === 'function') stockRender();
   }
 })();
 
@@ -23259,77 +23353,22 @@ window.sincFinAbrirPainel = sincFinAbrirPainel;
 // Identifica entradas pelo prefixo "SHEET-" para nunca sobrescrever lançamentos manuais
 // nem duplicar quando a sincronização é repetida.
 function sheetMergeReceber(){
-  var rows = window.AV_SHEET_ROWS || [];
-  if(!rows.length) return false;
-  var alterou = false;
-  // Índice rápido das entradas já existentes com origem na planilha
-  var porSheetId = {};
-  TES_RECEBER.forEach(function(r){ if(r._sheetId) porSheetId[r._sheetId]=r; });
-  rows.forEach(function(r){
-    var sid = String(r.numero||'').trim();
-    if(!sid) return;
-    var total = r.total || 0;
-    if(!total) return; // ignorar linhas sem valor
-    var liq = total / 1.23;
-    // Determinar estado com base na coluna "status" e nos campos recebido/aReceber
-    var stLow = String(r.status||'').toLowerCase();
-    var recebido = r.recebido || 0;
-    var aReceber = r.aReceber || 0;
-    var pago = stLow.includes('pag') || stLow.includes('receb') || aReceber === 0 && recebido > 0;
-    var estado = pago ? 'Recebido' : 'Pendente';
-    // Calcular data de vencimento (30 dias após emissão se não disponível)
-    var dataEmissao = r.data || '';
-    var vencimento = '';
-    if(dataEmissao){
-      var dm = dataEmissao.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
-      if(dm){
-        var dtV = new Date(parseInt(dm[3]), parseInt(dm[2])-1, parseInt(dm[1]));
-        dtV.setDate(dtV.getDate()+30);
-        vencimento = dtV.toLocaleDateString('pt-PT');
-      }
-    }
-    // O Sheet já traz o vendedor real por linha (coluna "Vendedor", já parseada
-    // em avFindCol/idx.vendedor) — é a fonte primária. Só recorre à derivação
-    // por cliente (orçamento/carteira) se a linha do Sheet vier sem vendedor.
-    var vendedorLinha = r.vendedor || tesResolverVendedor(r.nome);
-    var existente = porSheetId[sid];
-    if(existente){
-      // Atualizar valores se mudaram
-      if(existente.total!==total || existente.estado!==estado){ alterou=true; }
-      existente.total = total; existente.valorLiq = liq;
-      if(estado==='Recebido' && existente.estado!=='Recebido'){
-        existente.estado='Recebido';
-        existente.dataRec = r.dataRec || new Date().toLocaleDateString('pt-PT');
-        alterou=true;
-      }
-      if(!existente.vendedor && vendedorLinha){ existente.vendedor=vendedorLinha; alterou=true; }
-    } else {
-      alterou=true;
-      TES_RECEBER.push({
-        id: 'SHEET-'+sid,
-        _sheetId: sid,
-        tipo: 'FT',
-        data: dataEmissao,
-        descricao: 'Fatura '+sid,
-        cliente: r.nome || '—',
-        vendedor: vendedorLinha,
-        projeto: '',
-        valorLiq: liq,
-        ivaPct: 23,
-        total: total,
-        vencimento: vencimento,
-        dataEmissao: dataEmissao,
-        estado: estado,
-        dataRec: pago ? (r.dataRec || dataEmissao) : undefined
-      });
-    }
-  });
-  if(alterou) tesSaveReceber();
-  // Renderizar Tesouraria se as funções existirem
-  if(typeof tesRenderReceber==='function') tesRenderReceber();
-  if(typeof tesRenderRecebidos==='function') tesRenderRecebidos();
-  if(typeof tesRender==='function') tesRender();
-  return alterou;
+  // DESATIVADA (auditoria global de alimentação de dados, 08/09) — mesmo
+  // padrão de risco de tocoMergeFaturasCacheReceber() (linha ~22128, já
+  // desativada após o incidente 04/09): esta função escrevia registos
+  // sintéticos 'SHEET-'+numero diretamente em TES_RECEBER e chamava
+  // tesSaveReceber(), que está ligada (wrap('tesSaveReceber','ob-tes-receber'),
+  // linha ~30161) a um push automático e incondicional para a tabela
+  // canónica ob_crm_dados/'ob-tes-receber' no Supabase — sem reconciliação,
+  // sem revisão, disparado sozinho sempre que a página Análise de Vendas
+  // abre (avSyncVendedoresSheet(), chamado em renderAnaliseVendas()). O
+  // comentário original na Central Financeira (linha ~22143) já descrevia
+  // esta chamada como "local, nunca chega à cloud" — não é verdade, e é
+  // exatamente esse pressuposto errado que tornava o risco invisível.
+  // A via seguro e já existente para reconciliar a Sheet contra
+  // ob-tes-receber é sincFinReconciliar()/sincFinAplicarSheetPura(), que
+  // trabalha só sobre cópia local e mostra um relatório antes de gravar.
+  return false;
 }
 
 // Modal de criação manual (prompt) removido — os dados de "A Receber"/"Recebidos" vêm
@@ -25692,9 +25731,13 @@ function exportarConfiguracao() {
     tocoFaturas: JSON.parse(localStorage.getItem('ob-toconline-faturas') || 'null'),
     tocoClientes: JSON.parse(localStorage.getItem('ob-toconline-clientes') || 'null'),
     faturas: JSON.parse(localStorage.getItem('ob-faturas') || '[]'),
-    clientes: JSON.parse(localStorage.getItem('ob-clientes') || '[]'),
+    // Correção (auditoria global 08/09): as chaves reais usadas pelo resto
+    // da app são 'ob-clients' (cliData) e 'ob-leads' (crmLeads/Pipeline) —
+    // 'ob-clientes'/'ob-crm-leads' nunca são escritas por mais ninguém,
+    // por isso este backup exportava sempre [] para clientes e leads.
+    clientes: JSON.parse(localStorage.getItem('ob-clients') || '[]'),
     orcamentos: JSON.parse(localStorage.getItem('ob-orcamentos') || '[]'),
-    leads: JSON.parse(localStorage.getItem('ob-crm-leads') || '[]'),
+    leads: JSON.parse(localStorage.getItem('ob-leads') || '[]'),
     webhookToco: localStorage.getItem('ob-toco-webhook') || '',
     webhookCK: localStorage.getItem('ob-ck-webhook') || ''
   };
@@ -25720,9 +25763,10 @@ function importarConfiguracao() {
         if(!confirm('Importar configuração? Isto substituirá os dados actuais.')) return;
         if(data.toconline) localStorage.setItem('ob-toconline-config', JSON.stringify(data.toconline));
         if(data.faturas) localStorage.setItem('ob-faturas', JSON.stringify(data.faturas));
-        if(data.clientes) localStorage.setItem('ob-clientes', JSON.stringify(data.clientes));
+        // Mesma correção do lado da exportação: gravar nas chaves reais.
+        if(data.clientes) localStorage.setItem('ob-clients', JSON.stringify(data.clientes));
         if(data.orcamentos) localStorage.setItem('ob-orcamentos', JSON.stringify(data.orcamentos));
-        if(data.leads) localStorage.setItem('ob-crm-leads', JSON.stringify(data.leads));
+        if(data.leads) localStorage.setItem('ob-leads', JSON.stringify(data.leads));
         if(data.webhookToco) localStorage.setItem('ob-toco-webhook', data.webhookToco);
         if(data.webhookCK) localStorage.setItem('ob-ck-webhook', data.webhookCK);
         alert('✅ Configuração importada com sucesso! A página será recarregada.');
@@ -31081,6 +31125,14 @@ function _hfBuildFilters(){
   if(selAno && !selAno.dataset.built){
     var anos = Array.from(new Set((_hfData||[]).map(function(r){ var d=_hfParseData(r.dataEmissao||r.data); return d?d.getFullYear():null; }).filter(Boolean))).sort(function(a,b){return b-a;});
     selAno.innerHTML = '<option value="">Todos</option>' + anos.map(function(a){ return '<option value="'+a+'">'+a+'</option>'; }).join('');
+    // Omissão = ano atual (mesma regra já aplicada em TES_FILTRO_ANO/Tesouraria —
+    // Edna: a visão não deve começar silenciosamente pelo histórico completo).
+    // Só aplica se o ano atual existir mesmo nos dados; senão fica "Todos".
+    var anoAtualStr = String(new Date().getFullYear());
+    if(anos.indexOf(new Date().getFullYear())!==-1){
+      selAno.value = anoAtualStr;
+      _hfFilters.ano = anoAtualStr;
+    }
     selAno.dataset.built = '1';
   }
 }
@@ -31091,6 +31143,11 @@ function _hfApplyFilters(rows, opts){
   opts = opts || {};
   var f = _hfFilters;
   return rows.filter(function(r){
+    // NC nunca entra aqui — mesma regra de tesGetReceber()/tesGetRecebidos()
+    // (fonte é a mesma tabela ob-tes-receber): é uma redução de faturação,
+    // não uma fatura nem um recebimento; contá-la em "Total"/"Recebido"
+    // duplicaria/distorceria os KPIs desta página.
+    if(r.tipo==='NC') return false;
     if(!opts.skipEstado && f.estado && r.estado!==f.estado) return false;
     if(!opts.skipComercial && f.comercial && r.vendedor!==f.comercial) return false;
     if(f.busca){
