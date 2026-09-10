@@ -12924,6 +12924,20 @@ var CRM_TRANSICOES_AUTOMATICAS = {
     proforma_registada:      { de: ['Aguardar Adiantamento'], para: 'Fatura Proforma 50%' },
     pagamento_reportado:     { de: ['Fatura Proforma 50%','Aguardar Adiantamento'], para: 'Confirmação de Pagamento' },
     adiantamento_confirmado: { de: ['Confirmação de Pagamento'], para: '50% Confirmado' }
+  },
+  // Bloco C — Fase 3 (Preparação + Execução): Design (quando aplicável) +
+  // Produção + Instalação, sobre orc.faseProducao. 'de':[null] só a partir
+  // do zero (nunca "sem Design" -> "Aguarda Design" a meio do processo).
+  // producao_iniciada aceita [null, 'Design Aprovado'] de propósito — é
+  // exatamente essa dupla origem que implementa "com Design → bloqueado
+  // até aprovação; sem Design → segue direto" (ver obCriarProjetoProducao).
+  producao: {
+    design_necessario:    { de: [null], para: 'Aguarda Design' },
+    design_aprovado:      { de: ['Aguarda Design'], para: 'Design Aprovado' },
+    producao_iniciada:    { de: [null, 'Design Aprovado'], para: 'Em Produção' },
+    producao_concluida:   { de: ['Em Produção'], para: 'Produção Concluída' },
+    instalacao_iniciada:  { de: ['Produção Concluída'], para: 'Em Instalação' },
+    instalacao_concluida: { de: ['Em Instalação'], para: 'Instalação Concluída' }
   }
 };
 
@@ -12975,6 +12989,23 @@ async function crmAvaliarTransicaoAutomatica(entidade, evento, contexto){
     var resultadoOrc = await orcRegistarTransicaoEstado(orc, defOrc.para, evento, contexto.origem || 'automatico', contexto.motivo, contexto.extraCampos);
     if(!resultadoOrc || !resultadoOrc.applied) return null; // não aplicado OU não persistiu no servidor — nunca fica "meio confirmado"
     return { faseAnterior: faseAnteriorOrc, faseNova: defOrc.para, persisted: true };
+  }
+  // Bloco C — Fase 3 (Preparação + Execução): Design/Produção/Instalação,
+  // sobre orc.faseProducao. Mesmo motor central, mesma forma — nunca um
+  // sistema paralelo. producaoRegistarTransicaoEstado() é o equivalente de
+  // orcRegistarTransicaoEstado() para este campo de fase.
+  if(entidade==='producao'){
+    var defProd = CRM_TRANSICOES_AUTOMATICAS.producao && CRM_TRANSICOES_AUTOMATICAS.producao[evento];
+    if(!defProd || !contexto.orcNum || typeof orcData==='undefined') return null;
+    var orcProd = orcData.find(function(o){ return o && o.num===contexto.orcNum; });
+    if(!orcProd) return null;
+    var faseAnteriorProd = orcProd.faseProducao || null;
+    if(defProd.de && defProd.de.indexOf(faseAnteriorProd)===-1) return null; // fora de ordem, não força
+    if(faseAnteriorProd===defProd.para) return null; // já lá está
+    if(typeof producaoRegistarTransicaoEstado!=='function') return null;
+    var resultadoProd = await producaoRegistarTransicaoEstado(orcProd, defProd.para, evento, contexto.origem || 'automatico', contexto.motivo, contexto.extraCampos);
+    if(!resultadoProd || !resultadoProd.applied) return null;
+    return { faseAnterior: faseAnteriorProd, faseNova: defProd.para, persisted: true };
   }
   return null;
 }
@@ -16843,7 +16874,10 @@ async function _sbOrcUpsert(orc, opts) {
         proforma: (orc.proforma === undefined || orc.proforma === null) ? null : orc.proforma,
         confirmacaoAdiantamento: (orc.confirmacaoAdiantamento === undefined || orc.confirmacaoAdiantamento === null) ? null : orc.confirmacaoAdiantamento,
         pagamentosAdiantamento: Array.isArray(orc.pagamentosAdiantamento) ? orc.pagamentosAdiantamento : [],
-        historicoFinanceiro: Array.isArray(orc.historicoFinanceiro) ? orc.historicoFinanceiro : []
+        historicoFinanceiro: Array.isArray(orc.historicoFinanceiro) ? orc.historicoFinanceiro : [],
+        faseProducao: (orc.faseProducao === undefined || orc.faseProducao === null) ? null : orc.faseProducao,
+        necessitaDesign: orc.necessitaDesign === true,
+        historicoProducao: Array.isArray(orc.historicoProducao) ? orc.historicoProducao : []
       },
       owner_id: (cu.admin === true && opts.reassignOwnerId) ? opts.reassignOwnerId : cu.id,
       updated_by: cu.id
@@ -16905,6 +16939,9 @@ async function _sbOrcLoadAll() {
         confirmacaoAdiantamento: (extra.confirmacaoAdiantamento === undefined || extra.confirmacaoAdiantamento === null) ? null : extra.confirmacaoAdiantamento,
         pagamentosAdiantamento: Array.isArray(extra.pagamentosAdiantamento) ? extra.pagamentosAdiantamento : [],
         historicoFinanceiro: Array.isArray(extra.historicoFinanceiro) ? extra.historicoFinanceiro : [],
+        faseProducao: (extra.faseProducao === undefined || extra.faseProducao === null) ? null : extra.faseProducao,
+        necessitaDesign: extra.necessitaDesign === true,
+        historicoProducao: Array.isArray(extra.historicoProducao) ? extra.historicoProducao : [],
         owner_id: row.owner_id || null
       };
     });
@@ -18101,6 +18138,25 @@ function orcRenderAcoesFinanceiras(o, isAdmin){
   return html;
 }
 
+// Bloco C — Fase 3 (Design + Produção + Instalação): badge de
+// orc.faseProducao + botão "Requer Design", mostrados só para orçamentos
+// Aprovados. Mesma célula de ações — não mexe no <thead>.
+function orcRenderAcoesProducao(o){
+  if(o.st!=='Aprovado') return '';
+  if(!o.faseProducao){
+    // "Sem Design" continua o caminho por omissão — só aparece o botão
+    // para marcar explicitamente que este orçamento precisa de maqueta.
+    return `<button class="tbtn" style="font-size:10.5px;padding:2px 6px;white-space:nowrap;margin-top:2px" onclick="orcMarcarNecessitaDesign('${o.num}')" title="Bloqueia a produção até a maqueta ser aprovada">🎨 Requer Design</button>`;
+  }
+  var cores = {
+    'Aguarda Design': 'var(--y)', 'Design Aprovado': '#8b5cf6',
+    'Em Produção': '#F5C400', 'Produção Concluída': '#4d94db',
+    'Em Instalação': '#4d94db', 'Instalação Concluída': 'var(--g)'
+  };
+  var cor = cores[o.faseProducao] || 'var(--muted)';
+  return `<div style="margin-top:4px;font-size:10.5px;color:${cor};white-space:nowrap">🏭 ${o.faseProducao}</div>`;
+}
+
 function orcRenderList(){
   const el = document.getElementById('orc-tbody');
   if(!el) return;
@@ -18154,6 +18210,7 @@ function orcRenderList(){
          <button class="tbtn" style="font-size:11px;padding:2px 7px;white-space:nowrap;margin-top:2px;color:var(--g);border-color:rgba(63,207,142,.3)" onclick="fatAbrirModal('${o.num}')" title="Gerar Fatura a partir deste Orçamento">🧾 Fatura</button>`
         :'<span style="color:var(--muted);font-size:12px">—</span>'}
       ${orcRenderAcoesFinanceiras(o, isAdmin)}
+      ${orcRenderAcoesProducao(o)}
     </td>
   </tr>`;}).join('');
 }
@@ -27484,6 +27541,72 @@ window.obRegistarEtapa = function(item, de, para){
     por:(typeof CU!=='undefined'&&CU&&CU.name)||'Sistema' });
 };
 
+// Bloco C — Fase 3 (10/09/2026): ponto ÚNICO que liga as mudanças de
+// estado dos itens de Design/Produção/Instalação (uniItems) ao motor
+// central de transições do orçamento (orc.faseProducao). obRegistarEtapa
+// é já o único sítio por onde passam TANTO uniDrop (drag no kanban) COMO
+// uniSave (dropdown do modal) — por isso é ele que se envolve aqui, em
+// vez de duplicar a lógica nos dois handlers.
+(function(){
+  var _origRegistarEtapa = window.obRegistarEtapa;
+  window.obRegistarEtapa = function(item, de, para){
+    _origRegistarEtapa(item, de, para);
+    if(typeof obAvaliarTransicaoProducaoUni==='function') obAvaliarTransicaoProducaoUni(item, de, para);
+  };
+})();
+
+function obAvaliarTransicaoProducaoUni(item, statusAnterior, statusNovo){
+  if(!item || !item.orcNum || statusAnterior===statusNovo) return;
+  if(typeof crmAvaliarTransicaoAutomatica!=='function' || typeof orcData==='undefined') return;
+  var orc = orcData.find(function(o){ return o && o.num===item.orcNum; });
+  if(!orc) return;
+
+  // Maqueta aprovada (Design) -> tenta desbloquear/avançar a produção.
+  if(item.page==='design-tarefas' && statusNovo==='Aprovado'){
+    crmAvaliarTransicaoAutomatica('producao', 'design_aprovado', { orcNum: item.orcNum, origem: 'design_aprovado' }).then(function(r){
+      if(r && typeof obCriarProjetoProducao==='function') obCriarProjetoProducao(orc);
+    });
+    return;
+  }
+
+  // Produção concluída -> cria a Instalação ligada (se ainda não existir) e avança a fase.
+  if(item.page==='fabrica-producao' && statusNovo==='Concluído ✓'){
+    crmAvaliarTransicaoAutomatica('producao', 'producao_concluida', { orcNum: item.orcNum, origem: 'producao_concluida' }).then(function(){
+      var jaTemInstalacao = uniItems.some(function(i){ return i.page==='fabrica-instalacoes' && i.orcNum===item.orcNum; });
+      if(!jaTemInstalacao){
+        var autor = (typeof CU!=='undefined'&&CU&&CU.name) || 'Sistema';
+        var itemInst = {
+          id: Date.now(), page: 'fabrica-instalacoes',
+          n: item.n, client: item.client||orc.cli,
+          status: 'Planeada', priority: item.priority||'normal', assignee: '',
+          date: '', notes: 'Criado automaticamente — produção do orçamento '+item.orcNum+' concluída.',
+          orcNum: item.orcNum,
+          historico: [{ de:null, para:'Planeada', em:new Date().toISOString(), por:autor }],
+          dt: new Date().toLocaleDateString('pt-PT',{day:'2-digit',month:'2-digit',year:'numeric'})
+        };
+        uniItems.unshift(itemInst);
+        if(typeof saveUniItems==='function') saveUniItems();
+        if(typeof _sbUniItemUpsert==='function') _sbUniItemUpsert(itemInst);
+        if(typeof showToast==='function') showToast('🔨 Instalação criada automaticamente a partir de '+item.orcNum);
+      }
+      crmAvaliarTransicaoAutomatica('producao', 'instalacao_iniciada', { orcNum: item.orcNum, origem: 'producao_concluida' });
+    });
+    return;
+  }
+
+  // Instalação concluída -> fase terminal do Bloco C, sinaliza a próxima
+  // fase (faturação/entrega final, Bloco D) sem inventar colunas novas.
+  if(item.page==='fabrica-instalacoes' && statusNovo==='Concluída'){
+    crmAvaliarTransicaoAutomatica('producao', 'instalacao_concluida', { orcNum: item.orcNum, origem: 'instalacao_concluida' }).then(function(r){
+      if(r && orc.leadId && typeof crmAddAtividade==='function'){
+        crmAddAtividade(orc.leadId, 'nota', 'Instalação concluída — orçamento '+item.orcNum+' pronto para faturação/entrega final.', 'Sistema', { origem:'instalacao_concluida' });
+      }
+      if(r && typeof showToast==='function') showToast('✅ Instalação concluída — '+item.orcNum+' pronto para a próxima fase (faturação/entrega).');
+    });
+  }
+}
+window.obAvaliarTransicaoProducaoUni = obAvaliarTransicaoProducaoUni;
+
 // Extras na card do kanban de produção: barra de progresso + última etapa
 window.obCardExtras = function(i, page){
   if(page!=='fabrica-producao') return '';
@@ -27586,6 +27709,83 @@ async function orcRegistarTransicaoEstado(orc, faseNova, evento, origem, motivo,
   return { applied:true, entrada: entrada };
 }
 window.orcRegistarTransicaoEstado = orcRegistarTransicaoEstado;
+
+// ════════════════════════════════════════════════════════════════
+// BLOCO C — Fase 3: Design + Produção + Instalação (10/09/2026)
+// ════════════════════════════════════════════════════════════════
+// Equivalente de orcRegistarTransicaoEstado() para orc.faseProducao —
+// mesma forma (aplica, regista histórico próprio em historicoProducao,
+// espelha no lead, aguarda o Supabase confirmar, reverte tudo se falhar)
+// aplicada a outro campo de fase. Nunca um sistema paralelo.
+async function producaoRegistarTransicaoEstado(orc, faseNova, evento, origem, motivo, extraCampos){
+  if(!orc) return { applied:false, reason:'sem-orcamento' };
+  if(orc.faseProducao===faseNova && !extraCampos) return { applied:false, reason:'sem-alteracao' };
+  var faseAnterior = orc.faseProducao || null;
+  var valoresAnterioresExtra = {};
+  if(extraCampos){
+    Object.keys(extraCampos).forEach(function(k){ valoresAnterioresExtra[k] = orc[k]; });
+  }
+  orc.faseProducao = faseNova;
+  if(extraCampos) Object.assign(orc, extraCampos);
+  var autor = (typeof CU!=='undefined'&&CU&&CU.name) ? CU.name : 'Sistema';
+  var texto = 'Produção: "'+(faseAnterior||'—')+'" -> "'+faseNova+'"'+(motivo?' — '+motivo:'');
+  if(!Array.isArray(orc.historicoProducao)) orc.historicoProducao = [];
+  var entrada = { texto: texto, autor: autor, ts: new Date().toISOString(), faseAnterior: faseAnterior, faseNova: faseNova, evento: evento, origem: origem||'manual', motivo: motivo||null };
+  orc.historicoProducao.unshift(entrada);
+  if(orc.leadId && typeof crmAddAtividade==='function'){
+    crmAddAtividade(orc.leadId, 'producao', texto, autor, { origem: origem||'manual', orcId: orc.num, extra: { faseAnterior: faseAnterior, faseNova: faseNova, evento: evento, motivo: motivo||null } });
+  }
+  localStorage.setItem('ob-orcamentos', JSON.stringify((typeof orcData!=='undefined'?orcData:[]).slice(0,5000)));
+  var sbRes = (typeof _sbOrcUpsert==='function') ? await _sbOrcUpsert(orc, { isCreate:false }) : { ok:false, reason:'sem-funcao-upsert' };
+  if(!sbRes || sbRes.ok!==true){
+    orc.faseProducao = faseAnterior;
+    orc.historicoProducao.shift();
+    if(extraCampos) Object.keys(extraCampos).forEach(function(k){ orc[k] = valoresAnterioresExtra[k]; });
+    localStorage.setItem('ob-orcamentos', JSON.stringify((typeof orcData!=='undefined'?orcData:[]).slice(0,5000)));
+    return { applied:false, reason: sbRes && sbRes.reason, message: sbRes && sbRes.message };
+  }
+  return { applied:true, entrada: entrada };
+}
+window.producaoRegistarTransicaoEstado = producaoRegistarTransicaoEstado;
+
+// Marca que este orçamento precisa de aprovação formal de maqueta antes de
+// a produção poder começar — cria a tarefa ligada em Design (uniItems,
+// page:'design-tarefas') e regista orc.faseProducao='Aguarda Design'. Sem
+// esta marcação (o caminho por omissão), "sem Design" continua a valer:
+// obCriarProjetoProducao() avança direto assim que os 50% estiverem
+// confirmados, exatamente como antes do Bloco C.
+async function orcMarcarNecessitaDesign(orcNum){
+  var orc = (typeof orcData!=='undefined') ? orcData.find(function(o){ return o.num===orcNum; }) : null;
+  if(!orc){ alert('Orçamento não encontrado.'); return false; }
+  if(orc.faseProducao){ alert('Este orçamento já tem uma fase de produção definida ('+orc.faseProducao+') — não é preciso marcar de novo.'); return false; }
+  if(typeof uniItems==='undefined'){ alert('Módulo de Produção indisponível.'); return false; }
+  var autor = (typeof CU!=='undefined'&&CU&&CU.name) ? CU.name : 'Sistema';
+  var itemDesign = {
+    id: Date.now(), page: 'design-tarefas',
+    n: 'Maqueta — '+orc.cli, client: orc.cli,
+    status: 'Em fila', priority: 'high', assignee: '',
+    date: '', notes: 'Criado a partir do orçamento '+orc.num+' — aguarda aprovação da maqueta antes da produção.',
+    orcNum: orc.num,
+    historico: [{ de: null, para: 'Em fila', em: new Date().toISOString(), por: autor }],
+    dt: new Date().toLocaleDateString('pt-PT',{day:'2-digit',month:'2-digit',year:'numeric'})
+  };
+  uniItems.unshift(itemDesign);
+  var r = await crmAvaliarTransicaoAutomatica('producao', 'design_necessario', { orcNum: orcNum, origem: 'design', extraCampos: { necessitaDesign: true } });
+  if(!r){
+    // Não persistiu — desfaz também a tarefa de Design, para não ficar um
+    // item órfão sem a fase correspondente no orçamento.
+    var idx = uniItems.indexOf(itemDesign);
+    if(idx!==-1) uniItems.splice(idx,1);
+    alert('Não foi possível registar a necessidade de Design no servidor — tenta novamente.');
+    return false;
+  }
+  if(typeof saveUniItems==='function') saveUniItems();
+  if(typeof _sbUniItemUpsert==='function') _sbUniItemUpsert(itemDesign);
+  if(typeof orcRenderList==='function') orcRenderList();
+  if(typeof showToast==='function') showToast('🎨 Maqueta criada em Design — produção de '+orc.num+' aguarda aprovação.');
+  return true;
+}
+window.orcMarcarNecessitaDesign = orcMarcarNecessitaDesign;
 
 // Registo interno mínimo do adiantamento de 50% (número, valor = orc.sinal,
 // data, quem registou) — NÃO é uma "Fatura Proforma" emitida no TocOnline.
@@ -27765,6 +27965,19 @@ function obCriarProjetoProducao(orc, opts){
     }
     return;
   }
+  // Bloqueio de produção (Bloco C): quando o orçamento tem Design marcado
+  // (orc.faseProducao==='Aguarda Design'), a produção fica bloqueada até a
+  // maqueta ser aprovada — ver orcMarcarNecessitaDesign() e o wrap de
+  // uniDrop/uniSave que dispara 'design_aprovado' quando a tarefa de
+  // Design chega a "Aprovado". "Sem Design" (faseProducao nulo) segue
+  // direto, sem qualquer fricção nova.
+  if(orc.faseProducao==='Aguarda Design' && !opts.forcarAdmin){
+    if(typeof showToast==='function') showToast('🎨 Produção BLOQUEADA — orçamento '+orc.num+' aguarda aprovação da maqueta (Design).');
+    if(orc.leadId && typeof crmAddAtividade==='function'){
+      crmAddAtividade(orc.leadId, 'nota', 'Produção bloqueada — orçamento '+orc.num+' aguarda aprovação da maqueta (Design).', 'Sistema', { origem:'bloqueio_design' });
+    }
+    return;
+  }
   var produto=(orc.linhas&&orc.linhas[0]&&orc.linhas[0].produto)||'Trabalho';
   var prazo=new Date(); prazo.setDate(prazo.getDate()+(parseInt(orc.prazoEntrega)||25));
   var item={
@@ -27783,10 +27996,19 @@ function obCriarProjetoProducao(orc, opts){
   }
   uniItems.unshift(item);
   if(typeof saveUniItems==='function') saveUniItems();
+  if(typeof _sbUniItemUpsert==='function') _sbUniItemUpsert(item);
   try{ if(typeof fpRender==='function') fpRender(); }catch(e){}
   if(typeof showToast==='function') showToast((opts.forcarAdmin?'⚠️ ':'🏭 ')+'Projecto criado na Produção: '+item.n);
   if(orc.leadId && typeof crmAddAtividade==='function'){
     crmAddAtividade(orc.leadId, 'obra', (opts.forcarAdmin?'⚠️ EXCEÇÃO ADMIN — ':'')+'Obra iniciada a partir do orçamento '+orc.num+' — "'+item.n+'"'+(opts.forcarAdmin?' — motivo: '+opts.motivo:''), opts.forcarAdmin?(opts.autor||'Admin'):'Sistema');
+  }
+  // Bloco C: regista a entrada em "Em Produção" no motor central (a partir
+  // de null/"sem Design" ou de "Design Aprovado") — fire-and-forget, como
+  // o resto da criação do item de produção; se a persistência falhar aqui
+  // o item já foi criado na mesma (mesma tolerância já usada em toda a
+  // criação de uniItems, que nunca dependeu da confirmação do Supabase).
+  if(typeof crmAvaliarTransicaoAutomatica==='function'){
+    crmAvaliarTransicaoAutomatica('producao', 'producao_iniciada', { orcNum: orc.num, origem: opts.forcarAdmin?'override_admin':'producao' });
   }
 }
 
