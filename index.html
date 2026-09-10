@@ -7314,7 +7314,7 @@ tbody tr:hover{background:rgba(255,203,45,.05)}
       <div class="pg-title">Pipeline de Leads</div>
       <div class="pg-actions">
         <button class="tbtn" data-action="crmOpenComerciais" style="font-size:13px">👥 Comerciais</button>
-        <button class="tbtn y" data-action="crmOpenNew" data-col="Novo Lead" style="font-size:13px">+ Novo Lead</button>
+        <button class="tbtn y" data-action="crmOpenNew" data-col="Potenciais Clientes" style="font-size:13px">+ Novo Lead</button>
       </div>
     </div>
   </div>
@@ -8653,7 +8653,7 @@ tbody tr:hover{background:rgba(255,203,45,.05)}
     <div class="pg-hdr-top">
       <div class="pg-space-icon" style="background:var(--y)">★</div>
       <div class="pg-title">CRM Completo</div>
-      <div class="pg-actions"><button class="tbtn y" data-action="crmOpenNew" data-col="Novo Lead">+ Novo Lead</button></div>
+      <div class="pg-actions"><button class="tbtn y" data-action="crmOpenNew" data-col="Potenciais Clientes">+ Novo Lead</button></div>
     </div>
     <div class="view-tabs">
       <button class="vt on" onclick="this.closest('.page').querySelectorAll('.vt').forEach(b=>b.classList.remove('on'));this.classList.add('on');document.getElementById('crm-kanban-admin').style.display='flex';document.getElementById('crm-lista-admin')&&(document.getElementById('crm-lista-admin').style.display='none')">Quadro</button>
@@ -10464,9 +10464,10 @@ tbody tr:hover{background:rgba(255,203,45,.05)}
           <div class="form-group">
             <label class="form-label">Estado</label>
             <select class="form-select" id="clm-st">
-              <option>Novo Lead</option><option>Qualificado</option>
-              <option>Proposta enviada</option><option>Em negociação</option>
-              <option>Fecho</option><option>Ganho ✓</option><option>Perdido ✗</option>
+              <option>Potenciais Clientes</option><option>Contactados</option>
+              <option>Reunião Agendada</option><option>Proposta em Elaboração</option>
+              <option>Proposta Enviada</option><option>Proposta Adjudicada</option>
+              <option>Ganho</option><option>Perdido</option>
             </select>
           </div>
           <div class="form-group">
@@ -10592,6 +10593,7 @@ tbody tr:hover{background:rgba(255,203,45,.05)}
           <button class="crm-ativ-btn" onclick="crmOpenAddAtiv('Email')">✉ Email</button>
           <button class="crm-ativ-btn" onclick="crmOpenAddAtiv('Visita')">🚗 Visita</button>
           <button class="crm-ativ-btn" onclick="crmOpenAddAtiv('WhatsApp')">💬 WhatsApp</button>
+          <button class="crm-ativ-btn" onclick="crmOpenAddAtiv('Reunião')">📅 Reunião</button>
         </div>
         <div id="clm-add-ativ-form" style="display:none;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:10px">
           <div style="font-size:12px;font-weight:600;color:var(--txt2);margin-bottom:6px" id="clm-ativ-tipo-label">Adicionar Nota</div>
@@ -12808,30 +12810,36 @@ function crmGetComercial(nome){ return crmComerciais.find(c=>c.nome===nome)||{no
 function crmInitials(n){ return n.split(' ').map(w=>w[0]).join('').substring(0,2).toUpperCase(); }
 
 // ── LEADS ────────────────────────────────────────────────
-var crmLeads; try{crmLeads=JSON.parse(localStorage.getItem('ob-leads')||'null');}catch(e){crmLeads=null;} crmLeads = crmLeads || [
-  {id:1, n:'Letras 3D Fachada', emp:'Restaurante O Farol', prod:'Letras Monobloco 3D', val:2800, st:'Proposta enviada', ass:'Rui Mota', email:'geral@ofarol.pt', tel:'+351 919 000 001', nota:'', dt:'15/05/2026', origem:'Instagram'},
-  {id:2, n:'Reclamo LED Ginásio', emp:'Fit Studio Lisboa', prod:'Reclamo LED', val:3600, st:'Em negociação', ass:'Humberto Estrelinha', email:'info@fitstudio.pt', tel:'+351 919 000 002', nota:'', dt:'14/05/2026', origem:'Google Ads'},
-  {id:3, n:'Totem Entrada Hotel', emp:'Hotel Serra da Lua', prod:'Totem', val:7200, st:'Em negociação', ass:'Rui Mota', email:'reservas@hotelserra.pt', tel:'+351 219 000 003', nota:'', dt:'12/05/2026', origem:'Referência / Boca a boca'},
-  {id:4, n:'Sinalética Clínica', emp:'Clínica D&S', prod:'Sinalética', val:2900, st:'Qualificado', ass:'Humberto Estrelinha', email:'geral@clinicads.pt', tel:'+351 219 000 004', nota:'', dt:'10/05/2026', origem:'Site web'},
-  {id:5, n:'Painel LED CC Mira', emp:'CC Mira Sintra', prod:'Painel LED', val:12400, st:'Fecho', ass:'Humberto Estrelinha', email:'dir@ccmira.pt', tel:'+351 219 000 005', nota:'', dt:'09/05/2026', origem:'Feira / Evento'},
-  {id:6, n:'Neon Lounge', emp:'Bar Nox Cascais', prod:'Neon Flex', val:1800, st:'Proposta enviada', ass:'Paulo Faria', email:'nox@barnox.pt', tel:'+351 919 000 006', nota:'', dt:'08/05/2026', origem:'Facebook'},
-  {id:7, n:'Caixa Luz Farmácia', emp:'Farmácia Terrugem', prod:'Caixa de Luz', val:1400, st:'Novo Lead', ass:'Rui Mota', email:'farmacia@terrugem.pt', tel:'+351 219 000 007', nota:'', dt:'07/05/2026', origem:'WhatsApp directo'},
-  {id:8, n:'Letras Hotel Boa Vista', emp:'Hotel Boa Vista', prod:'Letras Monobloco 3D', val:5400, st:'Proposta enviada', ass:'Paulo Faria', email:'geral@hotelboavista.pt', tel:'+351 219 000 008', nota:'', dt:'06/05/2026', origem:'Google Orgânico'},
-];
+// Correção (Bloco A, fluxo oficial 10/09/2026): os 8 leads fictícios que
+// aqui estavam (Restaurante O Farol, Fit Studio, etc.) eram exatamente os
+// mesmos seeds já purgados do remoto nesta sessão (ver limpeza de
+// 2026-09-09) — mantê-los aqui só recriava o risco de reaparecerem num
+// browser novo. Fallback vazio: sem sessão/remoto, o Pipeline começa
+// vazio (nunca inventa leads), tal como crmHidratarLeadsCanonico() já
+// garante para qualquer sessão real.
+var crmLeads; try{crmLeads=JSON.parse(localStorage.getItem('ob-leads')||'null');}catch(e){crmLeads=null;} crmLeads = crmLeads || [];
 leads = crmLeads; // alias para Dashboard
 var crmLeadIdCounter = Math.max(...crmLeads.map(l=>l.id), 0) + 1;
 
 function saveCrmLeads(){ localStorage.setItem('ob-leads', JSON.stringify(crmLeads)); leads = crmLeads || []; }
 function saveCrmCounter(){ crmLeadIdCounter = Math.max(...crmLeads.map(l=>l.id), 0) + 1; }
 
+// Fluxo oficial Fase 1 — Comercial/Prospecção (Bloco A, 10/09/2026).
+// Substitui o pipeline livre anterior (Novo Lead/Qualificado/Proposta
+// enviada/Em negociação/Fecho/Ganho ✓/Perdido ✗) pelas 8 fases oficiais.
+// Mapeamento aplicado ao migrar leads existentes (crmMigrarEstadoLegado()):
+//   Novo Lead -> Potenciais Clientes | Qualificado -> Contactados
+//   Proposta enviada -> Proposta Enviada | Em negociação -> Proposta Enviada
+//   Fecho -> Proposta Adjudicada | Ganho ✓ -> Ganho | Perdido ✗ -> Perdido
 var CRM_COLS = [
-  {key:'Novo Lead',         cor:'#6b6b72'},
-  {key:'Qualificado',       cor:'#4d94db'},
-  {key:'Proposta enviada',  cor:'#d9822b'},
-  {key:'Em negociação',     cor:'#F5C400'},
-  {key:'Fecho',             cor:'#3fcf8e'},
-  {key:'Ganho ✓',           cor:'#27ae60'},
-  {key:'Perdido ✗',         cor:'#e74c3c'},
+  {key:'Potenciais Clientes',      cor:'#6b6b72'},
+  {key:'Contactados',              cor:'#4d94db'},
+  {key:'Reunião Agendada',         cor:'#8e6ad9'},
+  {key:'Proposta em Elaboração',   cor:'#c98a2b'},
+  {key:'Proposta Enviada',         cor:'#d9822b'},
+  {key:'Proposta Adjudicada',      cor:'#3fcf8e'},
+  {key:'Ganho',                    cor:'#27ae60'},
+  {key:'Perdido',                  cor:'#e74c3c'},
 ];
 
 // ── DRAG & DROP ──────────────────────────────────────────
@@ -12853,32 +12861,125 @@ function crmDragOver(e, colKey){
   if(col){ document.querySelectorAll('.k-col.drag-over').forEach(c=>c.classList.remove('drag-over')); col.classList.add('drag-over'); }
 }
 function crmDragLeave(e){ const col=e.currentTarget.closest('.k-col'); if(col)col.classList.remove('drag-over'); }
+// ════════════════════════════════════════════════════════════════
+// MOTOR CENTRAL DE TRANSIÇÕES — Bloco A, fluxo oficial (10/09/2026)
+// ════════════════════════════════════════════════════════════════
+// Um único sítio que sabe COMO registar uma mudança de fase (aplica o
+// novo estado, grava fase anterior/nova/evento/origem/motivo/autor/data
+// no histórico de atividades, e despoleta a persistência) — nem o drag
+// manual do Kanban nem as transições automáticas repetem esta lógica.
+//
+// crmRegistarTransicaoEstado(lead, faseNova, evento, origem, motivo):
+// aplica sempre (sem verificar ordem — usado tanto pelo drag manual,
+// que pode ir em qualquer direção, como pelo motor automático depois
+// de este já ter validado a transição).
+function crmRegistarTransicaoEstado(lead, faseNova, evento, origem, motivo){
+  if(!lead || lead.st===faseNova) return false;
+  var faseAnterior = lead.st;
+  lead.st = faseNova;
+  lead.dt = new Date().toLocaleDateString('pt-PT',{day:'2-digit',month:'2-digit',year:'numeric'});
+  if((faseNova==='Ganho'||faseNova==='Perdido') && !lead.dtFecho){
+    lead.dtFecho = new Date().toISOString().split('T')[0];
+  }
+  var autor = (typeof CU!=='undefined'&&CU&&CU.name) ? CU.name : 'Sistema';
+  crmAddAtividade(lead.id, 'estado', `Movido de "${faseAnterior}" para "${faseNova}"`+(motivo?` — Motivo: ${motivo}`:''), autor, {
+    origem: origem || 'manual',
+    extra: { faseAnterior: faseAnterior, faseNova: faseNova, evento: evento, motivo: motivo || null }
+  });
+  if(typeof crmRegistarOperacaoLead==='function') crmRegistarOperacaoLead('upsert', lead.id);
+  return true;
+}
+
+// Mapa declarativo das transições automáticas da Fase 1 (Comercial).
+// 'de': lista de fases de origem válidas (null = qualquer fase ativa,
+// nunca reabre Ganho/Perdido). Se o lead já não estiver numa fase de
+// origem válida, a transição é ignorada silenciosamente — nunca força
+// nem recua um lead que um comercial já avançou manualmente.
+var CRM_TRANSICOES_AUTOMATICAS = {
+  lead: {
+    contato_registado:      { de: ['Potenciais Clientes'], para: 'Contactados' },
+    reuniao_agendada:       { de: ['Potenciais Clientes','Contactados'], para: 'Reunião Agendada' },
+    orcamento_criado:       { de: ['Potenciais Clientes','Contactados','Reunião Agendada'], para: 'Proposta em Elaboração' },
+    proposta_enviada:       { de: ['Potenciais Clientes','Contactados','Reunião Agendada','Proposta em Elaboração'], para: 'Proposta Enviada' },
+    adjudicacao_confirmada: { de: null, para: 'Ganho' },
+    marcado_perdido:        { de: null, para: 'Perdido' }
+  }
+};
+
+// Motor central — crmAvaliarTransicaoAutomatica(entidade, evento, contexto).
+// Bloco A só cobre entidade='lead'; blocos seguintes (orçamento, produção,
+// instalação, faturação) estendem este mesmo motor, nunca criam um novo.
+// contexto: {leadId, origem?, motivo?}. Devolve {faseAnterior,faseNova} em
+// sucesso, ou null se não havia transição válida a fazer (idempotente —
+// seguro chamar mesmo que a fase já tenha avançado por outro caminho).
+function crmAvaliarTransicaoAutomatica(entidade, evento, contexto){
+  contexto = contexto || {};
+  if(entidade!=='lead') return null;
+  var def = CRM_TRANSICOES_AUTOMATICAS.lead[evento];
+  if(!def || !contexto.leadId) return null;
+  var lead = crmLeads.find(function(l){ return l && l.id===contexto.leadId; });
+  if(!lead) return null;
+  var faseAnterior = lead.st;
+  var terminal = (faseAnterior==='Ganho'||faseAnterior==='Perdido');
+  if(terminal) return null; // negócio fechado — só o drag manual reabre, de propósito
+  if(def.de && def.de.indexOf(faseAnterior)===-1) return null; // fora de ordem, não força
+  var aplicado = crmRegistarTransicaoEstado(lead, def.para, evento, contexto.origem || 'automatico', contexto.motivo);
+  if(!aplicado) return null;
+  if(typeof saveCrmLeads==='function') saveCrmLeads();
+  if(typeof crmRenderAll==='function') crmRenderAll();
+  return { faseAnterior: faseAnterior, faseNova: def.para };
+}
+window.crmAvaliarTransicaoAutomatica = crmAvaliarTransicaoAutomatica;
+
+// Migração única de estados legado -> Fase 1 oficial. Chamada uma vez no
+// arranque (ver crmInit) sobre os leads já carregados — idempotente
+// (já não há nada a migrar da 2ª vez em diante, porque os valores
+// antigos deixam de existir depois da 1ª passagem).
+var CRM_MAPA_ESTADO_LEGADO = {
+  'Novo Lead': 'Potenciais Clientes',
+  'Qualificado': 'Contactados',
+  'Proposta enviada': 'Proposta Enviada',
+  'Em negociação': 'Proposta Enviada',
+  'Fecho': 'Proposta Adjudicada',
+  'Ganho ✓': 'Ganho',
+  'Perdido ✗': 'Perdido'
+};
+function crmMigrarEstadoLegado(){
+  var mudou = false;
+  (crmLeads||[]).forEach(function(l){
+    if(l && CRM_MAPA_ESTADO_LEGADO.hasOwnProperty(l.st)){
+      var novo = CRM_MAPA_ESTADO_LEGADO[l.st];
+      crmAddAtividade(l.id, 'estado', `Migração Fase 1: "${l.st}" -> "${novo}"`, 'Sistema', {
+        origem: 'migracao_fase1', extra: { faseAnterior: l.st, faseNova: novo, evento: 'migracao_legado' }
+      });
+      l.st = novo;
+      if(typeof crmRegistarOperacaoLead==='function') crmRegistarOperacaoLead('upsert', l.id);
+      mudou = true;
+    }
+  });
+  if(mudou && typeof saveCrmLeads==='function') saveCrmLeads();
+  return mudou;
+}
+window.crmMigrarEstadoLegado = crmMigrarEstadoLegado;
+
 function crmDrop(e, colKey){
   e.preventDefault();
   const lead = crmLeads.find(l=>l.id===crmDragId);
   if(lead && lead.st !== colKey){
-    const stAnterior = lead.st;
-    lead.st = colKey;
-    lead.dt = new Date().toLocaleDateString('pt-PT',{day:'2-digit',month:'2-digit',year:'numeric'});
-    // Auto-preenche data de fecho ao marcar Ganho/Perdido
-    if((colKey==='Ganho ✓'||colKey==='Perdido ✗') && !lead.dtFecho){
-      lead.dtFecho = new Date().toISOString().split('T')[0];
-    }
-    // Regista actividade de mudança de estado
-    crmAddAtividade(lead.id, 'estado', `Movido de "${stAnterior}" para "${colKey}"`, 'Sistema');
-    // Motivo de perda
-    if(colKey==='Perdido ✗'){
+    let motivo = null;
+    // Motivo de perda — pedido ANTES de aplicar a transição, para poder
+    // ir junto no mesmo registo de histórico (crmRegistarTransicaoEstado).
+    if(colKey==='Perdido'){
       const motivos = ['Preço alto','Sem resposta do cliente','Concorrência','Projecto cancelado','Prazo incompatível','Outro'];
       const opcoes = motivos.map((m,i)=>`${i+1}. ${m}`).join('\n');
       const esc = prompt('❌ Motivo de perda:\n\n'+opcoes+'\n\nEscreve o número ou motivo:');
       if(esc){
         const num = parseInt(esc);
-        const mot = (!isNaN(num)&&num>=1&&num<=motivos.length) ? motivos[num-1] : esc.trim();
-        lead.motivoPerda = mot;
-        crmAddAtividade(lead.id, 'nota', 'Motivo de perda: '+mot, 'Sistema');
+        motivo = (!isNaN(num)&&num>=1&&num<=motivos.length) ? motivos[num-1] : esc.trim();
+        lead.motivoPerda = motivo;
       }
     }
-    if(typeof crmRegistarOperacaoLead==='function') crmRegistarOperacaoLead('upsert', lead.id);
+    crmRegistarTransicaoEstado(lead, colKey, 'manual_drag', 'kanban', motivo);
     saveCrmLeads();
     crmRenderAll();
   }
@@ -12958,7 +13059,7 @@ function crmCalcScore(l){
 // Funil: índice de cada coluna para calcular progresso
 const CRM_COL_IDX = {};
 CRM_COLS.forEach((c,i)=>CRM_COL_IDX[c.key]=i);
-const CRM_COL_PROGRESS = {'Novo Lead':10,'Qualificado':25,'Proposta enviada':45,'Em negociação':65,'Fecho':80,'Ganho ✓':100,'Perdido ✗':0};
+const CRM_COL_PROGRESS = {'Potenciais Clientes':10,'Contactados':20,'Reunião Agendada':35,'Proposta em Elaboração':50,'Proposta Enviada':65,'Proposta Adjudicada':85,'Ganho':100,'Perdido':0};
 
 function renderCRMKanban(elId){
   const el = document.getElementById(elId);
@@ -12996,7 +13097,7 @@ function renderCRMKanban(elId){
           if(l.dtInicio){ diasParse = new Date(l.dtInicio); }
           else if(l.dt){ const p=l.dt.split('/'); if(p.length===3) diasParse = new Date(p[2],p[1]-1,p[0]); }
           const diasDesde = diasParse ? Math.max(0,Math.round((new Date()-diasParse)/86400000)) : null;
-          const isAtivo = !['Ganho ✓','Perdido ✗'].includes(l.st);
+          const isAtivo = !['Ganho','Perdido'].includes(l.st);
           const isSLA = isAtivo && diasDesde!==null && diasDesde>7;
 
           const tempoBadge = diasDesde!==null ? `<span style="font-size:11px;color:${isSLA?'#e74c3c':'var(--muted)'};background:${isSLA?'rgba(231,76,60,.1)':'var(--bg3)'};border-radius:4px;padding:1px 6px;${isSLA?'border:1px solid rgba(231,76,60,.25)':''}">há ${diasDesde}d</span>` : '';
@@ -13115,10 +13216,10 @@ function crmRenderAll(){
 }
 
 function crmUpdateStats(){
-  const ativos = crmLeads.filter(l=>!['Ganho ✓','Perdido ✗'].includes(l.st));
+  const ativos = crmLeads.filter(l=>!['Ganho','Perdido'].includes(l.st));
   const pip = ativos.reduce((s,l)=>s+l.val,0);
-  const ganhos = crmLeads.filter(l=>l.st==='Ganho ✓').length;
-  const total = crmLeads.filter(l=>['Ganho ✓','Perdido ✗'].includes(l.st)).length;
+  const ganhos = crmLeads.filter(l=>l.st==='Ganho').length;
+  const total = crmLeads.filter(l=>['Ganho','Perdido'].includes(l.st)).length;
   const conv = total ? Math.round(ganhos/total*100) : 0;
   const set = (id,v)=>{ const el=document.getElementById(id); if(el)el.textContent=v; };
   set('crm-total', ativos.length);
@@ -13139,7 +13240,7 @@ function crmUpdateStats(){
 
   // Top Comercial: quem gerou mais receita em leads Ganhos ✓ (não quem tem mais leads em aberto)
   const receitaPorComercial = {};
-  crmLeads.filter(l=>l.st==='Ganho ✓').forEach(l=>{ if(l.ass) receitaPorComercial[l.ass]=(receitaPorComercial[l.ass]||0)+(l.val||0); });
+  crmLeads.filter(l=>l.st==='Ganho').forEach(l=>{ if(l.ass) receitaPorComercial[l.ass]=(receitaPorComercial[l.ass]||0)+(l.val||0); });
   const top = Object.entries(receitaPorComercial).sort((a,b)=>b[1]-a[1])[0];
   set('crm-top-comercial', top ? `${top[0]} (${fmt(top[1])})` : '—');
 }
@@ -13161,7 +13262,7 @@ function crmOpenNew(stInicial){
   document.getElementById('clm-nota').value = '';
   const fp=document.getElementById('clm-files-preview');if(fp)fp.innerHTML='📎 Clica para anexar (imagens, PDF, AI, PSD...)';
   const fi=document.getElementById('clm-file-input');if(fi)fi.value='';
-  document.getElementById('clm-st').value = stInicial||'Novo Lead';
+  document.getElementById('clm-st').value = stInicial||'Potenciais Clientes';
   const prioN=document.getElementById('clm-prioridade'); if(prioN) prioN.value='';
   // data de início automática
   const dtInicio=document.getElementById('clm-dt-inicio');
@@ -13248,7 +13349,7 @@ function crmOpenEdit(id){
   // Motivo de perda (apenas se já estava perdido)
   const motivoWrap = document.getElementById('clm-motivo-wrap');
   const motivoSel  = document.getElementById('clm-motivo');
-  if(motivoWrap){ motivoWrap.style.display = lead.st==='Perdido ✗'?'block':'none'; }
+  if(motivoWrap){ motivoWrap.style.display = lead.st==='Perdido'?'block':'none'; }
   if(motivoSel)  motivoSel.value = lead.motivoPerda||'';
 
   m.classList.add('open');
@@ -13261,9 +13362,12 @@ function crmSugerirProximoPasso(lead){
   else if(lead.dt){ const p=lead.dt.split('/'); if(p.length===3) base = new Date(p[2],p[1]-1,p[0]); }
   if(!base) return null;
   const dias = Math.round((new Date()-base)/86400000);
-  if(lead.st==='Novo Lead' && dias>3) return 'Sugestão: Qualificar este lead (contactar cliente).';
-  if(lead.st==='Proposta enviada' && dias>7) return 'Sugestão: Fazer follow-up.';
-  if(lead.st==='Em negociação' && dias>14) return 'Sugestão: Rever condições ou fechar.';
+  if(lead.st==='Potenciais Clientes' && dias>3) return 'Sugestão: Registar o primeiro contacto com este lead.';
+  if(lead.st==='Contactados' && dias>5) return 'Sugestão: Agendar reunião ou avançar para proposta.';
+  if(lead.st==='Reunião Agendada' && dias>7) return 'Sugestão: Confirmar reunião ou avançar para proposta.';
+  if(lead.st==='Proposta em Elaboração' && dias>5) return 'Sugestão: Concluir e enviar a proposta.';
+  if(lead.st==='Proposta Enviada' && dias>7) return 'Sugestão: Fazer follow-up.';
+  if(lead.st==='Proposta Adjudicada' && dias>3) return 'Sugestão: Confirmar adiantamento e fechar.';
   return null;
 }
 
@@ -13276,7 +13380,7 @@ function crmPopulateAssSelect(selNome){
 function crmRenderMktBar(){
   const leads = crmLeads||[];
   // Ciclo médio: apenas leads com dtInicio e dtFecho
-  const fechados = leads.filter(l=>l.dtInicio&&l.dtFecho&&(l.st==='Ganho ✓'||l.st==='Perdido ✗'));
+  const fechados = leads.filter(l=>l.dtInicio&&l.dtFecho&&(l.st==='Ganho'||l.st==='Perdido'));
   const cicloMedio = fechados.length
     ? Math.round(fechados.reduce((s,l)=>{
         const d=Math.max(0,Math.round((new Date(l.dtFecho)-new Date(l.dtInicio))/86400000));
@@ -13288,7 +13392,7 @@ function crmRenderMktBar(){
 
   // Taxa de conversão
   const total=leads.length;
-  const ganhos=leads.filter(l=>l.st==='Ganho ✓').length;
+  const ganhos=leads.filter(l=>l.st==='Ganho').length;
   const taxaEl=document.getElementById('mkt-taxa-conv');
   if(taxaEl) taxaEl.textContent=total?Math.round(ganhos/total*100)+'%':'—';
 
@@ -13305,7 +13409,7 @@ function crmRenderMktBar(){
   }
 
   // Por estado
-  const stCols=['Novo Lead','Qualificado','Proposta enviada','Em negociação','Fecho','Ganho ✓','Perdido ✗'];
+  const stCols=['Potenciais Clientes','Contactados','Reunião Agendada','Proposta em Elaboração','Proposta Enviada','Proposta Adjudicada','Ganho','Perdido'];
   const stColors=['var(--muted)','var(--b)','var(--a)','var(--y)','var(--p)','var(--g)','var(--r)'];
   const stMap={};
   leads.forEach(l=>stMap[l.st]=(stMap[l.st]||0)+1);
@@ -13350,7 +13454,7 @@ function crmCalcCiclo(){
     if(e.target.id==='clm-dt-inicio'||e.target.id==='clm-dt-fecho') crmCalcCiclo();
     if(e.target.id==='clm-st'){
       const mw = document.getElementById('clm-motivo-wrap');
-      if(mw) mw.style.display = e.target.value==='Perdido ✗'?'block':'none';
+      if(mw) mw.style.display = e.target.value==='Perdido'?'block':'none';
     }
   });
 })();
@@ -13363,7 +13467,7 @@ function crmSaveLead(){
   const dtInicioVal = document.getElementById('clm-dt-inicio')?.value || new Date().toISOString().split('T')[0];
   let dtFechoVal = document.getElementById('clm-dt-fecho')?.value || '';
   // Auto-preenche data de fecho ao marcar Ganho/Perdido
-  if((stVal==='Ganho ✓'||stVal==='Perdido ✗') && !dtFechoVal){
+  if((stVal==='Ganho'||stVal==='Perdido') && !dtFechoVal){
     dtFechoVal = new Date().toISOString().split('T')[0];
     const dtFEl=document.getElementById('clm-dt-fecho'); if(dtFEl) dtFEl.value=dtFechoVal;
   }
@@ -13486,12 +13590,17 @@ function crmOpenAddAtiv(tipo){
   const lbl  = document.getElementById('clm-ativ-tipo-label');
   const txt  = document.getElementById('clm-ativ-texto');
   if(!form) return;
-  const icons = {'Nota':'📝','Chamada':'📞','Email':'✉','Visita':'🚗','WhatsApp':'💬'};
+  const icons = {'Nota':'📝','Chamada':'📞','Email':'✉','Visita':'🚗','WhatsApp':'💬','Reunião':'📅'};
   if(lbl) lbl.textContent = (icons[tipo]||'')+' Registar '+tipo;
-  if(txt){ txt.value=''; txt.placeholder = tipo==='Chamada'?'Ex: Falei com o gestor, vai analisar a proposta':tipo==='Visita'?'Ex: Visita às instalações, tirei medidas':'Descrição...'; }
+  if(txt){ txt.value=''; txt.placeholder = tipo==='Chamada'?'Ex: Falei com o gestor, vai analisar a proposta':tipo==='Visita'?'Ex: Visita às instalações, tirei medidas':tipo==='Reunião'?'Ex: Reunião agendada para dia 15, apresentar proposta':'Descrição...'; }
   form.style.display='block';
   if(txt) setTimeout(()=>txt.focus(),50);
 }
+
+// Tipos de atividade que contam como "contacto" para o motor de
+// transições — Nota fica de fora (é só uma anotação interna, não prova
+// que o cliente foi contactado).
+var CRM_TIPOS_CONTATO = ['Chamada','Email','Visita','WhatsApp'];
 
 function crmSaveAtiv(){
   const txt = document.getElementById('clm-ativ-texto');
@@ -13500,6 +13609,17 @@ function crmSaveAtiv(){
   crmAddAtividade(crmEditingId, _crmAtivTipo, txt.value.trim());
   document.getElementById('clm-add-ativ-form').style.display='none';
   txt.value='';
+  // Bloco A, fluxo oficial: registar um contacto real (Chamada/Email/
+  // Visita/WhatsApp) avança "Potenciais Clientes" -> "Contactados";
+  // registar uma "Reunião" avança para "Reunião Agendada". Idempotente —
+  // se o lead já tiver avançado (manualmente ou por outra via), não faz nada.
+  if(typeof crmAvaliarTransicaoAutomatica==='function'){
+    if(_crmAtivTipo==='Reunião'){
+      crmAvaliarTransicaoAutomatica('lead', 'reuniao_agendada', { leadId: crmEditingId, origem: 'atividade_reuniao' });
+    } else if(CRM_TIPOS_CONTATO.indexOf(_crmAtivTipo)!==-1){
+      crmAvaliarTransicaoAutomatica('lead', 'contato_registado', { leadId: crmEditingId, origem: 'atividade_'+_crmAtivTipo.toLowerCase() });
+    }
+  }
   crmRenderTimeline(crmEditingId);
 }
 
@@ -13621,7 +13741,7 @@ function crmToggleHistCampos(){
 function crmUpdateFunnel(){
   const el = document.getElementById('crm-funnel-bar');
   if(!el) return;
-  const ativos = CRM_COLS.filter(c=>!['Ganho ✓','Perdido ✗'].includes(c.key));
+  const ativos = CRM_COLS.filter(c=>!['Ganho','Perdido'].includes(c.key));
   let html = '';
   ativos.forEach((col, i)=>{
     const count = crmLeads.filter(l=>l.st===col.key).length;
@@ -13641,14 +13761,14 @@ function crmUpdateFunnel(){
     }
   });
   // Ganhos / Perdidos final
-  const ganhos = crmLeads.filter(l=>l.st==='Ganho ✓').length;
-  const perdidos = crmLeads.filter(l=>l.st==='Perdido ✗').length;
+  const ganhos = crmLeads.filter(l=>l.st==='Ganho').length;
+  const perdidos = crmLeads.filter(l=>l.st==='Perdido').length;
   const total = ganhos+perdidos;
   const taxaFinal = total ? Math.round(ganhos/total*100) : 0;
   html += `<div class="cfb-arrow"><div class="cfb-arrow-icon">›</div>${total>0?`<div class="cfb-arrow-pct">${taxaFinal}%</div>`:''}</div>
     <div style="display:flex;gap:8px;align-items:center;padding:4px 8px">
-      <div class="cfb-stage"><div class="cfb-count" style="color:#27ae60">${ganhos}</div><div class="cfb-label">Ganho ✓</div></div>
-      <div class="cfb-stage"><div class="cfb-count" style="color:#e74c3c">${perdidos}</div><div class="cfb-label">Perdido ✗</div></div>
+      <div class="cfb-stage"><div class="cfb-count" style="color:#27ae60">${ganhos}</div><div class="cfb-label">Ganho</div></div>
+      <div class="cfb-stage"><div class="cfb-count" style="color:#e74c3c">${perdidos}</div><div class="cfb-label">Perdido</div></div>
     </div>`;
   el.innerHTML = html;
 }
@@ -17168,6 +17288,11 @@ async function orcGuardar(){
   if(d.leadId && typeof crmAddAtividade==='function'){
     crmAddAtividade(d.leadId, 'orcamento', 'Orçamento '+d.num+' criado — €'+(d.totais&&d.totais.total?d.totais.total.toFixed(2):'0,00'), d.vendedor);
   }
+  // Bloco A, fluxo oficial: orçamento criado -> lead avança para "Proposta
+  // em Elaboração" (só se ainda estiver numa fase anterior — não força).
+  if(d.leadId && typeof crmAvaliarTransicaoAutomatica==='function'){
+    crmAvaliarTransicaoAutomatica('lead', 'orcamento_criado', { leadId: d.leadId, origem: 'orcamento' });
+  }
   if (typeof _copExemplosCache !== 'undefined') _copExemplosCache = {};
   orcRenderList();
   // Próximo número
@@ -17231,6 +17356,15 @@ function orcWhatsApp(){
   const tel = (d.cliWA||'').replace(/[^0-9]/g,'');
   const base = tel ? ('https://wa.me/'+tel) : 'https://wa.me/';
   window.open(base+'?text='+encodeURIComponent(msgTexto),'_blank');
+  // Bloco A, fluxo oficial: proposta enviada (WhatsApp) -> lead avança
+  // para "Proposta Enviada". Não confirma entrega (é um mailto/wa.me
+  // client-side) — só regista a intenção/ação do comercial.
+  if(d.leadId && typeof crmAddAtividade==='function'){
+    crmAddAtividade(d.leadId, 'orcamento', 'Proposta '+d.num+' enviada por WhatsApp', d.vendedor);
+  }
+  if(d.leadId && typeof crmAvaliarTransicaoAutomatica==='function'){
+    crmAvaliarTransicaoAutomatica('lead', 'proposta_enviada', { leadId: d.leadId, origem: 'orcamento_whatsapp' });
+  }
 }
 
 function orcEmail(){
@@ -17263,6 +17397,15 @@ function orcEmail(){
     `Tel: +351 215 874 779 | www.opportunitybox.pt`,
   ].filter(l=>l!==null && l!==undefined).join('\n'));
   window.location.href = `mailto:?subject=${subject}&body=${body}`;
+  // Bloco A, fluxo oficial: proposta enviada (email) -> lead avança para
+  // "Proposta Enviada". Não confirma entrega (é um mailto: client-side)
+  // — só regista a intenção/ação do comercial.
+  if(d.leadId && typeof crmAddAtividade==='function'){
+    crmAddAtividade(d.leadId, 'orcamento', 'Proposta '+d.num+' enviada por email', d.vendedor);
+  }
+  if(d.leadId && typeof crmAvaliarTransicaoAutomatica==='function'){
+    crmAvaliarTransicaoAutomatica('lead', 'proposta_enviada', { leadId: d.leadId, origem: 'orcamento_email' });
+  }
 }
 
 
@@ -17358,16 +17501,20 @@ function crmSubmeterAdjudicacao(){
     orcChangeStatus(orc.num, 'Aprovado');
   }
 
-  // Marca a lead como Ganha — dispara a criação automática do Cliente
-  lead.st = 'Ganho ✓';
-  if(!lead.dtFecho) lead.dtFecho = new Date().toISOString().split('T')[0];
-  if(typeof crmRegistarOperacaoLead==='function') crmRegistarOperacaoLead('upsert', leadId);
-  if(typeof saveCrmLeads==='function') saveCrmLeads();
-  if(typeof crmRenderAll==='function') crmRenderAll();
+  // Marca a lead como Ganha via o motor central (fase anterior/nova,
+  // evento e origem ficam registados no histórico) — dispara a criação
+  // automática do Cliente (ver wrap de saveCrmLeads).
+  if(typeof crmAvaliarTransicaoAutomatica==='function'){
+    crmAvaliarTransicaoAutomatica('lead', 'adjudicacao_confirmada', { leadId: leadId, origem: 'adjudicacao' });
+  } else if(typeof crmRegistarTransicaoEstado==='function'){
+    crmRegistarTransicaoEstado(lead, 'Ganho', 'adjudicacao_confirmada', 'adjudicacao', null);
+    if(typeof saveCrmLeads==='function') saveCrmLeads();
+    if(typeof crmRenderAll==='function') crmRenderAll();
+  }
 
   // Refrescar o modal, se ainda estiver a editar esta lead
   if(typeof crmEditingId!=='undefined' && crmEditingId===leadId){
-    const stEl = document.getElementById('clm-st'); if(stEl) stEl.value = 'Ganho ✓';
+    const stEl = document.getElementById('clm-st'); if(stEl) stEl.value = 'Ganho';
     const dtFEl = document.getElementById('clm-dt-fecho'); if(dtFEl) dtFEl.value = lead.dtFecho;
     if(typeof crmRenderTimeline==='function') crmRenderTimeline(leadId);
     if(typeof crmRenderOrcLink==='function') crmRenderOrcLink(leadId);
@@ -25061,7 +25208,7 @@ document.addEventListener('click', function(e){
       var fi=document.getElementById('clm-file-input'); if(fi) fi.click(); break;
     case 'alertMsg': alert(ms); break;
     case 'openUniModal': safe(openUniModal,[pg]); break;
-    case 'crmOpenNew': safe(crmOpenNew,[col||'Novo Lead']); break;
+    case 'crmOpenNew': safe(crmOpenNew,[col||'Potenciais Clientes']); break;
     case 'pickColor': safe(pickColor,[co]); break;
     case 'crmSelectCor': safe(crmSelectCor,[co,el]); break;
     case 'designSelectCor': safe(designSelectCor,[co,el]); break;
@@ -27167,7 +27314,7 @@ function importarConfiguracao() {
    OB AUTOMATIZAÇÕES & PROCESSOS
    - Leads parados há mais de 7 dias → badge no menu + pendências no dashboard
    - Orçamento Aprovado / Em Produção → cria projecto na Produção
-   - Lead "Ganho ✓" → cria cliente na lista de Clientes
+   - Lead "Ganho" → cria cliente na lista de Clientes
    - Próximas acções dos leads → hoje e em atraso no dashboard
    - Checklists por tipo de projecto na Produção + registo de etapas
    - Sincronização com Supabase (tabela ob_crm_dados) para nada se perder
@@ -27349,7 +27496,7 @@ function obCriarClienteDeLead(lead){
     // Antes de gravar: leads ganhos ainda sem cliente criado
     try{
       (crmLeads||[]).forEach(function(l){
-        if(l.st==='Ganho ✓'&&!l._clienteCriado){ l._clienteCriado=true; obCriarClienteDeLead(l); }
+        if(l.st==='Ganho'&&!l._clienteCriado){ l._clienteCriado=true; obCriarClienteDeLead(l); }
       });
     }catch(e){}
     _orig();
@@ -27389,7 +27536,7 @@ function obLeadUltimaAtividade(l){
 function obLeadsParados(diasLimite){
   diasLimite=diasLimite||OB_DIAS_LEAD_PARADO;
   return (crmLeads||[])
-    .filter(function(l){ return ['Ganho ✓','Perdido ✗'].indexOf(l.st)===-1; })
+    .filter(function(l){ return ['Ganho','Perdido'].indexOf(l.st)===-1; })
     .map(function(l){ var dias=obDiasEntre(obLeadUltimaAtividade(l)); return {lead:l, dias:dias}; })
     .filter(function(x){ return x.dias!==null&&x.dias>diasLimite; })
     .sort(function(a,b){ return b.dias-a.dias; });
@@ -27399,7 +27546,7 @@ function obAcoesAgendadas(){
   var hoje=new Date().toISOString().split('T')[0];
   var out={hoje:[],atraso:[]};
   (crmLeads||[]).forEach(function(l){
-    if(['Ganho ✓','Perdido ✗'].indexOf(l.st)!==-1) return;
+    if(['Ganho','Perdido'].indexOf(l.st)!==-1) return;
     var pa=l.proximaAcao;
     if(!pa||!pa.data) return;
     if(pa.data===hoje) out.hoje.push({lead:l,pa:pa});
@@ -29618,7 +29765,7 @@ function fuPrioridade(dias){
 
 // Estados terminais fora do âmbito do follow-up — nenhum estado novo,
 // só reutiliza os já existentes no pipeline (crmLeads.st / orcData.st).
-var FU_ESTADOS_LEAD_TERMINAIS = ['Ganho ✓','Perdido ✗'];
+var FU_ESTADOS_LEAD_TERMINAIS = ['Ganho','Perdido'];
 var FU_ESTADOS_ORC_TERMINAIS = ['Aprovado','Faturado','Cancelado'];
 
 // ══ Fase 1.6 — leitura de ob_orcamento_triagem (só SELECT; RLS já filtra
@@ -30359,6 +30506,14 @@ async function crmHidratarLeadsCanonico(){
     leads = final;
     localStorage.setItem('ob-leads', JSON.stringify(final));
     window._crmLeadsEstado = final.length ? 'carregado' : 'vazio';
+
+    // Bloco A, fluxo oficial (10/09/2026): migra estados legado (Novo
+    // Lead/Qualificado/etc) para a Fase 1 oficial, DEPOIS de adotar o
+    // snapshot remoto fresco — nunca antes, para a migração não ser
+    // desfeita pela própria hidratação a seguir. crmMigrarEstadoLegado()
+    // já chama saveCrmLeads() sozinha quando muda alguma coisa (empurra a
+    // migração para o Supabase via o push seguro normal).
+    try{ if(typeof crmMigrarEstadoLegado==='function') crmMigrarEstadoLegado(); }catch(e){}
 
     try{ if(typeof crmRenderAll==='function') crmRenderAll(); }catch(e){}
   })();
