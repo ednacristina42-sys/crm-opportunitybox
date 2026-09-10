@@ -12926,18 +12926,28 @@ var CRM_TRANSICOES_AUTOMATICAS = {
     adiantamento_confirmado: { de: ['Confirmação de Pagamento'], para: '50% Confirmado' }
   },
   // Bloco C — Fase 3 (Preparação + Execução): Design (quando aplicável) +
-  // Produção + Instalação, sobre orc.faseProducao. 'de':[null] só a partir
-  // do zero (nunca "sem Design" -> "Aguarda Design" a meio do processo).
-  // producao_iniciada aceita [null, 'Design Aprovado'] de propósito — é
-  // exatamente essa dupla origem que implementa "com Design → bloqueado
-  // até aprovação; sem Design → segue direto" (ver obCriarProjetoProducao).
+  // Compra de Material + Produção + Instalação + Entrega, sobre
+  // orc.faseProducao. 'de':[null] só a partir do zero. A decisão de Design
+  // (orc.designNecessario: true/false/undefined) NÃO tem transição própria
+  // no mapa quando é "Sem Design" — é só um campo registado (ver
+  // orcMarcarSemDesign); é obCriarProjetoProducao() que trata os 3 estados
+  // (true/false/por decidir) como guardas explícitas antes de sequer
+  // avaliar esta entidade. compra_material_iniciada aceita
+  // [null, 'Design Aprovado'] de propósito — é essa dupla origem que
+  // implementa "com Design → bloqueado até aprovação; sem Design → segue
+  // direto" (ver obCriarProjetoProducao). Fluxo oficial completo: (Design
+  // opcional) -> Compra de Material -> Em Produção -> Produção Concluída
+  // -> Em Instalação -> Instalação Concluída -> Entrega (é a Entrega, não
+  // "Instalação Concluída", que sinaliza ao Bloco D que pode faturar).
   producao: {
-    design_necessario:    { de: [null], para: 'Aguarda Design' },
-    design_aprovado:      { de: ['Aguarda Design'], para: 'Design Aprovado' },
-    producao_iniciada:    { de: [null, 'Design Aprovado'], para: 'Em Produção' },
-    producao_concluida:   { de: ['Em Produção'], para: 'Produção Concluída' },
-    instalacao_iniciada:  { de: ['Produção Concluída'], para: 'Em Instalação' },
-    instalacao_concluida: { de: ['Em Instalação'], para: 'Instalação Concluída' }
+    design_necessario:        { de: [null], para: 'Aguarda Design' },
+    design_aprovado:          { de: ['Aguarda Design'], para: 'Design Aprovado' },
+    compra_material_iniciada: { de: [null, 'Design Aprovado'], para: 'Compra de Material' },
+    materiais_confirmados:    { de: ['Compra de Material'], para: 'Em Produção' },
+    producao_concluida:       { de: ['Em Produção'], para: 'Produção Concluída' },
+    instalacao_iniciada:      { de: ['Produção Concluída'], para: 'Em Instalação' },
+    instalacao_concluida:     { de: ['Em Instalação'], para: 'Instalação Concluída' },
+    entrega_confirmada:       { de: ['Instalação Concluída'], para: 'Entrega' }
   }
 };
 
@@ -14128,8 +14138,11 @@ var UNI_CFG = {
   },
   'fabrica-instalacoes': {
     title:'Instalação', icon:'🔨',
-    statuses:['Planeada','Agendada','Em curso','Concluída','Cancelada'],
-    colors:{'Planeada':'#6b6b72','Agendada':'#4d94db','Em curso':'#F5C400','Concluída':'#3fcf8e','Cancelada':'#e74c3c'},
+    // "Entrega" (10/09/2026, ajuste do Bloco C): estado real a seguir a
+    // "Concluída" — é ele, não "Concluída", que sinaliza ao Bloco D que a
+    // faturação final pode começar (ver obAvaliarTransicaoProducaoUni).
+    statuses:['Planeada','Agendada','Em curso','Concluída','Entrega','Cancelada'],
+    colors:{'Planeada':'#6b6b72','Agendada':'#4d94db','Em curso':'#F5C400','Concluída':'#3fcf8e','Entrega':'#27ae60','Cancelada':'#e74c3c'},
     kanban:false, nameLabel:'Trabalho', dateLabel:'Data instalação', extraRow:true, extraLabel:'Hora', extraPlaceholder:'08:00',
     teamPicker:true
   },
@@ -16876,7 +16889,10 @@ async function _sbOrcUpsert(orc, opts) {
         pagamentosAdiantamento: Array.isArray(orc.pagamentosAdiantamento) ? orc.pagamentosAdiantamento : [],
         historicoFinanceiro: Array.isArray(orc.historicoFinanceiro) ? orc.historicoFinanceiro : [],
         faseProducao: (orc.faseProducao === undefined || orc.faseProducao === null) ? null : orc.faseProducao,
-        necessitaDesign: orc.necessitaDesign === true,
+        // 3 estados reais: true (Requer Design), false (Sem Design, decisão
+        // explícita), null (ainda por decidir) — nunca tratar undefined como
+        // false por omissão (ver obCriarProjetoProducao).
+        designNecessario: (orc.designNecessario === true) ? true : (orc.designNecessario === false ? false : null),
         historicoProducao: Array.isArray(orc.historicoProducao) ? orc.historicoProducao : []
       },
       owner_id: (cu.admin === true && opts.reassignOwnerId) ? opts.reassignOwnerId : cu.id,
@@ -16940,7 +16956,7 @@ async function _sbOrcLoadAll() {
         pagamentosAdiantamento: Array.isArray(extra.pagamentosAdiantamento) ? extra.pagamentosAdiantamento : [],
         historicoFinanceiro: Array.isArray(extra.historicoFinanceiro) ? extra.historicoFinanceiro : [],
         faseProducao: (extra.faseProducao === undefined || extra.faseProducao === null) ? null : extra.faseProducao,
-        necessitaDesign: extra.necessitaDesign === true,
+        designNecessario: (extra.designNecessario === true) ? true : (extra.designNecessario === false ? false : null),
         historicoProducao: Array.isArray(extra.historicoProducao) ? extra.historicoProducao : [],
         owner_id: row.owner_id || null
       };
@@ -18143,15 +18159,28 @@ function orcRenderAcoesFinanceiras(o, isAdmin){
 // Aprovados. Mesma célula de ações — não mexe no <thead>.
 function orcRenderAcoesProducao(o){
   if(o.st!=='Aprovado') return '';
+  // Revisão 10/09/2026: decisão de Design tem de ser explícita — enquanto
+  // designNecessario não for true/false (nunca por omissão), mostram-se
+  // as DUAS opções lado a lado; Produção/Compra de Material ficam
+  // bloqueadas até uma delas ser escolhida (ver obCriarProjetoProducao).
+  if(o.designNecessario!==true && o.designNecessario!==false){
+    return `<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:2px">
+      <button class="tbtn" style="font-size:10.5px;padding:2px 6px;white-space:nowrap" onclick="orcMarcarNecessitaDesign('${o.num}')" title="Bloqueia a produção até a maqueta ser aprovada">🎨 Requer Design</button>
+      <button class="tbtn" style="font-size:10.5px;padding:2px 6px;white-space:nowrap" onclick="orcMarcarSemDesign('${o.num}')" title="Regista a decisão e liberta a produção assim que o adiantamento estiver confirmado">✓ Sem Design</button>
+    </div>`;
+  }
   if(!o.faseProducao){
-    // "Sem Design" continua o caminho por omissão — só aparece o botão
-    // para marcar explicitamente que este orçamento precisa de maqueta.
-    return `<button class="tbtn" style="font-size:10.5px;padding:2px 6px;white-space:nowrap;margin-top:2px" onclick="orcMarcarNecessitaDesign('${o.num}')" title="Bloqueia a produção até a maqueta ser aprovada">🎨 Requer Design</button>`;
+    // Decisão já tomada (Sem Design, ou Requer Design ainda sem item
+    // criado por alguma razão) mas a fase ainda não avançou — nada a
+    // mostrar aqui; obCriarProjetoProducao trata do resto assim que o
+    // adiantamento for confirmado.
+    return o.designNecessario===true ? `<div style="margin-top:4px;font-size:10.5px;color:var(--y);white-space:nowrap">🎨 Requer Design</div>` : '';
   }
   var cores = {
     'Aguarda Design': 'var(--y)', 'Design Aprovado': '#8b5cf6',
-    'Em Produção': '#F5C400', 'Produção Concluída': '#4d94db',
-    'Em Instalação': '#4d94db', 'Instalação Concluída': 'var(--g)'
+    'Compra de Material': '#d9822b', 'Em Produção': '#F5C400',
+    'Produção Concluída': '#4d94db', 'Em Instalação': '#4d94db',
+    'Instalação Concluída': '#8b5cf6', 'Entrega': 'var(--g)'
   };
   var cor = cores[o.faseProducao] || 'var(--muted)';
   return `<div style="margin-top:4px;font-size:10.5px;color:${cor};white-space:nowrap">🏭 ${o.faseProducao}</div>`;
@@ -27569,6 +27598,15 @@ function obAvaliarTransicaoProducaoUni(item, statusAnterior, statusNovo){
     return;
   }
 
+  // Materiais confirmados/disponíveis -> "Compra de Material" avança para
+  // "Em Produção". O sinal é o próprio item de produção chegar ao estado
+  // real "Em Produção" no kanban (não há um 2º item nem um botão à parte —
+  // é a mesma ordem de produção, só que já com os materiais garantidos).
+  if(item.page==='fabrica-producao' && statusNovo==='Em Produção'){
+    crmAvaliarTransicaoAutomatica('producao', 'materiais_confirmados', { orcNum: item.orcNum, origem: 'materiais_confirmados' });
+    return;
+  }
+
   // Produção concluída -> cria a Instalação ligada (se ainda não existir) e avança a fase.
   if(item.page==='fabrica-producao' && statusNovo==='Concluído ✓'){
     crmAvaliarTransicaoAutomatica('producao', 'producao_concluida', { orcNum: item.orcNum, origem: 'producao_concluida' }).then(function(){
@@ -27594,14 +27632,25 @@ function obAvaliarTransicaoProducaoUni(item, statusAnterior, statusNovo){
     return;
   }
 
-  // Instalação concluída -> fase terminal do Bloco C, sinaliza a próxima
-  // fase (faturação/entrega final, Bloco D) sem inventar colunas novas.
+  // Instalação fisicamente concluída -> aguarda ainda a confirmação de
+  // Entrega (revisão 10/09/2026: "Instalação Concluída" NÃO sinaliza o
+  // Bloco D sozinha — só a Entrega confirmada o faz, ver abaixo).
   if(item.page==='fabrica-instalacoes' && statusNovo==='Concluída'){
     crmAvaliarTransicaoAutomatica('producao', 'instalacao_concluida', { orcNum: item.orcNum, origem: 'instalacao_concluida' }).then(function(r){
+      if(r && typeof showToast==='function') showToast('🔧 Instalação concluída — '+item.orcNum+' aguarda confirmação de Entrega.');
+    });
+    return;
+  }
+
+  // Entrega confirmada -> fase terminal do Bloco C. É ESTE evento, não
+  // "Instalação Concluída", que sinaliza ao Bloco D que a faturação final
+  // pode começar.
+  if(item.page==='fabrica-instalacoes' && statusNovo==='Entrega'){
+    crmAvaliarTransicaoAutomatica('producao', 'entrega_confirmada', { orcNum: item.orcNum, origem: 'entrega_confirmada' }).then(function(r){
       if(r && orc.leadId && typeof crmAddAtividade==='function'){
-        crmAddAtividade(orc.leadId, 'nota', 'Instalação concluída — orçamento '+item.orcNum+' pronto para faturação/entrega final.', 'Sistema', { origem:'instalacao_concluida' });
+        crmAddAtividade(orc.leadId, 'nota', 'Entrega confirmada — orçamento '+item.orcNum+' pronto para faturação final.', 'Sistema', { origem:'entrega_confirmada' });
       }
-      if(r && typeof showToast==='function') showToast('✅ Instalação concluída — '+item.orcNum+' pronto para a próxima fase (faturação/entrega).');
+      if(r && typeof showToast==='function') showToast('📦 Entrega confirmada — '+item.orcNum+' pronto para faturação final.');
     });
   }
 }
@@ -27748,16 +27797,20 @@ async function producaoRegistarTransicaoEstado(orc, faseNova, evento, origem, mo
 }
 window.producaoRegistarTransicaoEstado = producaoRegistarTransicaoEstado;
 
-// Marca que este orçamento precisa de aprovação formal de maqueta antes de
-// a produção poder começar — cria a tarefa ligada em Design (uniItems,
-// page:'design-tarefas') e regista orc.faseProducao='Aguarda Design'. Sem
-// esta marcação (o caminho por omissão), "sem Design" continua a valer:
-// obCriarProjetoProducao() avança direto assim que os 50% estiverem
-// confirmados, exatamente como antes do Bloco C.
+// Revisão 10/09/2026 (ajuste do Bloco C antes do D): a decisão de Design
+// tem de ser EXPLÍCITA e persistida — orc.designNecessario só pode valer
+// true (Requer Design), false (Sem Design, decisão tomada) ou null (ainda
+// por decidir). Nunca se trata undefined/null como "sem Design" por
+// omissão: obCriarProjetoProducao() bloqueia Compra de Material/Produção
+// enquanto a decisão não estiver tomada, seja qual for o sentido.
+
+// "🎨 Requer Design" — cria a tarefa ligada em Design (uniItems,
+// page:'design-tarefas') e regista designNecessario=true +
+// faseProducao='Aguarda Design'.
 async function orcMarcarNecessitaDesign(orcNum){
   var orc = (typeof orcData!=='undefined') ? orcData.find(function(o){ return o.num===orcNum; }) : null;
   if(!orc){ alert('Orçamento não encontrado.'); return false; }
-  if(orc.faseProducao){ alert('Este orçamento já tem uma fase de produção definida ('+orc.faseProducao+') — não é preciso marcar de novo.'); return false; }
+  if(orc.designNecessario===true || orc.designNecessario===false){ alert('Este orçamento já tem uma decisão de Design registada ('+(orc.designNecessario?'Requer Design':'Sem Design')+').'); return false; }
   if(typeof uniItems==='undefined'){ alert('Módulo de Produção indisponível.'); return false; }
   var autor = (typeof CU!=='undefined'&&CU&&CU.name) ? CU.name : 'Sistema';
   var itemDesign = {
@@ -27770,7 +27823,7 @@ async function orcMarcarNecessitaDesign(orcNum){
     dt: new Date().toLocaleDateString('pt-PT',{day:'2-digit',month:'2-digit',year:'numeric'})
   };
   uniItems.unshift(itemDesign);
-  var r = await crmAvaliarTransicaoAutomatica('producao', 'design_necessario', { orcNum: orcNum, origem: 'design', extraCampos: { necessitaDesign: true } });
+  var r = await crmAvaliarTransicaoAutomatica('producao', 'design_necessario', { orcNum: orcNum, origem: 'design', extraCampos: { designNecessario: true } });
   if(!r){
     // Não persistiu — desfaz também a tarefa de Design, para não ficar um
     // item órfão sem a fase correspondente no orçamento.
@@ -27786,6 +27839,27 @@ async function orcMarcarNecessitaDesign(orcNum){
   return true;
 }
 window.orcMarcarNecessitaDesign = orcMarcarNecessitaDesign;
+
+// "✓ Sem Design" — a outra metade da decisão explícita: regista
+// designNecessario=false, autor e data, sem criar nenhuma tarefa nem mexer
+// em orc.faseProducao (não há fase de Design a percorrer). Usa
+// producaoRegistarTransicaoEstado() diretamente (fora do motor
+// crmAvaliarTransicaoAutomatica, que só trata mudanças de faseProducao)
+// porque aqui não há transição de fase — só um campo novo a persistir —
+// mesmo padrão já usado por orcConfirmarAdiantamento() para pagamentos
+// parciais que não mudam de fase.
+async function orcMarcarSemDesign(orcNum){
+  var orc = (typeof orcData!=='undefined') ? orcData.find(function(o){ return o.num===orcNum; }) : null;
+  if(!orc){ alert('Orçamento não encontrado.'); return false; }
+  if(orc.designNecessario===true || orc.designNecessario===false){ alert('Este orçamento já tem uma decisão de Design registada ('+(orc.designNecessario?'Requer Design':'Sem Design')+').'); return false; }
+  if(typeof producaoRegistarTransicaoEstado!=='function'){ alert('Motor de transições indisponível.'); return false; }
+  var r = await producaoRegistarTransicaoEstado(orc, orc.faseProducao||null, 'design_dispensado', 'design', 'Decisão: Sem Design', { designNecessario: false });
+  if(!r || !r.applied){ alert('Não foi possível registar a decisão "Sem Design" no servidor — tenta novamente.'); return false; }
+  if(typeof orcRenderList==='function') orcRenderList();
+  if(typeof showToast==='function') showToast('✓ Decisão registada — orçamento '+orc.num+' segue sem Design.');
+  return true;
+}
+window.orcMarcarSemDesign = orcMarcarSemDesign;
 
 // Registo interno mínimo do adiantamento de 50% (número, valor = orc.sinal,
 // data, quem registou) — NÃO é uma "Fatura Proforma" emitida no TocOnline.
@@ -27954,10 +28028,10 @@ function obCriarProjetoProducao(orc, opts){
   if(!orc||!orc.num||typeof uniItems==='undefined') return;
   if(uniItems.some(function(i){ return i.page==='fabrica-producao' && i.orcNum===orc.num; })) return;
   opts = opts || {};
-  // Bloqueio de produção (Bloco B): nenhuma compra de material nem ordem
-  // de produção avança sem os 50% de adiantamento confirmados. Única
-  // exceção: Admin, com motivo obrigatório (opts.forcarAdmin), sempre
-  // registada no histórico — ver orcForcarProducaoSemAdiantamento().
+  // Bloqueio 1 (Bloco B): nenhuma compra de material nem ordem de produção
+  // avança sem os 50% de adiantamento confirmados. Única exceção: Admin,
+  // com motivo obrigatório (opts.forcarAdmin), sempre registada no
+  // histórico — ver orcForcarProducaoSemAdiantamento().
   if(orc.faseFinanceira!=='50% Confirmado' && !opts.forcarAdmin){
     if(typeof showToast==='function') showToast('🔒 Produção BLOQUEADA — orçamento '+orc.num+' aguarda confirmação dos 50% de adiantamento.');
     if(orc.leadId && typeof crmAddAtividade==='function'){
@@ -27965,13 +28039,24 @@ function obCriarProjetoProducao(orc, opts){
     }
     return;
   }
-  // Bloqueio de produção (Bloco C): quando o orçamento tem Design marcado
-  // (orc.faseProducao==='Aguarda Design'), a produção fica bloqueada até a
-  // maqueta ser aprovada — ver orcMarcarNecessitaDesign() e o wrap de
-  // uniDrop/uniSave que dispara 'design_aprovado' quando a tarefa de
-  // Design chega a "Aprovado". "Sem Design" (faseProducao nulo) segue
-  // direto, sem qualquer fricção nova.
-  if(orc.faseProducao==='Aguarda Design' && !opts.forcarAdmin){
+  // Bloqueio 2 (Bloco C, revisão 10/09/2026): a decisão de Design tem de
+  // estar explicitamente tomada — designNecessario===true (Requer Design)
+  // ou ===false (Sem Design). Nunca se trata "ainda não decidido"
+  // (undefined/null) como "sem Design" por omissão — ver
+  // orcMarcarNecessitaDesign()/orcMarcarSemDesign().
+  if(orc.designNecessario!==true && orc.designNecessario!==false && !opts.forcarAdmin){
+    if(typeof showToast==='function') showToast('⏳ Produção BLOQUEADA — orçamento '+orc.num+' aguarda decisão de Design (🎨 Requer Design | ✓ Sem Design).');
+    if(orc.leadId && typeof crmAddAtividade==='function'){
+      crmAddAtividade(orc.leadId, 'nota', 'Produção bloqueada — orçamento '+orc.num+' aguarda decisão de Design.', 'Sistema', { origem:'bloqueio_design_decisao' });
+    }
+    return;
+  }
+  // Bloqueio 3 (Bloco C): quando a decisão foi "Requer Design"
+  // (designNecessario===true), a produção fica bloqueada até a maqueta ser
+  // aprovada — ver o wrap de uniDrop/uniSave que dispara 'design_aprovado'
+  // quando a tarefa de Design chega a "Aprovado". Com "Sem Design"
+  // (designNecessario===false), este bloqueio nunca se aplica.
+  if(orc.designNecessario===true && orc.faseProducao!=='Design Aprovado' && !opts.forcarAdmin){
     if(typeof showToast==='function') showToast('🎨 Produção BLOQUEADA — orçamento '+orc.num+' aguarda aprovação da maqueta (Design).');
     if(orc.leadId && typeof crmAddAtividade==='function'){
       crmAddAtividade(orc.leadId, 'nota', 'Produção bloqueada — orçamento '+orc.num+' aguarda aprovação da maqueta (Design).', 'Sistema', { origem:'bloqueio_design' });
@@ -28002,13 +28087,17 @@ function obCriarProjetoProducao(orc, opts){
   if(orc.leadId && typeof crmAddAtividade==='function'){
     crmAddAtividade(orc.leadId, 'obra', (opts.forcarAdmin?'⚠️ EXCEÇÃO ADMIN — ':'')+'Obra iniciada a partir do orçamento '+orc.num+' — "'+item.n+'"'+(opts.forcarAdmin?' — motivo: '+opts.motivo:''), opts.forcarAdmin?(opts.autor||'Admin'):'Sistema');
   }
-  // Bloco C: regista a entrada em "Em Produção" no motor central (a partir
-  // de null/"sem Design" ou de "Design Aprovado") — fire-and-forget, como
-  // o resto da criação do item de produção; se a persistência falhar aqui
-  // o item já foi criado na mesma (mesma tolerância já usada em toda a
+  // Bloco C (revisão 10/09/2026): regista a entrada em "Compra de
+  // Material" no motor central — NUNCA diretamente "Em Produção". O item
+  // criado aqui começa em "Entrada de Obra" no kanban (Compra de
+  // Material/preparação); só quando alguém o mover para o estado real "Em
+  // Produção" (materiais confirmados/disponíveis) é que
+  // obAvaliarTransicaoProducaoUni() dispara 'materiais_confirmados' e
+  // orc.faseProducao avança — ver esse handler mais abaixo. Fire-and-forget
+  // como o resto da criação do item (mesma tolerância já usada em toda a
   // criação de uniItems, que nunca dependeu da confirmação do Supabase).
   if(typeof crmAvaliarTransicaoAutomatica==='function'){
-    crmAvaliarTransicaoAutomatica('producao', 'producao_iniciada', { orcNum: orc.num, origem: opts.forcarAdmin?'override_admin':'producao' });
+    crmAvaliarTransicaoAutomatica('producao', 'compra_material_iniciada', { orcNum: orc.num, origem: opts.forcarAdmin?'override_admin':'producao' });
   }
 }
 
