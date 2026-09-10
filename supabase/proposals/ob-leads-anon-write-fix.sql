@@ -1,0 +1,93 @@
+-- ============================================================
+-- Fecha escrita anónima em ob-leads (chave da tabela ob_crm_dados).
+--
+-- APLICADA em 2026-09-10 — migration "ob_leads_remove_anon_write"
+-- no projeto ddzlbmnmsdyodouqxbjx.
+--
+-- Contexto (investigação de 2026-09-10): os logs do Supabase
+-- (edge_logs/postgrest_logs) mostraram POST anónimos (apikey E
+-- Authorization com role=anon, isto é sem sessão nenhuma) bem
+-- sucedidos contra /rest/v1/ob_crm_dados?on_conflict=chave, depois
+-- das correções de código de 09-10/09 (push seguro, crmSBClient),
+-- contra as chaves irmãs ob-crm-historico (13:31 UTC, origem
+-- https://ednacristina42-sys.github.io/) e ob-crm-atividades (13:41
+-- UTC, origem https://crm-opportunitybox.netlify.app/). A mesma
+-- origem github.io (uma aba/deploy antigo) escreveu ob-leads duas
+-- vezes essa manhã via sessão autenticada real — mas nada ao nível
+-- de RLS impedia a mesma origem de o fazer de forma anónima, porque
+-- a policy anon cobria 'ob-leads' sem verificação de role nenhuma.
+--
+-- Verificado antes de aplicar: a automação legítima que a policy
+-- anon parecia servir (Make.com "CRM — Sync Leonor → Pipeline de
+-- Leads", scenario 9570218) não escreve em ob_crm_dados diretamente
+-- — chama a edge function crm-lead-intake, que usa
+-- SUPABASE_SERVICE_ROLE_KEY internamente (bypassa RLS). Ou seja, a
+-- policy anon de escrita em ob-leads não tinha nenhuma utilização
+-- legítima identificada.
+--
+-- Nomes exatos das policies alteradas (identificados por leitura
+-- direta de pg_policies antes de qualquer alteração):
+--   ob_crm_dados_insert_anon_pipeline  (INSERT, roles={anon})
+--   ob_crm_dados_update_anon_pipeline  (UPDATE, roles={anon})
+--
+-- Correção mínima: remove só 'ob-leads' do array de chaves destas
+-- duas policies. NÃO tocadas nesta correção:
+--   - ob_crm_dados_select_anon_pipeline (SELECT ainda inclui
+--     ob-leads — só "escrita" estava em âmbito, por instrução
+--     explícita; leitura anónima de ob-leads fica para revisão à
+--     parte)
+--   - as chaves ob-clients / ob-crm-atividades / ob-crm-historico
+--     nas duas policies alteradas (mesmo array, só perderam
+--     'ob-leads')
+--   - policies authenticated (ob_crm_dados_insert_comercial /
+--     ob_crm_dados_update_comercial) — confirmadas byte-a-byte
+--     idênticas depois da migration
+--   - edge function crm-lead-intake — código não tocado
+--   - Tesouraria, Stock, main, Netlify
+-- ============================================================
+
+alter policy ob_crm_dados_insert_anon_pipeline on public.ob_crm_dados
+  with check (chave = ANY (ARRAY['ob-clients'::text, 'ob-crm-atividades'::text, 'ob-crm-historico'::text]));
+
+alter policy ob_crm_dados_update_anon_pipeline on public.ob_crm_dados
+  using (chave = ANY (ARRAY['ob-clients'::text, 'ob-crm-atividades'::text, 'ob-crm-historico'::text]))
+  with check (chave = ANY (ARRAY['ob-clients'::text, 'ob-crm-atividades'::text, 'ob-crm-historico'::text]));
+
+
+-- ------------------------------------------------------------
+-- RESULTADO DOS TESTES (corridos dentro de BEGIN...ROLLBACK, com
+-- SET LOCAL ROLE anon, zero persistência garantida pelo próprio
+-- ROLLBACK — nenhuma escrita real feita durante os testes)
+-- ------------------------------------------------------------
+--
+-- 1) anon INSERT/UPDATE/UPSERT em ob-leads -> NEGADO:
+--    - INSERT ... ON CONFLICT(chave) DO UPDATE (o caminho real do
+--      POST ?on_conflict=chave visto nos logs) -> erro 42501
+--      insufficient_privilege, explícito.
+--    - UPDATE direto (o caminho real do PATCH ?chave=eq.ob-leads
+--      visto nos logs) -> 0 linhas afetadas (RLS filtra a linha
+--      antes do UPDATE a tocar) — sem erro explícito, mas sem
+--      nenhuma alteração possível, que é a garantia que importa.
+--
+-- 2) authenticated (comercial/admin) -> inalterado: as policies
+--    ob_crm_dados_insert_comercial / ob_crm_dados_update_comercial
+--    ficaram idênticas (confirmado por comparação direta do texto
+--    de qual/with_check antes e depois desta migration).
+--
+-- 3) crm-lead-intake com service_role -> continua funcional: a
+--    função usa SUPABASE_SERVICE_ROLE_KEY, e service_role tem
+--    rolbypassrls=true (confirmado em pg_roles) — RLS nunca se
+--    aplica a essa role, esta migration não pode afetá-la. Não foi
+--    invocada a função para testar (invocá-la criaria um lead real,
+--    o que violaria "zero alteração do conteúdo atual").
+--
+-- 4) teste de controlo — anon UPDATE em ob-clients (chave NÃO
+--    tocada por esta correção) -> 1 linha afetada, continua a
+--    funcionar exatamente como antes. Confirma que a alteração foi
+--    cirúrgica, só em 'ob-leads'.
+--
+-- 5) conteúdo de ob-leads antes/depois: md5(dados::text) e
+--    updated_at idênticos (5e54fb29705a2d84f18bc0c1c50ae1c4,
+--    2026-09-10 10:52:59.944+00) — confirmado por leitura direta
+--    antes e depois da migration. Zero alteração de dados.
+-- ------------------------------------------------------------
