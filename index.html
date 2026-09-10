@@ -12895,14 +12895,24 @@ function crmRegistarTransicaoEstado(lead, faseNova, evento, origem, motivo){
 // nunca reabre Ganho/Perdido). Se o lead já não estiver numa fase de
 // origem válida, a transição é ignorada silenciosamente — nunca força
 // nem recua um lead que um comercial já avançou manualmente.
+//
+// Correção (pedido de revisão, 10/09/2026): adjudicação NUNCA salta
+// "Proposta Adjudicada" — fluxo oficial é Proposta Enviada -> Proposta
+// Adjudicada -> Ganho. Como o processo real da Opportunitybox hoje trata
+// a adjudicação como o próprio fecho comercial (não há um passo humano
+// separado de "confirmar fecho" depois de adjudicar), crmSubmeterAdjudicacao()
+// dispara as DUAS transições em sequência (adjudicacao_confirmada, depois
+// fecho_comercial_confirmado) — cada uma fica registada como uma entrada
+// própria no histórico, nunca uma escrita só.
 var CRM_TRANSICOES_AUTOMATICAS = {
   lead: {
-    contato_registado:      { de: ['Potenciais Clientes'], para: 'Contactados' },
-    reuniao_agendada:       { de: ['Potenciais Clientes','Contactados'], para: 'Reunião Agendada' },
-    orcamento_criado:       { de: ['Potenciais Clientes','Contactados','Reunião Agendada'], para: 'Proposta em Elaboração' },
-    proposta_enviada:       { de: ['Potenciais Clientes','Contactados','Reunião Agendada','Proposta em Elaboração'], para: 'Proposta Enviada' },
-    adjudicacao_confirmada: { de: null, para: 'Ganho' },
-    marcado_perdido:        { de: null, para: 'Perdido' }
+    contato_registado:           { de: ['Potenciais Clientes'], para: 'Contactados' },
+    reuniao_agendada:            { de: ['Potenciais Clientes','Contactados'], para: 'Reunião Agendada' },
+    orcamento_criado:            { de: ['Potenciais Clientes','Contactados','Reunião Agendada'], para: 'Proposta em Elaboração' },
+    proposta_enviada:            { de: ['Potenciais Clientes','Contactados','Reunião Agendada','Proposta em Elaboração'], para: 'Proposta Enviada' },
+    adjudicacao_confirmada:      { de: null, para: 'Proposta Adjudicada' },
+    fecho_comercial_confirmado:  { de: ['Proposta Adjudicada'], para: 'Ganho' },
+    marcado_perdido:             { de: null, para: 'Perdido' }
   }
 };
 
@@ -17501,13 +17511,17 @@ function crmSubmeterAdjudicacao(){
     orcChangeStatus(orc.num, 'Aprovado');
   }
 
-  // Marca a lead como Ganha via o motor central (fase anterior/nova,
-  // evento e origem ficam registados no histórico) — dispara a criação
-  // automática do Cliente (ver wrap de saveCrmLeads).
+  // Via o motor central — fluxo oficial nunca salta "Proposta Adjudicada":
+  // adjudicação confirmada primeiro leva a Proposta Adjudicada, e só depois
+  // (mesma ação do utilizador, mas duas transições distintas, cada uma com
+  // a sua própria entrada no histórico) o fecho comercial leva a Ganho.
+  // Dispara a criação automática do Cliente (ver wrap de saveCrmLeads).
   if(typeof crmAvaliarTransicaoAutomatica==='function'){
     crmAvaliarTransicaoAutomatica('lead', 'adjudicacao_confirmada', { leadId: leadId, origem: 'adjudicacao' });
+    crmAvaliarTransicaoAutomatica('lead', 'fecho_comercial_confirmado', { leadId: leadId, origem: 'adjudicacao' });
   } else if(typeof crmRegistarTransicaoEstado==='function'){
-    crmRegistarTransicaoEstado(lead, 'Ganho', 'adjudicacao_confirmada', 'adjudicacao', null);
+    crmRegistarTransicaoEstado(lead, 'Proposta Adjudicada', 'adjudicacao_confirmada', 'adjudicacao', null);
+    crmRegistarTransicaoEstado(lead, 'Ganho', 'fecho_comercial_confirmado', 'adjudicacao', null);
     if(typeof saveCrmLeads==='function') saveCrmLeads();
     if(typeof crmRenderAll==='function') crmRenderAll();
   }
