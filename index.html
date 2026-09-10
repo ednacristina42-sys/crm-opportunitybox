@@ -2746,6 +2746,10 @@ function crmEnterAppWithProfile(profile){
     // Etapa 8A: ob_uni_items (Agenda/Produção/Design/Instalações) agora exige
     // sessão autenticada — recarrega só depois de CU estar definido.
     try{ if(typeof _uniInitFromSB === 'function') _uniInitFromSB(); } catch(e){}
+    // Correção final (10/09/2026): ob-leads (Pipeline) tem agora hidratação
+    // canónica própria, mesmo princípio de _orcInitFromSB()/_uniInitFromSB()
+    // — só corre depois de CU/sessão estarem definidos.
+    try{ if(typeof crmHidratarLeadsCanonico === 'function') crmHidratarLeadsCanonico(); } catch(e){}
   }, 0);
 }
 
@@ -11794,6 +11798,10 @@ window.goPage=function goPage(id){
   if(id==='admin-analise-vendas'&&typeof afLoad==='function')afLoad();
   if(id==='comercial-orcamentos'&&typeof orcInitPage==='function')orcInitPage();
   if(id==='comercial-pipeline'&&typeof crmInit==='function')crmInit();
+  // Correção final (10/09/2026): garante hidratação canónica de ob-leads
+  // também ao navegar para o Pipeline (não só no arranque) — idempotente,
+  // não repete leitura se já estiver em curso ou concluída.
+  if(id==='comercial-pipeline'&&typeof crmHidratarLeadsCanonico==='function')crmHidratarLeadsCanonico();
   if(id==='meu-painel'&&typeof renderMeuPainel==='function')renderMeuPainel();
   if(id==='mapa-vendas'&&typeof renderMapaVendas==='function')renderMapaVendas();
   if(id==='historico-faturacao'&&typeof renderHistoricoFaturacao==='function')renderHistoricoFaturacao();
@@ -30280,6 +30288,92 @@ async function obSbPushLeadsSeguro(){
 }
 window.obSbPushLeadsSeguro = obSbPushLeadsSeguro;
 
+// ════════════════════════════════════════════════════════════════
+// HIDRATAÇÃO CANÓNICA DE ob-leads (Pipeline) — correção final (10/09/2026)
+// ════════════════════════════════════════════════════════════════
+// Mesmo bug de classe já corrigido na Tesouraria (tesHidratarCanonico()):
+// o push já ficou seguro em ddf9499, mas a LEITURA no arranque continuava
+// a passar pelo obSbBoot() genérico, que só adota o remoto quando o
+// localStorage já estava vazio — nunca substitui cache local antiga. Um
+// browser com aba aberta antes desta correção (ou nunca recarregado)
+// continuava a mostrar os seeds fictícios indefinidamente, e uma edição
+// feita a partir dessa cache antiga podia reintroduzi-los de uma vez
+// (confirmado ao vivo: 6 seeds reapareceram e 3 leads reais perderam
+// estado real — Totem Entrada Hotel voltou de "Ganho ✓" a "Em
+// negociação", Caixa Luz Farmácia voltou a "Novo Lead", outro lead
+// reverteu conteúdo — tudo consistente com UM browser desatualizado a
+// substituir o blob inteiro numa única escrita antiga).
+//
+// Esta função é agora a ÚNICA fonte de verdade para o arranque de
+// ob-leads:
+//  - com sessão autenticada, lê SEMPRE ob-leads remoto;
+//  - sucesso SUBSTITUI crmLeads/leads/localStorage['ob-leads'] por
+//    inteiro — nunca faz merge com a cache local antiga, nunca semeia;
+//  - localStorage só serve de fallback (só para a UI) se a leitura
+//    remota falhar ou não houver sessão — nunca grava nada nesse caso;
+//  - nunca faz push durante a hidratação (é só leitura);
+//  - corrida hidratação↔edição: uma edição em curso fica registada em
+//    window._crmOperacoesLeadsPendentes (crmRegistarOperacaoLead(), já
+//    existente) — a hidratação reaplica essas operações pendentes por
+//    cima do snapshot remoto fresco ANTES de substituir crmLeads (lê
+//    crmLeads — ainda o array pré-hidratação nesse instante — através do
+//    mesmo crmAplicarOperacaoLeadSobreRemoto() já usado no push), para
+//    uma edição em curso nunca ser apagada visualmente pela hidratação;
+//    a persistência real continua a ser feita, à parte, pelo push
+//    seguro debounced (obSbPushLeadsSeguro()), que volta a ler o remoto
+//    fresco na hora de gravar.
+window._crmLeadsEstado = 'loading'; // 'loading' | 'carregado' | 'vazio' | 'erro'
+var _crmLeadsHidratacaoPromise = null;
+
+async function crmHidratarLeadsCanonico(){
+  if(_crmLeadsHidratacaoPromise) return _crmLeadsHidratacaoPromise; // só deduplica chamadas EM CURSO ao mesmo tempo
+  _crmLeadsHidratacaoPromise = (async function(){
+    window._crmLeadsEstado = 'loading';
+    var sb = (typeof crmSBClient==='function') ? crmSBClient() : null;
+    var cu = (typeof CU!=='undefined') ? CU : null;
+    if(!sb || !cu || !cu.id){
+      window._crmLeadsEstado = 'erro';
+      console.warn('[SB-LEADS] Hidratação bloqueada: sem sessão autenticada — mantém a cópia local só para a UI, nunca grava nada.');
+      return;
+    }
+    var res;
+    try{ res = await sb.from('ob_crm_dados').select('dados,updated_at').eq('chave','ob-leads').maybeSingle(); }
+    catch(e){ res = { error: e }; }
+    if(!res || res.error){
+      window._crmLeadsEstado = 'erro';
+      console.warn('[SB-LEADS] Hidratação: falha a ler ob-leads remoto — mantém a cópia local como fallback só para a UI (nunca inventa dados, nunca grava).', res && res.error);
+      return;
+    }
+    var dadosRemoto = (res.data && Array.isArray(res.data.dados)) ? res.data.dados : [];
+    // Reaplica só as operações pendentes de uma edição em curso — nunca o
+    // array local inteiro nem os seeds que possam lá estar.
+    var pendentes = (window._crmOperacoesLeadsPendentes || []).slice();
+    var final = (pendentes.length && typeof crmAplicarOperacaoLeadSobreRemoto==='function')
+      ? pendentes.reduce(crmAplicarOperacaoLeadSobreRemoto, dadosRemoto)
+      : dadosRemoto;
+
+    crmLeads = final; // substitui sempre — nunca faz merge com a cache local antiga
+    leads = final;
+    localStorage.setItem('ob-leads', JSON.stringify(final));
+    window._crmLeadsEstado = final.length ? 'carregado' : 'vazio';
+
+    try{ if(typeof crmRenderAll==='function') crmRenderAll(); }catch(e){}
+  })();
+  // Correção (10/09/2026, pedido de revisão): a promise só serve para
+  // deduplicar chamadas SIMULTÂNEAS (duas entradas rápidas no Pipeline
+  // enquanto a leitura ainda está em curso -> 1 leitura só, partilhada).
+  // Assim que esta leitura termina — sucesso OU erro — a fila fica livre:
+  // limpa _crmLeadsHidratacaoPromise para que a PRÓXIMA chamada (ex.: sair
+  // e voltar a entrar no Pipeline mais tarde na mesma sessão) force uma
+  // leitura remota fresca, nunca reaproveite um resultado antigo. .finally()
+  // só regista o efeito colateral de limpar a fila — não altera o valor
+  // resolvido da promise original, que quem já estava à espera continua a
+  // receber normalmente.
+  _crmLeadsHidratacaoPromise.finally(function(){ _crmLeadsHidratacaoPromise = null; });
+  return _crmLeadsHidratacaoPromise;
+}
+window.crmHidratarLeadsCanonico = crmHidratarLeadsCanonico;
+
 function obSbPush(chave){
   if(typeof _ORC_SB_URL==='undefined'||typeof _ORC_SB_KEY==='undefined') return;
   // 'ob-clients': nunca envia antes de a leitura remota no arranque ter
@@ -30370,6 +30464,14 @@ async function obSbBoot(){
         // esse gate que deixava A Pagar/A Receber vazios e Recebidos preso
         // em cache local contaminada mesmo com a base remota correta.
         if(row.chave==='ob-tes-receber'||row.chave==='ob-tes-contas') return;
+        // 'ob-leads' tem agora hidratação canónica própria
+        // (crmHidratarLeadsCanonico(), correção final 10/09/2026) — mesmo
+        // motivo exato dos dois casos acima: este bloco genérico só adota
+        // o remoto quando o local já estava vazio, nunca substitui uma
+        // cache local antiga/contaminada, e é exatamente essa lacuna que
+        // permitia a um browser desatualizado continuar a mostrar (e
+        // depois reintroduzir) os seeds fictícios do Pipeline.
+        if(row.chave==='ob-leads') return;
         var localRaw=localStorage.getItem(row.chave);
         var localVazio=!localRaw||localRaw==='[]'||localRaw==='{}'||localRaw==='null';
         var remotoTem=row.dados&&(row.dados.length||Object.keys(row.dados).length);
@@ -30394,7 +30496,8 @@ async function obSbBoot(){
         if(localVazio&&remotoTem){
           localStorage.setItem(row.chave,JSON.stringify(row.dados));
           try{
-            if(row.chave==='ob-leads'&&typeof crmLeads!=='undefined'){ crmLeads=row.dados; leads=crmLeads; }
+            // 'ob-leads' já não chega aqui — filtrada acima, coberta por
+            // crmHidratarLeadsCanonico().
             if(row.chave==='ob-crm-atividades'&&typeof crmAtividades!=='undefined'){ crmAtividades=row.dados; }
             if(row.chave==='ob-crm-historico'&&typeof crmHistorico!=='undefined'){ crmHistorico=row.dados; }
             if(row.chave==='ob-fo-ausencias'&&typeof FO_AUSENCIAS!=='undefined'){ FO_AUSENCIAS=row.dados; }
