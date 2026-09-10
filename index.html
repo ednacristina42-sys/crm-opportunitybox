@@ -23555,7 +23555,25 @@ function tesRenderReceber(){
   // Fonte única: tesGetReceber() — NC excluídas, filtro de ano aplicado,
   // nunca a cache bruta do TOConline (tocoMergeFaturasCacheReceber está
   // desativada). Mesma lista usada pelos KPIs (tesUpdateKPIs).
-  var list=tesGetReceber().filter(function(r){return r.estado!=='Recebido';});
+  // Ordenação por prioridade de cobrança (correção 10/09/2026 — só visual,
+  // fonte/filtros/cálculos intactos): vencidas primeiro, depois vencimento
+  // mais próximo; desempate por dataEmissao mais recente. Sem isto a
+  // tabela mostrava a ordem bruta do array remoto (sem relação com data),
+  // escondendo as faturas mais urgentes atrás de linhas antigas.
+  var _hojeOrdenacao=new Date();
+  var list=tesGetReceber().filter(function(r){return r.estado!=='Recebido';}).slice().sort(function(a,b){
+    var va=parseVencTes(a.vencimento), vb=parseVencTes(b.vencimento);
+    var vencidaA = !isNaN(va) && va<_hojeOrdenacao;
+    var vencidaB = !isNaN(vb) && vb<_hojeOrdenacao;
+    if(vencidaA!==vencidaB) return vencidaA ? -1 : 1; // vencidas primeiro
+    var ta = isNaN(va) ? Infinity : va.getTime();
+    var tb = isNaN(vb) ? Infinity : vb.getTime();
+    if(ta!==tb) return ta-tb; // vencimento mais próximo primeiro (ascendente)
+    var ea = parseVencTes(a.dataEmissao||a.data), eb = parseVencTes(b.dataEmissao||b.data);
+    var eta = isNaN(ea) ? -Infinity : ea.getTime();
+    var etb = isNaN(eb) ? -Infinity : eb.getTime();
+    return etb-eta; // desempate: dataEmissao mais recente primeiro
+  });
   if(!list.length){
     var temDados = (typeof tocoFaturasCache==='function') && tocoFaturasCache().length>0;
     var temSheets = (window.AV_SHEET_ROWS||[]).length>0;
@@ -23586,7 +23604,18 @@ function tesRenderRecebidos(){
   // Fonte única: tesGetRecebidos() — já exclui NC (nunca é "recebida", é
   // uma redução de faturação) e aplica o filtro de ano. Mesma lista usada
   // pelos KPIs (tesUpdateKPIs).
-  var list=tesGetRecebidos();
+  // Ordenação por dataRec DESC, mais recente primeiro — fallback para
+  // dataEmissao só quando dataRec faltar (correção 10/09/2026, só visual).
+  // Sem isto a tabela mostrava a ordem bruta do array remoto (sem relação
+  // com data — confirmado: os primeiros registos do array eram todos de
+  // junho), escondendo agosto/setembro várias linhas abaixo.
+  var list=tesGetRecebidos().slice().sort(function(a,b){
+    var da=parseVencTes(a.dataRec||a.dataEmissao||a.data);
+    var db=parseVencTes(b.dataRec||b.dataEmissao||b.data);
+    var ta = isNaN(da) ? -Infinity : da.getTime();
+    var tb = isNaN(db) ? -Infinity : db.getTime();
+    return tb-ta; // desc — mais recente primeiro
+  });
   if(!list.length){
     var temToco = (typeof tocoFaturasCache==='function') && tocoFaturasCache().length>0;
     el.innerHTML='<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:20px">'+(temToco?'Sem recebimentos.':'Sincronize com TocOnline para ver as faturas.')+'</td></tr>';
