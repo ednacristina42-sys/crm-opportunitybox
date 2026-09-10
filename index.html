@@ -12948,6 +12948,24 @@ var CRM_TRANSICOES_AUTOMATICAS = {
     instalacao_iniciada:      { de: ['Produção Concluída'], para: 'Em Instalação' },
     instalacao_concluida:     { de: ['Em Instalação'], para: 'Instalação Concluída' },
     entrega_confirmada:       { de: ['Instalação Concluída'], para: 'Entrega' }
+  },
+  // Bloco D — Fase 4 (Liquidação): Faturação Final + Tesouraria, sobre
+  // orc.faseLiquidacao. Só arranca depois de orc.faseProducao==='Entrega'
+  // (ver orcRegistarFaturaFinal). Suporta os 2 cenários oficiais:
+  // pagamento imediato (fatura.prazo==='Imediato': Faturação Final ->
+  // Pagamento Confirmado, salta "A Receber") e fatura com prazo
+  // (Faturação Final -> A Receber -> Pagamento Confirmado) — por isso
+  // pagamento_confirmado aceita as duas origens de propósito, mesmo padrão
+  // das origens duplas já usadas nos Blocos B/C. Nunca escreve
+  // diretamente em ob-tes-receber — "Pagamento Confirmado" só é disparado
+  // quando a Tesouraria REAL confirma o recebimento (ver
+  // obAvaliarPagamentoFinalTes(), que observa tesReceberMarcarPago() sem
+  // o reescrever).
+  liquidacao: {
+    faturacao_final_registada: { de: [null], para: 'Faturação Final' },
+    fatura_a_receber:          { de: ['Faturação Final'], para: 'A Receber' },
+    pagamento_confirmado:      { de: ['Faturação Final','A Receber'], para: 'Pagamento Confirmado' },
+    liquidacao_concluida:      { de: ['Pagamento Confirmado'], para: 'Concluído' }
   }
 };
 
@@ -13016,6 +13034,24 @@ async function crmAvaliarTransicaoAutomatica(entidade, evento, contexto){
     var resultadoProd = await producaoRegistarTransicaoEstado(orcProd, defProd.para, evento, contexto.origem || 'automatico', contexto.motivo, contexto.extraCampos);
     if(!resultadoProd || !resultadoProd.applied) return null;
     return { faseAnterior: faseAnteriorProd, faseNova: defProd.para, persisted: true };
+  }
+  // Bloco D — Fase 4 (Liquidação): Faturação Final + Tesouraria, sobre
+  // orc.faseLiquidacao. Mesmo motor central, mesma forma — nunca um
+  // sistema paralelo. liquidacaoRegistarTransicaoEstado() é o equivalente
+  // de orcRegistarTransicaoEstado()/producaoRegistarTransicaoEstado() para
+  // este campo de fase.
+  if(entidade==='liquidacao'){
+    var defLiq = CRM_TRANSICOES_AUTOMATICAS.liquidacao && CRM_TRANSICOES_AUTOMATICAS.liquidacao[evento];
+    if(!defLiq || !contexto.orcNum || typeof orcData==='undefined') return null;
+    var orcLiq = orcData.find(function(o){ return o && o.num===contexto.orcNum; });
+    if(!orcLiq) return null;
+    var faseAnteriorLiq = orcLiq.faseLiquidacao || null;
+    if(defLiq.de && defLiq.de.indexOf(faseAnteriorLiq)===-1) return null; // fora de ordem, não força
+    if(faseAnteriorLiq===defLiq.para) return null; // já lá está
+    if(typeof liquidacaoRegistarTransicaoEstado!=='function') return null;
+    var resultadoLiq = await liquidacaoRegistarTransicaoEstado(orcLiq, defLiq.para, evento, contexto.origem || 'automatico', contexto.motivo, contexto.extraCampos);
+    if(!resultadoLiq || !resultadoLiq.applied) return null;
+    return { faseAnterior: faseAnteriorLiq, faseNova: defLiq.para, persisted: true };
   }
   return null;
 }
@@ -16893,7 +16929,14 @@ async function _sbOrcUpsert(orc, opts) {
         // explícita), null (ainda por decidir) — nunca tratar undefined como
         // false por omissão (ver obCriarProjetoProducao).
         designNecessario: (orc.designNecessario === true) ? true : (orc.designNecessario === false ? false : null),
-        historicoProducao: Array.isArray(orc.historicoProducao) ? orc.historicoProducao : []
+        historicoProducao: Array.isArray(orc.historicoProducao) ? orc.historicoProducao : [],
+        faseLiquidacao: (orc.faseLiquidacao === undefined || orc.faseLiquidacao === null) ? null : orc.faseLiquidacao,
+        faturaFinalNum: (orc.faturaFinalNum === undefined || orc.faturaFinalNum === null) ? null : orc.faturaFinalNum,
+        faturaFinalValor: (typeof orc.faturaFinalValor === 'number') ? orc.faturaFinalValor : null,
+        faturaFinalPrazo: (orc.faturaFinalPrazo === undefined || orc.faturaFinalPrazo === null) ? null : orc.faturaFinalPrazo,
+        faturaFinalImediato: orc.faturaFinalImediato === true,
+        recebimentoTesourariaId: (orc.recebimentoTesourariaId === undefined || orc.recebimentoTesourariaId === null) ? null : orc.recebimentoTesourariaId,
+        historicoLiquidacao: Array.isArray(orc.historicoLiquidacao) ? orc.historicoLiquidacao : []
       },
       owner_id: (cu.admin === true && opts.reassignOwnerId) ? opts.reassignOwnerId : cu.id,
       updated_by: cu.id
@@ -16958,6 +17001,13 @@ async function _sbOrcLoadAll() {
         faseProducao: (extra.faseProducao === undefined || extra.faseProducao === null) ? null : extra.faseProducao,
         designNecessario: (extra.designNecessario === true) ? true : (extra.designNecessario === false ? false : null),
         historicoProducao: Array.isArray(extra.historicoProducao) ? extra.historicoProducao : [],
+        faseLiquidacao: (extra.faseLiquidacao === undefined || extra.faseLiquidacao === null) ? null : extra.faseLiquidacao,
+        faturaFinalNum: (extra.faturaFinalNum === undefined || extra.faturaFinalNum === null) ? null : extra.faturaFinalNum,
+        faturaFinalValor: (typeof extra.faturaFinalValor === 'number') ? extra.faturaFinalValor : null,
+        faturaFinalPrazo: (extra.faturaFinalPrazo === undefined || extra.faturaFinalPrazo === null) ? null : extra.faturaFinalPrazo,
+        faturaFinalImediato: extra.faturaFinalImediato === true,
+        recebimentoTesourariaId: (extra.recebimentoTesourariaId === undefined || extra.recebimentoTesourariaId === null) ? null : extra.recebimentoTesourariaId,
+        historicoLiquidacao: Array.isArray(extra.historicoLiquidacao) ? extra.historicoLiquidacao : [],
         owner_id: row.owner_id || null
       };
     });
@@ -18186,6 +18236,32 @@ function orcRenderAcoesProducao(o){
   return `<div style="margin-top:4px;font-size:10.5px;color:${cor};white-space:nowrap">🏭 ${o.faseProducao}</div>`;
 }
 
+// Bloco D — Fase 4 (Liquidação + Tesouraria): só aparece depois de
+// faseProducao==='Entrega'. Mesma célula de ações — não mexe no <thead>.
+function orcRenderAcoesLiquidacao(o, isAdmin){
+  if(o.faseProducao!=='Entrega') return '';
+  if(!o.faseLiquidacao){
+    var esperado = (typeof orcCalcularValorFinalPendente==='function') ? orcCalcularValorFinalPendente(o) : null;
+    return `<div style="margin-top:4px">
+      <button class="tbtn" style="font-size:10.5px;padding:2px 6px;white-space:nowrap" onclick="orcRegistarFaturaFinal('${o.num}')" title="Liga a fatura final (já criada em 🧾 Fatura) à liquidação deste orçamento">🧾 Registar Fatura Final</button>
+      ${esperado!==null?`<div style="font-size:10px;color:var(--muted);white-space:nowrap;margin-top:2px">Valor final esperado: €${orcFmt(esperado)}</div>`:''}
+    </div>`;
+  }
+  var cores = {
+    'Faturação Final': '#d9822b', 'A Receber': '#4d94db',
+    'Pagamento Confirmado': '#8b5cf6', 'Concluído': 'var(--g)'
+  };
+  var cor = cores[o.faseLiquidacao] || 'var(--muted)';
+  var html = `<div style="margin-top:4px;font-size:10.5px;color:${cor};white-space:nowrap">📊 ${o.faseLiquidacao}</div>`;
+  if(o.faturaFinalNum){
+    html += `<div style="font-size:10px;color:var(--muted);white-space:nowrap">${o.faturaFinalNum} · €${orcFmt(o.faturaFinalValor||0)}${o.faturaFinalImediato?' · imediato':' · '+(o.faturaFinalPrazo||'')}</div>`;
+  }
+  if(o.faseLiquidacao!=='Concluído' && isAdmin){
+    html += `<button class="tbtn" style="font-size:10.5px;padding:2px 6px;white-space:nowrap;margin-top:2px;color:var(--r,#e74c3c);border-color:rgba(231,76,60,.3)" onclick="orcForcarLiquidacaoConcluida('${o.num}')" title="Apenas Admin — exige motivo">⚠️ Forçar Concluído</button>`;
+  }
+  return html;
+}
+
 function orcRenderList(){
   const el = document.getElementById('orc-tbody');
   if(!el) return;
@@ -18240,6 +18316,7 @@ function orcRenderList(){
         :'<span style="color:var(--muted);font-size:12px">—</span>'}
       ${orcRenderAcoesFinanceiras(o, isAdmin)}
       ${orcRenderAcoesProducao(o)}
+      ${orcRenderAcoesLiquidacao(o, isAdmin)}
     </td>
   </tr>`;}).join('');
 }
@@ -27796,6 +27873,180 @@ async function producaoRegistarTransicaoEstado(orc, faseNova, evento, origem, mo
   return { applied:true, entrada: entrada };
 }
 window.producaoRegistarTransicaoEstado = producaoRegistarTransicaoEstado;
+
+// ════════════════════════════════════════════════════════════════
+// BLOCO D — Fase 4: Liquidação + Tesouraria (10/09/2026)
+// ════════════════════════════════════════════════════════════════
+// Equivalente de orcRegistarTransicaoEstado()/producaoRegistarTransicaoEstado()
+// para orc.faseLiquidacao — mesma forma (aplica, regista histórico próprio
+// em historicoLiquidacao, espelha no lead, aguarda o Supabase confirmar,
+// reverte tudo se falhar). Nunca um sistema paralelo.
+async function liquidacaoRegistarTransicaoEstado(orc, faseNova, evento, origem, motivo, extraCampos){
+  if(!orc) return { applied:false, reason:'sem-orcamento' };
+  if(orc.faseLiquidacao===faseNova && !extraCampos) return { applied:false, reason:'sem-alteracao' };
+  var faseAnterior = orc.faseLiquidacao || null;
+  var valoresAnterioresExtra = {};
+  if(extraCampos){
+    Object.keys(extraCampos).forEach(function(k){ valoresAnterioresExtra[k] = orc[k]; });
+  }
+  orc.faseLiquidacao = faseNova;
+  if(extraCampos) Object.assign(orc, extraCampos);
+  var autor = (typeof CU!=='undefined'&&CU&&CU.name) ? CU.name : 'Sistema';
+  var texto = 'Liquidação: "'+(faseAnterior||'—')+'" -> "'+faseNova+'"'+(motivo?' — '+motivo:'');
+  if(!Array.isArray(orc.historicoLiquidacao)) orc.historicoLiquidacao = [];
+  var entrada = { texto: texto, autor: autor, ts: new Date().toISOString(), faseAnterior: faseAnterior, faseNova: faseNova, evento: evento, origem: origem||'manual', motivo: motivo||null };
+  orc.historicoLiquidacao.unshift(entrada);
+  if(orc.leadId && typeof crmAddAtividade==='function'){
+    crmAddAtividade(orc.leadId, 'liquidacao', texto, autor, { origem: origem||'manual', orcId: orc.num, extra: { faseAnterior: faseAnterior, faseNova: faseNova, evento: evento, motivo: motivo||null } });
+  }
+  localStorage.setItem('ob-orcamentos', JSON.stringify((typeof orcData!=='undefined'?orcData:[]).slice(0,5000)));
+  var sbRes = (typeof _sbOrcUpsert==='function') ? await _sbOrcUpsert(orc, { isCreate:false }) : { ok:false, reason:'sem-funcao-upsert' };
+  if(!sbRes || sbRes.ok!==true){
+    orc.faseLiquidacao = faseAnterior;
+    orc.historicoLiquidacao.shift();
+    if(extraCampos) Object.keys(extraCampos).forEach(function(k){ orc[k] = valoresAnterioresExtra[k]; });
+    localStorage.setItem('ob-orcamentos', JSON.stringify((typeof orcData!=='undefined'?orcData:[]).slice(0,5000)));
+    return { applied:false, reason: sbRes && sbRes.reason, message: sbRes && sbRes.message };
+  }
+  return { applied:true, entrada: entrada };
+}
+window.liquidacaoRegistarTransicaoEstado = liquidacaoRegistarTransicaoEstado;
+
+// Valor final pendente = total adjudicado - adiantamentos já recebidos.
+// Soma SEMPRE orc.pagamentosAdiantamento (o acumulador vivo do Bloco B,
+// nunca substituído) em vez de orc.saldo/orc.sinal — esses são calculados
+// uma única vez em orcGuardar() e podem ficar desatualizados se houver
+// pagamentos parciais registados depois (ver aviso em orcConfirmarAdiantamento).
+function orcCalcularValorFinalPendente(orc){
+  if(!orc) return 0;
+  var total = (typeof orcGetValorTotal==='function') ? orcGetValorTotal(orc) : (orc.totais?orc.totais.total:(orc.val||0));
+  var recebido = Array.isArray(orc.pagamentosAdiantamento) ? orc.pagamentosAdiantamento.reduce(function(s,p){ return s+(p.valor||0); }, 0) : 0;
+  return Math.round(((total||0)-recebido)*100)/100;
+}
+window.orcCalcularValorFinalPendente = orcCalcularValorFinalPendente;
+
+// "🧾 Registar Fatura Final" — NÃO cria uma fatura nova (isso continua a
+// ser feito só pelo módulo de Faturação já existente, botão "🧾 Fatura" /
+// fatGuardar()/fatEmitir() — nunca duplicado aqui). Esta função apenas
+// LIGA a fatura final já criada (fatData, orcNum) à fase de Liquidação do
+// orçamento, valida o valor contra orcCalcularValorFinalPendente(), e
+// decide logo o caminho (pagamento imediato vs fatura com prazo) a partir
+// de fatura.prazo==='Imediato' — o campo real e fiável para isso; o
+// próprio fatura.vencimento NÃO serve (é sempre preenchido com +30 dias
+// por omissão em fatGuardar(), mesmo para "Imediato", por um comportamento
+// pré-existente do módulo de Faturação que não é desta revisão mexer).
+async function orcRegistarFaturaFinal(orcNum){
+  var orc = (typeof orcData!=='undefined') ? orcData.find(function(o){ return o.num===orcNum; }) : null;
+  if(!orc){ alert('Orçamento não encontrado.'); return false; }
+  if(orc.faseProducao!=='Entrega'){ alert('A faturação final só pode começar depois de a Entrega estar confirmada.'); return false; }
+  if(orc.faseLiquidacao){ alert('Este orçamento já tem a faturação final registada ('+orc.faseLiquidacao+') — nunca duplicar.'); return false; }
+  if(typeof fatData==='undefined'){ alert('Módulo de Faturação indisponível.'); return false; }
+  var candidatas = fatData.filter(function(f){ return f.orcNum===orcNum; });
+  if(!candidatas.length){
+    alert('Ainda não existe nenhuma fatura ligada a este orçamento. Cria primeiro a fatura final através do botão "🧾 Fatura" e depois volta aqui para confirmar.');
+    return false;
+  }
+  // Prefere a mais recentemente emitida; entre iguais, a última criada.
+  var fatura = candidatas.slice().sort(function(a,b){
+    var pa = a.st==='Emitida' ? 1 : 0, pb = b.st==='Emitida' ? 1 : 0;
+    if(pa!==pb) return pb-pa;
+    return String(b.num||'').localeCompare(String(a.num||''));
+  })[0];
+  var valorEsperado = orcCalcularValorFinalPendente(orc);
+  if(Math.abs((fatura.total||0)-valorEsperado)>0.01){
+    var confirmarMesmoAssim = confirm('O valor da fatura ('+ (typeof orcFmt==='function'?orcFmt(fatura.total):fatura.total) +'€) não coincide com o valor final esperado (total adjudicado menos adiantamentos recebidos: '+(typeof orcFmt==='function'?orcFmt(valorEsperado):valorEsperado)+'€).\n\nConfirmar mesmo assim?');
+    if(!confirmarMesmoAssim) return false;
+  }
+  var imediato = fatura.prazo==='Imediato';
+  var r = await crmAvaliarTransicaoAutomatica('liquidacao', 'faturacao_final_registada', {
+    orcNum: orcNum, origem: 'faturacao_final',
+    extraCampos: { faturaFinalNum: fatura.num, faturaFinalValor: fatura.total, faturaFinalPrazo: fatura.prazo||null, faturaFinalImediato: imediato }
+  });
+  if(!r){ alert('Não foi possível registar a faturação final no servidor — tenta novamente.'); return false; }
+  if(!imediato){
+    // Fatura com prazo -> avança logo para "A Receber" (aguarda vencimento/pagamento).
+    var r2 = await crmAvaliarTransicaoAutomatica('liquidacao', 'fatura_a_receber', { orcNum: orcNum, origem: 'faturacao_final' });
+    if(!r2){ alert('Faturação final registada, mas não foi possível avançar para "A Receber" — tenta novamente a partir da lista.'); }
+  }
+  if(typeof orcRenderList==='function') orcRenderList();
+  if(typeof showToast==='function') showToast('🧾 Faturação final registada — '+fatura.num+' ('+orc.num+'), '+(imediato?'pagamento imediato':'aguarda "A Receber"')+'.');
+  return true;
+}
+window.orcRegistarFaturaFinal = orcRegistarFaturaFinal;
+
+// Ponto único que observa a Tesouraria REAL (nunca escreve nela): sempre
+// que um recebível é marcado como pago via tesReceberMarcarPago() — a
+// única função existente que faz essa transição, ver wrap mais abaixo —
+// verifica se corresponde (cliente + valor, mesma lógica de
+// correspondência já usada pela Central Financeira) a algum orçamento em
+// "Faturação Final"/"A Receber" e, se sim, avança-o para "Pagamento
+// Confirmado". Nunca cria nem altera linhas de ob-tes-receber.
+function obAvaliarPagamentoFinalTes(id){
+  if(typeof TES_RECEBER==='undefined' || typeof orcData==='undefined' || typeof crmAvaliarTransicaoAutomatica!=='function') return;
+  var r = TES_RECEBER.find(function(x){ return x.id===id; });
+  if(!r || r.estado!=='Recebido') return;
+  var candidatos = orcData.filter(function(o){
+    return (o.faseLiquidacao==='Faturação Final' || o.faseLiquidacao==='A Receber')
+      && o.cli && r.cliente
+      && o.cli.trim().toLowerCase()===String(r.cliente).trim().toLowerCase()
+      && typeof o.faturaFinalValor==='number'
+      && Math.abs(o.faturaFinalValor-(r.total||r.valorLiq||0))<0.01;
+  });
+  candidatos.forEach(function(o){
+    crmAvaliarTransicaoAutomatica('liquidacao', 'pagamento_confirmado', { orcNum: o.num, origem: 'tesouraria_recebido', extraCampos: { recebimentoTesourariaId: id } }).then(function(res){
+      if(res && typeof orcAvaliarLiquidacaoConcluida==='function') orcAvaliarLiquidacaoConcluida(o);
+    });
+  });
+}
+window.obAvaliarPagamentoFinalTes = obAvaliarPagamentoFinalTes;
+
+(function(){
+  if(typeof tesReceberMarcarPago!=='function') return;
+  var _origMarcarPago = tesReceberMarcarPago;
+  window.tesReceberMarcarPago = function(id){
+    _origMarcarPago(id);
+    if(typeof obAvaliarPagamentoFinalTes==='function') obAvaliarPagamentoFinalTes(id);
+  };
+})();
+
+// "Concluído" só quando: execução terminou (faseProducao==='Entrega',
+// já garantido antes de sequer entrar em Liquidação), a faturação final
+// existe e o pagamento foi confirmado (faseLiquidacao==='Pagamento
+// Confirmado') — nesse ponto o saldo pendente é 0 por construção (o
+// pagamento só é confirmado quando bate certo com faturaFinalValor).
+function orcAvaliarLiquidacaoConcluida(orc){
+  if(!orc || orc.faseProducao!=='Entrega' || orc.faseLiquidacao!=='Pagamento Confirmado') return;
+  if(typeof crmAvaliarTransicaoAutomatica!=='function') return;
+  crmAvaliarTransicaoAutomatica('liquidacao', 'liquidacao_concluida', { orcNum: orc.num, origem: 'liquidacao_concluida' }).then(function(r){
+    if(r && typeof showToast==='function') showToast('✅ Orçamento '+orc.num+' concluído — faturação e recebimento confirmados.');
+    if(r && orc.leadId && typeof crmAddAtividade==='function'){
+      crmAddAtividade(orc.leadId, 'nota', 'Orçamento '+orc.num+' CONCLUÍDO — faturação final e pagamento confirmados.', 'Sistema', { origem:'liquidacao_concluida' });
+    }
+  });
+}
+window.orcAvaliarLiquidacaoConcluida = orcAvaliarLiquidacaoConcluida;
+
+// Exceção — só Admin, motivo obrigatório, sempre registada no histórico.
+// Nunca fabrica um recebimento na Tesouraria — só avança a fase do
+// orçamento para "Concluído" por decisão humana explícita (ex: pagamento
+// confirmado por outro meio, fora do circuito TOConline/Sheets).
+async function orcForcarLiquidacaoConcluida(orcNum){
+  var cu = (typeof CU!=='undefined') ? CU : null;
+  if(!cu || cu.admin!==true){ alert('Só um Admin pode concluir a liquidação sem confirmação automática da Tesouraria.'); return false; }
+  var orc = (typeof orcData!=='undefined') ? orcData.find(function(o){ return o.num===orcNum; }) : null;
+  if(!orc){ alert('Orçamento não encontrado.'); return false; }
+  if(orc.faseLiquidacao==='Concluído'){ alert('Este orçamento já está concluído.'); return false; }
+  if(!orc.faseLiquidacao){ alert('Regista primeiro a faturação final.'); return false; }
+  var motivo = prompt('⚠️ Exceção Admin — concluir a liquidação sem confirmação automática da Tesouraria.\n\nMotivo (obrigatório):');
+  if(!motivo || !motivo.trim()){ alert('Motivo obrigatório — exceção cancelada.'); return false; }
+  motivo = motivo.trim();
+  var r = await liquidacaoRegistarTransicaoEstado(orc, 'Concluído', 'liquidacao_concluida', 'override_admin', motivo);
+  if(!r || !r.applied){ alert('Não foi possível registar a exceção no servidor — tenta novamente.'); return false; }
+  if(typeof orcRenderList==='function') orcRenderList();
+  if(typeof showToast==='function') showToast('⚠️ Liquidação concluída por exceção Admin — '+orc.num+'.');
+  return true;
+}
+window.orcForcarLiquidacaoConcluida = orcForcarLiquidacaoConcluida;
 
 // Revisão 10/09/2026 (ajuste do Bloco C antes do D): a decisão de Design
 // tem de ser EXPLÍCITA e persistida — orc.designNecessario só pode valer
