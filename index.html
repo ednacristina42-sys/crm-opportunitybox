@@ -30326,7 +30326,7 @@ window._crmLeadsEstado = 'loading'; // 'loading' | 'carregado' | 'vazio' | 'erro
 var _crmLeadsHidratacaoPromise = null;
 
 async function crmHidratarLeadsCanonico(){
-  if(_crmLeadsHidratacaoPromise) return _crmLeadsHidratacaoPromise;
+  if(_crmLeadsHidratacaoPromise) return _crmLeadsHidratacaoPromise; // só deduplica chamadas EM CURSO ao mesmo tempo
   _crmLeadsHidratacaoPromise = (async function(){
     window._crmLeadsEstado = 'loading';
     var sb = (typeof crmSBClient==='function') ? crmSBClient() : null;
@@ -30359,6 +30359,17 @@ async function crmHidratarLeadsCanonico(){
 
     try{ if(typeof crmRenderAll==='function') crmRenderAll(); }catch(e){}
   })();
+  // Correção (10/09/2026, pedido de revisão): a promise só serve para
+  // deduplicar chamadas SIMULTÂNEAS (duas entradas rápidas no Pipeline
+  // enquanto a leitura ainda está em curso -> 1 leitura só, partilhada).
+  // Assim que esta leitura termina — sucesso OU erro — a fila fica livre:
+  // limpa _crmLeadsHidratacaoPromise para que a PRÓXIMA chamada (ex.: sair
+  // e voltar a entrar no Pipeline mais tarde na mesma sessão) force uma
+  // leitura remota fresca, nunca reaproveite um resultado antigo. .finally()
+  // só regista o efeito colateral de limpar a fila — não altera o valor
+  // resolvido da promise original, que quem já estava à espera continua a
+  // receber normalmente.
+  _crmLeadsHidratacaoPromise.finally(function(){ _crmLeadsHidratacaoPromise = null; });
   return _crmLeadsHidratacaoPromise;
 }
 window.crmHidratarLeadsCanonico = crmHidratarLeadsCanonico;
