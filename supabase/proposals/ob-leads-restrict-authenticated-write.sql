@@ -1,9 +1,24 @@
 -- ============================================================
 -- Fecha escrita AUTENTICADA genérica em ob-leads.
--- PROPOSTA, NAO APLICADA — depende da Edge Function crm-lead-ops
--- (ver ob-leads-write-via-edge-function-design.md) estar
--- implementada e testada ANTES de aplicar isto, para não haver
--- janela sem nenhum caminho de escrita.
+--
+-- APLICADA em 2026-09-10 — migration "ob_leads_restrict_authenticated_write"
+-- no projeto ddzlbmnmsdyodouqxbjx, depois de:
+--  1. crm-lead-ops + RPC public.crm_lead_op implementados, testados
+--     (concorrência real, create/update/delete) e deployados;
+--  2. frontend (obSbPushLeadsSeguro) adaptado para chamar só
+--     crm-lead-ops, mesclado em main e deployado em produção
+--     (commits 9904a8c + hotfix/ob-leads-crm-lead-ops, deploys
+--     Netlify 6aa2d602.../6aa2d8ef... — commit_ref confirmado igual
+--     ao merge em cada um);
+--  3. só depois esta migration foi aplicada.
+--
+-- Verificado pós-aplicação: anon e authenticated (incluindo admin)
+-- negados em UPDATE/UPSERT direto a ob-leads (0 linhas / 42501,
+-- testado com BEGIN...ROLLBACK); ob-clients continua a funcionar
+-- (controlo); crm_lead_op continua a funcionar (create/delete
+-- isolado); duas criações concorrentes em leads diferentes via
+-- crm_lead_op sobrevivem as duas; conteúdo/hash de ob-leads
+-- inalterado. crm-lead-intake intacta (version 13, sem alteração).
 --
 -- Continuação de 2b06037 (ob_leads_remove_anon_write), que já tinha
 -- removido 'ob-leads' das policies anon equivalentes. Esta proposta
