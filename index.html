@@ -27974,29 +27974,114 @@ async function orcRegistarFaturaFinal(orcNum){
 }
 window.orcRegistarFaturaFinal = orcRegistarFaturaFinal;
 
+// Revisão 10/09/2026 (ajuste final do Bloco D — matching seguro): nunca
+// confirma liquidação só por cliente+valor. Correspondência por
+// identidade forte, em ordem de prioridade estrita — só desce ao nível
+// seguinte quando o anterior devolve ZERO candidatos; se algum nível
+// devolver 2+ candidatos, para logo ali como ambíguo (nunca "passa
+// adiante" para tentar desempatar com um nível mais fraco).
+function obEncontrarFaturaFinalLigada(orc){
+  if(!orc || !orc.faturaFinalNum || typeof fatData==='undefined') return null;
+  return fatData.find(function(f){ return f.num===orc.faturaFinalNum; }) || null;
+}
+window.obEncontrarFaturaFinalLigada = obEncontrarFaturaFinalLigada;
+
+// 1) faturaFinalNum ↔ número/documento da linha de Tesouraria — a
+// descrição das linhas reais (sincFinDocParaLinhaTes) é sempre
+// 'Fatura '+document_no (ou 'Nota de Crédito '+document_no); comparamos
+// aí o nº da fatura ligada (orc.faturaFinalNum) e, se existir, o nº
+// devolvido pelo TocOnline (fatura.tocoNum).
+function obCorrespondeRecebivelPorDocumento(r, orc){
+  if(!r || !orc) return false;
+  var fatura = obEncontrarFaturaFinalLigada(orc);
+  var candidatos = [];
+  if(orc.faturaFinalNum) candidatos.push(String(orc.faturaFinalNum));
+  if(fatura && fatura.tocoNum) candidatos.push(String(fatura.tocoNum));
+  var descricao = String(r.descricao||'').toLowerCase();
+  return candidatos.some(function(n){ return n && descricao.indexOf(n.toLowerCase())!==-1; });
+}
+window.obCorrespondeRecebivelPorDocumento = obCorrespondeRecebivelPorDocumento;
+
+// 2) ID da fatura / _tocoId / identificador equivalente — comparação
+// exata contra o identificador real da linha de Tesouraria (_tocoId,
+// vindo do TocOnline; _sheetId, vindo do Sheet), nunca por texto.
+function obCorrespondeRecebivelPorIdFatura(r, orc){
+  if(!r || !orc) return false;
+  var fatura = obEncontrarFaturaFinalLigada(orc);
+  if(fatura && fatura.tocoId && r._tocoId && String(fatura.tocoId)===String(r._tocoId)) return true;
+  if(orc.faturaFinalNum && r._sheetId && String(orc.faturaFinalNum)===String(r._sheetId)) return true;
+  return false;
+}
+window.obCorrespondeRecebivelPorIdFatura = obCorrespondeRecebivelPorIdFatura;
+
+// 3) orcNum, SE estiver gravado no próprio recebível (hoje nenhuma origem
+// de ob-tes-receber grava isto — só Contas a Pagar/logística o fazem — por
+// isso este nível devolve sempre 0 candidatos na prática, mas fica pronto
+// para o dia em que a Tesouraria passe a gravar esta referência).
+function obCorrespondeRecebivelPorOrcNum(r, orc){
+  if(!r || !orc || !orc.num) return false;
+  return !!((r.orcNum && r.orcNum===orc.num) || (r.projeto && r.projeto===orc.num));
+}
+window.obCorrespondeRecebivelPorOrcNum = obCorrespondeRecebivelPorOrcNum;
+
+// 4) Fallback — cliente + valor. Só decide quando é o ÚNICO candidato
+// entre TODOS os orçamentos elegíveis; nunca usado se algum nível mais
+// forte já tiver encontrado sequer um candidato (mesmo que ambíguo).
+function obCorrespondeRecebivelPorClienteValor(r, orc){
+  if(!r || !orc) return false;
+  return !!(orc.cli && r.cliente && orc.cli.trim().toLowerCase()===String(r.cliente).trim().toLowerCase()
+    && typeof orc.faturaFinalValor==='number'
+    && Math.abs(orc.faturaFinalValor-(r.total||r.valorLiq||0))<0.01);
+}
+window.obCorrespondeRecebivelPorClienteValor = obCorrespondeRecebivelPorClienteValor;
+
+// Registo (não persistido no Supabase — é só um sinal operacional local,
+// não um dado financeiro) de correspondências ambíguas, para inspeção/
+// resolução manual. Nunca decide sozinho qual dos candidatos é o certo.
+var OB_LIQUIDACAO_AMBIGUAS = [];
+window.OB_LIQUIDACAO_AMBIGUAS = OB_LIQUIDACAO_AMBIGUAS;
+function obRegistarCorrespondenciaAmbigua(r, candidatos, nivel){
+  var entrada = { recebimentoId: r.id, cliente: r.cliente, valor: r.total, nivel: nivel, orcamentos: candidatos.map(function(o){ return o.num; }), ts: new Date().toISOString() };
+  OB_LIQUIDACAO_AMBIGUAS.unshift(entrada);
+  if(typeof showToast==='function') showToast('⚠️ Correspondência ambígua no recebimento '+r.id+' — '+candidatos.length+' orçamentos possíveis ('+candidatos.map(function(o){return o.num;}).join(', ')+'). Resolução manual necessária — nenhum foi avançado.');
+  console.warn('[Bloco D] Correspondência ambígua — nenhum orçamento avançado automaticamente:', entrada);
+}
+window.obRegistarCorrespondenciaAmbigua = obRegistarCorrespondenciaAmbigua;
+
 // Ponto único que observa a Tesouraria REAL (nunca escreve nela): sempre
 // que um recebível é marcado como pago via tesReceberMarcarPago() — a
 // única função existente que faz essa transição, ver wrap mais abaixo —
-// verifica se corresponde (cliente + valor, mesma lógica de
-// correspondência já usada pela Central Financeira) a algum orçamento em
-// "Faturação Final"/"A Receber" e, se sim, avança-o para "Pagamento
-// Confirmado". Nunca cria nem altera linhas de ob-tes-receber.
+// procura, por identidade forte primeiro (documento -> ID da fatura ->
+// orçamento gravado -> só depois cliente+valor), um orçamento em
+// "Faturação Final"/"A Receber" e avança-o para "Pagamento Confirmado".
+// Nunca cria nem altera linhas de ob-tes-receber. Idempotente: um
+// recebimentoTesourariaId já ligado a um orçamento nunca liquida outro.
 function obAvaliarPagamentoFinalTes(id){
   if(typeof TES_RECEBER==='undefined' || typeof orcData==='undefined' || typeof crmAvaliarTransicaoAutomatica!=='function') return;
   var r = TES_RECEBER.find(function(x){ return x.id===id; });
   if(!r || r.estado!=='Recebido') return;
-  var candidatos = orcData.filter(function(o){
-    return (o.faseLiquidacao==='Faturação Final' || o.faseLiquidacao==='A Receber')
-      && o.cli && r.cliente
-      && o.cli.trim().toLowerCase()===String(r.cliente).trim().toLowerCase()
-      && typeof o.faturaFinalValor==='number'
-      && Math.abs(o.faturaFinalValor-(r.total||r.valorLiq||0))<0.01;
-  });
-  candidatos.forEach(function(o){
-    crmAvaliarTransicaoAutomatica('liquidacao', 'pagamento_confirmado', { orcNum: o.num, origem: 'tesouraria_recebido', extraCampos: { recebimentoTesourariaId: id } }).then(function(res){
-      if(res && typeof orcAvaliarLiquidacaoConcluida==='function') orcAvaliarLiquidacaoConcluida(o);
-    });
-  });
+
+  if(orcData.some(function(o){ return o.recebimentoTesourariaId===id; })) return; // já ligado — nunca liquida outro
+
+  var elegiveis = orcData.filter(function(o){ return o.faseLiquidacao==='Faturação Final' || o.faseLiquidacao==='A Receber'; });
+  var niveis = [obCorrespondeRecebivelPorDocumento, obCorrespondeRecebivelPorIdFatura, obCorrespondeRecebivelPorOrcNum, obCorrespondeRecebivelPorClienteValor];
+  var nomesNiveis = ['documento', 'id_fatura', 'orcNum', 'cliente_valor'];
+
+  for(var i=0;i<niveis.length;i++){
+    var candidatos = elegiveis.filter(function(o){ return niveis[i](r, o); });
+    if(candidatos.length===1){
+      var alvo = candidatos[0];
+      crmAvaliarTransicaoAutomatica('liquidacao', 'pagamento_confirmado', { orcNum: alvo.num, origem: 'tesouraria_recebido', extraCampos: { recebimentoTesourariaId: id } }).then(function(res){
+        if(res && typeof orcAvaliarLiquidacaoConcluida==='function') orcAvaliarLiquidacaoConcluida(alvo);
+      });
+      return;
+    }
+    if(candidatos.length>1){
+      obRegistarCorrespondenciaAmbigua(r, candidatos, nomesNiveis[i]);
+      return; // 2+ candidatos neste nível -> ambíguo, nunca avança nenhum, nunca tenta um nível mais fraco
+    }
+  }
+  // 0 candidatos em todos os níveis — recebimento sem relação com o Bloco D, nada a fazer.
 }
 window.obAvaliarPagamentoFinalTes = obAvaliarPagamentoFinalTes;
 
