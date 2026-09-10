@@ -16842,6 +16842,7 @@ async function _sbOrcUpsert(orc, opts) {
         faseFinanceira: (orc.faseFinanceira === undefined || orc.faseFinanceira === null) ? null : orc.faseFinanceira,
         proforma: (orc.proforma === undefined || orc.proforma === null) ? null : orc.proforma,
         confirmacaoAdiantamento: (orc.confirmacaoAdiantamento === undefined || orc.confirmacaoAdiantamento === null) ? null : orc.confirmacaoAdiantamento,
+        pagamentosAdiantamento: Array.isArray(orc.pagamentosAdiantamento) ? orc.pagamentosAdiantamento : [],
         historicoFinanceiro: Array.isArray(orc.historicoFinanceiro) ? orc.historicoFinanceiro : []
       },
       owner_id: (cu.admin === true && opts.reassignOwnerId) ? opts.reassignOwnerId : cu.id,
@@ -16902,6 +16903,7 @@ async function _sbOrcLoadAll() {
         faseFinanceira: (extra.faseFinanceira === undefined || extra.faseFinanceira === null) ? null : extra.faseFinanceira,
         proforma: (extra.proforma === undefined || extra.proforma === null) ? null : extra.proforma,
         confirmacaoAdiantamento: (extra.confirmacaoAdiantamento === undefined || extra.confirmacaoAdiantamento === null) ? null : extra.confirmacaoAdiantamento,
+        pagamentosAdiantamento: Array.isArray(extra.pagamentosAdiantamento) ? extra.pagamentosAdiantamento : [],
         historicoFinanceiro: Array.isArray(extra.historicoFinanceiro) ? extra.historicoFinanceiro : [],
         owner_id: row.owner_id || null
       };
@@ -18083,11 +18085,15 @@ function orcRenderAcoesFinanceiras(o, isAdmin){
     var c = o.confirmacaoAdiantamento;
     var dataConf = c.confirmadoEm ? new Date(c.confirmadoEm).toLocaleDateString('pt-PT',{day:'2-digit',month:'2-digit',year:'numeric'}) : '—';
     html += `<div style="font-size:10px;color:var(--muted);white-space:nowrap" title="${(c.referencia||'sem referência').replace(/"/g,'&quot;')}">€${orcFmt(c.valor)} · ${dataConf} · ${c.confirmadoPor||'—'}</div>`;
+  } else if(fase==='Confirmação de Pagamento' && o.confirmacaoAdiantamento && o.confirmacaoAdiantamento.emFalta>0){
+    // Pagamento parcial — mostra sempre recebido/esperado/em falta, nunca só "houve um clique".
+    var cp = o.confirmacaoAdiantamento;
+    html += `<div style="font-size:10px;color:var(--y);white-space:nowrap">€${orcFmt(cp.valor)} de €${orcFmt(cp.valorEsperado)} · faltam €${orcFmt(cp.emFalta)}</div>`;
   }
   if(fase==='Aguardar Adiantamento'){
     html += `<button class="tbtn" style="font-size:11px;padding:2px 7px;white-space:nowrap;margin-top:2px" onclick="orcRegistarProforma('${o.num}')">🧾 Registar Proforma 50%</button>`;
   } else if(fase==='Fatura Proforma 50%' || fase==='Confirmação de Pagamento'){
-    html += `<button class="tbtn" style="font-size:11px;padding:2px 7px;white-space:nowrap;margin-top:2px;color:var(--g);border-color:rgba(63,207,142,.3)" onclick="orcConfirmarAdiantamento('${o.num}')">✅ Confirmar Adiantamento</button>`;
+    html += `<button class="tbtn" style="font-size:11px;padding:2px 7px;white-space:nowrap;margin-top:2px;color:var(--g);border-color:rgba(63,207,142,.3)" onclick="orcConfirmarAdiantamento('${o.num}')">✅ ${fase==='Confirmação de Pagamento'?'Registar Mais Pagamento':'Confirmar Adiantamento'}</button>`;
   }
   if(fase!=='50% Confirmado' && isAdmin){
     html += `<button class="tbtn" style="font-size:10.5px;padding:2px 6px;white-space:nowrap;margin-top:2px;color:var(--r,#e74c3c);border-color:rgba(231,76,60,.3)" onclick="orcForcarProducaoSemAdiantamento('${o.num}')" title="Apenas Admin — exige motivo">⚠️ Forçar Produção</button>`;
@@ -27544,7 +27550,14 @@ window.obCardExtras = function(i, page){
 // isso este é o único sítio que precisa de garantir a persistência —
 // não é preciso duplicar a verificação em cada função que lê a fase.
 async function orcRegistarTransicaoEstado(orc, faseNova, evento, origem, motivo, extraCampos){
-  if(!orc || orc.faseFinanceira===faseNova) return { applied:false, reason:'sem-alteracao' };
+  if(!orc) return { applied:false, reason:'sem-orcamento' };
+  // Normalmente uma "não-alteração" (mesma fase) é ignorada — mas quando
+  // há extraCampos (ex: mais um pagamento parcial do adiantamento, ainda
+  // sem atingir o valor esperado, por isso a fase não muda) há dados novos
+  // a persistir na mesma; nesse caso o registo prossegue mesmo sem mudança
+  // de fase, para nunca perder um pagamento parcial só porque não houve
+  // transição (revisão 10/09/2026, validação Bloco B — regra 50%).
+  if(orc.faseFinanceira===faseNova && !extraCampos) return { applied:false, reason:'sem-alteracao' };
   var faseAnterior = orc.faseFinanceira || null;
   var valoresAnterioresExtra = {};
   if(extraCampos){
@@ -27597,45 +27610,104 @@ async function orcRegistarProforma(orcNum){
 }
 window.orcRegistarProforma = orcRegistarProforma;
 
-// Confirma o pagamento do adiantamento de 50% — duas transições em
-// sequência (pagamento_reportado -> Confirmação de Pagamento, depois
-// adiantamento_confirmado -> 50% Confirmado), cada uma com a sua própria
-// entrada no histórico — mesmo padrão de crmSubmeterAdjudicacao() no
-// Bloco A. Desbloqueia a produção (obCriarProjetoProducao já tinha sido
-// chamada e bloqueada na aprovação — chama-se de novo aqui, já sem bloqueio).
+// Valor esperado do adiantamento. Hoje é sempre 50% do orçamento
+// (orc.sinal, já calculado em orcGuardar() a partir de totais.total) —
+// mas isolado nesta função, e não espalhado pelas chamadas, para o dia em
+// que existam condições diferentes de 50/50 (ex: 30/70, tranches): só
+// este sítio precisa de mudar (revisão 10/09/2026, validação Bloco B).
+function orcValorAdiantamentoEsperado(orc){
+  if(!orc) return 0;
+  if(orc.sinal && orc.sinal>0) return orc.sinal;
+  var total = (typeof orcGetValorTotal==='function') ? orcGetValorTotal(orc) : (orc.totais ? orc.totais.total : (orc.val||0));
+  return Math.round((total||0)*50)/100;
+}
+window.orcValorAdiantamentoEsperado = orcValorAdiantamentoEsperado;
+
+// Confirma (total ou parcialmente) o pagamento do adiantamento.
 //
-// Revisão 10/09/2026 (validação do Bloco B, ponto 2): "50% Confirmado" tem
-// de significar pagamento efetivamente confirmado, não um simples clique —
-// por isso pede-se aqui o valor recebido e a referência/documento, e fica
-// tudo gravado em orc.confirmacaoAdiantamento {valor, referencia,
-// confirmadoPor, confirmadoEm} (persistido no Supabase, ver _sbOrcUpsert),
-// além de entrar no historicoFinanceiro/motivo como qualquer transição.
+// Revisão 10/09/2026 (validação do Bloco B, pontos 2 e 3): "50% Confirmado"
+// só é atingido quando a SOMA de todos os pagamentos registados
+// (orc.pagamentosAdiantamento — nunca substituídos, sempre acrescentados,
+// para nunca perder um pagamento parcial já registado) for >= ao valor
+// esperado (orcValorAdiantamentoEsperado). Se ainda faltar valor, o
+// orçamento fica (ou permanece) em "Confirmação de Pagamento" — nunca
+// avança para "50% Confirmado", logo a produção continua bloqueada — e
+// mostra-se claramente o recebido, o esperado e o que falta. Cada
+// pagamento fica com o seu próprio valor/referência/autor/data.
 async function orcConfirmarAdiantamento(orcNum){
   var orc = (typeof orcData!=='undefined') ? orcData.find(function(o){ return o.num===orcNum; }) : null;
   if(!orc){ alert('Orçamento não encontrado.'); return false; }
-  if(typeof crmAvaliarTransicaoAutomatica!=='function'){ alert('Motor de transições indisponível.'); return false; }
-  var valorSugerido = (orc.proforma && orc.proforma.valor) || orc.sinal || 0;
-  var valorTxt = prompt('Confirmar adiantamento de 50% — valor efetivamente recebido (€):', valorSugerido ? String(valorSugerido) : '');
+  if(orc.faseFinanceira==='50% Confirmado'){ alert('O adiantamento já está confirmado — não é preciso registar mais pagamentos.'); return false; }
+  if(typeof crmAvaliarTransicaoAutomatica!=='function' || typeof orcRegistarTransicaoEstado!=='function'){ alert('Motor de transições indisponível.'); return false; }
+
+  var valorEsperado = orcValorAdiantamentoEsperado(orc);
+  var jaRecebido = Math.round((Array.isArray(orc.pagamentosAdiantamento) ? orc.pagamentosAdiantamento.reduce(function(s,p){ return s+(p.valor||0); }, 0) : 0)*100)/100;
+  var faltaAntes = Math.max(0, Math.round((valorEsperado-jaRecebido)*100)/100);
+  var sugestao = faltaAntes>0 ? faltaAntes : valorEsperado;
+  var valorTxt = prompt('Registar pagamento do adiantamento — valor efetivamente recebido agora (€):'+(jaRecebido>0?'\n(já recebido: €'+jaRecebido+' de €'+valorEsperado+' esperado — falta €'+faltaAntes+')':''), sugestao ? String(sugestao) : '');
   if(valorTxt===null) return false; // cancelado pelo utilizador
   var valor = parseFloat(String(valorTxt).replace(',', '.'));
   if(!valor || valor<=0){ alert('Valor inválido — confirmação cancelada.'); return false; }
   var referencia = prompt('Referência/documento do pagamento (ex: nº de transferência, recibo) — opcional:');
   referencia = (referencia||'').trim() || null;
   var autor = (typeof CU!=='undefined'&&CU&&CU.name) ? CU.name : 'Sistema';
-  var confirmacao = { valor: valor, referencia: referencia, confirmadoPor: autor, confirmadoEm: new Date().toISOString() };
-  var motivoTxt = 'Valor confirmado: €'+valor+(referencia?' — Referência: '+referencia:'');
+  var novoPagamento = { valor: valor, referencia: referencia, confirmadoPor: autor, confirmadoEm: new Date().toISOString() };
 
-  var r1 = await crmAvaliarTransicaoAutomatica('orcamento', 'pagamento_reportado', { orcNum: orcNum, origem: 'adiantamento', motivo: motivoTxt });
-  if(!r1){ alert('Não foi possível registar o pagamento reportado — confirma a fase atual do orçamento e a ligação ao servidor.'); return false; }
-  var r2 = await crmAvaliarTransicaoAutomatica('orcamento', 'adiantamento_confirmado', { orcNum: orcNum, origem: 'adiantamento', motivo: motivoTxt, extraCampos: { confirmacaoAdiantamento: confirmacao } });
-  if(!r2){
-    alert('Não foi possível confirmar o adiantamento no servidor — o orçamento ficou em "Confirmação de Pagamento". Tenta novamente.');
+  var pagamentosAtualizados = (Array.isArray(orc.pagamentosAdiantamento) ? orc.pagamentosAdiantamento : []).concat([novoPagamento]);
+  var totalRecebido = Math.round(pagamentosAtualizados.reduce(function(s,p){ return s+(p.valor||0); }, 0)*100)/100;
+  var EPSILON = 0.01; // tolerância a arredondamentos de céntimos
+  var completo = valorEsperado>0 ? (totalRecebido >= valorEsperado-EPSILON) : (totalRecebido>0);
+  var emFalta = completo ? 0 : Math.max(0, Math.round((valorEsperado-totalRecebido)*100)/100);
+
+  var resumo = { valor: totalRecebido, valorEsperado: valorEsperado, referencia: referencia, confirmadoPor: autor, confirmadoEm: novoPagamento.confirmadoEm, completo: completo, emFalta: emFalta };
+  var motivoTxt = completo
+    ? 'Valor confirmado: €'+totalRecebido+' de €'+valorEsperado+' esperado'+(referencia?' — Referência: '+referencia:'')
+    : 'Pagamento PARCIAL: €'+totalRecebido+' de €'+valorEsperado+' esperado — faltam €'+emFalta+(referencia?' — Referência: '+referencia:'');
+  var extraCampos = { pagamentosAdiantamento: pagamentosAtualizados, confirmacaoAdiantamento: resumo };
+  var faseAtual = orc.faseFinanceira || null;
+  var faseAlvo = completo ? '50% Confirmado' : 'Confirmação de Pagamento';
+
+  var aplicado;
+  if(faseAtual===faseAlvo){
+    // Mesma fase (ex: 2º pagamento parcial, continua "Confirmação de
+    // Pagamento") — regista diretamente, sem passar pelo motor de
+    // transições (que bloquearia por "já lá está").
+    var rMesmaFase = await orcRegistarTransicaoEstado(orc, faseAlvo, completo?'adiantamento_confirmado':'pagamento_reportado', 'adiantamento', motivoTxt, extraCampos);
+    aplicado = rMesmaFase && rMesmaFase.applied;
+  } else if(faseAtual==='Confirmação de Pagamento'){
+    // Já vinha de um pagamento parcial anterior — este completa o valor.
+    var rCompleta = await crmAvaliarTransicaoAutomatica('orcamento', 'adiantamento_confirmado', { orcNum: orcNum, origem: 'adiantamento', motivo: motivoTxt, extraCampos: extraCampos });
+    aplicado = !!rCompleta;
+  } else {
+    // 1º pagamento — passa primeiro por "Confirmação de Pagamento". O
+    // extraCampos completo (pagamentosAdiantamento + confirmacaoAdiantamento)
+    // fica persistido já neste 1º passo — nunca só no passo final — para
+    // não se perder mesmo que a 2ª chamada (a que fecha em "50%
+    // Confirmado") venha a falhar; a 2ª chamada volta a passar os mesmos
+    // valores, por isso um eventual "revert" dela não apaga o que o 1º
+    // passo já confirmou.
+    var rReportado = await crmAvaliarTransicaoAutomatica('orcamento', 'pagamento_reportado', { orcNum: orcNum, origem: 'adiantamento', motivo: motivoTxt, extraCampos: extraCampos });
+    if(!rReportado){ alert('Não foi possível registar o pagamento reportado — confirma a fase atual do orçamento e a ligação ao servidor.'); return false; }
+    if(completo){
+      var rFinal = await crmAvaliarTransicaoAutomatica('orcamento', 'adiantamento_confirmado', { orcNum: orcNum, origem: 'adiantamento', motivo: motivoTxt, extraCampos: extraCampos });
+      aplicado = !!rFinal;
+    } else {
+      aplicado = true; // já persistido no passo do pagamento_reportado acima
+    }
+  }
+
+  if(!aplicado){
+    alert('Não foi possível registar o pagamento no servidor — tenta novamente.');
     if(typeof orcRenderList==='function') orcRenderList();
     return false;
   }
-  if(typeof obCriarProjetoProducao==='function') obCriarProjetoProducao(orc); // agora desbloqueado
   if(typeof orcRenderList==='function') orcRenderList();
-  if(typeof showToast==='function') showToast('✅ Adiantamento de 50% confirmado (€'+valor+') — '+orc.num+'. Produção desbloqueada.');
+  if(completo){
+    if(typeof obCriarProjetoProducao==='function') obCriarProjetoProducao(orc); // agora desbloqueado
+    if(typeof showToast==='function') showToast('✅ Adiantamento de 50% confirmado (€'+totalRecebido+') — '+orc.num+'. Produção desbloqueada.');
+  } else {
+    if(typeof showToast==='function') showToast('💰 Pagamento parcial registado (€'+valor+') — '+orc.num+'. Recebido €'+totalRecebido+' de €'+valorEsperado+', faltam €'+emFalta+'. Produção continua bloqueada.');
+  }
   return true;
 }
 window.orcConfirmarAdiantamento = orcConfirmarAdiantamento;
