@@ -12916,9 +12916,12 @@ var CRM_TRANSICOES_AUTOMATICAS = {
   },
   // Bloco B — Fase 2 (Fecho Financeiro), sobre o orçamento adjudicado.
   // 'de': null = qualquer fase (inclui ainda não iniciada/undefined).
+  // "proforma_registada" (não "emitida"): é só um registo local do
+  // adiantamento — NÃO existe ainda integração real com o TocOnline para
+  // gerar esse documento (revisão 10/09/2026). Ver orcRegistarProforma().
   orcamento: {
     adjudicacao_aprovada:    { de: null, para: 'Aguardar Adiantamento' },
-    proforma_emitida:        { de: ['Aguardar Adiantamento'], para: 'Fatura Proforma 50%' },
+    proforma_registada:      { de: ['Aguardar Adiantamento'], para: 'Fatura Proforma 50%' },
     pagamento_reportado:     { de: ['Fatura Proforma 50%','Aguardar Adiantamento'], para: 'Confirmação de Pagamento' },
     adiantamento_confirmado: { de: ['Confirmação de Pagamento'], para: '50% Confirmado' }
   }
@@ -12930,7 +12933,15 @@ var CRM_TRANSICOES_AUTOMATICAS = {
 // contexto: {leadId, origem?, motivo?}. Devolve {faseAnterior,faseNova} em
 // sucesso, ou null se não havia transição válida a fazer (idempotente —
 // seguro chamar mesmo que a fase já tenha avançado por outro caminho).
-function crmAvaliarTransicaoAutomatica(entidade, evento, contexto){
+//
+// É 'async' desde a revisão de 10/09/2026 (ponto 3 do pedido de validação
+// do Bloco B): para entidade='orcamento', a fase só é considerada aplicada
+// depois de orcRegistarTransicaoEstado() confirmar que o Supabase aceitou
+// a escrita — nunca fica "50% Confirmado" no browser sem o servidor
+// confirmar. A entidade='lead' (Bloco A) continua 100% síncrona por
+// dentro (nenhum await nesse ramo) — chamadas existentes que não fazem
+// `await` ao resultado continuam a funcionar exactamente na mesma.
+async function crmAvaliarTransicaoAutomatica(entidade, evento, contexto){
   contexto = contexto || {};
   if(entidade==='lead'){
     var defLead = CRM_TRANSICOES_AUTOMATICAS.lead[evento];
@@ -12960,9 +12971,10 @@ function crmAvaliarTransicaoAutomatica(entidade, evento, contexto){
     var faseAnteriorOrc = orc.faseFinanceira || null;
     if(defOrc.de && defOrc.de.indexOf(faseAnteriorOrc)===-1) return null; // fora de ordem, não força
     if(faseAnteriorOrc===defOrc.para) return null; // já lá está
-    var aplicadoOrc = (typeof orcRegistarTransicaoEstado==='function') && orcRegistarTransicaoEstado(orc, defOrc.para, evento, contexto.origem || 'automatico', contexto.motivo);
-    if(!aplicadoOrc) return null;
-    return { faseAnterior: faseAnteriorOrc, faseNova: defOrc.para };
+    if(typeof orcRegistarTransicaoEstado!=='function') return null;
+    var resultadoOrc = await orcRegistarTransicaoEstado(orc, defOrc.para, evento, contexto.origem || 'automatico', contexto.motivo, contexto.extraCampos);
+    if(!resultadoOrc || !resultadoOrc.applied) return null; // não aplicado OU não persistiu no servidor — nunca fica "meio confirmado"
+    return { faseAnterior: faseAnteriorOrc, faseNova: defOrc.para, persisted: true };
   }
   return null;
 }
@@ -16829,6 +16841,7 @@ async function _sbOrcUpsert(orc, opts) {
         leadId: (orc.leadId === undefined || orc.leadId === null) ? null : orc.leadId,
         faseFinanceira: (orc.faseFinanceira === undefined || orc.faseFinanceira === null) ? null : orc.faseFinanceira,
         proforma: (orc.proforma === undefined || orc.proforma === null) ? null : orc.proforma,
+        confirmacaoAdiantamento: (orc.confirmacaoAdiantamento === undefined || orc.confirmacaoAdiantamento === null) ? null : orc.confirmacaoAdiantamento,
         historicoFinanceiro: Array.isArray(orc.historicoFinanceiro) ? orc.historicoFinanceiro : []
       },
       owner_id: (cu.admin === true && opts.reassignOwnerId) ? opts.reassignOwnerId : cu.id,
@@ -16888,6 +16901,7 @@ async function _sbOrcLoadAll() {
         leadId: (extra.leadId === undefined || extra.leadId === null) ? null : extra.leadId,
         faseFinanceira: (extra.faseFinanceira === undefined || extra.faseFinanceira === null) ? null : extra.faseFinanceira,
         proforma: (extra.proforma === undefined || extra.proforma === null) ? null : extra.proforma,
+        confirmacaoAdiantamento: (extra.confirmacaoAdiantamento === undefined || extra.confirmacaoAdiantamento === null) ? null : extra.confirmacaoAdiantamento,
         historicoFinanceiro: Array.isArray(extra.historicoFinanceiro) ? extra.historicoFinanceiro : [],
         owner_id: row.owner_id || null
       };
@@ -18065,8 +18079,13 @@ function orcRenderAcoesFinanceiras(o, isAdmin){
   };
   var cor = cores[fase] || 'var(--muted)';
   var html = `<div style="margin-top:4px;font-size:10.5px;color:${cor};white-space:nowrap">💰 ${fase}</div>`;
+  if(fase==='50% Confirmado' && o.confirmacaoAdiantamento){
+    var c = o.confirmacaoAdiantamento;
+    var dataConf = c.confirmadoEm ? new Date(c.confirmadoEm).toLocaleDateString('pt-PT',{day:'2-digit',month:'2-digit',year:'numeric'}) : '—';
+    html += `<div style="font-size:10px;color:var(--muted);white-space:nowrap" title="${(c.referencia||'sem referência').replace(/"/g,'&quot;')}">€${orcFmt(c.valor)} · ${dataConf} · ${c.confirmadoPor||'—'}</div>`;
+  }
   if(fase==='Aguardar Adiantamento'){
-    html += `<button class="tbtn" style="font-size:11px;padding:2px 7px;white-space:nowrap;margin-top:2px" onclick="orcEmitirProforma('${o.num}')">🧾 Emitir Proforma 50%</button>`;
+    html += `<button class="tbtn" style="font-size:11px;padding:2px 7px;white-space:nowrap;margin-top:2px" onclick="orcRegistarProforma('${o.num}')">🧾 Registar Proforma 50%</button>`;
   } else if(fase==='Fatura Proforma 50%' || fase==='Confirmação de Pagamento'){
     html += `<button class="tbtn" style="font-size:11px;padding:2px 7px;white-space:nowrap;margin-top:2px;color:var(--g);border-color:rgba(63,207,142,.3)" onclick="orcConfirmarAdiantamento('${o.num}')">✅ Confirmar Adiantamento</button>`;
   }
@@ -27514,45 +27533,69 @@ window.obCardExtras = function(i, page){
 // equivalente de crmRegistarTransicaoEstado() para orçamentos: mesma
 // forma (fase anterior/nova/evento/origem/motivo/autor/data no
 // histórico), nunca um sistema paralelo.
-function orcRegistarTransicaoEstado(orc, faseNova, evento, origem, motivo){
-  if(!orc || orc.faseFinanceira===faseNova) return false;
+// Revisão 10/09/2026 (validação do Bloco B, ponto 3): passa a ser 'async'
+// e a AGUARDAR a confirmação do Supabase antes de considerar a transição
+// aplicada. Se a escrita remota falhar (sem sessão, rede em baixo, RLS),
+// reverte tudo localmente (fase, histórico, extraCampos) e devolve
+// applied:false — orc.faseFinanceira nunca fica "50% Confirmado" (ou
+// qualquer outra fase) só porque o browser assim decidiu; só fica assim
+// depois do servidor confirmar. É esse mesmo orc.faseFinanceira que
+// obCriarProjetoProducao() lê para decidir o bloqueio de produção, por
+// isso este é o único sítio que precisa de garantir a persistência —
+// não é preciso duplicar a verificação em cada função que lê a fase.
+async function orcRegistarTransicaoEstado(orc, faseNova, evento, origem, motivo, extraCampos){
+  if(!orc || orc.faseFinanceira===faseNova) return { applied:false, reason:'sem-alteracao' };
   var faseAnterior = orc.faseFinanceira || null;
+  var valoresAnterioresExtra = {};
+  if(extraCampos){
+    Object.keys(extraCampos).forEach(function(k){ valoresAnterioresExtra[k] = orc[k]; });
+  }
   orc.faseFinanceira = faseNova;
+  if(extraCampos) Object.assign(orc, extraCampos);
   var autor = (typeof CU!=='undefined'&&CU&&CU.name) ? CU.name : 'Sistema';
-  var texto = 'Adiantamento: "'+(faseAnterior||'—')+'" -> "'+faseNova+'"'+(motivo?' — Motivo: '+motivo:'');
+  var texto = 'Adiantamento: "'+(faseAnterior||'—')+'" -> "'+faseNova+'"'+(motivo?' — '+motivo:'');
   if(!Array.isArray(orc.historicoFinanceiro)) orc.historicoFinanceiro = [];
-  orc.historicoFinanceiro.unshift({ texto: texto, autor: autor, ts: new Date().toISOString(), faseAnterior: faseAnterior, faseNova: faseNova, evento: evento, origem: origem||'manual', motivo: motivo||null });
+  var entrada = { texto: texto, autor: autor, ts: new Date().toISOString(), faseAnterior: faseAnterior, faseNova: faseNova, evento: evento, origem: origem||'manual', motivo: motivo||null };
+  orc.historicoFinanceiro.unshift(entrada);
   if(orc.leadId && typeof crmAddAtividade==='function'){
     crmAddAtividade(orc.leadId, 'financeiro', texto, autor, { origem: origem||'manual', orcId: orc.num, extra: { faseAnterior: faseAnterior, faseNova: faseNova, evento: evento, motivo: motivo||null } });
   }
-  // Persistência: localStorage sempre; Supabase por sessão autenticada
-  // (_sbOrcUpsert já trata sem-sessão como bloqueio explícito, nunca
-  // silencioso — mesmo padrão já usado em todo o resto do módulo Orçamentos).
   localStorage.setItem('ob-orcamentos', JSON.stringify((typeof orcData!=='undefined'?orcData:[]).slice(0,5000)));
-  if(typeof _sbOrcUpsert==='function') _sbOrcUpsert(orc, { isCreate:false });
-  return true;
+  var sbRes = (typeof _sbOrcUpsert==='function') ? await _sbOrcUpsert(orc, { isCreate:false }) : { ok:false, reason:'sem-funcao-upsert' };
+  if(!sbRes || sbRes.ok!==true){
+    // Reverte — nunca fica "confirmado" só no browser.
+    orc.faseFinanceira = faseAnterior;
+    orc.historicoFinanceiro.shift();
+    if(extraCampos) Object.keys(extraCampos).forEach(function(k){ orc[k] = valoresAnterioresExtra[k]; });
+    localStorage.setItem('ob-orcamentos', JSON.stringify((typeof orcData!=='undefined'?orcData:[]).slice(0,5000)));
+    return { applied:false, reason: sbRes && sbRes.reason, message: sbRes && sbRes.message };
+  }
+  return { applied:true, entrada: entrada };
 }
 window.orcRegistarTransicaoEstado = orcRegistarTransicaoEstado;
 
-// Emite a Fatura Proforma de 50% — documento mínimo de adiantamento
-// (número, valor = orc.sinal já calculado no orçamento, data, quem
-// emitiu). Não substitui a Faturação real (fatData/TocOnline) — é só o
-// registo do adiantamento do fecho comercial.
-function orcEmitirProforma(orcNum){
+// Registo interno mínimo do adiantamento de 50% (número, valor = orc.sinal,
+// data, quem registou) — NÃO é uma "Fatura Proforma" emitida no TocOnline.
+// Não existe ainda integração real com o TocOnline para gerar este
+// documento (chamada nomeada "orcRegistarProforma", nunca "Emitir", desde
+// a revisão de 10/09/2026 — ver ob-crm-workflow validação Bloco B, ponto
+// 1). Quando essa integração existir, ligar aqui à mesma função usada por
+// enviarParaTocOnline() e passar a guardar o ID/número devolvido pelo
+// TocOnline em vez do "PRO-" gerado localmente.
+async function orcRegistarProforma(orcNum){
   var orc = (typeof orcData!=='undefined') ? orcData.find(function(o){ return o.num===orcNum; }) : null;
   if(!orc){ alert('Orçamento não encontrado.'); return false; }
   if(!orc.sinal || orc.sinal<=0){ alert('Este orçamento não tem condição de pagamento 50% definida (sinal=0).'); return false; }
+  if(typeof crmAvaliarTransicaoAutomatica!=='function'){ alert('Motor de transições indisponível.'); return false; }
   var autor = (typeof CU!=='undefined'&&CU&&CU.name) ? CU.name : 'Sistema';
-  orc.proforma = { num: 'PRO-'+orcNum.replace(/^ORC-/,''), data: new Date().toISOString().split('T')[0], valor: orc.sinal, emitidoPor: autor };
-  var aplicado = (typeof crmAvaliarTransicaoAutomatica==='function')
-    ? crmAvaliarTransicaoAutomatica('orcamento', 'proforma_emitida', { orcNum: orcNum, origem: 'proforma' })
-    : orcRegistarTransicaoEstado(orc, 'Fatura Proforma 50%', 'proforma_emitida', 'proforma', null);
-  if(!aplicado){ alert('Não foi possível emitir a proforma — o orçamento já não está em "Aguardar Adiantamento".'); return false; }
+  var proformaRegistada = { num: 'PRO-'+orcNum.replace(/^ORC-/,''), data: new Date().toISOString().split('T')[0], valor: orc.sinal, registadoPor: autor };
+  var r = await crmAvaliarTransicaoAutomatica('orcamento', 'proforma_registada', { orcNum: orcNum, origem: 'proforma', extraCampos: { proforma: proformaRegistada } });
+  if(!r){ alert('Não foi possível registar a proforma — confirma que o orçamento está em "Aguardar Adiantamento" e que há ligação ao servidor.'); return false; }
   if(typeof orcRenderList==='function') orcRenderList();
-  if(typeof showToast==='function') showToast('🧾 Proforma '+orc.proforma.num+' emitida — €'+orcFmt(orc.sinal));
+  if(typeof showToast==='function') showToast('🧾 Proforma '+proformaRegistada.num+' registada — €'+orcFmt(orc.sinal));
   return true;
 }
-window.orcEmitirProforma = orcEmitirProforma;
+window.orcRegistarProforma = orcRegistarProforma;
 
 // Confirma o pagamento do adiantamento de 50% — duas transições em
 // sequência (pagamento_reportado -> Confirmação de Pagamento, depois
@@ -27560,23 +27603,51 @@ window.orcEmitirProforma = orcEmitirProforma;
 // entrada no histórico — mesmo padrão de crmSubmeterAdjudicacao() no
 // Bloco A. Desbloqueia a produção (obCriarProjetoProducao já tinha sido
 // chamada e bloqueada na aprovação — chama-se de novo aqui, já sem bloqueio).
-function orcConfirmarAdiantamento(orcNum){
+//
+// Revisão 10/09/2026 (validação do Bloco B, ponto 2): "50% Confirmado" tem
+// de significar pagamento efetivamente confirmado, não um simples clique —
+// por isso pede-se aqui o valor recebido e a referência/documento, e fica
+// tudo gravado em orc.confirmacaoAdiantamento {valor, referencia,
+// confirmadoPor, confirmadoEm} (persistido no Supabase, ver _sbOrcUpsert),
+// além de entrar no historicoFinanceiro/motivo como qualquer transição.
+async function orcConfirmarAdiantamento(orcNum){
   var orc = (typeof orcData!=='undefined') ? orcData.find(function(o){ return o.num===orcNum; }) : null;
   if(!orc){ alert('Orçamento não encontrado.'); return false; }
   if(typeof crmAvaliarTransicaoAutomatica!=='function'){ alert('Motor de transições indisponível.'); return false; }
-  crmAvaliarTransicaoAutomatica('orcamento', 'pagamento_reportado', { orcNum: orcNum, origem: 'adiantamento' });
-  var r2 = crmAvaliarTransicaoAutomatica('orcamento', 'adiantamento_confirmado', { orcNum: orcNum, origem: 'adiantamento' });
-  if(!r2){ alert('Não foi possível confirmar o adiantamento — verifica a fase atual do orçamento.'); return false; }
+  var valorSugerido = (orc.proforma && orc.proforma.valor) || orc.sinal || 0;
+  var valorTxt = prompt('Confirmar adiantamento de 50% — valor efetivamente recebido (€):', valorSugerido ? String(valorSugerido) : '');
+  if(valorTxt===null) return false; // cancelado pelo utilizador
+  var valor = parseFloat(String(valorTxt).replace(',', '.'));
+  if(!valor || valor<=0){ alert('Valor inválido — confirmação cancelada.'); return false; }
+  var referencia = prompt('Referência/documento do pagamento (ex: nº de transferência, recibo) — opcional:');
+  referencia = (referencia||'').trim() || null;
+  var autor = (typeof CU!=='undefined'&&CU&&CU.name) ? CU.name : 'Sistema';
+  var confirmacao = { valor: valor, referencia: referencia, confirmadoPor: autor, confirmadoEm: new Date().toISOString() };
+  var motivoTxt = 'Valor confirmado: €'+valor+(referencia?' — Referência: '+referencia:'');
+
+  var r1 = await crmAvaliarTransicaoAutomatica('orcamento', 'pagamento_reportado', { orcNum: orcNum, origem: 'adiantamento', motivo: motivoTxt });
+  if(!r1){ alert('Não foi possível registar o pagamento reportado — confirma a fase atual do orçamento e a ligação ao servidor.'); return false; }
+  var r2 = await crmAvaliarTransicaoAutomatica('orcamento', 'adiantamento_confirmado', { orcNum: orcNum, origem: 'adiantamento', motivo: motivoTxt, extraCampos: { confirmacaoAdiantamento: confirmacao } });
+  if(!r2){
+    alert('Não foi possível confirmar o adiantamento no servidor — o orçamento ficou em "Confirmação de Pagamento". Tenta novamente.');
+    if(typeof orcRenderList==='function') orcRenderList();
+    return false;
+  }
   if(typeof obCriarProjetoProducao==='function') obCriarProjetoProducao(orc); // agora desbloqueado
   if(typeof orcRenderList==='function') orcRenderList();
-  if(typeof showToast==='function') showToast('✅ Adiantamento de 50% confirmado — '+orc.num+'. Produção desbloqueada.');
+  if(typeof showToast==='function') showToast('✅ Adiantamento de 50% confirmado (€'+valor+') — '+orc.num+'. Produção desbloqueada.');
   return true;
 }
 window.orcConfirmarAdiantamento = orcConfirmarAdiantamento;
 
 // Exceção — só Admin, motivo obrigatório, sempre registada no histórico
 // (do orçamento E do lead, quando existir). Nunca contorna em silêncio.
-function orcForcarProducaoSemAdiantamento(orcNum){
+//
+// Revisão 10/09/2026 (validação do Bloco B, ponto 3): agora aguarda a
+// confirmação do Supabase antes de criar a produção — se o registo da
+// exceção não persistir no servidor, a produção NÃO é criada (falha
+// segura, igual ao resto do Bloco B).
+async function orcForcarProducaoSemAdiantamento(orcNum){
   var cu = (typeof CU!=='undefined') ? CU : null;
   if(!cu || cu.admin!==true){ alert('Só um Admin pode avançar a produção sem o adiantamento confirmado.'); return false; }
   var orc = (typeof orcData!=='undefined') ? orcData.find(function(o){ return o.num===orcNum; }) : null;
@@ -27586,14 +27657,21 @@ function orcForcarProducaoSemAdiantamento(orcNum){
   if(!motivo || !motivo.trim()){ alert('Motivo obrigatório — exceção cancelada.'); return false; }
   motivo = motivo.trim();
   if(!Array.isArray(orc.historicoFinanceiro)) orc.historicoFinanceiro = [];
-  orc.historicoFinanceiro.unshift({
+  var entrada = {
     texto: 'EXCEÇÃO ADMIN — produção avançada sem confirmação dos 50% (fase atual: '+(orc.faseFinanceira||'—')+')',
     autor: cu.name, ts: new Date().toISOString(),
     faseAnterior: orc.faseFinanceira||null, faseNova: orc.faseFinanceira||null,
     evento: 'excecao_admin_sem_adiantamento', origem: 'override_admin', motivo: motivo
-  });
+  };
+  orc.historicoFinanceiro.unshift(entrada);
   localStorage.setItem('ob-orcamentos', JSON.stringify((typeof orcData!=='undefined'?orcData:[]).slice(0,5000)));
-  if(typeof _sbOrcUpsert==='function') _sbOrcUpsert(orc, { isCreate:false });
+  var sbRes = (typeof _sbOrcUpsert==='function') ? await _sbOrcUpsert(orc, { isCreate:false }) : { ok:false, reason:'sem-funcao-upsert' };
+  if(!sbRes || sbRes.ok!==true){
+    orc.historicoFinanceiro.shift();
+    localStorage.setItem('ob-orcamentos', JSON.stringify((typeof orcData!=='undefined'?orcData:[]).slice(0,5000)));
+    alert('Não foi possível registar a exceção no servidor — a produção NÃO foi criada. '+(sbRes&&sbRes.message?sbRes.message:'Tenta novamente.'));
+    return false;
+  }
   obCriarProjetoProducao(orc, { forcarAdmin:true, autor: cu.name, motivo: motivo });
   if(typeof orcRenderList==='function') orcRenderList();
   return true;
