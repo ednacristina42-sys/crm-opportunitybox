@@ -1,6 +1,17 @@
 -- ============================================================
 -- Remediação RLS de tabelas de backup expostas.
--- PROPOSTA, NAO APLICADA.
+--
+-- APLICADA em 2026-09-10 — migration "backup_tables_rls_lockdown"
+-- no projeto ddzlbmnmsdyodouqxbjx. Só as secções 1 e 2 abaixo foram
+-- executadas (ENABLE RLS + REVOKE ALL de anon/authenticated, zero
+-- policies). Verificado pós-aplicação: contagens das 5 tabelas
+-- inalteradas (577/722/25/0/21), rowsecurity=true nas 5, 0 policies
+-- criadas, has_table_privilege(anon/authenticated, ..., *)=false em
+-- SELECT/INSERT/UPDATE/DELETE nas 5, service_role/postgres
+-- inalterados, advisor de segurança já não reporta "RLS Disabled"
+-- para nenhuma das 5 (passou a INFO "RLS Enabled No Policy",
+-- esperado). ob_crm_dados manteve as mesmas 16 policies (nenhuma
+-- criada/removida) — secção 0 não foi tocada.
 --
 -- v2 (2026-09-10) — revista após feedback: princípio de menor
 -- privilégio nas 5 tabelas de backup (sem policy nenhuma, nem para
