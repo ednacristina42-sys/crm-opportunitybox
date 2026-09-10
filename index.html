@@ -30222,27 +30222,30 @@ function crmAplicarOperacaoLeadSobreRemoto(remotoArr, op){
 }
 
 // Push seguro e definitivo de ob-leads — nunca envia o array local
-// inteiro. Lê sempre a versão remota mais recente, aplica só as operações
-// pendentes (uma por lead alterado), preserva todos os outros leads
-// remotos, e grava com concorrência otimista (UPDATE condicional por
-// updated_at — mesmo princípio já testado em obSbPushClientesInterno()):
-// se outra escrita aconteceu entre a leitura e esta escrita, tenta
-// novamente UMA vez com uma leitura fresca; nunca força. Fila vazia
-// (ex.: chamada de rotina no arranque, sem edição real deste browser)
-// -> não escreve nada.
+// inteiro, nunca escreve diretamente em ob_crm_dados. Cada operação
+// pendente é enviada UMA de cada vez para a Edge Function crm-lead-ops,
+// que delega a um RPC transacional (public.crm_lead_op — SELECT ... FOR
+// UPDATE bloqueia a linha ob-leads até ao fim da transação, CAS real,
+// nunca upsert incondicional) e regista a auditoria de forma atómica.
+// Fila vazia (ex.: chamada de rotina no arranque) -> não escreve nada.
 //
-// Correção (10/09/2026, pedido de revisão):
-//  1. Autenticação — já não usa _ORC_SB_KEY (anon key) num fetch cru; usa
-//     sempre crmSBClient() com a sessão real autenticada, a RLS da tabela
-//     aplica-se como em qualquer outra escrita protegida do CRM. Sem
-//     sessão válida (CU/cu.id em falta), a escrita é bloqueada por
-//     inteiro — nada é enviado, as operações ficam na fila para a
-//     próxima tentativa. Nenhuma policy/schema foi alterada.
-//  2. Pós-escrita — crmLeads/leads/localStorage['ob-leads'] são sempre
-//     atualizados com o array remoto FINAL efetivamente confirmado pelo
-//     Supabase (nunca com `resultado`, o array só calculado localmente),
-//     para que o browser fique alinhado com a base — nunca continue a
-//     mostrar cache antiga depois de uma gravação bem-sucedida.
+// Correção (10/09/2026, revisão de segurança — write path):
+//  1. Já não fala diretamente com a tabela ob_crm_dados (nem
+//     .upsert/.update, nem a "proteção" por updated_at feita aqui no
+//     cliente — essa era só uma convenção, não impedia uma aba antiga
+//     com sessão ainda válida de sobrescrever o blob inteiro sem essa
+//     condição). A proteção real de concorrência passou a viver no
+//     servidor (RPC, FOR UPDATE), fora do alcance de qualquer cliente.
+//  2. Sem sessão válida (CU/cu.id em falta), a escrita é bloqueada por
+//     inteiro — nada é enviado, as operações ficam na fila.
+//  3. Pós-escrita — crmLeads/leads/localStorage['ob-leads'] são sempre
+//     atualizados com o array FINAL devolvido pela função (confirmado
+//     pelo servidor), nunca com um array só calculado localmente.
+//  4. Operações são enviadas sequencialmente (uma chamada por operação
+//     pendente — já não uma escrita só para o lote inteiro). Se uma
+//     falhar, essa e todas as seguintes voltam para a fila; as que já
+//     tinham sido confirmadas com sucesso ficam gravadas (não se
+//     desfazem, nem seria correto desfazê-las).
 async function obSbPushLeadsSeguro(){
   var operacoes = window._crmOperacoesLeadsPendentes.splice(0, window._crmOperacoesLeadsPendentes.length);
   if(!operacoes.length) return;
@@ -30254,63 +30257,34 @@ async function obSbPushLeadsSeguro(){
     return;
   }
 
-  for(var tentativa=0; tentativa<2; tentativa++){
-    var versao = await obLerRemotoComVersao('ob-leads');
-    if(versao===undefined){
-      console.error('[SB-LEADS] Push BLOQUEADO: não foi possível ler a versão remota atual de ob-leads antes de gravar (falha de leitura ou sessão perdida entretanto). Nada foi enviado — a alteração fica só local até à próxima tentativa.');
-      window._crmOperacoesLeadsPendentes = operacoes.concat(window._crmOperacoesLeadsPendentes);
-      return;
+  for(var i=0; i<operacoes.length; i++){
+    var op = operacoes[i];
+    var payload = { operacao: op.tipo==='delete' ? 'delete' : 'update', id: op.id };
+    if(op.tipo!=='delete'){
+      var leadLocal = (typeof crmLeads!=='undefined' ? crmLeads : []).find(function(l){ return l && l.id===op.id; });
+      if(!leadLocal) continue; // já não existe localmente (ex.: apagado logo a seguir) — nada a enviar
+      payload.lead = leadLocal;
     }
-    var baseRemota = versao===null ? [] : (Array.isArray(versao.dados) ? versao.dados : []);
-    var resultado = operacoes.reduce(crmAplicarOperacaoLeadSobreRemoto, baseRemota);
-    var agora = new Date().toISOString();
 
     try{
-      var res;
-      if(versao===null){
-        // Linha ainda não existe remotamente — primeira gravação.
-        res = await sb.from('ob_crm_dados')
-          .upsert({ chave:'ob-leads', dados: resultado, updated_at: agora }, { onConflict:'chave' })
-          .select();
-      } else {
-        // Concorrência otimista: só grava se updated_at ainda for
-        // exatamente o que acabámos de ler — 0 linhas afetadas = outra
-        // sessão gravou entretanto.
-        res = await sb.from('ob_crm_dados')
-          .update({ dados: resultado, updated_at: agora })
-          .eq('chave', 'ob-leads')
-          .eq('updated_at', versao.updated_at)
-          .select();
-      }
-      if(res.error){
-        console.error('[SB-LEADS] Push BLOQUEADO: gravação condicional falhou.', res.error);
-        window._crmOperacoesLeadsPendentes = operacoes.concat(window._crmOperacoesLeadsPendentes);
-        return;
-      }
-      var linhas = res.data || [];
-      if(!linhas.length){
-        // Conflito real: outra gravação aconteceu entre a nossa leitura e
-        // esta escrita — a condição updated_at=eq.<versão lida> deixou de
-        // bater certo, nada foi alterado. Tenta mais uma vez com leitura
-        // fresca; nunca força.
-        if(tentativa===0){ console.warn('[SB-LEADS] Conflito de concorrência em ob-leads — outra gravação aconteceu entretanto. A tentar novamente com a versão mais recente.'); continue; }
-        console.error('[SB-LEADS] Push BLOQUEADO após 2ª tentativa: conflito de concorrência persistente em ob-leads. Nada foi alterado remotamente — a alteração fica só local.');
-        window._crmOperacoesLeadsPendentes = operacoes.concat(window._crmOperacoesLeadsPendentes);
+      var res = await sb.functions.invoke('crm-lead-ops', { body: payload });
+      if(res.error || !res.data || !res.data.ok){
+        console.error('[SB-LEADS] Push BLOQUEADO: crm-lead-ops recusou ou falhou.', res.error || res.data);
+        window._crmOperacoesLeadsPendentes = operacoes.slice(i).concat(window._crmOperacoesLeadsPendentes);
         return;
       }
       // Sucesso — o local converge para o array FINAL confirmado pelo
-      // Supabase (inclui leads criados/alterados entretanto por outras
+      // servidor (inclui leads criados/alterados entretanto por outras
       // sessões ou pela Leonor) — nunca fica preso na cache antiga.
-      var confirmado = Array.isArray(linhas[0].dados) ? linhas[0].dados : resultado;
-      if(typeof crmLeads!=='undefined'){
+      var confirmado = Array.isArray(res.data.dados) ? res.data.dados : null;
+      if(confirmado && typeof crmLeads!=='undefined'){
         crmLeads = confirmado;
         if(typeof leads!=='undefined') leads = confirmado;
         localStorage.setItem('ob-leads', JSON.stringify(confirmado));
       }
-      return;
     }catch(e){
-      console.error('[SB-LEADS] Push BLOQUEADO: erro de rede/cliente.', e);
-      window._crmOperacoesLeadsPendentes = operacoes.concat(window._crmOperacoesLeadsPendentes);
+      console.error('[SB-LEADS] Push BLOQUEADO: erro de rede/cliente a chamar crm-lead-ops.', e);
+      window._crmOperacoesLeadsPendentes = operacoes.slice(i).concat(window._crmOperacoesLeadsPendentes);
       return;
     }
   }
