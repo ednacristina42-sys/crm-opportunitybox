@@ -30867,9 +30867,54 @@ function agAdiarTopHoje(itemKey){
   var comercial=(typeof CU!=='undefined'&&CU)?CU.name:null;
   var a=_agFindTopHojeAtiv(comercial, itemKey);
   if(!a) return;
+
+  // Correção controlada: ao adiar, exigir nova data e reutilizar
+  // crmAtividades/crmAddAtividade — sem sistema paralelo.
+  var dt=new Date(); dt.setDate(dt.getDate()+3);
+  var sugestao=dt.toISOString().slice(0,10);
+  var novaData=window.prompt('Adiar esta prioridade para que data?\nFormato: AAAA-MM-DD', sugestao);
+  if(novaData===null) return;
+  novaData=String(novaData||'').trim();
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(novaData) || isNaN(new Date(novaData+'T12:00:00').getTime())){
+    alert('Data inválida. Usa o formato AAAA-MM-DD.');
+    return;
+  }
+  var hoje=_agHojeStr();
+  if(novaData<=hoje){
+    alert('Escolhe uma data futura para adiar a prioridade.');
+    return;
+  }
+
+  var ex=a.extra||{};
   a.resultado='Adiada';
-  saveCrmAtividades();
-  if(typeof showToast==='function') showToast('📅 Adiada — sai do Top 10 de hoje, sem entrar outra automaticamente');
+  a.due=novaData;
+  a.extra=Object.assign({}, ex, {adiadoPara:novaData});
+
+  if(typeof crmAddAtividade==='function'){
+    crmAddAtividade(ex.leadId||null, 'Lembrete',
+      'Prioridade adiada: '+(ex.nome||ex.motivo||'item do Top Hoje'),
+      comercial, {
+        clienteId: ex.tipoOrigem==='cliente'?ex.origId:null,
+        orcId: ex.tipoOrigem==='orc'?ex.origId:null,
+        due: novaData,
+        data: hoje,
+        tags:['top-hoje','adiado'],
+        origem:'centro-prioridades',
+        extra:{
+          itemKey:itemKey,
+          adiadoDe:hoje,
+          adiadoPara:novaData,
+          tipoOrigem:ex.tipoOrigem||null,
+          origId:ex.origId||null
+        }
+      });
+  } else {
+    saveCrmAtividades();
+  }
+
+  if(typeof showToast==='function'){
+    showToast('📅 Adiada para '+new Date(novaData+'T12:00:00').toLocaleDateString('pt-PT'));
+  }
   try{ agRenderTopHoje(); }catch(e){}
   try{ agRenderCentroUnificado(); }catch(e){}
 }
