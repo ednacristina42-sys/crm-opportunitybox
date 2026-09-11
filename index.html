@@ -10807,28 +10807,35 @@ tbody tr:hover{background:rgba(255,203,45,.05)}
     <!-- Departamentos (só para Produção) -->
     <div id="uni-depts-wrap" style="display:none;margin-top:4px">
       <div style="font-size:13px;font-weight:600;color:var(--y);letter-spacing:.05em;border-top:1px solid var(--border);padding-top:14px;margin-bottom:10px">FLUXO DE PRODUÇÃO — Selecciona os departamentos</div>
-      <div style="font-size:12px;color:var(--muted);margin-bottom:10px">Cada departamento seleccionado gera uma subtarefa. A ordem define o fluxo de trabalho.</div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:10px">Cada departamento seleccionado gera uma subtarefa. Os departamentos podem trabalhar em paralelo na mesma obra.</div>
+      <!-- Produção 2.0 — Fase 1: departamentos canónicos (PROD_DEPTS_CANONICOS,
+           definido perto de uniSave()). As opções antigas misturavam fases
+           do fluxo com departamentos; obras antigas com essas subtarefas
+           continuam intactas (uniSave preserva quem não tiver aqui checkbox). -->
       <div style="display:flex;flex-wrap:wrap;gap:8px">
         <label class="dept-check-lbl" style="display:flex;align-items:center;gap:6px;background:var(--bg3);border:1px solid var(--border);border-radius:7px;padding:7px 12px;cursor:pointer;font-size:13px;color:var(--txt2);transition:border-color .15s">
-          <input type="checkbox" class="dept-check" value="Aguarda Arte" style="accent-color:var(--y);width:13px;height:13px"/> 🎨 Aguarda Arte
+          <input type="checkbox" class="dept-check" value="Design" style="accent-color:var(--y);width:13px;height:13px"/> 🎨 Design
         </label>
         <label class="dept-check-lbl" style="display:flex;align-items:center;gap:6px;background:var(--bg3);border:1px solid var(--border);border-radius:7px;padding:7px 12px;cursor:pointer;font-size:13px;color:var(--txt2);transition:border-color .15s">
-          <input type="checkbox" class="dept-check" value="Encomenda" style="accent-color:var(--y);width:13px;height:13px"/> 📦 Encomenda Materiais
+          <input type="checkbox" class="dept-check" value="Impressão / Vinil" style="accent-color:var(--y);width:13px;height:13px"/> 🖨️ Impressão / Vinil
         </label>
         <label class="dept-check-lbl" style="display:flex;align-items:center;gap:6px;background:var(--bg3);border:1px solid var(--border);border-radius:7px;padding:7px 12px;cursor:pointer;font-size:13px;color:var(--txt2);transition:border-color .15s">
-          <input type="checkbox" class="dept-check" value="Em Produção" checked style="accent-color:var(--y);width:13px;height:13px"/> ⚙️ Produção
+          <input type="checkbox" class="dept-check" value="Pintura" style="accent-color:var(--y);width:13px;height:13px"/> 🖌️ Pintura
         </label>
         <label class="dept-check-lbl" style="display:flex;align-items:center;gap:6px;background:var(--bg3);border:1px solid var(--border);border-radius:7px;padding:7px 12px;cursor:pointer;font-size:13px;color:var(--txt2);transition:border-color .15s">
-          <input type="checkbox" class="dept-check" value="Pintura" style="accent-color:var(--y);width:13px;height:13px"/> 🎨 Pintura
+          <input type="checkbox" class="dept-check" value="Serralharia" style="accent-color:var(--y);width:13px;height:13px"/> 🔩 Serralharia
         </label>
         <label class="dept-check-lbl" style="display:flex;align-items:center;gap:6px;background:var(--bg3);border:1px solid var(--border);border-radius:7px;padding:7px 12px;cursor:pointer;font-size:13px;color:var(--txt2);transition:border-color .15s">
-          <input type="checkbox" class="dept-check" value="Acabamento" style="accent-color:var(--y);width:13px;height:13px"/> ✨ Acabamento
+          <input type="checkbox" class="dept-check" value="Letras 3D" style="accent-color:var(--y);width:13px;height:13px"/> 🔤 Letras 3D
         </label>
         <label class="dept-check-lbl" style="display:flex;align-items:center;gap:6px;background:var(--bg3);border:1px solid var(--border);border-radius:7px;padding:7px 12px;cursor:pointer;font-size:13px;color:var(--txt2);transition:border-color .15s">
-          <input type="checkbox" class="dept-check" value="Qualidade" style="accent-color:var(--y);width:13px;height:13px"/> 🔍 Qualidade
+          <input type="checkbox" class="dept-check" value="Eletrificação" style="accent-color:var(--y);width:13px;height:13px"/> 💡 Eletrificação
         </label>
         <label class="dept-check-lbl" style="display:flex;align-items:center;gap:6px;background:var(--bg3);border:1px solid var(--border);border-radius:7px;padding:7px 12px;cursor:pointer;font-size:13px;color:var(--txt2);transition:border-color .15s">
-          <input type="checkbox" class="dept-check" value="Expedição" style="accent-color:var(--y);width:13px;height:13px"/> 🚚 Expedição
+          <input type="checkbox" class="dept-check" value="CNC / Laser" style="accent-color:var(--y);width:13px;height:13px"/> ⚙️ CNC / Laser
+        </label>
+        <label class="dept-check-lbl" style="display:flex;align-items:center;gap:6px;background:var(--bg3);border:1px solid var(--border);border-radius:7px;padding:7px 12px;cursor:pointer;font-size:13px;color:var(--txt2);transition:border-color .15s">
+          <input type="checkbox" class="dept-check" value="Montagem / Acabamento" style="accent-color:var(--y);width:13px;height:13px"/> ✨ Montagem / Acabamento
         </label>
       </div>
       <!-- Subtarefas geradas -->
@@ -11330,6 +11337,50 @@ function obListaResponsaveisAtivos(){
   return Array.from(new Set(nomes));
 }
 window.obListaResponsaveisAtivos = obListaResponsaveisAtivos;
+
+// Produção 2.0 (Fase 2): id estável para um nome de obListaResponsaveisAtivos().
+// Reaproveita os identificadores já existentes no CRM — USERS[].id (login,
+// ex.: 'paulo') e rhColabs[].id (ob_colaboradores, o mesmo id usado em
+// rhEditColabId/rhColabs.findIndex) — nunca inventa um esquema novo.
+function obResponsavelIdPorNome(nome){
+  if(!nome) return null;
+  var u=(typeof USERS!=='undefined'?USERS:[]).find(function(x){ return x.name===nome; });
+  if(u) return u.id;
+  var c=(window.rhColabs||[]).find(function(x){
+    return x && !x.deleted_at && x.ativo!==false && String(x.nome||x.name||'').trim()===nome;
+  });
+  return c ? c.id : null;
+}
+window.obResponsavelIdPorNome = obResponsavelIdPorNome;
+
+// Produção 2.0 (Fase 3): a subtask pertence a currentUser? ID primeiro
+// (responsavelId vem de USERS[].id/rhColabs[].id — ver obResponsavelIdPorNome
+// — e pode não ser o mesmo espaço de ids que currentUser.id, que em sessão
+// real vem de ob_profiles.id; por isso nome é sempre o fallback seguro,
+// nunca um esquema de identidade novo).
+function obSubtaskPertenceAoUtilizador(subtask, currentUser){
+  if(!subtask || !currentUser) return false;
+  if(subtask.responsavelId && currentUser.id && subtask.responsavelId===currentUser.id) return true;
+  if(subtask.responsavelNome && currentUser.name && subtask.responsavelNome===currentUser.name) return true;
+  return false;
+}
+window.obSubtaskPertenceAoUtilizador = obSubtaskPertenceAoUtilizador;
+
+// Decide se currentUser pode ver esta ordem de Produção. Só ALARGA a
+// visibilidade já existente (fpRender: admin/coordinator vê tudo,
+// utilizador comum vê pela regra atual item.assignee===currentUser.name)
+// — nunca esconde uma ordem que já era visível por essa regra.
+function obPodeVerOrdemProducao(item, currentUser){
+  if(!currentUser) return true;
+  if(currentUser.admin===true || currentUser.coordinator===true) return true;
+  if(item && item.assignee===currentUser.name) return true;
+  if(item && Array.isArray(item.subtasks) && typeof PROD_DEPTS_CANONICOS!=='undefined' && item.subtasks.some(function(s){
+    return PROD_DEPTS_CANONICOS.indexOf(s.dept)!==-1 && obSubtaskPertenceAoUtilizador(s, currentUser);
+  })) return true;
+  return false;
+}
+window.obPodeVerOrdemProducao = obPodeVerOrdemProducao;
+
 // Sidebar (Dep. Comercial): mostra os comerciais ativos vindos de ob_colaboradores,
 // no mesmo local dos antigos atalhos. Editar = adicionar/desativar em RH → Colaboradores.
 function obRenderComerciaisSidebar(){
@@ -14452,6 +14503,8 @@ function uniOpen(page, itemId){
       lbl.style.borderColor = cb.checked ? 'var(--y)' : '';
       lbl.style.background = cb.checked ? 'rgba(245,196,0,.08)' : '';
     });
+    // Definir .checked por JS não dispara 'change' — chamar diretamente.
+    if(typeof uniRenderSubtasksBlocos==='function') uniRenderSubtasksBlocos();
     if(typeof uniRenderDeptAtividades==='function') uniRenderDeptAtividades();
   }
   // Equipa de montagem (instalações)
@@ -14476,9 +14529,136 @@ function uniOpen(page, itemId){
   m.classList.add('open');
 }
 
-function uniSave(){
+// ══ PRODUÇÃO 2.0 — FASE 1: departamentos canónicos ═════════════════
+// Configuração central única dos departamentos da Produção (evolução
+// dos checkboxes .dept-check em "FLUXO DE PRODUÇÃO — Selecciona os
+// departamentos"). Espelha exatamente os values dos checkboxes no HTML
+// — é a fonte de verdade usada por uniSave() para decidir quais
+// subtarefas são "canónicas" (podem ser normalizadas) e quais são
+// legado (têm de ser sempre preservadas, mesmo sem checkbox próprio).
+var PROD_DEPTS_CANONICOS = ['Design','Impressão / Vinil','Pintura','Serralharia','Letras 3D','Eletrificação','CNC / Laser','Montagem / Acabamento'];
+window.PROD_DEPTS_CANONICOS = PROD_DEPTS_CANONICOS;
+
+// Normaliza uma subtarefa de Produção para o formato enriquecido da
+// Produção 2.0, de forma retrocompatível:
+// - nunca apaga propriedades extra já existentes;
+// - só preenche um campo em falta (nunca substitui um valor existente);
+// - 'done' mantém-se por compatibilidade com todo o código atual
+//   (fpToggleSubtask, uniRenderKanban, obCardExtras, etc.).
+function obNormalizarSubtaskProducao(sub){
+  var s = Object.assign({}, sub||{});
+  if(typeof s.done!=='boolean') s.done = false;
+  if(s.estado===undefined) s.estado = (s.done===true) ? 'Concluído' : 'Pendente';
+  if(s.obrigatorio===undefined) s.obrigatorio = true;
+  if(s.responsavelId===undefined) s.responsavelId = null;
+  if(s.responsavelNome===undefined) s.responsavelNome = '';
+  if(s.dataInicio===undefined) s.dataInicio = null;
+  if(s.dataPrevista===undefined) s.dataPrevista = null;
+  if(s.dataConclusao===undefined) s.dataConclusao = null;
+  if(s.observacoes===undefined) s.observacoes = '';
+  if(s.ficheiros===undefined) s.ficheiros = [];
+  if(s.historico===undefined) s.historico = [];
+  return s;
+}
+window.obNormalizarSubtaskProducao = obNormalizarSubtaskProducao;
+
+// ══ PRODUÇÃO 2.0 — FASE 3: critério de conclusão global ════════════
+// Considera só subtasks canónicas (PROD_DEPTS_CANONICOS — nenhuma segunda
+// lista) e obrigatórias (obrigatorio!==false). Concluída se estado==='Concluído'
+// ou, para compatibilidade com dados antigos, done===true. Uma obra sem
+// nenhuma subtask canónica (obra legada, sem Produção 2.0 aplicada) nunca
+// fica bloqueada — só o dono da regra é quem já tem departamentos canónicos.
+function obProducaoPodeConcluir(item){
+  var subtasks = (item && Array.isArray(item.subtasks)) ? item.subtasks : [];
+  var canonicasObrigatorias = subtasks.filter(function(s){
+    return s && PROD_DEPTS_CANONICOS.indexOf(s.dept)!==-1 && s.obrigatorio!==false;
+  });
+  if(!canonicasObrigatorias.length) return { podeConcluir:true, pendentes:[] };
+  var pendentes = canonicasObrigatorias.filter(function(s){
+    return !(s.estado==='Concluído' || s.done===true);
+  }).map(function(s){ return s.dept; });
+  return { podeConcluir: pendentes.length===0, pendentes: pendentes };
+}
+window.obProducaoPodeConcluir = obProducaoPodeConcluir;
+
+// ══ PRODUÇÃO 2.0 — FASE 2: estado operacional por departamento ═════
+// Configuração central única dos estados internos de cada subtask.
+// Departamentos são independentes entre si — nenhum estado aqui exige
+// que outro departamento tenha terminado primeiro (trabalho em paralelo).
+var PROD_ESTADOS_SUBTASK = ['Pendente','Em curso','Aguarda / Bloqueado','Concluído'];
+window.PROD_ESTADOS_SUBTASK = PROD_ESTADOS_SUBTASK;
+
+// Aplica uma mudança de estado a UMA subtask, devolvendo uma cópia nova
+// (nunca muta o objeto original, nem mexe nas outras subtasks/departamentos).
+// Regras (Fase 2):
+// - estado==='Concluído' -> done=true; qualquer outro estado -> done=false;
+// - 1ª vez que entra em 'Em curso' (dataInicio ainda vazia) -> regista agora;
+// - 1ª vez que entra em 'Concluído' (dataConclusao ainda vazia) -> regista agora;
+// - sair de 'Concluído' NUNCA apaga dataConclusao (fica como registo factual).
+function obAplicarEstadoSubtask(subAnterior, novoEstado){
+  var s = Object.assign({}, subAnterior||{});
+  s.estado = novoEstado;
+  s.done = (novoEstado === 'Concluído');
+  var agora = new Date().toISOString();
+  if(novoEstado==='Em curso' && !s.dataInicio) s.dataInicio = agora;
+  if(novoEstado==='Concluído' && !s.dataConclusao) s.dataConclusao = agora;
+  return s;
+}
+window.obAplicarEstadoSubtask = obAplicarEstadoSubtask;
+
+// Renderiza, para cada departamento canónico marcado, um bloco compacto
+// e editável (Responsável / Estado / Data prevista / Observações) dentro
+// do próprio modal da ordem — sem página nem modal novos. Os valores
+// atuais vêm sempre de item.subtasks (se a editar) ou ficam por omissão
+// (novo item); uniSave() lê estes controlos de volta no momento de gravar.
+function uniRenderSubtasksBlocos(){
+  const wrap = document.getElementById('uni-subtasks-preview');
+  if(!wrap) return;
+  const checked = [...document.querySelectorAll('.dept-check:checked')].map(c=>c.value);
+  if(!checked.length){
+    wrap.innerHTML = '<div style="font-size:12px;color:var(--muted);font-style:italic">Sem subtarefas — selecciona pelo menos um departamento.</div>';
+    return;
+  }
+  const prevSubtasks = uniEditingId ? ((uniItems.find(i=>i.id===uniEditingId)||{}).subtasks||[]) : [];
+  const responsaveis = (typeof obListaResponsaveisAtivos==='function') ? obListaResponsaveisAtivos() : [];
+  const estados = (typeof PROD_ESTADOS_SUBTASK!=='undefined') ? PROD_ESTADOS_SUBTASK : ['Pendente','Em curso','Aguarda / Bloqueado','Concluído'];
+  const escAttr = s => String(s==null?'':s).replace(/"/g,'&quot;');
+  const escHtml = s => String(s==null?'':s).replace(/</g,'&lt;');
+  wrap.innerHTML = checked.map(dept=>{
+    const prevRaw = prevSubtasks.find(s=>s.dept===dept) || {dept:dept};
+    const prev = obNormalizarSubtaskProducao(prevRaw);
+    const estadoAtual = prev.estado;
+    const respAtual = prev.responsavelNome || '';
+    const dataPrevAtual = prev.dataPrevista ? String(prev.dataPrevista).slice(0,10) : '';
+    const obsAtual = prev.observacoes || '';
+    const optsResp = ['<option value="">—</option>'].concat(responsaveis.map(n=>
+      '<option value="'+escAttr(n)+'"'+(n===respAtual?' selected':'')+'>'+escHtml(n)+'</option>'
+    )).join('');
+    const optsEstado = estados.map(es=>
+      '<option value="'+escAttr(es)+'"'+(es===estadoAtual?' selected':'')+'>'+escHtml(es)+'</option>'
+    ).join('');
+    // Produção 2.0 (Fase 3): destaque discreto — sem cor agressiva — quando
+    // o departamento pertence ao utilizador atual (ver obSubtaskPertenceAoUtilizador).
+    const ehMeu = (typeof obSubtaskPertenceAoUtilizador==='function' && typeof CU!=='undefined' && CU) ? obSubtaskPertenceAoUtilizador(prev, CU) : false;
+    const tagMeu = ehMeu ? ' <span style="font-size:10px;font-weight:600;color:var(--muted);background:var(--bg4);border:1px solid var(--border2);border-radius:10px;padding:1px 7px;text-transform:none;letter-spacing:0">MEU DEPARTAMENTO</span>' : '';
+    return '<div class="uni-subtask-block" data-dept="'+escAttr(dept)+'" style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:6px">'
+      + '<div style="font-size:12.5px;font-weight:700;color:var(--y);margin-bottom:6px;text-transform:uppercase">'+escHtml(dept)+tagMeu+'</div>'
+      + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:6px">'
+      +   '<label style="font-size:11.5px;color:var(--muted)">Responsável<select class="uni-subtask-resp" style="width:100%;margin-top:2px;background:var(--bg);border:1px solid var(--border2);border-radius:6px;padding:5px;color:var(--txt2)">'+optsResp+'</select></label>'
+      +   '<label style="font-size:11.5px;color:var(--muted)">Estado<select class="uni-subtask-estado" style="width:100%;margin-top:2px;background:var(--bg);border:1px solid var(--border2);border-radius:6px;padding:5px;color:var(--txt2)">'+optsEstado+'</select></label>'
+      + '</div>'
+      + '<div style="display:grid;grid-template-columns:1fr 2fr;gap:8px">'
+      +   '<label style="font-size:11.5px;color:var(--muted)">Data prevista<input type="date" class="uni-subtask-dataprevista" value="'+escAttr(dataPrevAtual)+'" style="width:100%;margin-top:2px;background:var(--bg);border:1px solid var(--border2);border-radius:6px;padding:5px;color:var(--txt2)"/></label>'
+      +   '<label style="font-size:11.5px;color:var(--muted)">Observações<textarea class="uni-subtask-obs" rows="1" style="width:100%;margin-top:2px;background:var(--bg);border:1px solid var(--border2);border-radius:6px;padding:5px;color:var(--txt2);resize:vertical">'+escHtml(obsAtual)+'</textarea></label>'
+      + '</div>'
+      + '</div>';
+  }).join('');
+}
+window.uniRenderSubtasksBlocos = uniRenderSubtasksBlocos;
+
+async function uniSave(){
   const n = document.getElementById('uni-name').value.trim();
-  if(!n){ alert('Preenche o título.'); return; }
+  if(!n){ alert('Preenche o título.'); return {ok:false, reason:'validation'}; }
   const cfg = UNI_CFG[uniCurrentPage];
   const extraVal = cfg&&cfg.extraRow ? (document.getElementById('uni-extra').value||document.getElementById('uni-time').value||'') : '';
   const data = {
@@ -14509,29 +14689,119 @@ function uniSave(){
   // Subtarefas de departamento (produção) — reflecte sempre os departamentos marcados,
   // tanto em novos itens como ao editar; preserva o estado "done" dos já existentes.
   // O estado (coluna) da ordem é controlado só pelo dropdown de estado, não por isto.
+  // Produção 2.0 (Fase 1): cada departamento canónico marcado gera/mantém uma
+  // subtarefa enriquecida (obNormalizarSubtaskProducao). Subtarefas antigas cujo
+  // dept não é canónico (ex.: "Aguarda Arte", "Qualidade") não têm checkbox
+  // nesta UI — são sempre preservadas integralmente, nunca migradas nem apagadas.
+  // Produção 2.0 (Fase 2): campos operacionais por departamento (responsável,
+  // estado, data prevista, observações), lidos do bloco .uni-subtask-block
+  // correspondente. Cada departamento só altera os SEUS próprios campos —
+  // nunca mexe nos outros (trabalho em paralelo, sem depender de ordem).
   if(uniCurrentPage==='fabrica-producao'){
     const checked=[...document.querySelectorAll('.dept-check:checked')].map(c=>c.value);
     const prevSubtasks = uniEditingId ? ((uniItems.find(i=>i.id===uniEditingId)||{}).subtasks||[]) : [];
-    data.subtasks = checked.map(dept=>prevSubtasks.find(s=>s.dept===dept) || {dept, done:false});
+    const blocos = [...document.querySelectorAll('.uni-subtask-block')];
+    const canonicas = checked.map(dept=>{
+      const base = obNormalizarSubtaskProducao(prevSubtasks.find(s=>s.dept===dept) || {dept:dept});
+      const bloco = blocos.find(b=>b.getAttribute('data-dept')===dept);
+      if(!bloco) return base;
+      const selEstado = bloco.querySelector('.uni-subtask-estado');
+      const novoEstado = selEstado ? selEstado.value : base.estado;
+      const atualizado = obAplicarEstadoSubtask(base, novoEstado);
+      const selResp = bloco.querySelector('.uni-subtask-resp');
+      atualizado.responsavelNome = selResp ? selResp.value : base.responsavelNome;
+      atualizado.responsavelId = atualizado.responsavelNome
+        ? ((typeof obResponsavelIdPorNome==='function') ? obResponsavelIdPorNome(atualizado.responsavelNome) : base.responsavelId)
+        : null;
+      const inpData = bloco.querySelector('.uni-subtask-dataprevista');
+      atualizado.dataPrevista = inpData ? (inpData.value || null) : base.dataPrevista;
+      const txtObs = bloco.querySelector('.uni-subtask-obs');
+      atualizado.observacoes = txtObs ? txtObs.value : base.observacoes;
+      return atualizado;
+    });
+    const legado = prevSubtasks.filter(s=>!PROD_DEPTS_CANONICOS.includes(s.dept));
+    data.subtasks = canonicas.concat(legado);
   }
+  // Produção 2.0 (Fase 3): bloquear a transição para o estado geral final
+  // ('Concluído ✓') enquanto houver departamento canónico obrigatório
+  // pendente. Só entra em ação quando é mesmo essa a transição pedida —
+  // nunca bloqueia gravações normais, nem obras antigas sem departamentos
+  // canónicos (obProducaoPodeConcluir trata isso). Não muda nada sozinho;
+  // só impede a gravação e explica o que falta.
+  if(uniCurrentPage==='fabrica-producao' && data.status==='Concluído ✓' && typeof obProducaoPodeConcluir==='function'){
+    const checagem = obProducaoPodeConcluir(data);
+    if(!checagem.podeConcluir){
+      alert('Não é possível concluir a Produção.\n\nDepartamentos pendentes:\n'+checagem.pendentes.map(d=>'• '+d).join('\n'));
+      return {ok:false, reason:'validation'};
+    }
+  }
+  // Produção 2.0 (Fase 4B) — concorrência segura em ob_uni_items, mesmo
+  // padrão optimistic-locking já usado em ob_orcamentos. Em edição:
+  // aplica localmente, tenta gravar no servidor, e só confirma (fecha o
+  // modal, dispara obRegistarEtapa/transições) depois de saber que a
+  // escrita realmente aconteceu. Em conflito ou erro, reverte tudo para
+  // o estado exatamente anterior a esta tentativa — nunca sobrescreve
+  // silenciosamente, nunca finge sucesso, nunca dispara transições.
   if(uniEditingId){
     const idx=uniItems.findIndex(i=>i.id===uniEditingId);
     if(idx>=0){
-      // ADD: registo da passagem de etapa quando o estado muda via modal
+      // Cópia profunda ANTES de qualquer alteração — inclui _sbVersaoConhecida
+      // (é uma propriedade normal do objeto, sobrevive ao JSON.parse/stringify),
+      // usada para reverter por completo se a gravação falhar.
+      const prevSnapshot = JSON.parse(JSON.stringify(uniItems[idx]));
       const _stAntes=uniItems[idx].status;
+      // 'data' nunca inclui _sbVersaoConhecida, por isso o merge preserva a
+      // versão conhecida atual de uniItems[idx] — exatamente a que
+      // _sbUniItemUpsert precisa para a condição optimistic-lock abaixo.
       uniItems[idx]={...uniItems[idx],...data};
-      if(_stAntes!==data.status && typeof obRegistarEtapa==='function') obRegistarEtapa(uniItems[idx],_stAntes,data.status);
+      const savedItem = uniItems[idx];
+      const resultado = (typeof _sbUniItemUpsert==='function')
+        ? await _sbUniItemUpsert(savedItem, {isCreate:false})
+        : {ok:true};
+      if(resultado.ok){
+        if(_stAntes!==data.status && typeof obRegistarEtapa==='function') obRegistarEtapa(savedItem,_stAntes,data.status);
+        saveUniItems();
+        document.getElementById('uni-modal').classList.remove('open');
+        uniRefreshPage(uniCurrentPage);
+        return {ok:true};
+      } else {
+        // Reverte exatamente para o estado anterior à tentativa — nunca um
+        // merge parcial. Não fecha o modal, não dispara obRegistarEtapa/
+        // transições seguintes (produção→instalação, etc.).
+        uniItems[idx] = prevSnapshot;
+        saveUniItems();
+        var msgFalha = resultado.message || 'Não foi possível gravar esta ordem. Tenta novamente.';
+        if(typeof showToast==='function') showToast('⚠ '+msgFalha);
+        else alert(msgFalha);
+        return {ok:false, reason: resultado.reason==='conflict' ? 'conflict' : 'error'};
+      }
     }
+    // Item a editar já não existe em uniItems (caso defensivo) — nada foi
+    // gravado, por isso não é sucesso.
+    return {ok:false, reason:'error'};
   } else {
     data.id=Date.now(); uniItems.unshift(data);
+    const novoItem = uniItems[0];
+    const resultadoCriacao = (typeof _sbUniItemUpsert==='function')
+      ? await _sbUniItemUpsert(novoItem, {isCreate:true})
+      : {ok:true};
+    // Criação: comportamento funcional continua igual (o item fica criado
+    // localmente mesmo se a sincronização falhar) — mas já não finge que
+    // gravou no servidor quando não gravou; avisa claramente.
+    if(!resultadoCriacao.ok){
+      var msgCriacao = resultadoCriacao.message || 'A ordem foi criada apenas neste dispositivo — não foi possível sincronizar com o servidor.';
+      if(typeof showToast==='function') showToast('⚠ '+msgCriacao);
+      else alert(msgCriacao);
+    }
+    saveUniItems();
+    document.getElementById('uni-modal').classList.remove('open');
+    uniRefreshPage(uniCurrentPage);
+    // Criação continua sempre "ok" localmente, mesmo se a sincronização
+    // remota falhou (comportamento funcional inalterado, ver acima) — é
+    // exatamente por isto que obGarantirChecklistsProducao() (wrapper) deve
+    // continuar a correr para ordens novas, como já corria antes da Fase 4B.
+    return {ok:true};
   }
-  saveUniItems();
-  if(typeof _sbUniItemUpsert==='function'){
-    const savedItem = uniEditingId ? uniItems.find(i=>i.id===uniEditingId) : uniItems[0];
-    if(savedItem) _sbUniItemUpsert(savedItem);
-  }
-  document.getElementById('uni-modal').classList.remove('open');
-  uniRefreshPage(uniCurrentPage);
 }
 
 function uniDelete(){
@@ -14624,7 +14894,13 @@ function fpRender(){
   const allItems=uniGetItems('fabrica-producao');
   // Só Ivan/coordenadores/admin veem o board completo; cada colaborador vê só as suas ordens.
   const canSeeAllProducao = !CU || CU.admin===true || CU.coordinator===true;
-  const items = canSeeAllProducao ? allItems : allItems.filter(i=>i.assignee===CU.name);
+  // Produção 2.0 (Fase 3): alarga a visibilidade — além do responsável
+  // principal (regra de sempre), um colaborador comum também vê a ordem se
+  // tiver pelo menos uma subtask canónica atribuída a si. obPodeVerOrdemProducao()
+  // inclui a regra antiga como um dos casos, nunca esconde o que já era visível.
+  const items = canSeeAllProducao ? allItems : allItems.filter(i=>
+    (typeof obPodeVerOrdemProducao==='function') ? obPodeVerOrdemProducao(i, CU) : i.assignee===CU.name
+  );
   if(fpCurrentView==='list'){
     const el=document.getElementById('fp-list-view'); if(!el) return;
     const cfg=UNI_CFG['fabrica-producao'];
@@ -14786,15 +15062,48 @@ function uniDragOver(e,st){
   if(col){ document.querySelectorAll('.k-col.drag-over').forEach(c=>c.classList.remove('drag-over')); col.classList.add('drag-over'); }
 }
 function uniDragLeave(e){ const col=e.currentTarget.closest('.k-col'); if(col) col.classList.remove('drag-over'); }
-function uniDrop(e,st,page){
+async function uniDrop(e,st,page){
   e.preventDefault();
   const item=uniItems.find(i=>i.id===uniDragId);
   if(item&&item.status!==st){
+    // Produção 2.0 (Fase 3): mesma validação de conclusão do uniSave(), aqui
+    // para a outra via ativa que muda o estado geral (arrastar no kanban).
+    if(page==='fabrica-producao' && st==='Concluído ✓' && typeof obProducaoPodeConcluir==='function'){
+      const checagem = obProducaoPodeConcluir(item);
+      if(!checagem.podeConcluir){
+        alert('Não é possível concluir a Produção.\n\nDepartamentos pendentes:\n'+checagem.pendentes.map(d=>'• '+d).join('\n'));
+        document.querySelectorAll('.k-col.drag-over').forEach(c=>c.classList.remove('drag-over'));
+        return;
+      }
+    }
+    // Produção 2.0 (Fase 4C) — mesma concorrência segura já usada em
+    // uniSave(): snapshot profundo ANTES de mudar o status, para poder
+    // reverter por completo se a gravação remota falhar. obRegistarEtapa
+    // (e a cadeia de transições que já pendura dele —
+    // obAvaliarTransicaoProducaoUni: Produção→Instalação, etc.) só corre
+    // DEPOIS de saber que a escrita realmente aconteceu.
+    const prevSnapshot=JSON.parse(JSON.stringify(item));
     const _etapaAnterior=item.status;
     item.status=st;
-    // ADD: registo da passagem de etapa com data e responsável (processos de produção)
-    if(typeof obRegistarEtapa==='function') obRegistarEtapa(item,_etapaAnterior,st);
-    saveUniItems(); uniRefreshPage(page);
+    const resultado = (typeof _sbUniItemUpsert==='function')
+      ? await _sbUniItemUpsert(item, {isCreate:false})
+      : {ok:true};
+    if(resultado.ok){
+      // ADD: registo da passagem de etapa com data e responsável (processos de produção)
+      if(typeof obRegistarEtapa==='function') obRegistarEtapa(item,_etapaAnterior,st);
+      saveUniItems(); uniRefreshPage(page);
+    } else {
+      // Reverte exatamente para o estado anterior à tentativa — nunca fica
+      // um card "meio arrastado": nem obRegistarEtapa nem qualquer
+      // transição automática corre em conflito/erro.
+      const idxRestore = uniItems.findIndex(i=>i.id===uniDragId);
+      if(idxRestore>=0) uniItems[idxRestore] = prevSnapshot;
+      saveUniItems();
+      uniRefreshPage(page);
+      var msgFalha = resultado.message || 'Não foi possível gravar esta alteração. Tenta novamente.';
+      if(typeof showToast==='function') showToast('⚠ '+msgFalha);
+      else alert(msgFalha);
+    }
   }
   document.querySelectorAll('.k-col.drag-over').forEach(c=>c.classList.remove('drag-over'));
 }
@@ -14873,19 +15182,62 @@ function fpResumeTicks(){
   });
 }
 
-function fpToggleSubtask(itemId, dept){
+async function fpToggleSubtask(itemId, dept){
   const item = uniItems.find(i=>i.id===itemId);
   if(!item||!item.subtasks) return;
   const sub = item.subtasks.find(s=>s.dept===dept);
-  if(sub) sub.done = !sub.done;
-  // Check if all done → suggest move to next stage
-  const allDone = item.subtasks.every(s=>s.done);
+  if(!sub) return;
+  // Produção 2.0 (Fase 4C) — mesma concorrência segura já usada em
+  // uniSave()/uniDrop(): snapshot profundo do ITEM INTEIRO antes de tocar
+  // numa subtask, para poder reverter tudo (nunca só a subtask alvo, nunca
+  // um merge parcial) se a gravação remota falhar. Nunca faz merge
+  // automático com a versão remota nesta fase.
+  const prevSnapshot = JSON.parse(JSON.stringify(item));
+  sub.done = !sub.done;
+  const resultado = (typeof _sbUniItemUpsert==='function')
+    ? await _sbUniItemUpsert(item, {isCreate:false})
+    : {ok:true};
+  if(!resultado.ok){
+    // Reverte o item inteiro — nunca deixa a subtask num estado visual
+    // "fantasma" desalinhado do que está realmente gravado.
+    const idxRestore = uniItems.findIndex(i=>i.id===itemId);
+    if(idxRestore>=0) uniItems[idxRestore] = prevSnapshot;
+    saveUniItems();
+    fpRender();
+    var msgFalha = resultado.message || 'Não foi possível gravar esta alteração. Tenta novamente.';
+    if(typeof showToast==='function') showToast('⚠ '+msgFalha);
+    else alert(msgFalha);
+    return;
+  }
   saveUniItems();
   fpRender();
+  // Check if all done → suggest move to next stage
+  const allDone = item.subtasks.every(s=>s.done);
   if(allDone){
     const n=item.subtasks.length;
     if(confirm('✓ Todas as '+n+' subtarefas concluídas! Mover para Qualidade?')){
-      item.status='Qualidade'; saveUniItems(); fpRender();
+      // Mudança de estado adicional — mesma proteção optimistic-lock,
+      // snapshot próprio (o toggle da subtask acima já ficou confirmado e
+      // não é revertido se só esta parte falhar).
+      const prevSnapshotStatus = JSON.parse(JSON.stringify(item));
+      const _stAntes = item.status;
+      item.status='Qualidade';
+      const resultadoStatus = (typeof _sbUniItemUpsert==='function')
+        ? await _sbUniItemUpsert(item, {isCreate:false})
+        : {ok:true};
+      if(resultadoStatus.ok){
+        if(typeof obRegistarEtapa==='function') obRegistarEtapa(item,_stAntes,'Qualidade');
+        saveUniItems();
+        fpRender();
+      } else {
+        const idxRestoreStatus = uniItems.findIndex(i=>i.id===itemId);
+        if(idxRestoreStatus>=0) uniItems[idxRestoreStatus] = prevSnapshotStatus;
+        saveUniItems();
+        fpRender();
+        var msgFalhaStatus = resultadoStatus.message || 'Não foi possível mover para Qualidade. Tenta novamente.';
+        if(typeof showToast==='function') showToast('⚠ '+msgFalhaStatus);
+        else alert(msgFalhaStatus);
+      }
     }
   }
 }
@@ -14899,17 +15251,10 @@ function uniToggleDeptSection(page){
 // Update subtask preview when checkboxes change
 document.addEventListener('change', function(e){
   if(e.target.classList.contains('dept-check')){
-    const checked = [...document.querySelectorAll('.dept-check:checked')].map(c=>c.value);
-    const prev = document.getElementById('uni-subtasks-preview');
-    if(prev){
-      prev.innerHTML = checked.length===0
-        ? '<div style="font-size:12px;color:var(--muted);font-style:italic">Sem subtarefas — selecciona pelo menos um departamento.</div>'
-        : checked.map((d,i)=>`<div style="display:flex;align-items:center;gap:8px;padding:5px 8px;background:var(--bg3);border-radius:6px;border:1px solid var(--border)">
-            <span style="font-size:12px;color:var(--muted);font-family:'DM Mono',monospace">${i+1}</span>
-            <span style="font-size:13px;color:var(--txt2)">${d}</span>
-            <span style="font-size:11px;color:var(--muted);margin-left:auto">subtarefa</span>
-          </div>`).join('');
-    }
+    // Produção 2.0 (Fase 2): a pré-visualização passa a ser os blocos
+    // editáveis por departamento (Responsável/Estado/Data prevista/
+    // Observações), não apenas uma lista com o nome do departamento.
+    if(typeof uniRenderSubtasksBlocos==='function') uniRenderSubtasksBlocos();
     // Highlight checked labels
     document.querySelectorAll('.dept-check-lbl').forEach(lbl=>{
       const cb=lbl.querySelector('.dept-check');
@@ -17169,15 +17514,70 @@ window._orcInitFromSB = _orcInitFromSB;
 // fallback anon): a RLS de ob_uni_items/ob_uni_atividades (ob_can_see(owner_id)
 // para page='admin-agenda', autenticado-apenas para as restantes páginas
 // uni*) só é respeitada de verdade com uma sessão real — ver ETAPA 8/8A.
-async function _sbUniItemUpsert(item){
+// Concorrência segura (Fase 4B, 11/09/2026) — mesmo padrão já usado em
+// _sbOrcUpsert()/ob_orcamentos, adaptado a ob_uni_items sem migration nem
+// mudança de schema/RLS: usa só a coluna updated_at já existente.
+// item._sbVersaoConhecida é uma marca LOCAL (ver _sbUniItemsLoadAll) —
+// nunca é gravada dentro de payload, nunca é uma coluna própria.
+//
+// opts.isCreate ou update sem baseline conhecido: sem versão anterior para
+// comparar — upsert normal (mesma tolerância de _sbOrcUpsert), e passa a
+// conhecer a versão a partir daqui, protegendo já a PRÓXIMA escrita.
+//
+// Atualização com versão conhecida: UPDATE condicional
+// (.eq('id',...).eq('page',...).eq('updated_at', versaoConhecida)). Se
+// entretanto outra sessão gravou, a condição deixa de bater certo e ZERO
+// linhas são afetadas — nunca escreve por cima, nunca funde payloads:
+// falha a escrita POR INTEIRO e devolve reason:'conflict', para o
+// chamador (uniSave) reverter o estado local.
+async function _sbUniItemUpsert(item, opts){
+  opts = opts || {};
   var sb = crmSBClient();
   var cu = (typeof CU!=='undefined') ? CU : null;
-  if(!sb || !cu || !cu.id){ console.warn('[SB-UNI] upsert bloqueado: sem sessão autenticada.'); return; }
+  if(!sb || !cu || !cu.id){
+    console.warn('[SB-UNI] upsert bloqueado: sem sessão autenticada.');
+    return { ok:false, reason:'no-session', message:'Sem sessão iniciada — a ordem não foi sincronizada.' };
+  }
   try{
-    var row = { id:item.id, page:item.page, payload:item, owner_id:item.owner_id||null, updated_at:new Date().toISOString() };
-    var res = await sb.from('ob_uni_items').upsert(row, { onConflict:'id,page' });
-    if(res.error) console.warn('[SB-UNI] upsert falhou:', res.error);
-  }catch(e){ console.warn('[SB-UNI] upsert falhou:', e); }
+    // Sanitização: uma cópia do item sem _sbVersaoConhecida — essa marca
+    // nunca pode entrar no payload persistido. Nenhuma outra propriedade é
+    // tocada (subtasks, projectId, historico, extra, responsável, estados,
+    // campos legados e quaisquer propriedades desconhecidas seguem intactos).
+    var payload = Object.assign({}, item);
+    delete payload._sbVersaoConhecida;
+    var versaoConhecida = item._sbVersaoConhecida || null;
+    var row = { id:item.id, page:item.page, payload:payload, owner_id:item.owner_id||null, updated_at:new Date().toISOString() };
+
+    if(opts.isCreate || !versaoConhecida){
+      var resUp = await sb.from('ob_uni_items').upsert(row, { onConflict:'id,page' }).select('updated_at');
+      if(resUp.error){
+        console.warn('[SB-UNI] upsert falhou:', resUp.error);
+        return { ok:false, reason:'error', message:'Não foi possível gravar no servidor. Tenta novamente.', error:resUp.error };
+      }
+      var novaVersaoCriacao = (resUp.data && resUp.data[0] && resUp.data[0].updated_at) || row.updated_at;
+      item._sbVersaoConhecida = novaVersaoCriacao;
+      return { ok:true, updated_at:novaVersaoCriacao };
+    }
+
+    var resUpd = await sb.from('ob_uni_items').update(row)
+      .eq('id', item.id).eq('page', item.page).eq('updated_at', versaoConhecida)
+      .select('updated_at');
+    if(resUpd.error){
+      console.warn('[SB-UNI] update falhou:', resUpd.error);
+      return { ok:false, reason:'error', message:'Não foi possível gravar no servidor. Tenta novamente.', error:resUpd.error };
+    }
+    if(!resUpd.data || resUpd.data.length===0){
+      var msgConflito = 'Esta obra foi alterada por outra pessoa enquanto estava aberta.\n\nOs dados não foram sobrescritos.\nRecarrega a obra para ver a versão mais recente antes de guardar novamente.';
+      console.warn('[SB-UNI] conflito de concorrência em ob_uni_items id='+item.id+' page='+item.page+' — updated_at já não corresponde ao conhecido pela sessão.');
+      return { ok:false, reason:'conflict', message:msgConflito };
+    }
+    var versaoAtualizada = resUpd.data[0].updated_at;
+    item._sbVersaoConhecida = versaoAtualizada;
+    return { ok:true, updated_at:versaoAtualizada };
+  }catch(e){
+    console.warn('[SB-UNI] upsert falhou (rede?):', e);
+    return { ok:false, reason:'network', message:'Não foi possível ligar ao servidor. A ordem ficou guardada só neste dispositivo.', error:e };
+  }
 }
 async function _sbUniItemDelete(id, page){
   var sb = crmSBClient();
@@ -17193,9 +17593,19 @@ async function _sbUniItemsLoadAll(){
   var cu = (typeof CU!=='undefined') ? CU : null;
   if(!sb || !cu || !cu.id){ console.warn('[SB-UNI] load bloqueado: sem sessão autenticada.'); return null; }
   try{
-    var res = await sb.from('ob_uni_items').select('payload, owner_id').order('updated_at', { ascending:false }).limit(5000);
+    var res = await sb.from('ob_uni_items').select('payload, owner_id, updated_at').order('updated_at', { ascending:false }).limit(5000);
     if(res.error){ console.warn('[SB-UNI] load falhou:', res.error); return null; }
-    return (res.data||[]).map(function(row){ var p=row.payload||{}; p.owner_id=row.owner_id||null; return p; });
+    return (res.data||[]).map(function(row){
+      var p=row.payload||{};
+      p.owner_id=row.owner_id||null;
+      // Concorrência segura (Fase 4B) — baseline local do updated_at real,
+      // para a próxima escrita desta sessão sobre este item já nascer
+      // protegida por versão (ver _sbUniItemUpsert). Nunca é uma coluna
+      // própria, nunca é reenviada ao servidor (removida do payload antes
+      // de qualquer upsert/update).
+      p._sbVersaoConhecida = row.updated_at || null;
+      return p;
+    });
   }catch(e){ console.warn('[SB-UNI] load falhou:', e); return null; }
 }
 async function _sbUniAtividadeInsert(a){
@@ -17235,7 +17645,9 @@ async function _uniInitFromSB(){
     if(typeof uniInitAll==='function') uniInitAll();
     if(typeof agendaRender==='function') { try{ agendaRender(); }catch(e){} }
   } else if(uniItems.length>0){
-    for(var i=0;i<uniItems.length;i++){ await _sbUniItemUpsert(uniItems[i]); }
+    // Só corre quando a tabela remota está vazia — todos os itens locais
+    // são, por definição, criações (sem baseline conhecido para comparar).
+    for(var i=0;i<uniItems.length;i++){ await _sbUniItemUpsert(uniItems[i], {isCreate:true}); }
     console.log('[SB-UNI] '+uniItems.length+' itens da Produção migrados para Supabase.');
   }
   var sbAtiv = await _sbUniAtividadesLoadAll();
@@ -27883,7 +28295,7 @@ function obAvaliarTransicaoProducaoUni(item, statusAnterior, statusNovo){
         };
         uniItems.unshift(itemInst);
         if(typeof saveUniItems==='function') saveUniItems();
-        if(typeof _sbUniItemUpsert==='function') _sbUniItemUpsert(itemInst);
+        if(typeof _sbUniItemUpsert==='function') _sbUniItemUpsert(itemInst, {isCreate:true});
         if(typeof showToast==='function') showToast('🔨 Instalação criada automaticamente a partir de '+item.orcNum);
       }
       crmAvaliarTransicaoAutomatica('producao', 'instalacao_iniciada', { orcNum: item.orcNum, origem: 'producao_concluida' });
@@ -27957,7 +28369,19 @@ window.obCardExtras = function(i, page){
 (function(){
   if(typeof uniSave!=='function') return;
   var _orig=uniSave;
-  window.uniSave=function(){ _orig(); obGarantirChecklistsProducao(); };
+  // Fase 4B: uniSave() passou a ser assíncrona (aguarda _sbUniItemUpsert) —
+  // aguardar aqui também, para manter a mesma sequência de sempre (só corre
+  // obGarantirChecklistsProducao depois de uniSave terminar de verdade).
+  // Correção (Fase 4B, ajuste): uniSave() agora devolve {ok,reason} — só
+  // correr o pós-processamento se a gravação foi mesmo bem sucedida. Em
+  // conflito, erro ou validação bloqueada, nada mais deve correr.
+  window.uniSave=async function(){
+    const resultado = await _orig();
+    if(resultado && resultado.ok){
+      obGarantirChecklistsProducao();
+    }
+    return resultado;
+  };
 })();
 
 // ══ 2. ORÇAMENTO APROVADO/ADJUDICADO → PROJECTO NA PRODUÇÃO ═════════
@@ -28718,7 +29142,7 @@ async function orcMarcarNecessitaDesign(orcNum){
     return false;
   }
   if(typeof saveUniItems==='function') saveUniItems();
-  if(typeof _sbUniItemUpsert==='function') _sbUniItemUpsert(itemDesign);
+  if(typeof _sbUniItemUpsert==='function') _sbUniItemUpsert(itemDesign, {isCreate:true});
   if(typeof orcRenderList==='function') orcRenderList();
   if(typeof showToast==='function') showToast('🎨 Maqueta criada em Design — produção de '+orc.num+' aguarda aprovação.');
   return true;
@@ -28966,7 +29390,7 @@ function obCriarProjetoProducao(orc, opts){
   }
   uniItems.unshift(item);
   if(typeof saveUniItems==='function') saveUniItems();
-  if(typeof _sbUniItemUpsert==='function') _sbUniItemUpsert(item);
+  if(typeof _sbUniItemUpsert==='function') _sbUniItemUpsert(item, {isCreate:true});
   try{ if(typeof fpRender==='function') fpRender(); }catch(e){}
   if(typeof showToast==='function') showToast((opts.forcarAdmin?'⚠️ ':'🏭 ')+'Projecto criado na Produção: '+item.n);
   if(orc.leadId && typeof crmAddAtividade==='function'){
@@ -30867,9 +31291,54 @@ function agAdiarTopHoje(itemKey){
   var comercial=(typeof CU!=='undefined'&&CU)?CU.name:null;
   var a=_agFindTopHojeAtiv(comercial, itemKey);
   if(!a) return;
+
+  // Correção controlada: ao adiar, exigir nova data e reutilizar
+  // crmAtividades/crmAddAtividade — sem sistema paralelo.
+  var dt=new Date(); dt.setDate(dt.getDate()+3);
+  var sugestao=dt.toISOString().slice(0,10);
+  var novaData=window.prompt('Adiar esta prioridade para que data?\nFormato: AAAA-MM-DD', sugestao);
+  if(novaData===null) return;
+  novaData=String(novaData||'').trim();
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(novaData) || isNaN(new Date(novaData+'T12:00:00').getTime())){
+    alert('Data inválida. Usa o formato AAAA-MM-DD.');
+    return;
+  }
+  var hoje=_agHojeStr();
+  if(novaData<=hoje){
+    alert('Escolhe uma data futura para adiar a prioridade.');
+    return;
+  }
+
+  var ex=a.extra||{};
   a.resultado='Adiada';
-  saveCrmAtividades();
-  if(typeof showToast==='function') showToast('📅 Adiada — sai do Top 10 de hoje, sem entrar outra automaticamente');
+  a.due=novaData;
+  a.extra=Object.assign({}, ex, {adiadoPara:novaData});
+
+  if(typeof crmAddAtividade==='function'){
+    crmAddAtividade(ex.leadId||null, 'Lembrete',
+      'Prioridade adiada: '+(ex.nome||ex.motivo||'item do Top Hoje'),
+      comercial, {
+        clienteId: ex.tipoOrigem==='cliente'?ex.origId:null,
+        orcId: ex.tipoOrigem==='orc'?ex.origId:null,
+        due: novaData,
+        data: hoje,
+        tags:['top-hoje','adiado'],
+        origem:'centro-prioridades',
+        extra:{
+          itemKey:itemKey,
+          adiadoDe:hoje,
+          adiadoPara:novaData,
+          tipoOrigem:ex.tipoOrigem||null,
+          origId:ex.origId||null
+        }
+      });
+  } else {
+    saveCrmAtividades();
+  }
+
+  if(typeof showToast==='function'){
+    showToast('📅 Adiada para '+new Date(novaData+'T12:00:00').toLocaleDateString('pt-PT'));
+  }
   try{ agRenderTopHoje(); }catch(e){}
   try{ agRenderCentroUnificado(); }catch(e){}
 }
