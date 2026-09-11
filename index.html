@@ -14658,7 +14658,7 @@ window.uniRenderSubtasksBlocos = uniRenderSubtasksBlocos;
 
 async function uniSave(){
   const n = document.getElementById('uni-name').value.trim();
-  if(!n){ alert('Preenche o título.'); return; }
+  if(!n){ alert('Preenche o título.'); return {ok:false, reason:'validation'}; }
   const cfg = UNI_CFG[uniCurrentPage];
   const extraVal = cfg&&cfg.extraRow ? (document.getElementById('uni-extra').value||document.getElementById('uni-time').value||'') : '';
   const data = {
@@ -14732,7 +14732,7 @@ async function uniSave(){
     const checagem = obProducaoPodeConcluir(data);
     if(!checagem.podeConcluir){
       alert('Não é possível concluir a Produção.\n\nDepartamentos pendentes:\n'+checagem.pendentes.map(d=>'• '+d).join('\n'));
-      return;
+      return {ok:false, reason:'validation'};
     }
   }
   // Produção 2.0 (Fase 4B) — concorrência segura em ob_uni_items, mesmo
@@ -14763,6 +14763,7 @@ async function uniSave(){
         saveUniItems();
         document.getElementById('uni-modal').classList.remove('open');
         uniRefreshPage(uniCurrentPage);
+        return {ok:true};
       } else {
         // Reverte exatamente para o estado anterior à tentativa — nunca um
         // merge parcial. Não fecha o modal, não dispara obRegistarEtapa/
@@ -14772,8 +14773,12 @@ async function uniSave(){
         var msgFalha = resultado.message || 'Não foi possível gravar esta ordem. Tenta novamente.';
         if(typeof showToast==='function') showToast('⚠ '+msgFalha);
         else alert(msgFalha);
+        return {ok:false, reason: resultado.reason==='conflict' ? 'conflict' : 'error'};
       }
     }
+    // Item a editar já não existe em uniItems (caso defensivo) — nada foi
+    // gravado, por isso não é sucesso.
+    return {ok:false, reason:'error'};
   } else {
     data.id=Date.now(); uniItems.unshift(data);
     const novoItem = uniItems[0];
@@ -14791,6 +14796,11 @@ async function uniSave(){
     saveUniItems();
     document.getElementById('uni-modal').classList.remove('open');
     uniRefreshPage(uniCurrentPage);
+    // Criação continua sempre "ok" localmente, mesmo se a sincronização
+    // remota falhou (comportamento funcional inalterado, ver acima) — é
+    // exatamente por isto que obGarantirChecklistsProducao() (wrapper) deve
+    // continuar a correr para ordens novas, como já corria antes da Fase 4B.
+    return {ok:true};
   }
 }
 
@@ -28296,7 +28306,16 @@ window.obCardExtras = function(i, page){
   // Fase 4B: uniSave() passou a ser assíncrona (aguarda _sbUniItemUpsert) —
   // aguardar aqui também, para manter a mesma sequência de sempre (só corre
   // obGarantirChecklistsProducao depois de uniSave terminar de verdade).
-  window.uniSave=async function(){ await _orig(); obGarantirChecklistsProducao(); };
+  // Correção (Fase 4B, ajuste): uniSave() agora devolve {ok,reason} — só
+  // correr o pós-processamento se a gravação foi mesmo bem sucedida. Em
+  // conflito, erro ou validação bloqueada, nada mais deve correr.
+  window.uniSave=async function(){
+    const resultado = await _orig();
+    if(resultado && resultado.ok){
+      obGarantirChecklistsProducao();
+    }
+    return resultado;
+  };
 })();
 
 // ══ 2. ORÇAMENTO APROVADO/ADJUDICADO → PROJECTO NA PRODUÇÃO ═════════
