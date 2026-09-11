@@ -107,11 +107,12 @@ function subchkOpenModal(type, itemId) {
   var titleEl = document.getElementById('subchk-modal-title');
   if (titleEl) titleEl.textContent = '📋 ' + (item.n || item.title || 'Tarefa');
 
-  // Populate responsáveis
+  // Populate responsáveis — roster real (Direção + colaboradores ativos), não USERS sozinho (ajuste 12/09/2026)
   var respSel = document.getElementById('subchk-sub-resp');
-  if (respSel && typeof USERS !== 'undefined') {
+  if (respSel && typeof obListaResponsaveisAtivos === 'function') {
+    var _respNomes = obListaResponsaveisAtivos();
     respSel.innerHTML = '<option value="">Responsável</option>' +
-      USERS.map(function(u) { return '<option value="' + u.name + '">' + u.name.split(' ')[0] + '</option>'; }).join('');
+      _respNomes.map(function(n) { return '<option value="' + n + '">' + n.split(' ')[0] + '</option>'; }).join('');
   }
 
   subchkRenderSubs(item);
@@ -643,16 +644,11 @@ function renderTasksGantt() {
   wrap.innerHTML = html;
 }
 
-// Patch switchView to trigger renders
-(function() {
-  var _orig = typeof switchView === 'function' ? switchView : null;
-  if (!_orig) return;
-  switchView = function(v) {
-    _orig(v);
-    if (v === 'calendar') renderTasksCalendar();
-    if (v === 'gantt')    renderTasksGantt();
-  };
-})();
+// Bug 8 (auditoria 12/09): este patch nunca funcionava — corria antes de
+// switchView existir (script anterior ao que a declara), por isso
+// Calendário/Gantt não renderizavam no 1º clique. O disparo foi movido
+// para dentro da função real switchView() (ver mais abaixo, perto de
+// window.switchView = switchView).
 
 </script>
 <script>
@@ -7459,7 +7455,7 @@ tbody tr:hover{background:rgba(255,203,45,.05)}
           <div class="kval" id="mp-kpi-cobrar">—</div>
           <div class="ksub" id="mp-kpi-cobrar-sub">clientes com valores em aberto</div>
           <div class="mp-breakdown" id="mp-cobrar-breakdown"></div>
-          <button class="mp-action-btn" id="mp-cobrar-btn" data-action="goPage" data-page="tesouraria">Abrir Cobranças</button>
+          <button class="mp-action-btn" id="mp-cobrar-btn" onclick="goPage('tesouraria');setTimeout(function(){try{tesMostrarTab('receber')}catch(e){}},200)">Abrir Cobranças</button>
         </div>
       </div>
     </div>
@@ -11313,6 +11309,27 @@ function obVerComoComerciais(){
   return lista;
 }
 window.obVerComoComerciais = obVerComoComerciais;
+
+// Roster canónico de "responsável" para subtarefas/tarefas — Direção
+// (USERS: Paulo, Edna) + colaboradores ATIVOS reais (ob_colaboradores,
+// via window.rhColabs — mesma fonte já usada em obVerComoComerciais()/
+// obRenderComerciaisSidebar() acima), qualquer departamento (não só
+// Comercial, um responsável de tarefa pode ser de Design/Produção/Admin).
+// Ajuste 12/09/2026: substitui as várias listas hardcoded/parciais que
+// existiam antes (USERS sozinho no modal de subtarefas; crmComerciais +
+// 4 nomes fictícios no modal de Nova Tarefa) por esta única fonte —
+// sempre inclui quem estiver ativo em RH -> Colaboradores (ex: Rui,
+// Humberto, André), sem listas paralelas.
+function obListaResponsaveisAtivos(){
+  var nomes = (typeof USERS!=='undefined' ? USERS : []).map(function(u){ return u.name; });
+  (window.rhColabs||[]).forEach(function(c){
+    if(!c || c.deleted_at || c.ativo===false) return;
+    var nome = String(c.nome||c.name||'').trim();
+    if(nome) nomes.push(nome);
+  });
+  return Array.from(new Set(nomes));
+}
+window.obListaResponsaveisAtivos = obListaResponsaveisAtivos;
 // Sidebar (Dep. Comercial): mostra os comerciais ativos vindos de ob_colaboradores,
 // no mesmo local dos antigos atalhos. Editar = adicionar/desativar em RH → Colaboradores.
 function obRenderComerciaisSidebar(){
@@ -11834,7 +11851,12 @@ window.goPage=function goPage(id){
   if(id==='admin-rh')            { try{ rhRender(); }catch(e){} }
   if(id==='admin-docs')          { crmDocsRender(); docsTab('crm'); }
   if(id==='dashboard')           { try{ renderDashLeads(); setTimeout(initCharts,50); }catch(e){} }
-  if(id==='financeiro')          { try{ renderFinanceiro(); setTimeout(initCharts,50); }catch(e){} }
+  if(id==='financeiro')          { try{ renderFinanceiro(); setTimeout(initCharts,50);
+    // Bug 7 (auditoria 12/09): garantir CRM_DESPESAS carregado (mesmo loader
+    // usado por admin-despesas) mesmo que o utilizador nunca tenha visitado
+    // o separador Despesas — senão os KPIs fin-desp-* ficam a €0.
+    if(typeof despLoadCRM==='function'){ despLoadCRM().then(function(){ try{ finAtualizarKpisDespesas(); }catch(e){} }).catch(function(){}); }
+  }catch(e){} }
   if(id==='relatorios')          { try{ renderRelatorios(); setTimeout(initCharts,50); }catch(e){} }
   if(id==='equipa')              { try{ renderEquipa(); }catch(e){} }
   if(id==='alerts')              { try{ renderAlerts(); }catch(e){} }
@@ -11869,6 +11891,14 @@ function switchView(v){
   });
   // guardar estado
   window._currentView = v;
+  // Bug 8 (auditoria 12/09): este disparo vivia num IIFE isolado, num
+  // <script> anterior, que tentava fazer switchView=function(v){...} sobre
+  // um switchView ainda inexistente (typeof switchView==='function' era
+  // sempre false nesse ponto) — nunca chegava a correr, por isso o
+  // Calendário/Gantt ficavam em branco no 1º clique. Movido para dentro da
+  // função real, que é sempre chamada com o v pedido.
+  if(v==='calendar' && typeof renderTasksCalendar==='function') renderTasksCalendar();
+  if(v==='gantt'    && typeof renderTasksGantt==='function')    renderTasksGantt();
 }
 window.switchView = switchView;
 
@@ -12416,7 +12446,7 @@ function homeOpenNewTask(defaultStatus){
   document.getElementById('ht-dept').value='Dep. Comercial';
   document.getElementById('ht-prio').value='normal';
   const aSel=document.getElementById('ht-assignee');
-  const allTeam=[...(crmComerciais||[]).map(c=>c.nome),'Sara Antunes','Tomás Figueiredo','Ricardo Faria','Pedro Silva'];
+  const allTeam=(typeof obListaResponsaveisAtivos==='function')?obListaResponsaveisAtivos():[...(crmComerciais||[]).map(c=>c.nome)];
   aSel.innerHTML=[...new Set(allTeam)].map(n=>`<option value="${n}">${n}</option>`).join('');
   m.classList.add('open');
 }
@@ -12432,7 +12462,7 @@ function homeEditTask(id){
   document.getElementById('ht-status').value=t.status||'A fazer';
   document.getElementById('ht-prio').value=PRIO_BY_LABEL[t.prio]||'normal';
   const aSel=document.getElementById('ht-assignee');
-  const allTeam=[...(crmComerciais||[]).map(c=>c.nome),'Sara Antunes','Tomás Figueiredo','Ricardo Faria','Pedro Silva'];
+  const allTeam=(typeof obListaResponsaveisAtivos==='function')?obListaResponsaveisAtivos():[...(crmComerciais||[]).map(c=>c.nome)];
   aSel.innerHTML=[...new Set(allTeam)].map(n=>`<option value="${n}">${n}</option>`).join('');
   if(t.assNome) aSel.value=t.assNome;
   const htDateEl=document.getElementById('ht-date');
@@ -12505,7 +12535,7 @@ function homeOpenFullEdit(id){
   document.getElementById('hf-dept').value=t.dept||t.group||'Dep. Comercial';
 
   const aSel=document.getElementById('hf-assignee');
-  const allTeam=typeof USERS!=='undefined' ? USERS.map(function(u){return u.name;}) : [...(crmComerciais||[]).map(c=>c.nome)];
+  const allTeam=(typeof obListaResponsaveisAtivos==='function')?obListaResponsaveisAtivos():(typeof USERS!=='undefined' ? USERS.map(function(u){return u.name;}) : [...(crmComerciais||[]).map(c=>c.nome)]);
   aSel.innerHTML=[...new Set(allTeam)].map(n=>`<option value="${n}">${n}</option>`).join('');
   const sel=ex.responsaveis||(t.assNome?[t.assNome]:[]);
   Array.prototype.forEach.call(aSel.options,function(o){ o.selected=sel.indexOf(o.value)!==-1; });
@@ -15063,13 +15093,21 @@ function uniShowTabs(item){
 // INSTALAÇÕES — Equipa, WhatsApp, Guia de Transporte
 // ══════════════════════════════════════════════════════════════════
 
-var INST_EQUIPA = ['Ricardo Faria','Pedro Silva','Sérgio Nunes','Luís Cardoso','Nuno Bento','Diogo Costa','Carlos Melo','Bruno Ferreira'];
+// Bug 6 (auditoria 12/09): lista fixa de nomes fictícios — não refletia o
+// roster real de colaboradores ativos. Mantida apenas como fallback de
+// segurança caso o roster real (obListaResponsaveisAtivos) ainda não tenha
+// sido carregado quando o checklist é desenhado.
+var INST_EQUIPA_FALLBACK = ['Ricardo Faria','Pedro Silva','Sérgio Nunes','Luís Cardoso','Nuno Bento','Diogo Costa','Carlos Melo','Bruno Ferreira'];
+function instEquipaAtiva(){
+  var lista = (typeof obListaResponsaveisAtivos==='function') ? obListaResponsaveisAtivos() : [];
+  return lista.length ? lista : INST_EQUIPA_FALLBACK;
+}
 
 function instRenderEquipaChecks(item){
   const wrap = document.getElementById('uni-equipa-checks');
   if(!wrap) return;
   const sel = item && item.equipa ? item.equipa : [];
-  wrap.innerHTML = INST_EQUIPA.map(n=>{
+  wrap.innerHTML = instEquipaAtiva().map(n=>{
     const checked = sel.includes(n);
     return `<label style="display:flex;align-items:center;gap:6px;background:${checked?'rgba(77,148,219,.1)':'var(--bg3)'};border:1px solid ${checked?'var(--b)':'var(--border)'};border-radius:7px;padding:6px 11px;cursor:pointer;font-size:13px;color:var(--txt2);transition:all .15s">
       <input type="checkbox" class="equipa-check" value="${n}" ${checked?'checked':''} style="accent-color:var(--b);width:13px;height:13px;cursor:pointer"/>
@@ -16732,13 +16770,20 @@ function importarOrcamentos2026() {
   var jaImportados = {};
   orcData.forEach(function(o){ if (o._numOriginal) jaImportados[o._numOriginal] = true; });
 
-  var novosOrc = 0, novosClientes = 0, jaExistiam = 0, ignoradas = 0;
+  var novosOrc = 0, novosClientes = 0, jaExistiam = 0, ignoradas = 0, colisoesNum = 0;
   var origem = window.OB_IMPORT_ORC_2026;
 
   for (var i = 0; i < origem.length; i++) {
     var row = origem[i];
     if (!row || !row.cliente || row.cliente === '#N/A') { ignoradas++; continue; }
     if (jaImportados[row.numOriginal]) { jaExistiam++; continue; }
+    // Bug 4 (auditoria 12/09): esta via de importação nunca validava se o
+    // 'num' gerado já existia em orcData (só verificava _numOriginal, que
+    // é seu próprio). Sem isto, uma colisão com um orçamento nativo ou de
+    // outra importação era gravada em silêncio, criando 2 orçamentos com
+    // o mesmo número. Agora deteta e ignora a linha, avisando no resumo.
+    var numGerado = 'ORC-2026OB-' + row.numOriginal.replace('/2026OB','');
+    if (orcData.some(function(o){ return o.num === numGerado; })) { colisoesNum++; continue; }
 
     // mesclar/cliente
     var clienteExistente = obEncontrarClienteSimilar(row.cliente);
@@ -16755,7 +16800,7 @@ function importarOrcamentos2026() {
 
     var dataConvertida = obConverterDataImport(row.data);
     var orc = {
-      num: 'ORC-2026OB-' + row.numOriginal.replace('/2026OB',''),
+      num: numGerado,
       cli: nomeClienteFinal,
       val: (typeof row.valor === 'number') ? row.valor : 0,
       vendedor: row.comercial || '',
@@ -16782,7 +16827,8 @@ function importarOrcamentos2026() {
     '✓ ' + novosOrc + ' orçamentos importados\n' +
     '✓ ' + novosClientes + ' novos clientes criados\n' +
     '↻ ' + jaExistiam + ' já tinham sido importados antes (ignorados)\n' +
-    '⊘ ' + ignoradas + ' linhas inválidas ignoradas');
+    '⊘ ' + ignoradas + ' linhas inválidas ignoradas' +
+    (colisoesNum ? '\n⚠ ' + colisoesNum + ' ignoradas por colisão de número com orçamento já existente' : ''));
 }
 window.importarOrcamentos2026 = importarOrcamentos2026;
 
@@ -17583,7 +17629,10 @@ function orcWhatsApp(){
   // ADD: usar o nº de WhatsApp do cliente (campo #orc-whatsapp) quando preenchido,
   // para abrir já a conversa certa em vez do seletor genérico de contactos.
   // Também codifica corretamente o texto (acentos, €, *, espaços) via encodeURIComponent.
-  const tel = (d.cliWA||'').replace(/[^0-9]/g,'');
+  // Bug 5 (auditoria 12/09): usar _cliNormTel (mesma normalização já usada em
+  // cliEnviarWhatsApp) para que um número PT sem indicativo (9 dígitos) fique
+  // com o prefixo 351 — números já internacionais mantêm-se como estão.
+  const tel = d.cliWA ? ((typeof _cliNormTel==='function') ? _cliNormTel(d.cliWA) : String(d.cliWA).replace(/\D/g,'')) : '';
   const base = tel ? ('https://wa.me/'+tel) : 'https://wa.me/';
   window.open(base+'?text='+encodeURIComponent(msgTexto),'_blank');
   // Bloco A, fluxo oficial: proposta enviada (WhatsApp) -> lead avança
@@ -18761,12 +18810,15 @@ var EC_DESPESAS_APP = [];
 const DESP_ESTADO_LABEL = {approved:'Aprovada',pending:'Pendente',rejected:'Rejeitada',reimbursed:'Reembolsada'};
 const DESP_ESTADO_CLS   = {approved:'bg',pending:'ba',rejected:'br',reimbursed:'bg'};
 
-function renderDespesas(){
-  const el = document.getElementById('desp-tbody'); if(!el) return;
+// Bug 7 (auditoria 12/09): cálculo único dos totais de despesas (CRM local +
+// App de Pontos), partilhado entre o separador Despesas (desp-stat-*) e os
+// KPIs do Painel Financeiro (fin-desp-*), que antes ficavam presos em €0
+// por nunca serem atualizados. Fonte de dados é sempre CRM_DESPESAS/
+// EC_DESPESAS_APP — a mesma já usada pelo separador Despesas.
+function despCalcularTotais(){
   const now = new Date(); const mes = now.getMonth(); const ano = now.getFullYear();
   let totalMes=0,cntMes=0,totalPend=0,cntPend=0,totalReimb=0,totalAprov=0;
 
-  // CRM local
   CRM_DESPESAS.forEach(d=>{
     const dt = d.data ? new Date(d.data+'T12:00:00') : null;
     if(dt && dt.getMonth()===mes && dt.getFullYear()===ano){ totalMes+=d.valor||0; cntMes++; }
@@ -18775,7 +18827,6 @@ function renderDespesas(){
     if(d.estado==='approved') totalAprov+=d.valor||0;
   });
 
-  // App de Pontos (adiciona aos totais)
   EC_DESPESAS_APP.forEach(d=>{
     const v = parseFloat(d.amount_eur)||0;
     const dt = d.occurred_at ? new Date(d.occurred_at) : null;
@@ -18784,6 +18835,27 @@ function renderDespesas(){
     if(d.status==='reimbursed') totalReimb+=v;
     if(d.status==='approved') totalAprov+=v;
   });
+
+  return {totalMes,cntMes,totalPend,cntPend,totalReimb,totalAprov};
+}
+window.despCalcularTotais = despCalcularTotais;
+
+// Aplica os totais calculados aos KPIs do Painel Financeiro (fin-desp-*).
+// Chamado por renderFinanceiro() — não inventa dados novos, só reutiliza
+// despCalcularTotais().
+function finAtualizarKpisDespesas(){
+  const fmt = v=>'€'+(v%1===0?v:v.toFixed(2));
+  const t = despCalcularTotais();
+  const elMes=document.getElementById('fin-desp-mes'); if(elMes) elMes.textContent=fmt(t.totalMes);
+  const elPend=document.getElementById('fin-desp-pend'); if(elPend) elPend.textContent=fmt(t.totalPend);
+  const elReimb=document.getElementById('fin-desp-reimb'); if(elReimb) elReimb.textContent=fmt(t.totalReimb);
+  const elAprov=document.getElementById('fin-desp-aprov'); if(elAprov) elAprov.textContent=fmt(t.totalAprov);
+}
+window.finAtualizarKpisDespesas = finAtualizarKpisDespesas;
+
+function renderDespesas(){
+  const el = document.getElementById('desp-tbody'); if(!el) return;
+  const {totalMes,cntMes,totalPend,cntPend,totalReimb,totalAprov} = despCalcularTotais();
 
   const fmt = v=>'€'+(v%1===0?v:v.toFixed(2));
   document.getElementById('desp-stat-mes').textContent=fmt(totalMes);
@@ -19244,6 +19316,7 @@ function renderFinanceiro(){
   } else {
     el.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:20px">Nenhum projeto importado. Importe orçamentos da planilha ou sincronize o TocOnline.</td></tr>';
   }
+  if(typeof finAtualizarKpisDespesas==='function') finAtualizarKpisDespesas();
 }
 
 // ── RELATÓRIOS ────────────────────────────────────────────
@@ -19932,13 +20005,18 @@ function renderAll(){
 
 // openUniModal - exposta no window para acesso directo de onclicks
 window.openUniModal = function(page){
+  // Bug 3 (auditoria 12/09): esta CFGS usava strings de estado sem acentos,
+  // divergentes de UNI_CFG.statuses (a fonte canónica lida por
+  // uniRenderKanban). Itens criados aqui ficavam com um status que não
+  // batia certo com nenhuma coluna do kanban e desapareciam de Design/
+  // Produção/Instalação. Agora lê sempre de UNI_CFG — fonte única.
   var CFGS = {
-    'design-tarefas':     ['Em fila','Em progresso','Aguarda aprovacao','Aprovado','Conclusao'],
-    'design-ficheiros':   ['Rascunho','Em progresso','Aguarda aprovacao','Aprovado','Arquivo'],
-    'fabrica-producao':   ['Entrada de Obra','Aguarda Arte','Encomenda','Em Produção','Pintura','Acabamento','Qualidade','Expedição','Concluído ✓'],
-    'fabrica-instalacoes':['Planeada','Agendada','Em curso','Concluida','Cancelada'],
-    'admin-agenda':       ['Reuniao','Visita a cliente','Instalacao','Follow-up','Entrega','Outro'],
-    'home-tasks':         ['A fazer','Em progresso','Em revisao','Concluido']
+    'design-tarefas':     UNI_CFG['design-tarefas'].statuses,
+    'design-ficheiros':   UNI_CFG['design-ficheiros'].statuses,
+    'fabrica-producao':   UNI_CFG['fabrica-producao'].statuses,
+    'fabrica-instalacoes':UNI_CFG['fabrica-instalacoes'].statuses,
+    'admin-agenda':       UNI_CFG['admin-agenda'].statuses,
+    'home-tasks':         ['A fazer','Em progresso','Em revisão','Concluído']
   };
   var NAMES = {
     'design-tarefas':'Tarefa de Design','design-ficheiros':'Ficheiro / Arte',
@@ -28489,7 +28567,9 @@ function fuAprovarEEnviarAssistido(followUpId, textoFinal){
   if(!texto){ if(typeof alert==='function') alert('Gera primeiro o texto sugerido.'); return false; }
   var orc = (fu.orcNum && typeof orcData!=='undefined') ? orcData.find(function(o){ return o.num===fu.orcNum; }) : null;
   if(orc && orc.cliWA && typeof window!=='undefined' && window.open){
-    var numero = String(orc.cliWA).replace(/\D/g,'');
+    // Bug 5 (auditoria 12/09): mesma normalização de orcWhatsApp/cliEnviarWhatsApp
+    // — um nº PT sem indicativo (9 dígitos) fica com o prefixo 351.
+    var numero = (typeof _cliNormTel==='function') ? _cliNormTel(orc.cliWA) : String(orc.cliWA).replace(/\D/g,'');
     window.open('https://wa.me/'+numero+'?text='+encodeURIComponent(texto), '_blank');
   }
   fu.tentativa = (fu.tentativa||1) + 1;
