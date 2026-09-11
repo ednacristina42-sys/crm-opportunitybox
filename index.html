@@ -14578,8 +14578,9 @@ function uniRenderSubtasksBlocos(){
   const escAttr = s => String(s==null?'':s).replace(/"/g,'&quot;');
   const escHtml = s => String(s==null?'':s).replace(/</g,'&lt;');
   wrap.innerHTML = checked.map(dept=>{
-    const prev = prevSubtasks.find(s=>s.dept===dept) || {};
-    const estadoAtual = prev.estado || 'Pendente';
+    const prevRaw = prevSubtasks.find(s=>s.dept===dept) || {dept:dept};
+    const prev = obNormalizarSubtaskProducao(prevRaw);
+    const estadoAtual = prev.estado;
     const respAtual = prev.responsavelNome || '';
     const dataPrevAtual = prev.dataPrevista ? String(prev.dataPrevista).slice(0,10) : '';
     const obsAtual = prev.observacoes || '';
