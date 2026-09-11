@@ -10807,7 +10807,7 @@ tbody tr:hover{background:rgba(255,203,45,.05)}
     <!-- Departamentos (só para Produção) -->
     <div id="uni-depts-wrap" style="display:none;margin-top:4px">
       <div style="font-size:13px;font-weight:600;color:var(--y);letter-spacing:.05em;border-top:1px solid var(--border);padding-top:14px;margin-bottom:10px">FLUXO DE PRODUÇÃO — Selecciona os departamentos</div>
-      <div style="font-size:12px;color:var(--muted);margin-bottom:10px">Cada departamento seleccionado gera uma subtarefa. A ordem define o fluxo de trabalho.</div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:10px">Cada departamento seleccionado gera uma subtarefa. Os departamentos podem trabalhar em paralelo na mesma obra.</div>
       <!-- Produção 2.0 — Fase 1: departamentos canónicos (PROD_DEPTS_CANONICOS,
            definido perto de uniSave()). As opções antigas misturavam fases
            do fluxo com departamentos; obras antigas com essas subtarefas
@@ -11337,6 +11337,22 @@ function obListaResponsaveisAtivos(){
   return Array.from(new Set(nomes));
 }
 window.obListaResponsaveisAtivos = obListaResponsaveisAtivos;
+
+// Produção 2.0 (Fase 2): id estável para um nome de obListaResponsaveisAtivos().
+// Reaproveita os identificadores já existentes no CRM — USERS[].id (login,
+// ex.: 'paulo') e rhColabs[].id (ob_colaboradores, o mesmo id usado em
+// rhEditColabId/rhColabs.findIndex) — nunca inventa um esquema novo.
+function obResponsavelIdPorNome(nome){
+  if(!nome) return null;
+  var u=(typeof USERS!=='undefined'?USERS:[]).find(function(x){ return x.name===nome; });
+  if(u) return u.id;
+  var c=(window.rhColabs||[]).find(function(x){
+    return x && !x.deleted_at && x.ativo!==false && String(x.nome||x.name||'').trim()===nome;
+  });
+  return c ? c.id : null;
+}
+window.obResponsavelIdPorNome = obResponsavelIdPorNome;
+
 // Sidebar (Dep. Comercial): mostra os comerciais ativos vindos de ob_colaboradores,
 // no mesmo local dos antigos atalhos. Editar = adicionar/desativar em RH → Colaboradores.
 function obRenderComerciaisSidebar(){
@@ -14459,6 +14475,8 @@ function uniOpen(page, itemId){
       lbl.style.borderColor = cb.checked ? 'var(--y)' : '';
       lbl.style.background = cb.checked ? 'rgba(245,196,0,.08)' : '';
     });
+    // Definir .checked por JS não dispara 'change' — chamar diretamente.
+    if(typeof uniRenderSubtasksBlocos==='function') uniRenderSubtasksBlocos();
     if(typeof uniRenderDeptAtividades==='function') uniRenderDeptAtividades();
   }
   // Equipa de montagem (instalações)
@@ -14516,6 +14534,76 @@ function obNormalizarSubtaskProducao(sub){
 }
 window.obNormalizarSubtaskProducao = obNormalizarSubtaskProducao;
 
+// ══ PRODUÇÃO 2.0 — FASE 2: estado operacional por departamento ═════
+// Configuração central única dos estados internos de cada subtask.
+// Departamentos são independentes entre si — nenhum estado aqui exige
+// que outro departamento tenha terminado primeiro (trabalho em paralelo).
+var PROD_ESTADOS_SUBTASK = ['Pendente','Em curso','Aguarda / Bloqueado','Concluído'];
+window.PROD_ESTADOS_SUBTASK = PROD_ESTADOS_SUBTASK;
+
+// Aplica uma mudança de estado a UMA subtask, devolvendo uma cópia nova
+// (nunca muta o objeto original, nem mexe nas outras subtasks/departamentos).
+// Regras (Fase 2):
+// - estado==='Concluído' -> done=true; qualquer outro estado -> done=false;
+// - 1ª vez que entra em 'Em curso' (dataInicio ainda vazia) -> regista agora;
+// - 1ª vez que entra em 'Concluído' (dataConclusao ainda vazia) -> regista agora;
+// - sair de 'Concluído' NUNCA apaga dataConclusao (fica como registo factual).
+function obAplicarEstadoSubtask(subAnterior, novoEstado){
+  var s = Object.assign({}, subAnterior||{});
+  s.estado = novoEstado;
+  s.done = (novoEstado === 'Concluído');
+  var agora = new Date().toISOString();
+  if(novoEstado==='Em curso' && !s.dataInicio) s.dataInicio = agora;
+  if(novoEstado==='Concluído' && !s.dataConclusao) s.dataConclusao = agora;
+  return s;
+}
+window.obAplicarEstadoSubtask = obAplicarEstadoSubtask;
+
+// Renderiza, para cada departamento canónico marcado, um bloco compacto
+// e editável (Responsável / Estado / Data prevista / Observações) dentro
+// do próprio modal da ordem — sem página nem modal novos. Os valores
+// atuais vêm sempre de item.subtasks (se a editar) ou ficam por omissão
+// (novo item); uniSave() lê estes controlos de volta no momento de gravar.
+function uniRenderSubtasksBlocos(){
+  const wrap = document.getElementById('uni-subtasks-preview');
+  if(!wrap) return;
+  const checked = [...document.querySelectorAll('.dept-check:checked')].map(c=>c.value);
+  if(!checked.length){
+    wrap.innerHTML = '<div style="font-size:12px;color:var(--muted);font-style:italic">Sem subtarefas — selecciona pelo menos um departamento.</div>';
+    return;
+  }
+  const prevSubtasks = uniEditingId ? ((uniItems.find(i=>i.id===uniEditingId)||{}).subtasks||[]) : [];
+  const responsaveis = (typeof obListaResponsaveisAtivos==='function') ? obListaResponsaveisAtivos() : [];
+  const estados = (typeof PROD_ESTADOS_SUBTASK!=='undefined') ? PROD_ESTADOS_SUBTASK : ['Pendente','Em curso','Aguarda / Bloqueado','Concluído'];
+  const escAttr = s => String(s==null?'':s).replace(/"/g,'&quot;');
+  const escHtml = s => String(s==null?'':s).replace(/</g,'&lt;');
+  wrap.innerHTML = checked.map(dept=>{
+    const prev = prevSubtasks.find(s=>s.dept===dept) || {};
+    const estadoAtual = prev.estado || 'Pendente';
+    const respAtual = prev.responsavelNome || '';
+    const dataPrevAtual = prev.dataPrevista ? String(prev.dataPrevista).slice(0,10) : '';
+    const obsAtual = prev.observacoes || '';
+    const optsResp = ['<option value="">—</option>'].concat(responsaveis.map(n=>
+      '<option value="'+escAttr(n)+'"'+(n===respAtual?' selected':'')+'>'+escHtml(n)+'</option>'
+    )).join('');
+    const optsEstado = estados.map(es=>
+      '<option value="'+escAttr(es)+'"'+(es===estadoAtual?' selected':'')+'>'+escHtml(es)+'</option>'
+    ).join('');
+    return '<div class="uni-subtask-block" data-dept="'+escAttr(dept)+'" style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:6px">'
+      + '<div style="font-size:12.5px;font-weight:700;color:var(--y);margin-bottom:6px;text-transform:uppercase">'+escHtml(dept)+'</div>'
+      + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:6px">'
+      +   '<label style="font-size:11.5px;color:var(--muted)">Responsável<select class="uni-subtask-resp" style="width:100%;margin-top:2px;background:var(--bg);border:1px solid var(--border2);border-radius:6px;padding:5px;color:var(--txt2)">'+optsResp+'</select></label>'
+      +   '<label style="font-size:11.5px;color:var(--muted)">Estado<select class="uni-subtask-estado" style="width:100%;margin-top:2px;background:var(--bg);border:1px solid var(--border2);border-radius:6px;padding:5px;color:var(--txt2)">'+optsEstado+'</select></label>'
+      + '</div>'
+      + '<div style="display:grid;grid-template-columns:1fr 2fr;gap:8px">'
+      +   '<label style="font-size:11.5px;color:var(--muted)">Data prevista<input type="date" class="uni-subtask-dataprevista" value="'+escAttr(dataPrevAtual)+'" style="width:100%;margin-top:2px;background:var(--bg);border:1px solid var(--border2);border-radius:6px;padding:5px;color:var(--txt2)"/></label>'
+      +   '<label style="font-size:11.5px;color:var(--muted)">Observações<textarea class="uni-subtask-obs" rows="1" style="width:100%;margin-top:2px;background:var(--bg);border:1px solid var(--border2);border-radius:6px;padding:5px;color:var(--txt2);resize:vertical">'+escHtml(obsAtual)+'</textarea></label>'
+      + '</div>'
+      + '</div>';
+  }).join('');
+}
+window.uniRenderSubtasksBlocos = uniRenderSubtasksBlocos;
+
 function uniSave(){
   const n = document.getElementById('uni-name').value.trim();
   if(!n){ alert('Preenche o título.'); return; }
@@ -14553,10 +14641,32 @@ function uniSave(){
   // subtarefa enriquecida (obNormalizarSubtaskProducao). Subtarefas antigas cujo
   // dept não é canónico (ex.: "Aguarda Arte", "Qualidade") não têm checkbox
   // nesta UI — são sempre preservadas integralmente, nunca migradas nem apagadas.
+  // Produção 2.0 (Fase 2): campos operacionais por departamento (responsável,
+  // estado, data prevista, observações), lidos do bloco .uni-subtask-block
+  // correspondente. Cada departamento só altera os SEUS próprios campos —
+  // nunca mexe nos outros (trabalho em paralelo, sem depender de ordem).
   if(uniCurrentPage==='fabrica-producao'){
     const checked=[...document.querySelectorAll('.dept-check:checked')].map(c=>c.value);
     const prevSubtasks = uniEditingId ? ((uniItems.find(i=>i.id===uniEditingId)||{}).subtasks||[]) : [];
-    const canonicas = checked.map(dept=>obNormalizarSubtaskProducao(prevSubtasks.find(s=>s.dept===dept) || {dept:dept}));
+    const blocos = [...document.querySelectorAll('.uni-subtask-block')];
+    const canonicas = checked.map(dept=>{
+      const base = obNormalizarSubtaskProducao(prevSubtasks.find(s=>s.dept===dept) || {dept:dept});
+      const bloco = blocos.find(b=>b.getAttribute('data-dept')===dept);
+      if(!bloco) return base;
+      const selEstado = bloco.querySelector('.uni-subtask-estado');
+      const novoEstado = selEstado ? selEstado.value : base.estado;
+      const atualizado = obAplicarEstadoSubtask(base, novoEstado);
+      const selResp = bloco.querySelector('.uni-subtask-resp');
+      atualizado.responsavelNome = selResp ? selResp.value : base.responsavelNome;
+      atualizado.responsavelId = atualizado.responsavelNome
+        ? ((typeof obResponsavelIdPorNome==='function') ? obResponsavelIdPorNome(atualizado.responsavelNome) : base.responsavelId)
+        : null;
+      const inpData = bloco.querySelector('.uni-subtask-dataprevista');
+      atualizado.dataPrevista = inpData ? (inpData.value || null) : base.dataPrevista;
+      const txtObs = bloco.querySelector('.uni-subtask-obs');
+      atualizado.observacoes = txtObs ? txtObs.value : base.observacoes;
+      return atualizado;
+    });
     const legado = prevSubtasks.filter(s=>!PROD_DEPTS_CANONICOS.includes(s.dept));
     data.subtasks = canonicas.concat(legado);
   }
@@ -14945,17 +15055,10 @@ function uniToggleDeptSection(page){
 // Update subtask preview when checkboxes change
 document.addEventListener('change', function(e){
   if(e.target.classList.contains('dept-check')){
-    const checked = [...document.querySelectorAll('.dept-check:checked')].map(c=>c.value);
-    const prev = document.getElementById('uni-subtasks-preview');
-    if(prev){
-      prev.innerHTML = checked.length===0
-        ? '<div style="font-size:12px;color:var(--muted);font-style:italic">Sem subtarefas — selecciona pelo menos um departamento.</div>'
-        : checked.map((d,i)=>`<div style="display:flex;align-items:center;gap:8px;padding:5px 8px;background:var(--bg3);border-radius:6px;border:1px solid var(--border)">
-            <span style="font-size:12px;color:var(--muted);font-family:'DM Mono',monospace">${i+1}</span>
-            <span style="font-size:13px;color:var(--txt2)">${d}</span>
-            <span style="font-size:11px;color:var(--muted);margin-left:auto">subtarefa</span>
-          </div>`).join('');
-    }
+    // Produção 2.0 (Fase 2): a pré-visualização passa a ser os blocos
+    // editáveis por departamento (Responsável/Estado/Data prevista/
+    // Observações), não apenas uma lista com o nome do departamento.
+    if(typeof uniRenderSubtasksBlocos==='function') uniRenderSubtasksBlocos();
     // Highlight checked labels
     document.querySelectorAll('.dept-check-lbl').forEach(lbl=>{
       const cb=lbl.querySelector('.dept-check');
