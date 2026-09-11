@@ -12887,6 +12887,11 @@ function crmRegistarTransicaoEstado(lead, faseNova, evento, origem, motivo){
     extra: { faseAnterior: faseAnterior, faseNova: faseNova, evento: evento, motivo: motivo || null }
   });
   if(typeof crmRegistarOperacaoLead==='function') crmRegistarOperacaoLead('upsert', lead.id);
+  // Bloco E — negócio fechado (Ganho ou Perdido) nunca deixa um follow-up
+  // "vivo" para trás.
+  if((faseNova==='Ganho'||faseNova==='Perdido') && typeof fuEncerrarFollowUpsDe==='function'){
+    fuEncerrarFollowUpsDe({ leadId: lead.id }, 'Lead chegou a "'+faseNova+'"');
+  }
   return true;
 }
 
@@ -16936,7 +16941,8 @@ async function _sbOrcUpsert(orc, opts) {
         faturaFinalPrazo: (orc.faturaFinalPrazo === undefined || orc.faturaFinalPrazo === null) ? null : orc.faturaFinalPrazo,
         faturaFinalImediato: orc.faturaFinalImediato === true,
         recebimentoTesourariaId: (orc.recebimentoTesourariaId === undefined || orc.recebimentoTesourariaId === null) ? null : orc.recebimentoTesourariaId,
-        historicoLiquidacao: Array.isArray(orc.historicoLiquidacao) ? orc.historicoLiquidacao : []
+        historicoLiquidacao: Array.isArray(orc.historicoLiquidacao) ? orc.historicoLiquidacao : [],
+        projectId: (orc.projectId === undefined || orc.projectId === null) ? null : orc.projectId
       },
       owner_id: (cu.admin === true && opts.reassignOwnerId) ? opts.reassignOwnerId : cu.id,
       updated_by: cu.id
@@ -17008,6 +17014,7 @@ async function _sbOrcLoadAll() {
         faturaFinalImediato: extra.faturaFinalImediato === true,
         recebimentoTesourariaId: (extra.recebimentoTesourariaId === undefined || extra.recebimentoTesourariaId === null) ? null : extra.recebimentoTesourariaId,
         historicoLiquidacao: Array.isArray(extra.historicoLiquidacao) ? extra.historicoLiquidacao : [],
+        projectId: (extra.projectId === undefined || extra.projectId === null) ? null : extra.projectId,
         owner_id: row.owner_id || null
       };
     });
@@ -17527,6 +17534,10 @@ function orcWhatsApp(){
   if(d.leadId && typeof crmAvaliarTransicaoAutomatica==='function'){
     crmAvaliarTransicaoAutomatica('lead', 'proposta_enviada', { leadId: d.leadId, origem: 'orcamento_whatsapp' });
   }
+  // Bloco E — cria/atualiza o follow-up canónico desta proposta (nunca duplica).
+  if(typeof fuRegistarOuAtualizarFollowUp==='function'){
+    fuRegistarOuAtualizarFollowUp({ leadId: d.leadId, orcNum: d.num, origem: 'orcamento_whatsapp' });
+  }
 }
 
 function orcEmail(){
@@ -17567,6 +17578,10 @@ function orcEmail(){
   }
   if(d.leadId && typeof crmAvaliarTransicaoAutomatica==='function'){
     crmAvaliarTransicaoAutomatica('lead', 'proposta_enviada', { leadId: d.leadId, origem: 'orcamento_email' });
+  }
+  // Bloco E — cria/atualiza o follow-up canónico desta proposta (nunca duplica).
+  if(typeof fuRegistarOuAtualizarFollowUp==='function'){
+    fuRegistarOuAtualizarFollowUp({ leadId: d.leadId, orcNum: d.num, origem: 'orcamento_email' });
   }
 }
 
@@ -17657,6 +17672,16 @@ function crmSubmeterAdjudicacao(){
   lead.adjudicacao = dados;
   if(typeof crmAddAtividade==='function'){
     crmAddAtividade(leadId, 'adjudicacao', 'Adjudicação submetida — NIF '+dados.nif+(orc?' · Orçamento '+orc.num:' · sem orçamento associado'), autor);
+  }
+
+  // Bloco E — project_id nasce aqui (adjudicação/fecho), persistente e
+  // imutável: uma vez atribuído a este orçamento, nunca muda nem é
+  // gerado de novo (orcAtribuirProjectId() é no-op se orc.projectId já
+  // existir). Propaga-se de imediato ao lead; o resto da cadeia (Cliente,
+  // Design/Produção/Instalação, Faturação, Follow-up) liga-se a ele nos
+  // respetivos pontos de criação — nunca por cópia paralela do valor.
+  if(orc && typeof orcAtribuirProjectId==='function'){
+    orcAtribuirProjectId(orc, lead);
   }
 
   if(orc && typeof orcChangeStatus==='function'){
@@ -26811,8 +26836,23 @@ function importarConfiguracao() {
     });
   }
   EventBus.subscribe('lead_atualizado', agenteLeadsAvaliar);
+  // Bloco E (11/09/2026) — o Agente 2 continua a ser o produtor deste
+  // evento (agenteLeadsAvaliar reavalia todos os leads a cada
+  // 'lead_atualizado' e publica 'lead_parado' de novo para quem continua
+  // parado), mas o que acontece a seguir passa a desembocar sempre no
+  // Motor de Follow-up canónico — nunca cria/atualiza um lembrete
+  // independente em paralelo. fuRegistarOuAtualizarFollowUp() já garante
+  // "1 só por leadId, nunca duplica"; o card do quadro de tarefas só é
+  // criado na 1ª vez (segue a ser útil como lembrete visual da equipa),
+  // não a cada reavaliação do mesmo lead ainda parado.
   EventBus.subscribe('lead_parado', function(lead){
     if (!agenteAtivo('leads')) return;
+    if (!lead || lead.id==null) return;
+    var jaExistiaAberto = (typeof fuEncontrarFollowUpAberto==='function') && !!fuEncontrarFollowUpAberto({ leadId: lead.id });
+    if (typeof fuRegistarOuAtualizarFollowUp==='function'){
+      fuRegistarOuAtualizarFollowUp({ leadId: lead.id, origem: 'agente2_eventbus', evento: 'lead_parado', estadoInicial: 'aberto', modoInicial: 'lembrete' });
+    }
+    if (jaExistiaAberto) return; // já havia follow-up aberto para este lead — não duplica o card
     if (typeof homeTasksData === 'undefined' || !homeTasksData) return;
     var iniciais = String(lead.ass||'').trim().split(/\s+/).map(function(p){ return p[0]||''; }).join('').slice(0,2).toUpperCase() || 'CO';
     var task = {
@@ -27695,7 +27735,7 @@ function obAvaliarTransicaoProducaoUni(item, statusAnterior, statusNovo){
           n: item.n, client: item.client||orc.cli,
           status: 'Planeada', priority: item.priority||'normal', assignee: '',
           date: '', notes: 'Criado automaticamente — produção do orçamento '+item.orcNum+' concluída.',
-          orcNum: item.orcNum,
+          orcNum: item.orcNum, projectId: (item.projectId || (orc&&orc.projectId) || null),
           historico: [{ de:null, para:'Planeada', em:new Date().toISOString(), por:autor }],
           dt: new Date().toLocaleDateString('pt-PT',{day:'2-digit',month:'2-digit',year:'numeric'})
         };
@@ -27957,6 +27997,10 @@ async function orcRegistarFaturaFinal(orcNum){
     var confirmarMesmoAssim = confirm('O valor da fatura ('+ (typeof orcFmt==='function'?orcFmt(fatura.total):fatura.total) +'€) não coincide com o valor final esperado (total adjudicado menos adiantamentos recebidos: '+(typeof orcFmt==='function'?orcFmt(valorEsperado):valorEsperado)+'€).\n\nConfirmar mesmo assim?');
     if(!confirmarMesmoAssim) return false;
   }
+  // Bloco E — liga o project_id à fatura já existente (nunca reescreve
+  // fatGuardar/fatEmitir, só acrescenta esta referência no ponto em que o
+  // Bloco D já a encontra/liga ao orçamento).
+  if(orc.projectId && !fatura.projectId){ fatura.projectId = orc.projectId; if(typeof fatSave==='function') fatSave(); }
   var imediato = fatura.prazo==='Imediato';
   var r = await crmAvaliarTransicaoAutomatica('liquidacao', 'faturacao_final_registada', {
     orcNum: orcNum, origem: 'faturacao_final',
@@ -28133,6 +28177,337 @@ async function orcForcarLiquidacaoConcluida(orcNum){
 }
 window.orcForcarLiquidacaoConcluida = orcForcarLiquidacaoConcluida;
 
+// ════════════════════════════════════════════════════════════════
+// BLOCO E — Agente de Follow-up (3 modos) + project_id (11/09/2026)
+// ════════════════════════════════════════════════════════════════
+// project_id — nasce na adjudicação/fecho (ver orcAtribuirProjectId(),
+// chamada em crmSubmeterAdjudicacao()), persistente e imutável: uma vez
+// atribuído, nunca é regenerado. Deriva-se sempre do próprio orc.num
+// (já garantidamente único), nunca de um contador paralelo — por isso o
+// mesmo orc.num produz sempre o mesmo project_id, o que também torna o
+// backfill de registos antigos determinístico (ver orcBackfillProjectIds()).
+function orcGerarProjectId(orc){
+  if(!orc || !orc.num) return null;
+  return 'PRJ-' + String(orc.num).replace(/^ORC-/, '');
+}
+window.orcGerarProjectId = orcGerarProjectId;
+
+// Atribui o project_id ao orçamento (nunca substitui um já existente) e
+// propaga-o de imediato ao lead ligado. A propagação a Cliente (Bloco E,
+// obCriarClienteDeLead), Design/Produção/Instalação (uniItems.projectId,
+// ver obCriarProjetoProducao/orcMarcarNecessitaDesign/
+// obAvaliarTransicaoProducaoUni) e Faturação (fatura.projectId, ver
+// orcRegistarFaturaFinal) acontece cada uma no seu próprio ponto de
+// criação — nunca por cópia paralela de um valor já desatualizado.
+async function orcAtribuirProjectId(orc, lead){
+  if(!orc) return null;
+  if(orc.projectId) return orc.projectId; // já tem — imutável, nunca gera outro
+  var pid = orcGerarProjectId(orc);
+  if(!pid) return null;
+  orc.projectId = pid;
+  if(lead) lead.projectId = pid;
+  if(typeof _sbOrcUpsert==='function') await _sbOrcUpsert(orc, { isCreate:false });
+  if(lead && typeof saveCrmLeads==='function') saveCrmLeads();
+  return pid;
+}
+window.orcAtribuirProjectId = orcAtribuirProjectId;
+
+// Backfill — só para orçamentos já adjudicados (st !== 'Pendente'/'Recusado',
+// ou seja já passaram pela adjudicação no passado) sem project_id ainda,
+// e só quando o vínculo é inequívoco: orc.leadId aponta para exatamente
+// um lead existente. Ambíguo (sem leadId, ou leadId que já não existe em
+// crmLeads) -> nunca inventa, fica de fora e é reportado. Idempotente e
+// seguro de correr várias vezes (só toca em quem ainda não tem project_id).
+function orcBackfillProjectIds(){
+  var resultado = { atribuidos: [], ambiguos: [] };
+  if(typeof orcData==='undefined') return resultado;
+  var FU_ESTADOS_ADJUDICADOS = ['Aprovado','Faturado','Concluido','Concluído','Cancelado'];
+  orcData.forEach(function(orc){
+    if(!orc || orc.projectId) return;
+    if(FU_ESTADOS_ADJUDICADOS.indexOf(orc.st)===-1) return;
+    var leadsCorrespondentes = (typeof crmLeads!=='undefined' && orc.leadId) ? crmLeads.filter(function(l){ return l.id===orc.leadId; }) : [];
+    if(leadsCorrespondentes.length!==1){
+      resultado.ambiguos.push({ orcNum: orc.num, razao: !orc.leadId ? 'sem leadId gravado' : 'leadId não corresponde a exatamente 1 lead' });
+      return;
+    }
+    var pid = orcGerarProjectId(orc);
+    if(!pid) return;
+    orc.projectId = pid;
+    leadsCorrespondentes[0].projectId = pid;
+    if(typeof _sbOrcUpsert==='function') _sbOrcUpsert(orc, { isCreate:false });
+    resultado.atribuidos.push({ orcNum: orc.num, projectId: pid });
+  });
+  if(resultado.atribuidos.length && typeof saveCrmLeads==='function') saveCrmLeads();
+  return resultado;
+}
+window.orcBackfillProjectIds = orcBackfillProjectIds;
+
+// ── Motor de Follow-up canónico ──────────────────────────────────────
+// Núcleo único de acompanhamento comercial pós-proposta — reutiliza o
+// mesmo Kanban/página já existentes (#page-comercial-followup, fu*) como
+// interface; esta secção acrescenta o registo estruturado por
+// proposta/oportunidade que faltava (modo, tentativas, histórico), sem
+// substituir nada do que já lá estava (fu_reativar_simples/fu_classificar/
+// etc. continuam a tratar a triagem/classificação de sempre). Persistido
+// como um blob genérico em ob_crm_dados (chave 'ob-followups'), mesmo
+// padrão exato já usado para ob-clients/ob-crm-atividades/ob-crm-historico
+// — nenhuma tabela nova, nenhuma RPC nova, nenhum sistema paralelo.
+var followUps; try{ followUps=JSON.parse(localStorage.getItem('ob-followups')||'null'); }catch(e){ followUps=null; } followUps = followUps || [];
+function saveFollowUps(){ localStorage.setItem('ob-followups', JSON.stringify(followUps.slice(0,5000))); }
+window.saveFollowUps = saveFollowUps;
+
+function fuGerarId(){ return 'FU-' + Date.now() + '-' + Math.random().toString(36).slice(2,7); }
+
+// Estados terminais do follow-up em si — nunca confundir com os estados
+// terminais do pipeline comercial (FU_ESTADOS_LEAD_TERMINAIS/
+// FU_ESTADOS_ORC_TERMINAIS, já existentes mais abaixo neste ficheiro).
+var FU_MODOS = ['automatico', 'assistido', 'lembrete'];
+var FU_CANONICO_ESTADOS_ABERTOS = ['aberto', 'aguarda_aprovacao', 'aguarda_resposta', 'reagendado'];
+
+function fuEncontrarFollowUpAberto(criterio){
+  criterio = criterio || {};
+  return followUps.find(function(f){
+    if(FU_CANONICO_ESTADOS_ABERTOS.indexOf(f.estado)===-1) return false;
+    if(criterio.orcNum) return f.orcNum===criterio.orcNum;
+    if(criterio.leadId) return f.leadId===criterio.leadId && !f.orcNum;
+    return false;
+  }) || null;
+}
+window.fuEncontrarFollowUpAberto = fuEncontrarFollowUpAberto;
+
+function fuAdicionarHistorico(fu, evento, texto, extra){
+  if(!Array.isArray(fu.historico)) fu.historico=[];
+  var autor = (typeof CU!=='undefined'&&CU&&CU.name) ? CU.name : 'Sistema';
+  var entrada = Object.assign({ ts: new Date().toISOString(), autor: autor, evento: evento, texto: texto||'' }, extra||{});
+  fu.historico.unshift(entrada);
+  return entrada;
+}
+
+// Persiste o array followUps inteiro (mesmo padrão de saveCrmAtividades/
+// saveCliData — o array completo é pequeno o suficiente para não precisar
+// de upsert por-linha) e espelha no lead/orçamento quando aplicável.
+function fuPersistir(){
+  if(typeof saveFollowUps==='function') saveFollowUps();
+  if(typeof obSbPush==='function') obSbPush('ob-followups');
+}
+
+// Regra principal do Bloco E: quando ocorre 'proposta_enviada' (disparado
+// por orcWhatsApp()/orcEmail(), Bloco A), cria UM follow-up canónico — se
+// já existir um aberto para esta mesma proposta/oportunidade (mesmo
+// orcNum), atualiza-o (nova tentativa/entrada no histórico), NUNCA
+// duplica. contexto: {leadId, orcNum, origem, motivo}.
+function fuRegistarOuAtualizarFollowUp(contexto){
+  contexto = contexto || {};
+  if(!contexto.orcNum && !contexto.leadId) return null;
+  var orc = (contexto.orcNum && typeof orcData!=='undefined') ? orcData.find(function(o){ return o.num===contexto.orcNum; }) : null;
+  var lead = (typeof crmLeads!=='undefined') ? crmLeads.find(function(l){ return l.id===(contexto.leadId || (orc&&orc.leadId)); }) : null;
+  var existente = fuEncontrarFollowUpAberto({ orcNum: contexto.orcNum, leadId: contexto.leadId });
+  // estadoInicial/modoInicial: por omissão, este ponto assume que uma
+  // mensagem acabou de ser enviada ao cliente (proposta_enviada) — quem
+  // não envia nada (ex: Agente 2, um lead simplesmente "parado", sem
+  // contacto novo) passa explicitamente estadoInicial:'aberto' e
+  // modoInicial:'lembrete' para não fingir uma resposta que não foi pedida.
+  var estadoAlvo = contexto.estadoInicial || 'aguarda_resposta';
+
+  if(existente){
+    existente.tentativa = (existente.tentativa||1) + 1;
+    existente.ultimaExecucao = new Date().toISOString();
+    existente.estado = estadoAlvo;
+    if(orc && !existente.projectId && orc.projectId) existente.projectId = orc.projectId;
+    fuAdicionarHistorico(existente, contexto.evento||'proposta_reenviada', 'Proposta reenviada — tentativa '+existente.tentativa, { origem: contexto.origem||'manual' });
+    fuAtualizarVencido(existente);
+    fuPersistir();
+    return existente;
+  }
+
+  var fu = {
+    id: fuGerarId(),
+    leadId: contexto.leadId || (orc&&orc.leadId) || (lead&&lead.id) || null,
+    orcNum: contexto.orcNum || null,
+    projectId: (orc&&orc.projectId) || (lead&&lead.projectId) || null,
+    responsavel: (orc&&orc.vendedor) || (lead&&lead.ass) || (typeof CU!=='undefined'&&CU&&CU.name) || '—',
+    modo: contexto.modoInicial || 'assistido', // "automático" só ativa quando marcado explicitamente E preparado (ver fuExecutarAutomatico)
+    estado: estadoAlvo,
+    proximaAcao: null,
+    tentativa: 1,
+    ultimaExecucao: new Date().toISOString(),
+    respostaCliente: null,
+    vencido: false,
+    origem: contexto.origem || 'proposta_enviada',
+    automaticoAtivo: false, // nunca true hoje — sem infraestrutura real de envio pelo email de cada comercial
+    textoSugerido: null,
+    historico: []
+  };
+  fuAdicionarHistorico(fu, contexto.evento||'proposta_enviada', 'Follow-up criado — proposta enviada', { origem: fu.origem });
+  followUps.unshift(fu);
+  fuAtualizarVencido(fu);
+  fuPersistir();
+  return fu;
+}
+window.fuRegistarOuAtualizarFollowUp = fuRegistarOuAtualizarFollowUp;
+
+// Muda o modo do follow-up — sempre registado (autor + data). "automatico"
+// fica marcado no registo mas NUNCA fica automaticoAtivo:true por si só —
+// isso exigiria infraestrutura real de envio pelo email de cada comercial,
+// que hoje não existe (ver fuExecutarAutomatico).
+function fuDefinirModo(followUpId, modo, motivo){
+  var fu = followUps.find(function(f){ return f.id===followUpId; });
+  if(!fu){ if(typeof alert==='function') alert('Follow-up não encontrado.'); return false; }
+  if(FU_MODOS.indexOf(modo)===-1){ if(typeof alert==='function') alert('Modo inválido.'); return false; }
+  var modoAnterior = fu.modo;
+  if(modoAnterior===modo) return true; // já está neste modo
+  fu.modo = modo;
+  fuAdicionarHistorico(fu, 'modo_alterado', 'Modo: "'+modoAnterior+'" -> "'+modo+'"'+(motivo?' — '+motivo:''), { modoAnterior: modoAnterior, modoNovo: modo, motivo: motivo||null });
+  fuPersistir();
+  if(typeof showToast==='function') showToast('Modo do follow-up alterado para "'+modo+'".');
+  return true;
+}
+window.fuDefinirModo = fuDefinirModo;
+
+// Gera o texto sugerido (modo Assistido) — só um template determinístico,
+// nunca enviado sozinho; fica pendente de aprovação do comercial
+// (fuAprovarEEnviarAssistido) antes de sequer abrir o mecanismo real de
+// envio (wa.me/mailto, os únicos que já existem — ver orcWhatsApp/orcEmail).
+function fuGerarTextoAssistido(followUpId){
+  var fu = followUps.find(function(f){ return f.id===followUpId; });
+  if(!fu){ if(typeof alert==='function') alert('Follow-up não encontrado.'); return null; }
+  var orc = (fu.orcNum && typeof orcData!=='undefined') ? orcData.find(function(o){ return o.num===fu.orcNum; }) : null;
+  var cliente = (orc&&orc.cli) || '';
+  var valor = orc ? ((typeof orcGetValorTotal==='function') ? orcGetValorTotal(orc) : (orc.val||0)) : 0;
+  var texto = 'Olá'+(cliente?' '+cliente:'')+', escrevo para saber se teve oportunidade de analisar a nossa proposta'+(orc?' ('+orc.num+', €'+(typeof orcFmt==='function'?orcFmt(valor):valor)+')':'')+'. Fico ao dispor para esclarecer qualquer dúvida.';
+  fu.textoSugerido = texto;
+  fu.estado = 'aguarda_aprovacao';
+  fuAdicionarHistorico(fu, 'texto_sugerido_gerado', 'Texto sugerido gerado, aguarda aprovação do comercial');
+  fuPersistir();
+  return texto;
+}
+window.fuGerarTextoAssistido = fuGerarTextoAssistido;
+
+// Aprova o texto sugerido (ou o texto editado pelo comercial) e SÓ ENTÃO
+// abre o mecanismo real de envio já existente (wa.me — mesmo link que
+// orcWhatsApp() já gera). Nunca envia nada sozinho — quem clica "enviar"
+// no WhatsApp Web/app continua a ser sempre a pessoa, exatamente como em
+// todo o resto do CRM.
+function fuAprovarEEnviarAssistido(followUpId, textoFinal){
+  var fu = followUps.find(function(f){ return f.id===followUpId; });
+  if(!fu){ if(typeof alert==='function') alert('Follow-up não encontrado.'); return false; }
+  var texto = textoFinal || fu.textoSugerido;
+  if(!texto){ if(typeof alert==='function') alert('Gera primeiro o texto sugerido.'); return false; }
+  var orc = (fu.orcNum && typeof orcData!=='undefined') ? orcData.find(function(o){ return o.num===fu.orcNum; }) : null;
+  if(orc && orc.cliWA && typeof window!=='undefined' && window.open){
+    var numero = String(orc.cliWA).replace(/\D/g,'');
+    window.open('https://wa.me/'+numero+'?text='+encodeURIComponent(texto), '_blank');
+  }
+  fu.tentativa = (fu.tentativa||1) + 1;
+  fu.ultimaExecucao = new Date().toISOString();
+  fu.estado = 'aguarda_resposta';
+  fu.textoSugerido = null;
+  fuAdicionarHistorico(fu, 'assistido_aprovado_enviado', 'Texto aprovado e enviado (modo Assistido) — tentativa '+fu.tentativa, { texto: texto });
+  fuAtualizarVencido(fu);
+  fuPersistir();
+  if(typeof showToast==='function') showToast('✓ Follow-up assistido enviado — tentativa '+fu.tentativa+'.');
+  return true;
+}
+window.fuAprovarEEnviarAssistido = fuAprovarEEnviarAssistido;
+
+// Modo Lembrete — cobra tarefa do comercial, NUNCA contacta o cliente.
+function fuCriarOuAtualizarLembrete(followUpId, dataLembrete, nota){
+  var fu = followUps.find(function(f){ return f.id===followUpId; });
+  if(!fu){ if(typeof alert==='function') alert('Follow-up não encontrado.'); return false; }
+  fu.modo = 'lembrete';
+  fu.proximaAcao = { data: dataLembrete || new Date(Date.now()+3*86400000).toISOString(), tipo: 'lembrete', texto: nota||'Retomar contacto' };
+  fu.estado = 'aberto';
+  fuAdicionarHistorico(fu, 'lembrete_definido', 'Lembrete definido para '+fu.proximaAcao.data.split('T')[0]+(nota?' — '+nota:''));
+  fuAtualizarVencido(fu);
+  fuPersistir();
+  if(typeof showToast==='function') showToast('🔔 Lembrete definido — nenhum contacto ao cliente foi feito.');
+  return true;
+}
+window.fuCriarOuAtualizarLembrete = fuCriarOuAtualizarLembrete;
+
+// Modo Automático — tecnicamente preparado, NUNCA ativo hoje. Só envia de
+// facto quando existir infraestrutura real e autorizada para enviar pelo
+// email de CADA comercial (não uma única caixa partilhada) — enquanto
+// automaticoAtivo não for true (nunca é, nesta revisão), fica só
+// registado no histórico, sem qualquer contacto real ao cliente.
+function fuExecutarAutomatico(followUpId){
+  var fu = followUps.find(function(f){ return f.id===followUpId; });
+  if(!fu) return false;
+  if(fu.modo!=='automatico' || !fu.automaticoAtivo){
+    fuAdicionarHistorico(fu, 'automatico_nao_executado', 'Modo Automático preparado mas NÃO ativo — sem infraestrutura real de envio pelo email do comercial. Nenhum contacto foi feito.');
+    fuPersistir();
+    return false;
+  }
+  // Ponto de extensão para quando essa infraestrutura existir — nunca
+  // chamado hoje (automaticoAtivo é sempre false nesta revisão).
+  return false;
+}
+window.fuExecutarAutomatico = fuExecutarAutomatico;
+
+// Resposta do cliente — encerra ou reagenda, sempre por decisão explícita
+// de quem regista (nunca tenta interpretar sozinho o texto livre).
+function fuRegistarRespostaCliente(followUpId, texto, desfecho, novaData){
+  var fu = followUps.find(function(f){ return f.id===followUpId; });
+  if(!fu){ if(typeof alert==='function') alert('Follow-up não encontrado.'); return false; }
+  var autor = (typeof CU!=='undefined'&&CU&&CU.name) ? CU.name : 'Sistema';
+  fu.respostaCliente = { texto: texto||'', ts: new Date().toISOString(), autor: autor };
+  if(desfecho==='encerrar'){
+    fu.estado = 'encerrado';
+    fu.proximaAcao = null;
+    fuAdicionarHistorico(fu, 'resposta_cliente_encerrado', 'Resposta do cliente registada — follow-up encerrado', { resposta: texto||'' });
+  } else {
+    fu.estado = 'reagendado';
+    fu.proximaAcao = { data: novaData || new Date(Date.now()+7*86400000).toISOString(), tipo: fu.proximaAcao&&fu.proximaAcao.tipo || 'contacto', texto: 'Reagendado após resposta do cliente' };
+    fuAdicionarHistorico(fu, 'resposta_cliente_reagendado', 'Resposta do cliente registada — reagendado para '+fu.proximaAcao.data.split('T')[0], { resposta: texto||'' });
+  }
+  fuAtualizarVencido(fu);
+  fuPersistir();
+  return true;
+}
+window.fuRegistarRespostaCliente = fuRegistarRespostaCliente;
+
+// Encerramento automático — chamado quando o negócio chega a um estado
+// terminal (lead Ganho/Perdido, orçamento Aprovado/Faturado/Cancelado; ver
+// os pontos de chamada em crmRegistarTransicaoEstado()/orcChangeStatus()).
+// Nunca deixa um follow-up "vivo" para um negócio já fechado.
+function fuEncerrarFollowUpsDe(criterio, motivo){
+  criterio = criterio || {};
+  var alterados = [];
+  followUps.forEach(function(fu){
+    if(FU_CANONICO_ESTADOS_ABERTOS.indexOf(fu.estado)===-1) return;
+    var corresponde = (criterio.orcNum && fu.orcNum===criterio.orcNum) || (criterio.leadId && fu.leadId===criterio.leadId);
+    if(!corresponde) return;
+    fu.estado = 'encerrado';
+    fu.proximaAcao = null;
+    fuAdicionarHistorico(fu, 'encerrado_automatico', motivo||'Encerrado automaticamente — negócio chegou a estado terminal');
+    alterados.push(fu);
+  });
+  if(alterados.length) fuPersistir();
+  return alterados;
+}
+window.fuEncerrarFollowUpsDe = fuEncerrarFollowUpsDe;
+
+// "Vencido" — verdade sempre recalculada a partir de proximaAcao/estado
+// (nunca confiar cegamente num valor persistido antigo); fuAtualizarVencido
+// também grava o resultado no próprio registo, para cumprir literalmente o
+// pedido de guardar o campo "vencido sim/não".
+function fuFollowUpVencido(fu){
+  if(!fu || FU_CANONICO_ESTADOS_ABERTOS.indexOf(fu.estado)===-1) return false;
+  if(!fu.proximaAcao || !fu.proximaAcao.data) return false;
+  return new Date(fu.proximaAcao.data) < new Date();
+}
+window.fuFollowUpVencido = fuFollowUpVencido;
+function fuAtualizarVencido(fu){
+  fu.vencido = fuFollowUpVencido(fu);
+  return fu.vencido;
+}
+window.fuAtualizarVencido = fuAtualizarVencido;
+function fuAtualizarVencidosTodos(){
+  followUps.forEach(fuAtualizarVencido);
+  fuPersistir();
+}
+window.fuAtualizarVencidosTodos = fuAtualizarVencidosTodos;
+
 // Revisão 10/09/2026 (ajuste do Bloco C antes do D): a decisão de Design
 // tem de ser EXPLÍCITA e persistida — orc.designNecessario só pode valer
 // true (Requer Design), false (Sem Design, decisão tomada) ou null (ainda
@@ -28154,7 +28529,7 @@ async function orcMarcarNecessitaDesign(orcNum){
     n: 'Maqueta — '+orc.cli, client: orc.cli,
     status: 'Em fila', priority: 'high', assignee: '',
     date: '', notes: 'Criado a partir do orçamento '+orc.num+' — aguarda aprovação da maqueta antes da produção.',
-    orcNum: orc.num,
+    orcNum: orc.num, projectId: orc.projectId||null,
     historico: [{ de: null, para: 'Em fila', em: new Date().toISOString(), por: autor }],
     dt: new Date().toLocaleDateString('pt-PT',{day:'2-digit',month:'2-digit',year:'numeric'})
   };
@@ -28407,7 +28782,7 @@ function obCriarProjetoProducao(orc, opts){
     status:'Entrada de Obra', priority:'high',
     assignee:'', date:prazo.toISOString().split('T')[0],
     notes:'Criado automaticamente a partir do orçamento '+orc.num+(orc.vendedor?' (vendedor: '+orc.vendedor+')':'')+(opts.forcarAdmin?' — EXCEÇÃO ADMIN sem adiantamento confirmado: '+opts.motivo:''),
-    orcNum:orc.num, _ckAplicado:true,
+    orcNum:orc.num, projectId:orc.projectId||null, _ckAplicado:true,
     checklists:[obChecklistParaTipo(produto)],
     historico:[{de:null,para:'Entrada de Obra',em:new Date().toISOString(),por:(typeof CU!=='undefined'&&CU&&CU.name)||'Sistema'}],
     dt:new Date().toLocaleDateString('pt-PT',{day:'2-digit',month:'2-digit',year:'numeric'})
@@ -28453,6 +28828,12 @@ function obCriarProjetoProducao(orc, opts){
     if(orc&&stAntes!==novoEstado&&(novoEstado==='Aprovado'||novoEstado==='Em Produção'||novoEstado==='Em Producao')){
       obCriarProjetoProducao(orc);
     }
+    // Bloco E — orçamento chegou a um estado terminal do pipeline comercial
+    // (Aprovado = ganho; Cancelado = perdido) -> encerra o follow-up desta
+    // proposta, nunca fica um follow-up "vivo" para um negócio já fechado.
+    if(orc&&stAntes!==novoEstado&&(novoEstado==='Aprovado'||novoEstado==='Cancelado')&&typeof fuEncerrarFollowUpsDe==='function'){
+      fuEncerrarFollowUpsDe({ orcNum: orc.num }, 'Orçamento chegou a "'+novoEstado+'"');
+    }
   };
 })();
 
@@ -28461,12 +28842,26 @@ function obCriarClienteDeLead(lead){
   if(typeof cliData==='undefined') return;
   var nome=lead.emp||lead.n;
   if(!nome) return;
-  var existe=(cliData||[]).some(function(c){ return (c.n||'').trim().toLowerCase()===nome.trim().toLowerCase(); });
-  if(existe) return;
+  var existente=(cliData||[]).find(function(c){ return (c.n||'').trim().toLowerCase()===nome.trim().toLowerCase(); });
+  if(existente){
+    // Bloco E — project_id: cliente já existe (cliente recorrente) — nunca
+    // sobrescreve identidade nem cria cópia, só acrescenta o novo projeto à
+    // lista (projectIds nunca é substituído, só cresce, mesmo padrão de
+    // orc.pagamentosAdiantamento no Bloco B).
+    if(lead.projectId){
+      if(!Array.isArray(existente.projectIds)) existente.projectIds=[];
+      if(existente.projectIds.indexOf(lead.projectId)===-1){
+        existente.projectIds.push(lead.projectId);
+        if(typeof saveCliData==='function') saveCliData();
+      }
+    }
+    return;
+  }
   cliData.unshift({
     id:Date.now(), n:nome, sec:'Outro', cont:lead.n||nome,
     email:lead.email||'', tel:lead.tel||'', nif:'', morada:'',
-    projs:1, rev:lead.val||0, last:'hoje', st:'active'
+    projs:1, rev:lead.val||0, last:'hoje', st:'active',
+    projectIds: lead.projectId ? [lead.projectId] : []
   });
   if(typeof saveCliData==='function') saveCliData();
   try{ if(typeof renderClientes==='function') renderClientes(); }catch(e){}
@@ -31172,7 +31567,9 @@ window.fuRegistarContacto=fuRegistarContacto;
 // _sbUniItemUpsert/_uniInitFromSB), mais robusta que este mecanismo de blob único.
 var OB_SB_SYNC_KEYS=['ob-leads','ob-clients','ob-crm-atividades','ob-crm-historico','ob-rh-colabs','ob-fo-ausencias','ob-rh-ferias-cfg','ob-rh-turnos',
   // Dados financeiros — tesouraria, despesas, IVA e faturas
-  'ob-tes-contas','ob-tes-receber','ob-tes-log','ob-tes-cartoes','ob-fin-despesas','ob-iva-dados','ob-faturas'];
+  'ob-tes-contas','ob-tes-receber','ob-tes-log','ob-tes-cartoes','ob-fin-despesas','ob-iva-dados','ob-faturas',
+  // Bloco E — Follow-up canónico (mesmo padrão genérico de chave/blob já usado acima)
+  'ob-followups'];
 var _obSbTimers={};
 
 // ── Proteção específica de 'ob-clients' contra sobrescrita por dados locais
@@ -31653,6 +32050,7 @@ async function obSbBoot(){
             if(row.chave==='ob-fin-despesas'&&typeof FIN_DESPESAS!=='undefined'){ FIN_DESPESAS=row.dados; }
             if(row.chave==='ob-iva-dados'&&typeof TES_IVA_DATA!=='undefined'){ TES_IVA_DATA=row.dados; }
             if(row.chave==='ob-faturas'&&typeof fatData!=='undefined'){ fatData=row.dados; }
+            if(row.chave==='ob-followups'&&typeof followUps!=='undefined'){ followUps=row.dados; }
           }catch(e){}
           adoptou=true;
         }
@@ -31765,6 +32163,14 @@ async function obSbMesclarRemotoAntesDoBackup(){
         localStorage.setItem('ob-crm-atividades', JSON.stringify(crmAtividades.slice(0,2000)));
       }
     }
+    if(typeof followUps!=='undefined'){
+      var remFollowUps=await obSbLerRemoto('ob-followups');
+      var mescladoFu=obSbMesclarPorChave(followUps, remFollowUps, 'id');
+      if(mescladoFu!==followUps){
+        followUps=mescladoFu;
+        localStorage.setItem('ob-followups', JSON.stringify(followUps.slice(0,5000)));
+      }
+    }
     if(typeof crmRenderAll==='function') crmRenderAll();
     if(typeof obAtualizarPendencias==='function') obAtualizarPendencias();
   }catch(e){ console.warn('[SB-CRM] mesclar remoto falhou:',e); }
@@ -31787,6 +32193,7 @@ async function obSbMesclarRemotoAntesDoBackup(){
   wrap('tesCartoesSave','ob-tes-cartoes');
   wrap('finDespSave','ob-fin-despesas');
   wrap('fatSave','ob-faturas');
+  wrap('saveFollowUps','ob-followups');
   // 'ob-leads' já é enviado no wrapper de saveCrmLeads (secção 3)
 })();
 
