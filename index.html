@@ -14656,7 +14656,7 @@ function uniRenderSubtasksBlocos(){
 }
 window.uniRenderSubtasksBlocos = uniRenderSubtasksBlocos;
 
-function uniSave(){
+async function uniSave(){
   const n = document.getElementById('uni-name').value.trim();
   if(!n){ alert('Preenche o título.'); return; }
   const cfg = UNI_CFG[uniCurrentPage];
@@ -14735,24 +14735,63 @@ function uniSave(){
       return;
     }
   }
+  // Produção 2.0 (Fase 4B) — concorrência segura em ob_uni_items, mesmo
+  // padrão optimistic-locking já usado em ob_orcamentos. Em edição:
+  // aplica localmente, tenta gravar no servidor, e só confirma (fecha o
+  // modal, dispara obRegistarEtapa/transições) depois de saber que a
+  // escrita realmente aconteceu. Em conflito ou erro, reverte tudo para
+  // o estado exatamente anterior a esta tentativa — nunca sobrescreve
+  // silenciosamente, nunca finge sucesso, nunca dispara transições.
   if(uniEditingId){
     const idx=uniItems.findIndex(i=>i.id===uniEditingId);
     if(idx>=0){
-      // ADD: registo da passagem de etapa quando o estado muda via modal
+      // Cópia profunda ANTES de qualquer alteração — inclui _sbVersaoConhecida
+      // (é uma propriedade normal do objeto, sobrevive ao JSON.parse/stringify),
+      // usada para reverter por completo se a gravação falhar.
+      const prevSnapshot = JSON.parse(JSON.stringify(uniItems[idx]));
       const _stAntes=uniItems[idx].status;
+      // 'data' nunca inclui _sbVersaoConhecida, por isso o merge preserva a
+      // versão conhecida atual de uniItems[idx] — exatamente a que
+      // _sbUniItemUpsert precisa para a condição optimistic-lock abaixo.
       uniItems[idx]={...uniItems[idx],...data};
-      if(_stAntes!==data.status && typeof obRegistarEtapa==='function') obRegistarEtapa(uniItems[idx],_stAntes,data.status);
+      const savedItem = uniItems[idx];
+      const resultado = (typeof _sbUniItemUpsert==='function')
+        ? await _sbUniItemUpsert(savedItem, {isCreate:false})
+        : {ok:true};
+      if(resultado.ok){
+        if(_stAntes!==data.status && typeof obRegistarEtapa==='function') obRegistarEtapa(savedItem,_stAntes,data.status);
+        saveUniItems();
+        document.getElementById('uni-modal').classList.remove('open');
+        uniRefreshPage(uniCurrentPage);
+      } else {
+        // Reverte exatamente para o estado anterior à tentativa — nunca um
+        // merge parcial. Não fecha o modal, não dispara obRegistarEtapa/
+        // transições seguintes (produção→instalação, etc.).
+        uniItems[idx] = prevSnapshot;
+        saveUniItems();
+        var msgFalha = resultado.message || 'Não foi possível gravar esta ordem. Tenta novamente.';
+        if(typeof showToast==='function') showToast('⚠ '+msgFalha);
+        else alert(msgFalha);
+      }
     }
   } else {
     data.id=Date.now(); uniItems.unshift(data);
+    const novoItem = uniItems[0];
+    const resultadoCriacao = (typeof _sbUniItemUpsert==='function')
+      ? await _sbUniItemUpsert(novoItem, {isCreate:true})
+      : {ok:true};
+    // Criação: comportamento funcional continua igual (o item fica criado
+    // localmente mesmo se a sincronização falhar) — mas já não finge que
+    // gravou no servidor quando não gravou; avisa claramente.
+    if(!resultadoCriacao.ok){
+      var msgCriacao = resultadoCriacao.message || 'A ordem foi criada apenas neste dispositivo — não foi possível sincronizar com o servidor.';
+      if(typeof showToast==='function') showToast('⚠ '+msgCriacao);
+      else alert(msgCriacao);
+    }
+    saveUniItems();
+    document.getElementById('uni-modal').classList.remove('open');
+    uniRefreshPage(uniCurrentPage);
   }
-  saveUniItems();
-  if(typeof _sbUniItemUpsert==='function'){
-    const savedItem = uniEditingId ? uniItems.find(i=>i.id===uniEditingId) : uniItems[0];
-    if(savedItem) _sbUniItemUpsert(savedItem);
-  }
-  document.getElementById('uni-modal').classList.remove('open');
-  uniRefreshPage(uniCurrentPage);
 }
 
 function uniDelete(){
@@ -17399,15 +17438,70 @@ window._orcInitFromSB = _orcInitFromSB;
 // fallback anon): a RLS de ob_uni_items/ob_uni_atividades (ob_can_see(owner_id)
 // para page='admin-agenda', autenticado-apenas para as restantes páginas
 // uni*) só é respeitada de verdade com uma sessão real — ver ETAPA 8/8A.
-async function _sbUniItemUpsert(item){
+// Concorrência segura (Fase 4B, 11/09/2026) — mesmo padrão já usado em
+// _sbOrcUpsert()/ob_orcamentos, adaptado a ob_uni_items sem migration nem
+// mudança de schema/RLS: usa só a coluna updated_at já existente.
+// item._sbVersaoConhecida é uma marca LOCAL (ver _sbUniItemsLoadAll) —
+// nunca é gravada dentro de payload, nunca é uma coluna própria.
+//
+// opts.isCreate ou update sem baseline conhecido: sem versão anterior para
+// comparar — upsert normal (mesma tolerância de _sbOrcUpsert), e passa a
+// conhecer a versão a partir daqui, protegendo já a PRÓXIMA escrita.
+//
+// Atualização com versão conhecida: UPDATE condicional
+// (.eq('id',...).eq('page',...).eq('updated_at', versaoConhecida)). Se
+// entretanto outra sessão gravou, a condição deixa de bater certo e ZERO
+// linhas são afetadas — nunca escreve por cima, nunca funde payloads:
+// falha a escrita POR INTEIRO e devolve reason:'conflict', para o
+// chamador (uniSave) reverter o estado local.
+async function _sbUniItemUpsert(item, opts){
+  opts = opts || {};
   var sb = crmSBClient();
   var cu = (typeof CU!=='undefined') ? CU : null;
-  if(!sb || !cu || !cu.id){ console.warn('[SB-UNI] upsert bloqueado: sem sessão autenticada.'); return; }
+  if(!sb || !cu || !cu.id){
+    console.warn('[SB-UNI] upsert bloqueado: sem sessão autenticada.');
+    return { ok:false, reason:'no-session', message:'Sem sessão iniciada — a ordem não foi sincronizada.' };
+  }
   try{
-    var row = { id:item.id, page:item.page, payload:item, owner_id:item.owner_id||null, updated_at:new Date().toISOString() };
-    var res = await sb.from('ob_uni_items').upsert(row, { onConflict:'id,page' });
-    if(res.error) console.warn('[SB-UNI] upsert falhou:', res.error);
-  }catch(e){ console.warn('[SB-UNI] upsert falhou:', e); }
+    // Sanitização: uma cópia do item sem _sbVersaoConhecida — essa marca
+    // nunca pode entrar no payload persistido. Nenhuma outra propriedade é
+    // tocada (subtasks, projectId, historico, extra, responsável, estados,
+    // campos legados e quaisquer propriedades desconhecidas seguem intactos).
+    var payload = Object.assign({}, item);
+    delete payload._sbVersaoConhecida;
+    var versaoConhecida = item._sbVersaoConhecida || null;
+    var row = { id:item.id, page:item.page, payload:payload, owner_id:item.owner_id||null, updated_at:new Date().toISOString() };
+
+    if(opts.isCreate || !versaoConhecida){
+      var resUp = await sb.from('ob_uni_items').upsert(row, { onConflict:'id,page' }).select('updated_at');
+      if(resUp.error){
+        console.warn('[SB-UNI] upsert falhou:', resUp.error);
+        return { ok:false, reason:'error', message:'Não foi possível gravar no servidor. Tenta novamente.', error:resUp.error };
+      }
+      var novaVersaoCriacao = (resUp.data && resUp.data[0] && resUp.data[0].updated_at) || row.updated_at;
+      item._sbVersaoConhecida = novaVersaoCriacao;
+      return { ok:true, updated_at:novaVersaoCriacao };
+    }
+
+    var resUpd = await sb.from('ob_uni_items').update(row)
+      .eq('id', item.id).eq('page', item.page).eq('updated_at', versaoConhecida)
+      .select('updated_at');
+    if(resUpd.error){
+      console.warn('[SB-UNI] update falhou:', resUpd.error);
+      return { ok:false, reason:'error', message:'Não foi possível gravar no servidor. Tenta novamente.', error:resUpd.error };
+    }
+    if(!resUpd.data || resUpd.data.length===0){
+      var msgConflito = 'Esta obra foi alterada por outra pessoa enquanto estava aberta.\n\nOs dados não foram sobrescritos.\nRecarrega a obra para ver a versão mais recente antes de guardar novamente.';
+      console.warn('[SB-UNI] conflito de concorrência em ob_uni_items id='+item.id+' page='+item.page+' — updated_at já não corresponde ao conhecido pela sessão.');
+      return { ok:false, reason:'conflict', message:msgConflito };
+    }
+    var versaoAtualizada = resUpd.data[0].updated_at;
+    item._sbVersaoConhecida = versaoAtualizada;
+    return { ok:true, updated_at:versaoAtualizada };
+  }catch(e){
+    console.warn('[SB-UNI] upsert falhou (rede?):', e);
+    return { ok:false, reason:'network', message:'Não foi possível ligar ao servidor. A ordem ficou guardada só neste dispositivo.', error:e };
+  }
 }
 async function _sbUniItemDelete(id, page){
   var sb = crmSBClient();
@@ -17423,9 +17517,19 @@ async function _sbUniItemsLoadAll(){
   var cu = (typeof CU!=='undefined') ? CU : null;
   if(!sb || !cu || !cu.id){ console.warn('[SB-UNI] load bloqueado: sem sessão autenticada.'); return null; }
   try{
-    var res = await sb.from('ob_uni_items').select('payload, owner_id').order('updated_at', { ascending:false }).limit(5000);
+    var res = await sb.from('ob_uni_items').select('payload, owner_id, updated_at').order('updated_at', { ascending:false }).limit(5000);
     if(res.error){ console.warn('[SB-UNI] load falhou:', res.error); return null; }
-    return (res.data||[]).map(function(row){ var p=row.payload||{}; p.owner_id=row.owner_id||null; return p; });
+    return (res.data||[]).map(function(row){
+      var p=row.payload||{};
+      p.owner_id=row.owner_id||null;
+      // Concorrência segura (Fase 4B) — baseline local do updated_at real,
+      // para a próxima escrita desta sessão sobre este item já nascer
+      // protegida por versão (ver _sbUniItemUpsert). Nunca é uma coluna
+      // própria, nunca é reenviada ao servidor (removida do payload antes
+      // de qualquer upsert/update).
+      p._sbVersaoConhecida = row.updated_at || null;
+      return p;
+    });
   }catch(e){ console.warn('[SB-UNI] load falhou:', e); return null; }
 }
 async function _sbUniAtividadeInsert(a){
@@ -17465,7 +17569,9 @@ async function _uniInitFromSB(){
     if(typeof uniInitAll==='function') uniInitAll();
     if(typeof agendaRender==='function') { try{ agendaRender(); }catch(e){} }
   } else if(uniItems.length>0){
-    for(var i=0;i<uniItems.length;i++){ await _sbUniItemUpsert(uniItems[i]); }
+    // Só corre quando a tabela remota está vazia — todos os itens locais
+    // são, por definição, criações (sem baseline conhecido para comparar).
+    for(var i=0;i<uniItems.length;i++){ await _sbUniItemUpsert(uniItems[i], {isCreate:true}); }
     console.log('[SB-UNI] '+uniItems.length+' itens da Produção migrados para Supabase.');
   }
   var sbAtiv = await _sbUniAtividadesLoadAll();
@@ -28113,7 +28219,7 @@ function obAvaliarTransicaoProducaoUni(item, statusAnterior, statusNovo){
         };
         uniItems.unshift(itemInst);
         if(typeof saveUniItems==='function') saveUniItems();
-        if(typeof _sbUniItemUpsert==='function') _sbUniItemUpsert(itemInst);
+        if(typeof _sbUniItemUpsert==='function') _sbUniItemUpsert(itemInst, {isCreate:true});
         if(typeof showToast==='function') showToast('🔨 Instalação criada automaticamente a partir de '+item.orcNum);
       }
       crmAvaliarTransicaoAutomatica('producao', 'instalacao_iniciada', { orcNum: item.orcNum, origem: 'producao_concluida' });
@@ -28187,7 +28293,10 @@ window.obCardExtras = function(i, page){
 (function(){
   if(typeof uniSave!=='function') return;
   var _orig=uniSave;
-  window.uniSave=function(){ _orig(); obGarantirChecklistsProducao(); };
+  // Fase 4B: uniSave() passou a ser assíncrona (aguarda _sbUniItemUpsert) —
+  // aguardar aqui também, para manter a mesma sequência de sempre (só corre
+  // obGarantirChecklistsProducao depois de uniSave terminar de verdade).
+  window.uniSave=async function(){ await _orig(); obGarantirChecklistsProducao(); };
 })();
 
 // ══ 2. ORÇAMENTO APROVADO/ADJUDICADO → PROJECTO NA PRODUÇÃO ═════════
@@ -28948,7 +29057,7 @@ async function orcMarcarNecessitaDesign(orcNum){
     return false;
   }
   if(typeof saveUniItems==='function') saveUniItems();
-  if(typeof _sbUniItemUpsert==='function') _sbUniItemUpsert(itemDesign);
+  if(typeof _sbUniItemUpsert==='function') _sbUniItemUpsert(itemDesign, {isCreate:true});
   if(typeof orcRenderList==='function') orcRenderList();
   if(typeof showToast==='function') showToast('🎨 Maqueta criada em Design — produção de '+orc.num+' aguarda aprovação.');
   return true;
@@ -29196,7 +29305,7 @@ function obCriarProjetoProducao(orc, opts){
   }
   uniItems.unshift(item);
   if(typeof saveUniItems==='function') saveUniItems();
-  if(typeof _sbUniItemUpsert==='function') _sbUniItemUpsert(item);
+  if(typeof _sbUniItemUpsert==='function') _sbUniItemUpsert(item, {isCreate:true});
   try{ if(typeof fpRender==='function') fpRender(); }catch(e){}
   if(typeof showToast==='function') showToast((opts.forcarAdmin?'⚠️ ':'🏭 ')+'Projecto criado na Produção: '+item.n);
   if(orc.leadId && typeof crmAddAtividade==='function'){
