@@ -24060,24 +24060,16 @@ function tesRenderReceber(){
   // Fonte única: tesGetReceber() — NC excluídas, filtro de ano aplicado,
   // nunca a cache bruta do TOConline (tocoMergeFaturasCacheReceber está
   // desativada). Mesma lista usada pelos KPIs (tesUpdateKPIs).
-  // Ordenação por prioridade de cobrança (correção 10/09/2026 — só visual,
-  // fonte/filtros/cálculos intactos): vencidas primeiro, depois vencimento
-  // mais próximo; desempate por dataEmissao mais recente. Sem isto a
-  // tabela mostrava a ordem bruta do array remoto (sem relação com data),
-  // escondendo as faturas mais urgentes atrás de linhas antigas.
-  var _hojeOrdenacao=new Date();
+  // Ordenação por dataEmissao DESC, fallback vencimento (ajuste 12/09/2026
+  // — só visual, fonte/filtros/cálculos/estados/matching intactos, mesmo
+  // padrão de tesRenderRecebidos() abaixo). O destaque de vencidas
+  // (vcol/⚠️, mais abaixo no map) não depende desta ordenação — continua
+  // exatamente como estava.
   var list=tesGetReceber().filter(function(r){return r.estado!=='Recebido';}).slice().sort(function(a,b){
-    var va=parseVencTes(a.vencimento), vb=parseVencTes(b.vencimento);
-    var vencidaA = !isNaN(va) && va<_hojeOrdenacao;
-    var vencidaB = !isNaN(vb) && vb<_hojeOrdenacao;
-    if(vencidaA!==vencidaB) return vencidaA ? -1 : 1; // vencidas primeiro
-    var ta = isNaN(va) ? Infinity : va.getTime();
-    var tb = isNaN(vb) ? Infinity : vb.getTime();
-    if(ta!==tb) return ta-tb; // vencimento mais próximo primeiro (ascendente)
-    var ea = parseVencTes(a.dataEmissao||a.data), eb = parseVencTes(b.dataEmissao||b.data);
-    var eta = isNaN(ea) ? -Infinity : ea.getTime();
-    var etb = isNaN(eb) ? -Infinity : eb.getTime();
-    return etb-eta; // desempate: dataEmissao mais recente primeiro
+    var da=parseVencTes(a.dataEmissao||a.vencimento), db=parseVencTes(b.dataEmissao||b.vencimento);
+    var ta = isNaN(da) ? -Infinity : da.getTime();
+    var tb = isNaN(db) ? -Infinity : db.getTime();
+    return tb-ta; // desc — dataEmissao mais recente primeiro
   });
   if(!list.length){
     var temDados = (typeof tocoFaturasCache==='function') && tocoFaturasCache().length>0;
