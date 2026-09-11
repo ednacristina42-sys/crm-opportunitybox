@@ -17669,22 +17669,30 @@ async function crmSubmeterAdjudicacao(){
     ? ((orcData||[]).find(o=>o.leadId===leadId) || (orcData||[]).find(o=>o.cli===lead.emp))
     : null;
 
-  lead.adjudicacao = dados;
-  if(typeof crmAddAtividade==='function'){
-    crmAddAtividade(leadId, 'adjudicacao', 'Adjudicação submetida — NIF '+dados.nif+(orc?' · Orçamento '+orc.num:' · sem orçamento associado'), autor);
-  }
-
   // Bloco E — project_id nasce aqui (adjudicação/fecho), persistente e
   // imutável: uma vez atribuído a este orçamento, nunca muda nem é
   // gerado de novo (orcAtribuirProjectId() é no-op se orc.projectId já
   // existir). Propaga-se de imediato ao lead; o resto da cadeia (Cliente,
   // Design/Produção/Instalação, Faturação, Follow-up) liga-se a ele nos
   // respetivos pontos de criação — nunca por cópia paralela do valor.
-  // Ajuste 11/09/2026 (persist-first): aguarda a confirmação do Supabase
-  // ANTES de seguir para o resto do fluxo dependente do projeto — nunca
-  // fica um project_id local sem ter sido gravado.
+  // Ajuste 12/09/2026 (bloquear se não persistir): corre ANTES de
+  // qualquer outra mutação (lead.adjudicacao, histórico, orcChangeStatus,
+  // produção, transições de fase) — se houver orçamento e a atribuição
+  // não for confirmada pelo Supabase (applied!==true), a adjudicação
+  // inteira é interrompida aqui, nada foi ainda alterado, e o utilizador
+  // é avisado explicitamente. Sem orçamento associado, não há project_id
+  // para atribuir, e o fluxo legado (adjudicação sem orçamento) continua.
   if(orc && typeof orcAtribuirProjectId==='function'){
-    await orcAtribuirProjectId(orc, lead);
+    const projectRes = await orcAtribuirProjectId(orc, lead);
+    if(!projectRes || projectRes.applied !== true){
+      alert('Não foi possível submeter a adjudicação: o projeto (project_id) não foi gravado no Supabase. Tenta novamente dentro de momentos — nada foi alterado.');
+      return;
+    }
+  }
+
+  lead.adjudicacao = dados;
+  if(typeof crmAddAtividade==='function'){
+    crmAddAtividade(leadId, 'adjudicacao', 'Adjudicação submetida — NIF '+dados.nif+(orc?' · Orçamento '+orc.num:' · sem orçamento associado'), autor);
   }
 
   if(orc && typeof orcChangeStatus==='function'){
