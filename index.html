@@ -16949,12 +16949,68 @@ async function _sbOrcUpsert(orc, opts) {
     };
     if (opts.isCreate) row.created_by = cu.id;
 
-    var res = await sb.from('ob_orcamentos').upsert(row, { onConflict: 'id' });
+    // Concorrência segura por versionamento otimista (ajuste 12/09/2026) —
+    // usa a coluna updated_at que já existe em ob_orcamentos (com trigger
+    // BEFORE UPDATE set_updated_at() já ativo na base de dados: o servidor,
+    // nunca o cliente, é quem decide o valor novo). orc._sbVersaoConhecida
+    // é só uma marca LOCAL (nunca enviada ao servidor, nunca uma coluna) do
+    // último updated_at que esta sessão viu — vem de _sbOrcLoadAll() ao
+    // carregar, ou da própria resposta da escrita anterior.
+    //
+    // Criação (opts.isCreate): sem versão anterior para comparar — upsert
+    // normal, mesmo padrão de sempre.
+    //
+    // Atualização, com versão conhecida: UPDATE condicional
+    // (.eq('id',...).eq('updated_at', versaoConhecida)). Se entretanto
+    // outra sessão gravou, a condição updated_at deixou de bater certo e
+    // ZERO linhas são afetadas — nunca escreve por cima, nunca funde campos
+    // financeiros/fases às cegas: falha a escrita POR INTEIRO e devolve
+    // reason:'conflict', para o chamador reverter o estado local (mesmo
+    // "revert on failure" já usado em todos os Blocos B/C/D/E).
+    //
+    // Atualização, sem versão conhecida (ex.: 1ª escrita desta sessão sobre
+    // um orçamento nunca carregado por _sbOrcLoadAll()): sem baseline para
+    // comparar, não há como distinguir "conflito real" de "a linha talvez
+    // nem exista ainda" — grava sem condição de versão (mesma tolerância
+    // que já existia antes desta revisão) e passa a conhecer a versão a
+    // partir daqui, protegendo já a PRÓXIMA escrita desta sessão.
+    var versaoConhecida = orc._sbVersaoConhecida || null;
+    var query = opts.isCreate
+      ? sb.from('ob_orcamentos').upsert(row, { onConflict: 'id' })
+      : sb.from('ob_orcamentos').update(row).eq('id', row.id);
+    if (!opts.isCreate && versaoConhecida) query = query.eq('updated_at', versaoConhecida);
+    var res = await query.select('updated_at');
     if (res.error) {
       var msg = _sbOrcErroLegivel(res.error, res.status);
       console.warn('[SB-ORC] upsert do orçamento ' + row.num + ' falhou: ' + msg, res.error);
       return { ok: false, reason: _sbOrcClassificarErro(res.error, res.status), error: res.error, message: msg };
     }
+    if (!opts.isCreate && (!res.data || res.data.length === 0)) {
+      if (versaoConhecida) {
+        // Conflito real — a versão que esta sessão conhecia já não
+        // corresponde à atual no servidor. Nunca sobrescrever, nunca
+        // fundir: falha explícita, sem tocar em nada.
+        var msgConflito = 'Este orçamento foi alterado por outro utilizador. Atualiza os dados antes de gravar novamente.';
+        console.warn('[SB-ORC] conflito de concorrência em ' + row.num + ' — updated_at já não corresponde ao conhecido pela sessão.');
+        if (typeof showToast === 'function') showToast('⚠ ' + msgConflito);
+        else if (typeof alert === 'function') alert(msgConflito);
+        return { ok: false, reason: 'conflict', message: msgConflito };
+      }
+      // Sem versão conhecida e zero linhas afetadas — a linha pode
+      // realmente ainda não existir no servidor (ex.: uma criação anterior
+      // que nunca chegou a persistir). Autorrecupera com upsert, a mesma
+      // tolerância que já existia antes desta revisão — nunca perde dados
+      // por este caso-limite.
+      var resUpsert = await sb.from('ob_orcamentos').upsert(row, { onConflict: 'id' }).select('updated_at');
+      if (resUpsert.error) {
+        var msgU = _sbOrcErroLegivel(resUpsert.error, resUpsert.status);
+        console.warn('[SB-ORC] upsert de recuperação do orçamento ' + row.num + ' falhou: ' + msgU, resUpsert.error);
+        return { ok: false, reason: _sbOrcClassificarErro(resUpsert.error, resUpsert.status), error: resUpsert.error, message: msgU };
+      }
+      if (resUpsert.data && resUpsert.data[0] && resUpsert.data[0].updated_at) orc._sbVersaoConhecida = resUpsert.data[0].updated_at;
+      return { ok: true };
+    }
+    if (res.data && res.data[0] && res.data[0].updated_at) orc._sbVersaoConhecida = res.data[0].updated_at;
     return { ok: true };
   } catch(e) {
     console.warn('[SB-ORC] upsert falhou (rede?):', e);
@@ -17015,7 +17071,12 @@ async function _sbOrcLoadAll() {
         recebimentoTesourariaId: (extra.recebimentoTesourariaId === undefined || extra.recebimentoTesourariaId === null) ? null : extra.recebimentoTesourariaId,
         historicoLiquidacao: Array.isArray(extra.historicoLiquidacao) ? extra.historicoLiquidacao : [],
         projectId: (extra.projectId === undefined || extra.projectId === null) ? null : extra.projectId,
-        owner_id: row.owner_id || null
+        owner_id: row.owner_id || null,
+        // Concorrência segura (ajuste 12/09/2026) — baseline local do
+        // updated_at real, para a próxima escrita desta sessão sobre este
+        // orçamento já nascer protegida por versão (ver _sbOrcUpsert()).
+        // Nunca é uma coluna, nunca é reenviado ao servidor.
+        _sbVersaoConhecida: row.updated_at || null
       };
     });
     return { ok: true, rows: rows };
