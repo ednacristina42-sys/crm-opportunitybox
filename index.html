@@ -11353,6 +11353,34 @@ function obResponsavelIdPorNome(nome){
 }
 window.obResponsavelIdPorNome = obResponsavelIdPorNome;
 
+// Produção 2.0 (Fase 3): a subtask pertence a currentUser? ID primeiro
+// (responsavelId vem de USERS[].id/rhColabs[].id — ver obResponsavelIdPorNome
+// — e pode não ser o mesmo espaço de ids que currentUser.id, que em sessão
+// real vem de ob_profiles.id; por isso nome é sempre o fallback seguro,
+// nunca um esquema de identidade novo).
+function obSubtaskPertenceAoUtilizador(subtask, currentUser){
+  if(!subtask || !currentUser) return false;
+  if(subtask.responsavelId && currentUser.id && subtask.responsavelId===currentUser.id) return true;
+  if(subtask.responsavelNome && currentUser.name && subtask.responsavelNome===currentUser.name) return true;
+  return false;
+}
+window.obSubtaskPertenceAoUtilizador = obSubtaskPertenceAoUtilizador;
+
+// Decide se currentUser pode ver esta ordem de Produção. Só ALARGA a
+// visibilidade já existente (fpRender: admin/coordinator vê tudo,
+// utilizador comum vê pela regra atual item.assignee===currentUser.name)
+// — nunca esconde uma ordem que já era visível por essa regra.
+function obPodeVerOrdemProducao(item, currentUser){
+  if(!currentUser) return true;
+  if(currentUser.admin===true || currentUser.coordinator===true) return true;
+  if(item && item.assignee===currentUser.name) return true;
+  if(item && Array.isArray(item.subtasks) && typeof PROD_DEPTS_CANONICOS!=='undefined' && item.subtasks.some(function(s){
+    return PROD_DEPTS_CANONICOS.indexOf(s.dept)!==-1 && obSubtaskPertenceAoUtilizador(s, currentUser);
+  })) return true;
+  return false;
+}
+window.obPodeVerOrdemProducao = obPodeVerOrdemProducao;
+
 // Sidebar (Dep. Comercial): mostra os comerciais ativos vindos de ob_colaboradores,
 // no mesmo local dos antigos atalhos. Editar = adicionar/desativar em RH → Colaboradores.
 function obRenderComerciaisSidebar(){
@@ -14534,6 +14562,25 @@ function obNormalizarSubtaskProducao(sub){
 }
 window.obNormalizarSubtaskProducao = obNormalizarSubtaskProducao;
 
+// ══ PRODUÇÃO 2.0 — FASE 3: critério de conclusão global ════════════
+// Considera só subtasks canónicas (PROD_DEPTS_CANONICOS — nenhuma segunda
+// lista) e obrigatórias (obrigatorio!==false). Concluída se estado==='Concluído'
+// ou, para compatibilidade com dados antigos, done===true. Uma obra sem
+// nenhuma subtask canónica (obra legada, sem Produção 2.0 aplicada) nunca
+// fica bloqueada — só o dono da regra é quem já tem departamentos canónicos.
+function obProducaoPodeConcluir(item){
+  var subtasks = (item && Array.isArray(item.subtasks)) ? item.subtasks : [];
+  var canonicasObrigatorias = subtasks.filter(function(s){
+    return s && PROD_DEPTS_CANONICOS.indexOf(s.dept)!==-1 && s.obrigatorio!==false;
+  });
+  if(!canonicasObrigatorias.length) return { podeConcluir:true, pendentes:[] };
+  var pendentes = canonicasObrigatorias.filter(function(s){
+    return !(s.estado==='Concluído' || s.done===true);
+  }).map(function(s){ return s.dept; });
+  return { podeConcluir: pendentes.length===0, pendentes: pendentes };
+}
+window.obProducaoPodeConcluir = obProducaoPodeConcluir;
+
 // ══ PRODUÇÃO 2.0 — FASE 2: estado operacional por departamento ═════
 // Configuração central única dos estados internos de cada subtask.
 // Departamentos são independentes entre si — nenhum estado aqui exige
@@ -14590,8 +14637,12 @@ function uniRenderSubtasksBlocos(){
     const optsEstado = estados.map(es=>
       '<option value="'+escAttr(es)+'"'+(es===estadoAtual?' selected':'')+'>'+escHtml(es)+'</option>'
     ).join('');
+    // Produção 2.0 (Fase 3): destaque discreto — sem cor agressiva — quando
+    // o departamento pertence ao utilizador atual (ver obSubtaskPertenceAoUtilizador).
+    const ehMeu = (typeof obSubtaskPertenceAoUtilizador==='function' && typeof CU!=='undefined' && CU) ? obSubtaskPertenceAoUtilizador(prev, CU) : false;
+    const tagMeu = ehMeu ? ' <span style="font-size:10px;font-weight:600;color:var(--muted);background:var(--bg4);border:1px solid var(--border2);border-radius:10px;padding:1px 7px;text-transform:none;letter-spacing:0">MEU DEPARTAMENTO</span>' : '';
     return '<div class="uni-subtask-block" data-dept="'+escAttr(dept)+'" style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:6px">'
-      + '<div style="font-size:12.5px;font-weight:700;color:var(--y);margin-bottom:6px;text-transform:uppercase">'+escHtml(dept)+'</div>'
+      + '<div style="font-size:12.5px;font-weight:700;color:var(--y);margin-bottom:6px;text-transform:uppercase">'+escHtml(dept)+tagMeu+'</div>'
       + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:6px">'
       +   '<label style="font-size:11.5px;color:var(--muted)">Responsável<select class="uni-subtask-resp" style="width:100%;margin-top:2px;background:var(--bg);border:1px solid var(--border2);border-radius:6px;padding:5px;color:var(--txt2)">'+optsResp+'</select></label>'
       +   '<label style="font-size:11.5px;color:var(--muted)">Estado<select class="uni-subtask-estado" style="width:100%;margin-top:2px;background:var(--bg);border:1px solid var(--border2);border-radius:6px;padding:5px;color:var(--txt2)">'+optsEstado+'</select></label>'
@@ -14670,6 +14721,19 @@ function uniSave(){
     });
     const legado = prevSubtasks.filter(s=>!PROD_DEPTS_CANONICOS.includes(s.dept));
     data.subtasks = canonicas.concat(legado);
+  }
+  // Produção 2.0 (Fase 3): bloquear a transição para o estado geral final
+  // ('Concluído ✓') enquanto houver departamento canónico obrigatório
+  // pendente. Só entra em ação quando é mesmo essa a transição pedida —
+  // nunca bloqueia gravações normais, nem obras antigas sem departamentos
+  // canónicos (obProducaoPodeConcluir trata isso). Não muda nada sozinho;
+  // só impede a gravação e explica o que falta.
+  if(uniCurrentPage==='fabrica-producao' && data.status==='Concluído ✓' && typeof obProducaoPodeConcluir==='function'){
+    const checagem = obProducaoPodeConcluir(data);
+    if(!checagem.podeConcluir){
+      alert('Não é possível concluir a Produção.\n\nDepartamentos pendentes:\n'+checagem.pendentes.map(d=>'• '+d).join('\n'));
+      return;
+    }
   }
   if(uniEditingId){
     const idx=uniItems.findIndex(i=>i.id===uniEditingId);
@@ -14781,7 +14845,13 @@ function fpRender(){
   const allItems=uniGetItems('fabrica-producao');
   // Só Ivan/coordenadores/admin veem o board completo; cada colaborador vê só as suas ordens.
   const canSeeAllProducao = !CU || CU.admin===true || CU.coordinator===true;
-  const items = canSeeAllProducao ? allItems : allItems.filter(i=>i.assignee===CU.name);
+  // Produção 2.0 (Fase 3): alarga a visibilidade — além do responsável
+  // principal (regra de sempre), um colaborador comum também vê a ordem se
+  // tiver pelo menos uma subtask canónica atribuída a si. obPodeVerOrdemProducao()
+  // inclui a regra antiga como um dos casos, nunca esconde o que já era visível.
+  const items = canSeeAllProducao ? allItems : allItems.filter(i=>
+    (typeof obPodeVerOrdemProducao==='function') ? obPodeVerOrdemProducao(i, CU) : i.assignee===CU.name
+  );
   if(fpCurrentView==='list'){
     const el=document.getElementById('fp-list-view'); if(!el) return;
     const cfg=UNI_CFG['fabrica-producao'];
@@ -14947,6 +15017,16 @@ function uniDrop(e,st,page){
   e.preventDefault();
   const item=uniItems.find(i=>i.id===uniDragId);
   if(item&&item.status!==st){
+    // Produção 2.0 (Fase 3): mesma validação de conclusão do uniSave(), aqui
+    // para a outra via ativa que muda o estado geral (arrastar no kanban).
+    if(page==='fabrica-producao' && st==='Concluído ✓' && typeof obProducaoPodeConcluir==='function'){
+      const checagem = obProducaoPodeConcluir(item);
+      if(!checagem.podeConcluir){
+        alert('Não é possível concluir a Produção.\n\nDepartamentos pendentes:\n'+checagem.pendentes.map(d=>'• '+d).join('\n'));
+        document.querySelectorAll('.k-col.drag-over').forEach(c=>c.classList.remove('drag-over'));
+        return;
+      }
+    }
     const _etapaAnterior=item.status;
     item.status=st;
     // ADD: registo da passagem de etapa com data e responsável (processos de produção)
