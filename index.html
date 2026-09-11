@@ -15062,7 +15062,7 @@ function uniDragOver(e,st){
   if(col){ document.querySelectorAll('.k-col.drag-over').forEach(c=>c.classList.remove('drag-over')); col.classList.add('drag-over'); }
 }
 function uniDragLeave(e){ const col=e.currentTarget.closest('.k-col'); if(col) col.classList.remove('drag-over'); }
-function uniDrop(e,st,page){
+async function uniDrop(e,st,page){
   e.preventDefault();
   const item=uniItems.find(i=>i.id===uniDragId);
   if(item&&item.status!==st){
@@ -15076,11 +15076,34 @@ function uniDrop(e,st,page){
         return;
       }
     }
+    // Produção 2.0 (Fase 4C) — mesma concorrência segura já usada em
+    // uniSave(): snapshot profundo ANTES de mudar o status, para poder
+    // reverter por completo se a gravação remota falhar. obRegistarEtapa
+    // (e a cadeia de transições que já pendura dele —
+    // obAvaliarTransicaoProducaoUni: Produção→Instalação, etc.) só corre
+    // DEPOIS de saber que a escrita realmente aconteceu.
+    const prevSnapshot=JSON.parse(JSON.stringify(item));
     const _etapaAnterior=item.status;
     item.status=st;
-    // ADD: registo da passagem de etapa com data e responsável (processos de produção)
-    if(typeof obRegistarEtapa==='function') obRegistarEtapa(item,_etapaAnterior,st);
-    saveUniItems(); uniRefreshPage(page);
+    const resultado = (typeof _sbUniItemUpsert==='function')
+      ? await _sbUniItemUpsert(item, {isCreate:false})
+      : {ok:true};
+    if(resultado.ok){
+      // ADD: registo da passagem de etapa com data e responsável (processos de produção)
+      if(typeof obRegistarEtapa==='function') obRegistarEtapa(item,_etapaAnterior,st);
+      saveUniItems(); uniRefreshPage(page);
+    } else {
+      // Reverte exatamente para o estado anterior à tentativa — nunca fica
+      // um card "meio arrastado": nem obRegistarEtapa nem qualquer
+      // transição automática corre em conflito/erro.
+      const idxRestore = uniItems.findIndex(i=>i.id===uniDragId);
+      if(idxRestore>=0) uniItems[idxRestore] = prevSnapshot;
+      saveUniItems();
+      uniRefreshPage(page);
+      var msgFalha = resultado.message || 'Não foi possível gravar esta alteração. Tenta novamente.';
+      if(typeof showToast==='function') showToast('⚠ '+msgFalha);
+      else alert(msgFalha);
+    }
   }
   document.querySelectorAll('.k-col.drag-over').forEach(c=>c.classList.remove('drag-over'));
 }
@@ -15159,19 +15182,62 @@ function fpResumeTicks(){
   });
 }
 
-function fpToggleSubtask(itemId, dept){
+async function fpToggleSubtask(itemId, dept){
   const item = uniItems.find(i=>i.id===itemId);
   if(!item||!item.subtasks) return;
   const sub = item.subtasks.find(s=>s.dept===dept);
-  if(sub) sub.done = !sub.done;
-  // Check if all done → suggest move to next stage
-  const allDone = item.subtasks.every(s=>s.done);
+  if(!sub) return;
+  // Produção 2.0 (Fase 4C) — mesma concorrência segura já usada em
+  // uniSave()/uniDrop(): snapshot profundo do ITEM INTEIRO antes de tocar
+  // numa subtask, para poder reverter tudo (nunca só a subtask alvo, nunca
+  // um merge parcial) se a gravação remota falhar. Nunca faz merge
+  // automático com a versão remota nesta fase.
+  const prevSnapshot = JSON.parse(JSON.stringify(item));
+  sub.done = !sub.done;
+  const resultado = (typeof _sbUniItemUpsert==='function')
+    ? await _sbUniItemUpsert(item, {isCreate:false})
+    : {ok:true};
+  if(!resultado.ok){
+    // Reverte o item inteiro — nunca deixa a subtask num estado visual
+    // "fantasma" desalinhado do que está realmente gravado.
+    const idxRestore = uniItems.findIndex(i=>i.id===itemId);
+    if(idxRestore>=0) uniItems[idxRestore] = prevSnapshot;
+    saveUniItems();
+    fpRender();
+    var msgFalha = resultado.message || 'Não foi possível gravar esta alteração. Tenta novamente.';
+    if(typeof showToast==='function') showToast('⚠ '+msgFalha);
+    else alert(msgFalha);
+    return;
+  }
   saveUniItems();
   fpRender();
+  // Check if all done → suggest move to next stage
+  const allDone = item.subtasks.every(s=>s.done);
   if(allDone){
     const n=item.subtasks.length;
     if(confirm('✓ Todas as '+n+' subtarefas concluídas! Mover para Qualidade?')){
-      item.status='Qualidade'; saveUniItems(); fpRender();
+      // Mudança de estado adicional — mesma proteção optimistic-lock,
+      // snapshot próprio (o toggle da subtask acima já ficou confirmado e
+      // não é revertido se só esta parte falhar).
+      const prevSnapshotStatus = JSON.parse(JSON.stringify(item));
+      const _stAntes = item.status;
+      item.status='Qualidade';
+      const resultadoStatus = (typeof _sbUniItemUpsert==='function')
+        ? await _sbUniItemUpsert(item, {isCreate:false})
+        : {ok:true};
+      if(resultadoStatus.ok){
+        if(typeof obRegistarEtapa==='function') obRegistarEtapa(item,_stAntes,'Qualidade');
+        saveUniItems();
+        fpRender();
+      } else {
+        const idxRestoreStatus = uniItems.findIndex(i=>i.id===itemId);
+        if(idxRestoreStatus>=0) uniItems[idxRestoreStatus] = prevSnapshotStatus;
+        saveUniItems();
+        fpRender();
+        var msgFalhaStatus = resultadoStatus.message || 'Não foi possível mover para Qualidade. Tenta novamente.';
+        if(typeof showToast==='function') showToast('⚠ '+msgFalhaStatus);
+        else alert(msgFalhaStatus);
+      }
     }
   }
 }
