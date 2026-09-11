@@ -14510,8 +14510,8 @@ function obNormalizarSubtaskProducao(sub){
   if(s.dataPrevista===undefined) s.dataPrevista = null;
   if(s.dataConclusao===undefined) s.dataConclusao = null;
   if(s.observacoes===undefined) s.observacoes = '';
-  if(!Array.isArray(s.ficheiros)) s.ficheiros = [];
-  if(!Array.isArray(s.historico)) s.historico = [];
+  if(s.ficheiros===undefined) s.ficheiros = [];
+  if(s.historico===undefined) s.historico = [];
   return s;
 }
 window.obNormalizarSubtaskProducao = obNormalizarSubtaskProducao;
