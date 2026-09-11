@@ -17636,7 +17636,7 @@ function crmFecharAdjudicacaoModal(){
   if(m) m.classList.remove('open');
 }
 
-function crmSubmeterAdjudicacao(){
+async function crmSubmeterAdjudicacao(){
   const m = document.getElementById('adj-modal');
   if(!m) return;
   const leadId = parseInt(m.dataset.leadId);
@@ -17680,8 +17680,11 @@ function crmSubmeterAdjudicacao(){
   // existir). Propaga-se de imediato ao lead; o resto da cadeia (Cliente,
   // Design/Produção/Instalação, Faturação, Follow-up) liga-se a ele nos
   // respetivos pontos de criação — nunca por cópia paralela do valor.
+  // Ajuste 11/09/2026 (persist-first): aguarda a confirmação do Supabase
+  // ANTES de seguir para o resto do fluxo dependente do projeto — nunca
+  // fica um project_id local sem ter sido gravado.
   if(orc && typeof orcAtribuirProjectId==='function'){
-    orcAtribuirProjectId(orc, lead);
+    await orcAtribuirProjectId(orc, lead);
   }
 
   if(orc && typeof orcChangeStatus==='function'){
@@ -28199,16 +28202,32 @@ window.orcGerarProjectId = orcGerarProjectId;
 // obAvaliarTransicaoProducaoUni) e Faturação (fatura.projectId, ver
 // orcRegistarFaturaFinal) acontece cada uma no seu próprio ponto de
 // criação — nunca por cópia paralela de um valor já desatualizado.
+//
+// Persist-first (ajuste 11/09/2026): a atribuição em orc/lead é sempre
+// tentativa até o Supabase confirmar — mesma disciplina de
+// orcRegistarTransicaoEstado()/producaoRegistarTransicaoEstado(). Se
+// _sbOrcUpsert() falhar, reverte os dois (orc.projectId e lead.projectId)
+// e devolve falha explícita — nunca fica um project_id "fantasma" só no
+// browser. O lead só é persistido (saveCrmLeads) depois de o orçamento já
+// estar confirmado remotamente.
 async function orcAtribuirProjectId(orc, lead){
-  if(!orc) return null;
-  if(orc.projectId) return orc.projectId; // já tem — imutável, nunca gera outro
+  if(!orc) return { applied:false, reason:'sem-orcamento' };
+  if(orc.projectId) return { applied:true, projectId: orc.projectId }; // já tem — imutável, nunca gera outro
   var pid = orcGerarProjectId(orc);
-  if(!pid) return null;
-  orc.projectId = pid;
+  if(!pid) return { applied:false, reason:'sem-orc-num' };
+  orc.projectId = pid; // tentativo
+  var leadProjectIdAnterior = lead ? lead.projectId : undefined;
   if(lead) lead.projectId = pid;
-  if(typeof _sbOrcUpsert==='function') await _sbOrcUpsert(orc, { isCreate:false });
-  if(lead && typeof saveCrmLeads==='function') saveCrmLeads();
-  return pid;
+  var sbRes = (typeof _sbOrcUpsert==='function') ? await _sbOrcUpsert(orc, { isCreate:false }) : { ok:false, reason:'sem-funcao-upsert' };
+  if(!sbRes || sbRes.ok!==true){
+    // Reverte — nunca fica atribuído só no browser.
+    orc.projectId = null;
+    if(lead) lead.projectId = leadProjectIdAnterior;
+    if(typeof console!=='undefined' && console.warn) console.warn('[BLOCO E] project_id não atribuído — falha ao persistir no Supabase: '+(sbRes&&sbRes.reason));
+    return { applied:false, reason: sbRes && sbRes.reason, message: sbRes && sbRes.message };
+  }
+  if(lead && typeof saveCrmLeads==='function') saveCrmLeads(); // só grava o lead depois do orçamento confirmado
+  return { applied:true, projectId: pid };
 }
 window.orcAtribuirProjectId = orcAtribuirProjectId;
 
@@ -28218,25 +28237,39 @@ window.orcAtribuirProjectId = orcAtribuirProjectId;
 // um lead existente. Ambíguo (sem leadId, ou leadId que já não existe em
 // crmLeads) -> nunca inventa, fica de fora e é reportado. Idempotente e
 // seguro de correr várias vezes (só toca em quem ainda não tem project_id).
-function orcBackfillProjectIds(){
-  var resultado = { atribuidos: [], ambiguos: [] };
+//
+// Persist-first (ajuste 11/09/2026): mesma disciplina de
+// orcAtribuirProjectId() — cada atribuição só conta em "atribuidos" depois
+// de _sbOrcUpsert() confirmar; falha reverte orc/lead e vai para "falhas",
+// nunca é contabilizada como sucesso. async porque agora aguarda cada
+// confirmação do Supabase (um orçamento de cada vez, nunca em paralelo,
+// para nunca perder o revert de um pelo outro).
+async function orcBackfillProjectIds(){
+  var resultado = { atribuidos: [], ambiguos: [], falhas: [] };
   if(typeof orcData==='undefined') return resultado;
   var FU_ESTADOS_ADJUDICADOS = ['Aprovado','Faturado','Concluido','Concluído','Cancelado'];
-  orcData.forEach(function(orc){
-    if(!orc || orc.projectId) return;
-    if(FU_ESTADOS_ADJUDICADOS.indexOf(orc.st)===-1) return;
+  var candidatos = orcData.filter(function(orc){ return orc && !orc.projectId && FU_ESTADOS_ADJUDICADOS.indexOf(orc.st)!==-1; });
+  for(var i=0;i<candidatos.length;i++){
+    var orc = candidatos[i];
     var leadsCorrespondentes = (typeof crmLeads!=='undefined' && orc.leadId) ? crmLeads.filter(function(l){ return l.id===orc.leadId; }) : [];
     if(leadsCorrespondentes.length!==1){
       resultado.ambiguos.push({ orcNum: orc.num, razao: !orc.leadId ? 'sem leadId gravado' : 'leadId não corresponde a exatamente 1 lead' });
-      return;
+      continue;
     }
     var pid = orcGerarProjectId(orc);
-    if(!pid) return;
-    orc.projectId = pid;
+    if(!pid) continue;
+    orc.projectId = pid; // tentativo
+    var leadProjectIdAnterior = leadsCorrespondentes[0].projectId;
     leadsCorrespondentes[0].projectId = pid;
-    if(typeof _sbOrcUpsert==='function') _sbOrcUpsert(orc, { isCreate:false });
+    var sbRes = (typeof _sbOrcUpsert==='function') ? await _sbOrcUpsert(orc, { isCreate:false }) : { ok:false, reason:'sem-funcao-upsert' };
+    if(!sbRes || sbRes.ok!==true){
+      orc.projectId = null;
+      leadsCorrespondentes[0].projectId = leadProjectIdAnterior;
+      resultado.falhas.push({ orcNum: orc.num, reason: sbRes && sbRes.reason });
+      continue;
+    }
     resultado.atribuidos.push({ orcNum: orc.num, projectId: pid });
-  });
+  }
   if(resultado.atribuidos.length && typeof saveCrmLeads==='function') saveCrmLeads();
   return resultado;
 }
