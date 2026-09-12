@@ -18516,12 +18516,37 @@ async function obGarantirTarefaFinanceiraAdjudicacao(lead, dados, orc){
     if(semPagamento && !existente._alertaPagamentoEmitido && typeof EventBus!=='undefined' && EventBus && typeof EventBus.publish==='function'){
       obRegistarAlertaAgente5PagamentoFalta();
       EventBus.publish('adjudicacao_sem_pagamento', { cliente:cliente, leadId:existente.leadId, orcNum:existente.orcNum, projectId:existente.projectId });
+      // O EventBus já foi publicado (uma única vez) — a partir daqui só resta
+      // persistir remotamente a flag de deduplicação, com optimistic locking
+      // e sem repetir o evento seja qual for o resultado desta escrita.
+      var flagAnteriorExistente = existente._alertaPagamentoEmitido;
       existente._alertaPagamentoEmitido = true;
       if(typeof saveUniItems==='function') saveUniItems();
+      var persistFlagExistente = (typeof _sbUniItemUpsert==='function')
+        ? await _sbUniItemUpsert(existente, {isCreate:false})
+        : {ok:true};
+      if(!persistFlagExistente.ok){
+        // Não fingir deduplicação persistente: reverte ao último estado
+        // remotamente confirmado, sem tocar de novo no EventBus.
+        existente._alertaPagamentoEmitido = flagAnteriorExistente;
+        if(typeof saveUniItems==='function') saveUniItems();
+        return {ok:true, item:existente, alertaPersistidoRemotamente:false};
+      }
+      return {ok:true, item:existente, alertaPersistidoRemotamente:true};
     } else if(!semPagamento && existente._alertaPagamentoEmitido){
       // Pagamento passou a existir — a próxima falta (noutra adjudicação) volta a poder alertar.
+      var flagAnteriorExistenteResolvido = existente._alertaPagamentoEmitido;
       existente._alertaPagamentoEmitido = false;
       if(typeof saveUniItems==='function') saveUniItems();
+      var persistFlagResolvido = (typeof _sbUniItemUpsert==='function')
+        ? await _sbUniItemUpsert(existente, {isCreate:false})
+        : {ok:true};
+      if(!persistFlagResolvido.ok){
+        existente._alertaPagamentoEmitido = flagAnteriorExistenteResolvido;
+        if(typeof saveUniItems==='function') saveUniItems();
+        return {ok:true, item:existente, alertaPersistidoRemotamente:false};
+      }
+      return {ok:true, item:existente, alertaPersistidoRemotamente:true};
     }
     return {ok:true, item:existente};
   }
@@ -18556,14 +18581,28 @@ async function obGarantirTarefaFinanceiraAdjudicacao(lead, dados, orc){
   }
   uniItems.unshift(item);
   if(typeof saveUniItems==='function') saveUniItems();
+  var alertaPersistidoRemotamenteCriacao;
   if(semPagamento && typeof EventBus!=='undefined' && EventBus && typeof EventBus.publish==='function'){
     obRegistarAlertaAgente5PagamentoFalta();
     EventBus.publish('adjudicacao_sem_pagamento', { cliente:cliente, leadId:item.leadId, orcNum:item.orcNum, projectId:item.projectId });
+    // Igual ao ramo de atualização: o evento já foi publicado (uma única
+    // vez); resta persistir a flag remotamente, com optimistic locking,
+    // sem nunca repetir o EventBus consoante o resultado desta escrita.
     item._alertaPagamentoEmitido = true;
     if(typeof saveUniItems==='function') saveUniItems();
+    var persistFlagCriacao = (typeof _sbUniItemUpsert==='function')
+      ? await _sbUniItemUpsert(item, {isCreate:false})
+      : {ok:true};
+    if(!persistFlagCriacao.ok){
+      item._alertaPagamentoEmitido = false;
+      if(typeof saveUniItems==='function') saveUniItems();
+      alertaPersistidoRemotamenteCriacao = false;
+    } else {
+      alertaPersistidoRemotamenteCriacao = true;
+    }
   }
   if(typeof showToast==='function') showToast('💰 Tarefa criada para o Financeiro — preparar faturação de '+cliente);
-  return {ok:true, item:item};
+  return {ok:true, item:item, alertaPersistidoRemotamente: alertaPersistidoRemotamenteCriacao};
 }
 window.obGarantirTarefaFinanceiraAdjudicacao = obGarantirTarefaFinanceiraAdjudicacao;
 
