@@ -8653,6 +8653,10 @@ tbody tr:hover{background:rgba(255,203,45,.05)}
         <div id="dash-alerts"></div>
       </div>
     </div>
+    <div class="cc" style="margin-top:16px">
+      <div class="sh"><h2>Tarefas Financeiras pendentes</h2></div>
+      <div id="dash-fin-tarefas"></div>
+    </div>
     </div>
 
 </div>
@@ -11915,7 +11919,7 @@ window.goPage=function goPage(id){
   if(id==='admin-despesas')      { try{ despTab('crm'); despLoadCRM(); if(!EC_DESPESAS_APP.length) despSyncApp(); }catch(e){} }
   if(id==='admin-rh')            { try{ rhRender(); }catch(e){} }
   if(id==='admin-docs')          { crmDocsRender(); docsTab('crm'); }
-  if(id==='dashboard')           { try{ renderDashLeads(); setTimeout(initCharts,50); }catch(e){} }
+  if(id==='dashboard')           { try{ renderDashLeads(); setTimeout(initCharts,50); if(typeof renderDashboardCFO==='function') renderDashboardCFO(); }catch(e){} }
   if(id==='financeiro')          { try{ renderFinanceiro(); setTimeout(initCharts,50);
     // Bug 7 (auditoria 12/09): garantir CRM_DESPESAS carregado (mesmo loader
     // usado por admin-despesas) mesmo que o utilizador nunca tenha visitado
@@ -18245,7 +18249,8 @@ function crmAbrirAdjudicacaoModal(leadId){
     eng:           (adj&&adj.eng)           || '',
     obs:           (adj&&adj.obs)           || '',
     orcNum:        (adj&&adj.orcNum)        || orc.num || '',
-    produto:       (adj&&adj.produto)       || lead.prod || ''
+    produto:       (adj&&adj.produto)       || lead.prod || '',
+    pagamento:     (adj&&adj.pagamento)     || ''
   };
 
   const set = (id,v)=>{ const el=document.getElementById(id); if(el) el.value=v; };
@@ -18261,6 +18266,7 @@ function crmAbrirAdjudicacaoModal(leadId){
   set('adj-eng', pre.eng);
   set('adj-produto', pre.produto);
   set('adj-obs', pre.obs);
+  set('adj-pagamento', pre.pagamento);
   const ref = document.getElementById('adj-orc-ref');
   if(ref){ ref.style.display = pre.orcNum?'inline-block':'none'; ref.textContent = pre.orcNum?('Ref. '+pre.orcNum):''; }
 
@@ -18293,7 +18299,10 @@ async function crmSubmeterAdjudicacao(){
     cabimento: get('adj-cabimento'),
     eng: get('adj-eng'),
     produto: get('adj-produto'),
-    obs: get('adj-obs')
+    obs: get('adj-obs'),
+    // Parte 2 (Fase 3) — campo administrativo, nunca bloqueia a submissão
+    // se vier vazio (ver comentário mais abaixo, junto da validação).
+    pagamento: get('adj-pagamento')
   };
   if(!dados.finNome || !dados.finTel || !dados.finEmail || !dados.nif || !dados.empresa || !dados.moradaFiscal || !dados.moradaMontagem){
     alert('Preenche os campos obrigatórios da adjudicação.');
@@ -18360,6 +18369,14 @@ async function crmSubmeterAdjudicacao(){
     crmAddAtividade(leadId, 'adjudicacao', 'Adjudicação submetida — NIF '+dados.nif+(orc?' · Orçamento '+orc.num:' · sem orçamento associado'), autor);
   }
 
+  // Parte 2 (Fase 3) — tarefa administrativa para o Financeiro, reaproveitando
+  // ob_uni_items/admin-agenda (mesmo padrão de orcMarcarNecessitaDesign()).
+  // Nunca duplica: obGarantirTarefaFinanceiraAdjudicacao() localiza uma
+  // tarefa já existente por projectId (ou leadId+orcNum) antes de criar.
+  if(typeof obGarantirTarefaFinanceiraAdjudicacao==='function'){
+    obGarantirTarefaFinanceiraAdjudicacao(lead, dados, orc);
+  }
+
   if(orc && typeof orcChangeStatus==='function'){
     orcChangeStatus(orc.num, 'Aprovado');
   }
@@ -18394,6 +18411,179 @@ async function crmSubmeterAdjudicacao(){
   crmFecharAdjudicacaoModal();
 }
 
+// ══════════════════════════════════════════════════════════════════
+// PARTE 2 (FASE 3) — FLUXO FINANCEIRO PÓS-ADJUDICAÇÃO
+// Reaproveita integralmente a infraestrutura já existente: ob_uni_items
+// (page:'admin-agenda', mesmo padrão de orcMarcarNecessitaDesign()),
+// EventBus/Agente 5 (alertas), e lead.adjudicacao (Fase 1/leitor read-only).
+// Nenhuma tabela nova, nenhum motor de cálculo tocado.
+// ══════════════════════════════════════════════════════════════════
+
+// Localiza uma tarefa Financeiro já existente para esta adjudicação —
+// nunca por Date.now()/id novo. Prioridade: projectId (identificador mais
+// estável, imutável) -> leadId+orcNum -> leadId sozinho (quando a
+// adjudicação não tem orçamento associado). Isto é a chave lógica de
+// deduplicação pedida: reabrir/ressubmeter a mesma adjudicação nunca cria
+// uma 2ª tarefa, só atualiza a existente.
+function obEncontrarTarefaFinanceiraAdjudicacao(dados){
+  if(typeof uniItems==='undefined' || !dados) return null;
+  var candidatos = uniItems.filter(function(i){ return i && i.page==='admin-agenda' && i._tarefaFinanceiraAdjudicacao===true; });
+  if(dados.projectId){
+    var porProjectId = candidatos.find(function(i){ return i.projectId && i.projectId===dados.projectId; });
+    if(porProjectId) return porProjectId;
+  }
+  if(dados.leadId!=null && dados.orcNum){
+    var porLeadOrc = candidatos.find(function(i){ return i.leadId===dados.leadId && i.orcNum===dados.orcNum; });
+    if(porLeadOrc) return porLeadOrc;
+  }
+  if(dados.leadId!=null){
+    var porLeadSo = candidatos.find(function(i){ return i.leadId===dados.leadId && !i.projectId && !i.orcNum; });
+    if(porLeadSo) return porLeadSo;
+  }
+  return null;
+}
+window.obEncontrarTarefaFinanceiraAdjudicacao = obEncontrarTarefaFinanceiraAdjudicacao;
+
+// AGENTE 5 — mapeamento do alerta "Forma de Pagamento em falta" (reaproveita
+// o EventBus/painel de agentes já existente, ver bloco "SISTEMA DE AGENTES
+// COLABORATIVOS" mais abaixo). Feito aqui, fora daquela IIFE, porque esta
+// função corre antes dela no ficheiro — window.AGENTE5_ICONES/NIVEL/MSG só
+// existem se essa IIFE já tiver corrido; por isso o registo é condicional
+// e tolerante (nunca cria um 2º sistema de alertas).
+function obRegistarAlertaAgente5PagamentoFalta(){
+  if(typeof window.AGENTE5_ICONES==='object' && window.AGENTE5_ICONES && !('adjudicacao_sem_pagamento' in window.AGENTE5_ICONES)){
+    window.AGENTE5_ICONES.adjudicacao_sem_pagamento = '🔴';
+  }
+  if(typeof window.AGENTE5_NIVEL==='object' && window.AGENTE5_NIVEL && !('adjudicacao_sem_pagamento' in window.AGENTE5_NIVEL)){
+    window.AGENTE5_NIVEL.adjudicacao_sem_pagamento = 'crit';
+  }
+  if(typeof window.AGENTE5_MSG==='object' && window.AGENTE5_MSG && !('adjudicacao_sem_pagamento' in window.AGENTE5_MSG)){
+    window.AGENTE5_MSG.adjudicacao_sem_pagamento = function(d){ return 'Forma de Pagamento em falta — ' + ((d&&d.cliente)||'adjudicação'); };
+  }
+}
+
+// Cria (ou atualiza, nunca duplica) a tarefa administrativa do Financeiro
+// depois de uma adjudicação submetida com sucesso. Mesmo padrão de
+// orcMarcarNecessitaDesign(): objeto simples em uniItems + saveUniItems +
+// _sbUniItemUpsert. Sem tabela nova, sem 2º sistema de tarefas.
+function obGarantirTarefaFinanceiraAdjudicacao(lead, dados, orc){
+  if(typeof uniItems==='undefined' || !dados) return null;
+  var autor = (typeof CU!=='undefined'&&CU&&CU.name) ? CU.name : 'Sistema';
+  var cliente = dados.empresa || (lead&&lead.emp) || '—';
+  var existente = obEncontrarTarefaFinanceiraAdjudicacao(dados);
+  var semPagamento = !dados.pagamento;
+
+  if(existente){
+    // Atualiza dados administrativos relevantes — nunca cria um duplicado.
+    existente.client = cliente;
+    existente.clientId = dados.clientId || existente.clientId || null;
+    existente.projectId = dados.projectId || existente.projectId || null;
+    existente.orcNum = dados.orcNum || existente.orcNum || null;
+    existente.pagamento = dados.pagamento || '';
+    existente.leadId = dados.leadId!=null ? dados.leadId : existente.leadId;
+    if(typeof saveUniItems==='function') saveUniItems();
+    if(typeof _sbUniItemUpsert==='function') _sbUniItemUpsert(existente, {isCreate:false});
+    if(semPagamento && !existente._alertaPagamentoEmitido && typeof EventBus!=='undefined' && EventBus && typeof EventBus.publish==='function'){
+      obRegistarAlertaAgente5PagamentoFalta();
+      EventBus.publish('adjudicacao_sem_pagamento', { cliente:cliente, leadId:existente.leadId, orcNum:existente.orcNum, projectId:existente.projectId });
+      existente._alertaPagamentoEmitido = true;
+      if(typeof saveUniItems==='function') saveUniItems();
+    } else if(!semPagamento && existente._alertaPagamentoEmitido){
+      // Pagamento passou a existir — a próxima falta (noutra adjudicação) volta a poder alertar.
+      existente._alertaPagamentoEmitido = false;
+      if(typeof saveUniItems==='function') saveUniItems();
+    }
+    return existente;
+  }
+
+  var item = {
+    id: Date.now(), page: 'admin-agenda',
+    n: 'Adjudicação — preparar faturação — '+cliente,
+    client: cliente, status: 'Outro', priority: 'normal', assignee: 'Financeiro',
+    date: new Date().toISOString().split('T')[0],
+    notes: 'Criado automaticamente após adjudicação'+(orc?(' — Orçamento '+orc.num):' (sem orçamento associado)')+'.',
+    extra: '',
+    leadId: dados.leadId!=null ? dados.leadId : null,
+    clientId: dados.clientId || null,
+    projectId: dados.projectId || null,
+    orcNum: dados.orcNum || null,
+    pagamento: dados.pagamento || '',
+    _tarefaFinanceiraAdjudicacao: true,
+    _alertaPagamentoEmitido: false,
+    historico: [{ de:null, para:'Outro', em:new Date().toISOString(), por:autor }],
+    dt: new Date().toLocaleDateString('pt-PT',{day:'2-digit',month:'2-digit',year:'numeric'})
+  };
+  uniItems.unshift(item);
+  if(typeof saveUniItems==='function') saveUniItems();
+  if(typeof _sbUniItemUpsert==='function') _sbUniItemUpsert(item, {isCreate:true});
+  if(semPagamento && typeof EventBus!=='undefined' && EventBus && typeof EventBus.publish==='function'){
+    obRegistarAlertaAgente5PagamentoFalta();
+    EventBus.publish('adjudicacao_sem_pagamento', { cliente:cliente, leadId:item.leadId, orcNum:item.orcNum, projectId:item.projectId });
+    item._alertaPagamentoEmitido = true;
+    if(typeof saveUniItems==='function') saveUniItems();
+  }
+  if(typeof showToast==='function') showToast('💰 Tarefa criada para o Financeiro — preparar faturação de '+cliente);
+  return item;
+}
+window.obGarantirTarefaFinanceiraAdjudicacao = obGarantirTarefaFinanceiraAdjudicacao;
+
+// ── Dashboard CFO — secção "Tarefas Financeiras pendentes" ──────────
+// Só lê uniItems/admin-agenda (nunca duplica em outra estrutura, nunca
+// constrói um novo dashboard — acrescenta uma secção ao CFO já existente).
+function renderTarefasFinanceirasCFO(){
+  var el = document.getElementById('dash-fin-tarefas');
+  if(!el) return;
+  if(typeof uniItems==='undefined'){ el.innerHTML=''; return; }
+  var tarefas = uniItems.filter(function(i){ return i && i.page==='admin-agenda' && i._tarefaFinanceiraAdjudicacao===true; });
+  if(!tarefas.length){ el.innerHTML = '<div style="font-size:12px;color:var(--muted);padding:6px 0">Sem tarefas financeiras pendentes.</div>'; return; }
+  el.innerHTML = tarefas.map(function(t){
+    var semPagamento = !t.pagamento;
+    var corBorda = semPagamento ? 'var(--r)' : 'var(--border)';
+    return '<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-left:3px solid '+corBorda+';background:var(--bg3);border-radius:6px;margin-bottom:6px;font-size:12.5px">'
+      + '<div style="flex:1">'
+      + '<div style="font-weight:600;color:var(--txt2)">'+(t.client||'—')+(t.orcNum?' · Nº '+t.orcNum:'')+'</div>'
+      + '<div style="color:var(--muted);font-size:11.5px">'+(semPagamento?'⚠ Forma de Pagamento em falta':('💳 '+t.pagamento))+' · '+(t.status||'—')+' · '+(t.dt||'—')+'</div>'
+      + '</div>'
+      + (t.leadId!=null ? '<button class="tbtn" style="font-size:11px;padding:3px 8px" onclick="crmAbrirVerAdjudicacao('+t.leadId+')">👁 Ver Adjudicação</button>' : '')
+      + '</div>';
+  }).join('');
+}
+window.renderTarefasFinanceirasCFO = renderTarefasFinanceirasCFO;
+
+// ── "👁 Ver Adjudicação" — leitor read-only, nunca duplica o formulário de
+// edição (#adj-modal) nem permite alterar nada por aqui. ────────────────
+function crmAbrirVerAdjudicacao(leadId){
+  var lead = (typeof crmLeads!=='undefined') ? crmLeads.find(function(l){ return l.id===leadId; }) : null;
+  var m = document.getElementById('adj-view-modal');
+  if(!m) return;
+  var adj = (lead && lead.adjudicacao) || {};
+  var val = function(v){ return (v===undefined||v===null||v==='') ? '—' : v; };
+  var set = function(id,v){ var el=document.getElementById(id); if(el) el.textContent = val(v); };
+  set('adjv-empresa', adj.empresa);
+  set('adjv-nif', adj.nif);
+  set('adjv-fin-nome', adj.finNome);
+  set('adjv-fin-tel', adj.finTel);
+  set('adjv-fin-email', adj.finEmail);
+  set('adjv-morada-fiscal', adj.moradaFiscal);
+  set('adjv-morada-montagem', adj.moradaMontagem);
+  set('adjv-pagamento', adj.pagamento);
+  set('adjv-os', adj.os);
+  set('adjv-cabimento', adj.cabimento);
+  set('adjv-eng', adj.eng);
+  set('adjv-obs', adj.obs);
+  set('adjv-orcnum', adj.orcNum);
+  set('adjv-projectid', adj.projectId);
+  set('adjv-leadid', adj.leadId!=null?adj.leadId:(lead?lead.id:null));
+  if(!lead && typeof showToast==='function') showToast('⚠ Lead não encontrada — a mostrar apenas os dados que existirem.');
+  m.classList.add('open');
+}
+window.crmAbrirVerAdjudicacao = crmAbrirVerAdjudicacao;
+function crmFecharVerAdjudicacao(){
+  var m = document.getElementById('adj-view-modal');
+  if(m) m.classList.remove('open');
+}
+window.crmFecharVerAdjudicacao = crmFecharVerAdjudicacao;
+
 // Liga eventos dos botões do modal de adjudicação e do botão "Adjudicação" do lead (sem onclick inline)
 document.addEventListener('DOMContentLoaded', function(){
   const adjBtn = document.getElementById('clm-adjud-btn');
@@ -18402,6 +18592,8 @@ document.addEventListener('DOMContentLoaded', function(){
   if(adjCancelBtn) adjCancelBtn.addEventListener('click', crmFecharAdjudicacaoModal);
   const adjSubmitBtn = document.getElementById('adj-submit-btn');
   if(adjSubmitBtn) adjSubmitBtn.addEventListener('click', crmSubmeterAdjudicacao);
+  const adjvCloseBtn = document.getElementById('adjv-close-btn');
+  if(adjvCloseBtn) adjvCloseBtn.addEventListener('click', crmFecharVerAdjudicacao);
 });
 
 // Converte um valor monetário (0 a 999.999,99) para texto por extenso em português
@@ -19839,6 +20031,10 @@ function renderDashboardCFO(){
 
   set('dash-kpi-vencido-val', fmt(totalVencido));
   set('dash-kpi-vencido-sub', vencidas.length+' fatura'+(vencidas.length===1?'':'s'));
+
+  // Parte 2 (Fase 3) — secção de tarefas financeiras pendentes, acrescentada
+  // ao CFO já existente (nunca um dashboard novo).
+  if(typeof renderTarefasFinanceirasCFO==='function') renderTarefasFinanceirasCFO();
 }
 
 function renderFinanceiro(){
@@ -27429,6 +27625,21 @@ function importarConfiguracao() {
         <input class="form-input" id="adj-produto" readonly style="opacity:.6;cursor:not-allowed"/>
       </div>
     </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Forma de Pagamento</label>
+        <!-- Parte 2 (Fase 3) — mesmas opções já usadas em #fat-pagamento
+             (Faturação); campo administrativo, não gera nenhum cálculo. -->
+        <select class="form-select" id="adj-pagamento">
+          <option value="">-- Selecione --</option>
+          <option value="Transferência Bancária">🏦 Transferência Bancária</option>
+          <option value="Multibanco">💳 Multibanco</option>
+          <option value="Cheque">📝 Cheque</option>
+          <option value="Numerário">💵 Numerário</option>
+          <option value="Débito Directo">📋 Débito Directo</option>
+        </select>
+      </div>
+    </div>
 
     <div style="margin:14px 0 8px;font-size:12px;font-weight:700;letter-spacing:.06em;color:var(--y);text-transform:uppercase;border-top:1px solid var(--border);padding-top:14px">Documentação</div>
     <div class="form-row full">
@@ -27441,6 +27652,57 @@ function importarConfiguracao() {
     <div class="crm-modal-btns">
       <button class="tbtn" id="adj-cancel-btn">Cancelar</button>
       <button class="tbtn y" id="adj-submit-btn">✓ Submeter</button>
+    </div>
+  </div>
+</div>
+
+<!-- Parte 2 (Fase 3) — leitor READ-ONLY de lead.adjudicacao: reaproveita os
+     mesmos rótulos/agrupamento visual de #adj-modal, mas com <div> em vez
+     de <input>/<select> — nunca permite editar nada, nunca é o mesmo
+     formulário de edição. -->
+<div id="adj-view-modal" class="crm-modal-overlay">
+  <div class="crm-modal" style="max-width:620px">
+    <h2>👁 Adjudicação (consulta)</h2>
+    <div style="margin:4px 0 8px;font-size:12px;font-weight:700;letter-spacing:.06em;color:var(--y);text-transform:uppercase">Área Financeira</div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Nome (Área Financeira)</label><div class="form-input" id="adjv-fin-nome" style="opacity:.85"></div></div>
+      <div class="form-group"><label class="form-label">Contacto</label><div class="form-input" id="adjv-fin-tel" style="opacity:.85"></div></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Email</label><div class="form-input" id="adjv-fin-email" style="opacity:.85"></div></div>
+      <div class="form-group"><label class="form-label">NIF</label><div class="form-input" id="adjv-nif" style="opacity:.85"></div></div>
+    </div>
+    <div style="margin:14px 0 8px;font-size:12px;font-weight:700;letter-spacing:.06em;color:var(--y);text-transform:uppercase;border-top:1px solid var(--border);padding-top:14px">Dados da Empresa</div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Nome de Empresa</label><div class="form-input" id="adjv-empresa" style="opacity:.85"></div></div>
+      <div class="form-group"><label class="form-label">Morada Fiscal</label><div class="form-input" id="adjv-morada-fiscal" style="opacity:.85"></div></div>
+    </div>
+    <div style="margin:14px 0 8px;font-size:12px;font-weight:700;letter-spacing:.06em;color:var(--y);text-transform:uppercase;border-top:1px solid var(--border);padding-top:14px">Instalação / Encomenda</div>
+    <div class="form-row full">
+      <div class="form-group"><label class="form-label">Morada de Montagem</label><div class="form-input" id="adjv-morada-montagem" style="opacity:.85"></div></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">N.º OS/PO</label><div class="form-input" id="adjv-os" style="opacity:.85"></div></div>
+      <div class="form-group"><label class="form-label">N.º Cabimento</label><div class="form-input" id="adjv-cabimento" style="opacity:.85"></div></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Engenheiro</label><div class="form-input" id="adjv-eng" style="opacity:.85"></div></div>
+      <div class="form-group"><label class="form-label">Forma de Pagamento</label><div class="form-input" id="adjv-pagamento" style="opacity:.85"></div></div>
+    </div>
+    <div style="margin:14px 0 8px;font-size:12px;font-weight:700;letter-spacing:.06em;color:var(--y);text-transform:uppercase;border-top:1px solid var(--border);padding-top:14px">Observações</div>
+    <div class="form-row full">
+      <div class="form-group"><div class="form-input" id="adjv-obs" style="opacity:.85;white-space:pre-wrap"></div></div>
+    </div>
+    <div style="margin:14px 0 8px;font-size:12px;font-weight:700;letter-spacing:.06em;color:var(--y);text-transform:uppercase;border-top:1px solid var(--border);padding-top:14px">Identificadores</div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Nº Orçamento</label><div class="form-input" id="adjv-orcnum" style="opacity:.85"></div></div>
+      <div class="form-group"><label class="form-label">Project ID</label><div class="form-input" id="adjv-projectid" style="opacity:.85"></div></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Lead ID</label><div class="form-input" id="adjv-leadid" style="opacity:.85"></div></div>
+    </div>
+    <div class="crm-modal-btns">
+      <button class="tbtn" id="adjv-close-btn">Fechar</button>
     </div>
   </div>
 </div>
