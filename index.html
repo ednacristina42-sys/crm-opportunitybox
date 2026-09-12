@@ -10855,11 +10855,41 @@ tbody tr:hover{background:rgba(255,203,45,.05)}
         <label class="dept-check-lbl" style="display:flex;align-items:center;gap:6px;background:var(--bg3);border:1px solid var(--border);border-radius:7px;padding:7px 12px;cursor:pointer;font-size:13px;color:var(--txt2);transition:border-color .15s">
           <input type="checkbox" class="dept-check" value="Montagem / Acabamento" style="accent-color:var(--y);width:13px;height:13px"/> ✨ Montagem / Acabamento
         </label>
+        <!-- Parte 2 (Fase 4) — aditivo: novos departamentos canónicos
+             (PROD_DEPTS_CANONICOS), sem separar Impressão/Vinil nem CNC/Laser. -->
+        <label class="dept-check-lbl" style="display:flex;align-items:center;gap:6px;background:var(--bg3);border:1px solid var(--border);border-radius:7px;padding:7px 12px;cursor:pointer;font-size:13px;color:var(--txt2);transition:border-color .15s">
+          <input type="checkbox" class="dept-check" value="Impressão 3D" style="accent-color:var(--y);width:13px;height:13px"/> 🖨️ Impressão 3D
+        </label>
+        <label class="dept-check-lbl" style="display:flex;align-items:center;gap:6px;background:var(--bg3);border:1px solid var(--border);border-radius:7px;padding:7px 12px;cursor:pointer;font-size:13px;color:var(--txt2);transition:border-color .15s">
+          <input type="checkbox" class="dept-check" value="Modelagem 3D" style="accent-color:var(--y);width:13px;height:13px"/> 🧊 Modelagem 3D
+        </label>
       </div>
       <!-- Subtarefas geradas -->
       <div id="uni-subtasks-preview" style="margin-top:12px;display:flex;flex-direction:column;gap:4px"></div>
       <!-- Actividades por departamento -->
       <div id="uni-dept-atividades" style="margin-top:14px;display:flex;flex-direction:column;gap:10px"></div>
+    </div>
+
+    <!-- Parte 2 (Fase 4) — Design: criar Ficheiro/Arte a partir da própria
+         tarefa, herdando os dados que a tarefa já conhece (projectId,
+         cliente, clientId, orcNum, responsável). Só visível ao editar uma
+         tarefa de Design já existente (ver uniOpen). -->
+    <div id="dt-novo-ficheiro-wrap" style="display:none;margin-top:12px;border-top:1px solid var(--border);padding-top:12px">
+      <button type="button" id="dt-btn-novo-ficheiro" class="tbtn y" onclick="if(typeof dtCriarFicheiroDeTarefa==='function' && uniEditingId) dtCriarFicheiroDeTarefa(uniEditingId)" style="font-size:13px">📁 + Ficheiro / Arte</button>
+    </div>
+
+    <!-- Parte 2 (Fase 4) — Design: histórico de versões do Ficheiro/Arte.
+         Só visível ao editar um item de design-ficheiros já existente. -->
+    <div id="fi-versoes-wrap" style="display:none;margin-top:12px;border-top:1px solid var(--border);padding-top:12px">
+      <div style="font-size:13px;font-weight:600;color:var(--y);letter-spacing:.05em;margin-bottom:10px">VERSÕES</div>
+      <div id="fi-versao-atual-info" style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:8px"></div>
+      <div style="display:flex;gap:8px;margin-bottom:8px">
+        <input class="form-input" id="fi-nova-versao-ficheiro" placeholder="Ficheiro / link da nova versão..." style="flex:1;font-size:13px"/>
+        <input class="form-input" id="fi-nova-versao-obs" placeholder="Observação (opcional)" style="flex:1;font-size:13px"/>
+        <button type="button" class="tbtn" onclick="if(typeof fiUINovaVersao==='function') fiUINovaVersao()" style="font-size:13px">+ Nova versão</button>
+      </div>
+      <button type="button" id="fi-toggle-versoes-antigas" onclick="if(typeof fiUIToggleVersoesAntigas==='function') fiUIToggleVersoesAntigas()" style="background:none;border:none;color:var(--muted);font-size:12.5px;cursor:pointer;text-decoration:underline;padding:0 0 8px">Ver versões anteriores</button>
+      <div id="fi-versoes-lista" style="display:none;flex-direction:column;gap:6px"></div>
     </div>
 
     <!-- ── ABAS: Subtarefas · Itens de Ação ── -->
@@ -14493,6 +14523,10 @@ function openUniModal(page){
   // Guardar página actual
   uniCurrentPage=page;
   uniEditingId=null;
+  // Parte 2 (Fase 4) — item novo: nunca mostra "+ Ficheiro / Arte" nem o
+  // painel de Versões (ambos exigem uma tarefa/ficheiro já existente).
+  var dtNovoFicheiroWrapNovo = m.querySelector('#dt-novo-ficheiro-wrap'); if(dtNovoFicheiroWrapNovo) dtNovoFicheiroWrapNovo.style.display='none';
+  var fiVersoesWrapNovo = m.querySelector('#fi-versoes-wrap'); if(fiVersoesWrapNovo) fiVersoesWrapNovo.style.display='none';
   // Departamentos (só para produção)
   uniToggleDeptSection(page);
   if(page==='fabrica-producao'){
@@ -14605,6 +14639,22 @@ function uniOpen(page, itemId){
   // Mostrar abas apenas em edição
   const editItem = itemId ? uniItems.find(i=>i.id===itemId) : null;
   if(typeof uniShowTabs==='function') uniShowTabs(editItem);
+  // Parte 2 (Fase 4) — "+ Ficheiro / Arte" só em edição de uma tarefa de
+  // Design já existente; painel de Versões só em edição de um
+  // design-ficheiros já existente (ambos escondidos ao criar um item novo).
+  const dtNovoFicheiroWrap = document.getElementById('dt-novo-ficheiro-wrap');
+  if(dtNovoFicheiroWrap) dtNovoFicheiroWrap.style.display = (page==='design-tarefas' && itemId) ? 'block' : 'none';
+  const fiVersoesWrap = document.getElementById('fi-versoes-wrap');
+  if(fiVersoesWrap){
+    fiVersoesWrap.style.display = (page==='design-ficheiros' && itemId && editItem) ? 'block' : 'none';
+    if(page==='design-ficheiros' && itemId && editItem){
+      const listaEl = document.getElementById('fi-versoes-lista');
+      if(listaEl) listaEl.style.display='none';
+      const toggleEl = document.getElementById('fi-toggle-versoes-antigas');
+      if(toggleEl) toggleEl.textContent='Ver versões anteriores';
+      if(typeof fiRenderVersoesPainel==='function') fiRenderVersoesPainel(editItem);
+    }
+  }
   m.classList.add('open');
 }
 
@@ -14615,7 +14665,13 @@ function uniOpen(page, itemId){
 // — é a fonte de verdade usada por uniSave() para decidir quais
 // subtarefas são "canónicas" (podem ser normalizadas) e quais são
 // legado (têm de ser sempre preservadas, mesmo sem checkbox próprio).
-var PROD_DEPTS_CANONICOS = ['Design','Impressão / Vinil','Pintura','Serralharia','Letras 3D','Eletrificação','CNC / Laser','Montagem / Acabamento'];
+// Parte 2 (Fase 4) — aditivo: 'Impressão 3D' e 'Modelagem 3D' juntam-se à
+// lista central sem separar 'Impressão / Vinil' nem 'CNC / Laser' (essa
+// separação fica fora do âmbito desta fase). Todos os consumidores
+// dinâmicos (uniSave, obProducaoPodeConcluir, filtros, "Meu Departamento")
+// já leem PROD_DEPTS_CANONICOS — não precisam de lógica extra por
+// departamento novo.
+var PROD_DEPTS_CANONICOS = ['Design','Impressão / Vinil','Pintura','Serralharia','Letras 3D','Eletrificação','CNC / Laser','Montagem / Acabamento','Impressão 3D','Modelagem 3D'];
 window.PROD_DEPTS_CANONICOS = PROD_DEPTS_CANONICOS;
 
 // Normaliza uma subtarefa de Produção para o formato enriquecido da
@@ -14946,17 +15002,268 @@ function fiRender(){
   const cfg=UNI_CFG['design-ficheiros'];
   el.innerHTML=items.map(i=>{
     const sc=cfg.colors[i.status]||'#6b7280';
+    // Parte 2 (Fase 4): mostra a versão APROVADA quando existir, senão a
+    // mais recente (fiVersaoAtual) — item.extra sozinho já não reflecte o
+    // histórico completo (ver item.versoes). Itens legado sem versoes
+    // continuam a mostrar exatamente o que mostravam antes.
+    const versaoLabel = (typeof fiVersaoAtual==='function') ? ((fiVersaoAtual(i)||{}).versao || i.extra || 'v1') : (i.extra||'v1');
     return `<tr onclick="uniOpen('design-ficheiros',${i.id})" style="cursor:pointer">
       <td><strong style="color:var(--txt2)">${i.n}</strong></td>
       <td style="font-size:13px">${i.client||'—'}</td>
       <td><span class="b bm" style="font-size:11px">Ficheiro</span></td>
-      <td style="font-size:13px">${i.extra||'v1'}</td>
+      <td style="font-size:13px">${versaoLabel}</td>
       <td><span class="b" style="background:${sc}22;color:${sc}">${i.status}</span></td>
       <td style="font-size:13px">${i.assignee||'—'}</td>
       <td style="font-size:13px;color:var(--muted)">${i.dt||'—'}</td>
     </tr>`;
   }).join('');
 }
+window.fiRender = fiRender;
+
+// ══ PARTE 2 (FASE 4) — DESIGN: HISTÓRICO DE VERSÕES DE design-ficheiros ═
+// A auditoria confirmou que o campo de versão (item.extra) era sempre
+// sobrescrito — sem migration, sem apagar nada: introduz item.versoes[],
+// um array aditivo (cada entrada preserva número/id, data/hora, autor,
+// observação, ficheiro/link, estado e se está aprovada). Itens antigos
+// sem versoes nunca quebram — fiObterVersoes() sintetiza, só em memória,
+// uma "versão inicial" a partir dos campos já existentes; só passam a ter
+// versoes[] persistido de verdade na próxima operação seguindem
+// (fiAdicionarVersao/fiAprovarVersao) — nunca por uma migration global.
+
+// Devolve sempre um array (nunca muta o item). Item legado sem versoes ->
+// sintetiza 1 única entrada "inicial" a partir do estado atual do item.
+function fiObterVersoes(item){
+  if(!item) return [];
+  if(Array.isArray(item.versoes) && item.versoes.length) return item.versoes;
+  return [{
+    id: item.id+'-legacy',
+    versao: item.extra || 'v1',
+    em: item.date || item.dt || null,
+    autor: item.assignee || '',
+    observacao: item.notes || '',
+    ficheiro: item.extra || null,
+    estado: item.status,
+    aprovada: item.status==='Aprovado'
+  }];
+}
+window.fiObterVersoes = fiObterVersoes;
+
+// Versão a mostrar por padrão: a aprovada, se existir; senão a mais
+// recente (última do array — fiAdicionarVersao só acrescenta no fim,
+// nunca reordena nem apaga as anteriores).
+function fiVersaoAtual(item){
+  var versoes = fiObterVersoes(item);
+  if(!versoes.length) return null;
+  var aprovada = versoes.find(function(v){ return v.aprovada===true; });
+  return aprovada || versoes[versoes.length-1];
+}
+window.fiVersaoAtual = fiVersaoAtual;
+
+// Adiciona uma nova versão a um design-ficheiros existente, respeitando o
+// optimistic locking já existente em _sbUniItemUpsert — nunca um blind
+// upsert (isCreate:false reutiliza sempre _sbVersaoConhecida). Em conflito
+// ou erro: snapshot restaurado por completo (nunca perde uma versão já
+// existente), aviso ao utilizador, sem auto-merge.
+async function fiAdicionarVersao(itemId, dadosVersao){
+  dadosVersao = dadosVersao || {};
+  if(typeof uniItems==='undefined') return {ok:false, reason:'sem-uniItems'};
+  var item = uniItems.find(function(i){ return i.id===itemId && i.page==='design-ficheiros'; });
+  if(!item) return {ok:false, reason:'nao-encontrado'};
+  var prevSnapshot = JSON.parse(JSON.stringify(item));
+  var versoesAtuais = fiObterVersoes(item).slice();
+  var autor = (typeof CU!=='undefined'&&CU&&CU.name) ? CU.name : 'Sistema';
+  var novoNumero = versoesAtuais.length+1;
+  var novaVersao = {
+    id: itemId+'-'+novoNumero,
+    versao: dadosVersao.versao || ('v'+novoNumero),
+    em: new Date().toISOString(),
+    autor: autor,
+    observacao: dadosVersao.observacao || '',
+    ficheiro: dadosVersao.ficheiro || null,
+    estado: dadosVersao.estado || item.status,
+    aprovada: false
+  };
+  item.versoes = versoesAtuais.concat([novaVersao]);
+  item.extra = novaVersao.versao;
+  var resultado = (typeof _sbUniItemUpsert==='function')
+    ? await _sbUniItemUpsert(item, {isCreate:false})
+    : {ok:true};
+  if(!resultado.ok){
+    var idx = uniItems.indexOf(item);
+    if(idx>=0) uniItems[idx] = prevSnapshot;
+    if(typeof saveUniItems==='function') saveUniItems();
+    var msg = resultado.message || 'Não foi possível gravar a nova versão no servidor. Tenta novamente.';
+    if(typeof showToast==='function') showToast('⚠ '+msg);
+    return {ok:false, reason: resultado.reason==='conflict' ? 'conflict' : 'error', item: prevSnapshot};
+  }
+  if(typeof saveUniItems==='function') saveUniItems();
+  return {ok:true, item:item, versao:novaVersao};
+}
+window.fiAdicionarVersao = fiAdicionarVersao;
+
+// Aprova uma versão específica — nunca mais que uma fica marcada como
+// aprovada ao mesmo tempo. Recalcula o array inteiro de versoes a partir
+// do estado atual (nunca apaga nenhuma), só troca o flag 'aprovada' da
+// anterior para a nova, e regista no histórico quem aprovou e quando.
+// Mesma proteção de concorrência (snapshot/rollback, sem blind upsert).
+async function fiAprovarVersao(itemId, versaoId){
+  if(typeof uniItems==='undefined') return {ok:false, reason:'sem-uniItems'};
+  var item = uniItems.find(function(i){ return i.id===itemId && i.page==='design-ficheiros'; });
+  if(!item) return {ok:false, reason:'nao-encontrado'};
+  var versoesAtuais = fiObterVersoes(item).slice();
+  var alvo = versoesAtuais.find(function(v){ return v.id===versaoId; });
+  if(!alvo) return {ok:false, reason:'versao-nao-encontrada'};
+  var prevSnapshot = JSON.parse(JSON.stringify(item));
+  var autor = (typeof CU!=='undefined'&&CU&&CU.name) ? CU.name : 'Sistema';
+  var agora = new Date().toISOString();
+  item.versoes = versoesAtuais.map(function(v){ return Object.assign({}, v, { aprovada: v.id===versaoId }); });
+  item.status = 'Aprovado';
+  item.extra = alvo.versao;
+  item.historico = (Array.isArray(item.historico) ? item.historico : []).concat([{
+    de: prevSnapshot.status||null, para:'Aprovado', em: agora, por: autor, nota: 'Versão '+alvo.versao+' aprovada'
+  }]);
+  var resultado = (typeof _sbUniItemUpsert==='function')
+    ? await _sbUniItemUpsert(item, {isCreate:false})
+    : {ok:true};
+  if(!resultado.ok){
+    var idx = uniItems.indexOf(item);
+    if(idx>=0) uniItems[idx] = prevSnapshot;
+    if(typeof saveUniItems==='function') saveUniItems();
+    var msg = resultado.message || 'Não foi possível aprovar esta versão no servidor. Tenta novamente.';
+    if(typeof showToast==='function') showToast('⚠ '+msg);
+    return {ok:false, reason: resultado.reason==='conflict' ? 'conflict' : 'error', item: prevSnapshot};
+  }
+  if(typeof saveUniItems==='function') saveUniItems();
+  return {ok:true, item:item};
+}
+window.fiAprovarVersao = fiAprovarVersao;
+
+// Painel de versões dentro do modal (ver #fi-versoes-wrap) — só
+// renderização, nenhuma lógica de negócio aqui (essa vive nas funções
+// acima, testáveis isoladamente).
+function fiRenderVersoesPainel(item){
+  var infoEl = document.getElementById('fi-versao-atual-info');
+  var listaEl = document.getElementById('fi-versoes-lista');
+  if(!infoEl || !item) return;
+  var escHtml = function(s){ return String(s==null?'':s).replace(/</g,'&lt;'); };
+  var atual = fiVersaoAtual(item);
+  var todas = fiObterVersoes(item);
+  infoEl.innerHTML = !atual ? '<div style="font-size:12.5px;color:var(--muted);font-style:italic">Sem versões registadas.</div>' : (
+    '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px">'
+    + '<div><strong style="color:var(--txt2)">'+escHtml(atual.versao)+'</strong>'
+    + (atual.aprovada ? ' <span class="b" style="background:#3fcf8e22;color:#3fcf8e;font-size:11px">Aprovada</span>' : '')
+    + '<div style="font-size:11.5px;color:var(--muted);margin-top:2px">'+escHtml(atual.autor||'—')+(atual.observacao?' · '+escHtml(atual.observacao):'')+'</div></div>'
+    + (!atual.aprovada ? '<button type="button" class="tbtn" onclick="if(typeof fiUIAprovarVersao===\'function\') fiUIAprovarVersao(\''+atual.id+'\')" style="font-size:12px">✓ Aprovar esta versão</button>' : '')
+    + '</div>'
+  );
+  if(listaEl){
+    listaEl.innerHTML = todas.slice().reverse().map(function(v){
+      return '<div style="background:var(--bg3);border:1px solid var(--border);border-radius:7px;padding:8px 10px;font-size:12.5px;display:flex;justify-content:space-between;align-items:center;gap:8px">'
+        + '<div><strong>'+escHtml(v.versao)+'</strong>'+(v.aprovada?' <span style="color:#3fcf8e">✓ Aprovada</span>':'')
+        + '<div style="color:var(--muted);font-size:11px">'+escHtml(v.autor||'—')+(v.observacao?' · '+escHtml(v.observacao):'')+'</div></div>'
+        + (!v.aprovada ? '<button type="button" class="tbtn" onclick="if(typeof fiUIAprovarVersao===\'function\') fiUIAprovarVersao(\''+v.id+'\')" style="font-size:11.5px">Aprovar</button>' : '')
+        + '</div>';
+    }).join('');
+  }
+}
+window.fiRenderVersoesPainel = fiRenderVersoesPainel;
+
+function fiUIToggleVersoesAntigas(){
+  var el = document.getElementById('fi-versoes-lista');
+  if(!el) return;
+  var aberto = el.style.display==='flex';
+  el.style.display = aberto ? 'none' : 'flex';
+  var btn = document.getElementById('fi-toggle-versoes-antigas');
+  if(btn) btn.textContent = aberto ? 'Ver versões anteriores' : 'Ocultar versões anteriores';
+}
+window.fiUIToggleVersoesAntigas = fiUIToggleVersoesAntigas;
+
+async function fiUINovaVersao(){
+  if(!uniEditingId) return;
+  var ficheiroEl = document.getElementById('fi-nova-versao-ficheiro');
+  var obsEl = document.getElementById('fi-nova-versao-obs');
+  var r = await fiAdicionarVersao(uniEditingId, { ficheiro: ficheiroEl?ficheiroEl.value:'', observacao: obsEl?obsEl.value:'' });
+  if(r.ok){
+    if(ficheiroEl) ficheiroEl.value='';
+    if(obsEl) obsEl.value='';
+    if(typeof showToast==='function') showToast('📁 Nova versão adicionada — '+r.versao.versao);
+    fiRenderVersoesPainel(r.item);
+    if(typeof fiRender==='function') fiRender();
+  }
+}
+window.fiUINovaVersao = fiUINovaVersao;
+
+async function fiUIAprovarVersao(versaoId){
+  if(!uniEditingId) return;
+  var r = await fiAprovarVersao(uniEditingId, versaoId);
+  if(r.ok){
+    if(typeof showToast==='function') showToast('✓ Versão aprovada.');
+    fiRenderVersoesPainel(r.item);
+    if(typeof fiRender==='function') fiRender();
+  }
+}
+window.fiUIAprovarVersao = fiUIAprovarVersao;
+
+// ══ PARTE 2 (FASE 4) — DESIGN: "+ Ficheiro / Arte" a partir da tarefa ═══
+// Cria um design-ficheiros diretamente ligado à tarefa de origem, herdando
+// tudo o que ela já sabe — nunca pede de novo cliente/projectId/clientId/
+// orcNum/responsável. Segue o mesmo padrão seguro de criação já usado em
+// obGarantirTarefaFinanceiraAdjudicacao: tenta gravar no servidor ANTES de
+// inserir em uniItems (nunca fica um ficheiro fantasma se a escrita
+// falhar). Guarda lógica própria (_dtFicheiroEmCriacao) torna o botão
+// resistente a duplo clique — uma criação já em curso para a mesma tarefa
+// é ignorada, nunca cria um segundo ficheiro.
+var _dtFicheiroEmCriacao = {};
+async function dtCriarFicheiroDeTarefa(tarefaId){
+  if(typeof uniItems==='undefined') return {ok:false, reason:'sem-uniItems'};
+  if(_dtFicheiroEmCriacao[tarefaId]) return {ok:false, reason:'em-curso'};
+  var tarefa = uniItems.find(function(i){ return i.id===tarefaId && i.page==='design-tarefas'; });
+  if(!tarefa) return {ok:false, reason:'tarefa-nao-encontrada'};
+  _dtFicheiroEmCriacao[tarefaId] = true;
+  var btn = (typeof document!=='undefined') ? document.getElementById('dt-btn-novo-ficheiro') : null;
+  if(btn) btn.disabled = true;
+  try{
+    var autor = (typeof CU!=='undefined'&&CU&&CU.name) ? CU.name : 'Sistema';
+    var clientIdHerdado = tarefa.clientId || ((typeof crmEncontrarCliente==='function' && tarefa.client) ? ((crmEncontrarCliente({nome:tarefa.client})||{}).id||null) : null);
+    var item = {
+      id: Date.now(), page: 'design-ficheiros',
+      n: tarefa.n || ('Arte — '+(tarefa.client||'')),
+      client: tarefa.client || '',
+      status: 'Rascunho', priority: tarefa.priority || 'normal',
+      assignee: tarefa.assignee || '',
+      date: new Date().toISOString().split('T')[0],
+      notes: '', extra: 'v1',
+      clientId: clientIdHerdado,
+      projectId: tarefa.projectId || null,
+      orcNum: tarefa.orcNum || null,
+      _tarefaOrigemId: tarefaId,
+      versoes: [{
+        id: null, versao:'v1', em:new Date().toISOString(), autor:autor,
+        observacao:'', ficheiro:null, estado:'Rascunho', aprovada:false
+      }],
+      historico: [{ de:null, para:'Rascunho', em:new Date().toISOString(), por:autor }],
+      dt: new Date().toLocaleDateString('pt-PT',{day:'2-digit',month:'2-digit',year:'numeric'})
+    };
+    item.versoes[0].id = item.id+'-1';
+    var resultado = (typeof _sbUniItemUpsert==='function')
+      ? await _sbUniItemUpsert(item, {isCreate:true})
+      : {ok:true};
+    if(!resultado.ok){
+      var msg = resultado.message || 'Não foi possível criar o ficheiro no servidor. Tenta novamente.';
+      if(typeof showToast==='function') showToast('⚠ '+msg);
+      return {ok:false, reason: resultado.reason==='conflict' ? 'conflict' : 'error'};
+    }
+    uniItems.unshift(item);
+    if(typeof saveUniItems==='function') saveUniItems();
+    if(typeof showToast==='function') showToast('📁 Ficheiro criado a partir da tarefa — '+(tarefa.n||''));
+    if(typeof uniOpen==='function') uniOpen('design-ficheiros', item.id);
+    return {ok:true, item:item};
+  } finally {
+    delete _dtFicheiroEmCriacao[tarefaId];
+    if(btn) btn.disabled = false;
+  }
+}
+window.dtCriarFicheiroDeTarefa = dtCriarFicheiroDeTarefa;
 
 // ══ FÁBRICA PRODUÇÃO ═════════════════════════════════════════════════
 var fpCurrentView = 'board';
