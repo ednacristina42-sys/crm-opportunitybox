@@ -13874,13 +13874,51 @@ function crmRenderTimeline(leadId, orcId){
   }).join('');
 }
 
+// Parte 2 (Fase 1) — localiza TODOS os orçamentos já ligados a uma Lead,
+// com a mesma prioridade em toda a parte administrativa do CRM (badge
+// "Orçamentos ligados" + formulário de Adjudicação): nunca depende só do
+// sessionStorage efémero de criação (window._orcCurrentLeadId/'ob-orc-from-lead').
+// Ordem: orcNum já conhecido (ex.: adjudicação anterior) -> leadId explícito
+// -> projectId -> NIF (Adjudicação) -> nome normalizado (case-insensitive)
+// como último recurso. Devolve sempre um array (pode estar vazio), do mais
+// certo para o menos certo, sem duplicados. Só lê orcData — nunca mexe em
+// cálculo/linhas/pricing do orçamento.
+function crmOrcamentosLigadosALead(lead, criteriosExtra){
+  if(typeof orcData==='undefined' || !lead) return [];
+  criteriosExtra = criteriosExtra || {};
+  var vistos = {};
+  var resultado = [];
+  function add(o){ if(o && !vistos[o.num]){ vistos[o.num]=true; resultado.push(o); } }
+
+  var orcNumConhecido = criteriosExtra.orcNum || (lead.adjudicacao && lead.adjudicacao.orcNum) || null;
+  if(orcNumConhecido) add((orcData||[]).find(function(o){ return o && o.num===orcNumConhecido; }));
+
+  (orcData||[]).filter(function(o){ return o && o.leadId===lead.id; }).forEach(add);
+
+  if(lead.projectId){
+    (orcData||[]).filter(function(o){ return o && o.projectId && o.projectId===lead.projectId; }).forEach(add);
+  }
+
+  var nifConhecido = criteriosExtra.nif || (lead.adjudicacao && lead.adjudicacao.nif) || null;
+  if(nifConhecido && typeof cliNormalizarNif==='function'){
+    var nifNorm = cliNormalizarNif(nifConhecido);
+    (orcData||[]).filter(function(o){ return o && o.nif && cliNormalizarNif(o.nif)===nifNorm; }).forEach(add);
+  }
+
+  if(lead.emp){
+    var nomeNorm = String(lead.emp).trim().toLowerCase();
+    (orcData||[]).filter(function(o){ return o && !o.leadId && o.cli && String(o.cli).trim().toLowerCase()===nomeNorm; }).forEach(add);
+  }
+
+  return resultado;
+}
+window.crmOrcamentosLigadosALead = crmOrcamentosLigadosALead;
+
 function crmRenderOrcLink(leadId){
   const el = document.getElementById('clm-orc-link');
   if(!el) return;
   const lead = (typeof crmLeads!=='undefined') ? crmLeads.find(l=>l.id===leadId) : null;
-  const ligados = (typeof orcData!=='undefined' && lead)
-    ? (orcData||[]).filter(o=>o.leadId===leadId || (!o.leadId && lead.emp && o.cli===lead.emp))
-    : [];
+  const ligados = lead ? crmOrcamentosLigadosALead(lead) : [];
   if(!ligados.length){ el.style.display='none'; el.innerHTML=''; return; }
   el.style.display='block';
   el.innerHTML = '<div style="font-size:11px;font-weight:700;color:var(--muted);letter-spacing:.06em;text-transform:uppercase;margin-bottom:6px">📄 Orçamentos ligados</div>'
@@ -16499,6 +16537,34 @@ function cliNormalizarNif(nif){
 }
 window.cliNormalizarNif = cliNormalizarNif;
 
+// Parte 2 (Fase 1) — localizador único de Cliente por identificador seguro,
+// com a mesma prioridade em toda a parte administrativa do CRM: id já
+// conhecido (clientId) -> NIF normalizado -> nome normalizado (só como
+// último recurso). Nunca cria, nunca funde, nunca apaga — só localiza um
+// Cliente já existente em cliData.
+function crmEncontrarCliente(criterios){
+  criterios = criterios || {};
+  if(typeof cliData==='undefined' || !Array.isArray(cliData)) return null;
+  if(criterios.clientId){
+    var porId = cliData.find(function(c){ return c.id===criterios.clientId; });
+    if(porId) return porId;
+  }
+  var nifNorm = criterios.nif ? cliNormalizarNif(criterios.nif) : '';
+  if(nifNorm){
+    var porNif = cliData.find(function(c){
+      return cliNormalizarNif(c.nif)===nifNorm || cliNormalizarNif(c.finNif)===nifNorm;
+    });
+    if(porNif) return porNif;
+  }
+  var nomeNorm = criterios.nome ? String(criterios.nome).trim().toLowerCase() : '';
+  if(nomeNorm){
+    var porNome = cliData.find(function(c){ return String(c.n||'').trim().toLowerCase()===nomeNorm; });
+    if(porNome) return porNome;
+  }
+  return null;
+}
+window.crmEncontrarCliente = crmEncontrarCliente;
+
 // Preenche o <datalist> de #cli-nome com os clientes existentes (cliData).
 function cliPopularAutocomplete(){
   var dl=document.getElementById('cli-nome-datalist');
@@ -18117,18 +18183,32 @@ function crmAbrirAdjudicacaoModal(leadId){
   const lead = crmLeads.find(l=>l.id===id);
   if(!lead) return;
 
-  const cli = (cliData||[]).find(c=>c.n.toLowerCase()===lead.emp.toLowerCase())||{};
-  const orc = (typeof orcData!=='undefined' ? ((orcData||[]).find(o=>o.leadId===lead.id) || (orcData||[]).find(o=>o.cli===lead.emp)) : null)||{};
+  // Parte 2 (Fase 1) — a adjudicação já submetida anteriormente (se
+  // existir) é sempre a fonte PRIORITÁRIA ao reabrir: nunca força um campo
+  // já persistido de volta a vazio. Regra por campo: adjudicacao guardada
+  // -> dados atuais da Lead/Cliente/Orçamento -> fallback vazio.
+  const adj = lead.adjudicacao || null;
+
+  const cli = (typeof crmEncontrarCliente==='function')
+    ? (crmEncontrarCliente({ clientId: adj&&adj.clientId, nif: adj&&adj.nif, nome: lead.emp }) || {})
+    : ((cliData||[]).find(c=>c.n.toLowerCase()===(lead.emp||'').toLowerCase())||{});
+  const ligados = crmOrcamentosLigadosALead(lead, { orcNum: adj&&adj.orcNum, nif: adj&&adj.nif });
+  const orc = ligados[0] || {};
 
   const pre = {
-    finNome:    cli.finNome||'',
-    finTel:     cli.finTel||cli.tel||'',
-    finEmail:   cli.finEmail||cli.email||lead.email||'',
-    nif:        cli.finNif||cli.nif||orc.nif||'',
-    empresa:    lead.emp||'',
-    moradaFiscal: cli.morada||orc.morada||'',
-    orcNum:     orc.num||'',
-    produto:    lead.prod||''
+    finNome:       (adj&&adj.finNome)       || cli.finNome || '',
+    finTel:        (adj&&adj.finTel)        || cli.finTel||cli.tel || '',
+    finEmail:      (adj&&adj.finEmail)      || cli.finEmail||cli.email||lead.email || '',
+    nif:           (adj&&adj.nif)           || cli.finNif||cli.nif||orc.nif || '',
+    empresa:       (adj&&adj.empresa)       || lead.emp || '',
+    moradaFiscal:  (adj&&adj.moradaFiscal)  || cli.morada||orc.morada || '',
+    moradaMontagem:(adj&&adj.moradaMontagem)|| '',
+    os:            (adj&&adj.os)            || '',
+    cabimento:     (adj&&adj.cabimento)     || '',
+    eng:           (adj&&adj.eng)           || '',
+    obs:           (adj&&adj.obs)           || '',
+    orcNum:        (adj&&adj.orcNum)        || orc.num || '',
+    produto:       (adj&&adj.produto)       || lead.prod || ''
   };
 
   const set = (id,v)=>{ const el=document.getElementById(id); if(el) el.value=v; };
@@ -18138,12 +18218,12 @@ function crmAbrirAdjudicacaoModal(leadId){
   set('adj-nif', pre.nif);
   set('adj-empresa', pre.empresa);
   set('adj-morada-fiscal', pre.moradaFiscal);
-  set('adj-morada-montagem', '');
-  set('adj-os', '');
-  set('adj-cabimento', '');
-  set('adj-eng', '');
+  set('adj-morada-montagem', pre.moradaMontagem);
+  set('adj-os', pre.os);
+  set('adj-cabimento', pre.cabimento);
+  set('adj-eng', pre.eng);
   set('adj-produto', pre.produto);
-  set('adj-obs', '');
+  set('adj-obs', pre.obs);
   const ref = document.getElementById('adj-orc-ref');
   if(ref){ ref.style.display = pre.orcNum?'inline-block':'none'; ref.textContent = pre.orcNum?('Ref. '+pre.orcNum):''; }
 
@@ -18186,10 +18266,13 @@ async function crmSubmeterAdjudicacao(){
   if(!lead){ alert('Lead não encontrada.'); return; }
   const autor = (typeof CU!=='undefined'&&CU&&CU.name)?CU.name:'Sistema';
 
-  // Liga a adjudicação ao orçamento desta lead (por leadId, com fallback por nome do cliente)
-  const orc = (typeof orcData!=='undefined')
-    ? ((orcData||[]).find(o=>o.leadId===leadId) || (orcData||[]).find(o=>o.cli===lead.emp))
-    : null;
+  // Parte 2 (Fase 1) — mesma prioridade usada em toda a parte
+  // administrativa do CRM para ligar a adjudicação ao orçamento certo:
+  // orcNum já conhecido -> leadId -> projectId -> NIF -> nome (último
+  // recurso). Nunca depende só do sessionStorage efémero de criação.
+  const adjAnterior = lead.adjudicacao || null;
+  const orcLigados = crmOrcamentosLigadosALead(lead, { orcNum: adjAnterior&&adjAnterior.orcNum, nif: dados.nif });
+  const orc = orcLigados[0] || null;
 
   // Bloco E — project_id nasce aqui (adjudicação/fecho), persistente e
   // imutável: uma vez atribuído a este orçamento, nunca muda nem é
@@ -18212,7 +18295,25 @@ async function crmSubmeterAdjudicacao(){
     }
   }
 
+  // Parte 2 (Fase 1) — enriquecer o payload com os identificadores já
+  // conhecidos pelo CRM (nunca inventados; ficam null/vazio se não
+  // existirem), para a adjudicação nunca mais ficar órfã/irrecuperável.
+  const clienteEncontrado = (typeof crmEncontrarCliente==='function')
+    ? crmEncontrarCliente({ clientId: adjAnterior&&adjAnterior.clientId, nif: dados.nif, nome: dados.empresa })
+    : null;
+  dados.clientId = (clienteEncontrado && clienteEncontrado.id) || (adjAnterior && adjAnterior.clientId) || null;
+  dados.projectId = lead.projectId || (adjAnterior && adjAnterior.projectId) || null;
+  dados.orcNum = (orc && orc.num) || (adjAnterior && adjAnterior.orcNum) || null;
+
   lead.adjudicacao = dados;
+  // Persistência incondicional (Fase 1) — a adjudicação tem de ficar
+  // gravada já aqui, independentemente de a lead estar num estado
+  // terminal (Ganho/Perdido) ou de a transição de pipeline abaixo ser
+  // recusada pelas guards do motor central. Nunca decide essa transição
+  // por conta própria, só garante que 'adjudicacao' em si nunca fica presa
+  // só em memória (ver crmRegistarTransicaoEstado/crmAvaliarTransicaoAutomatica
+  // mais abaixo — essas guards continuam exatamente como estavam).
+  if(typeof saveCrmLeads==='function') saveCrmLeads();
   if(typeof crmAddAtividade==='function'){
     crmAddAtividade(leadId, 'adjudicacao', 'Adjudicação submetida — NIF '+dados.nif+(orc?' · Orçamento '+orc.num:' · sem orçamento associado'), autor);
   }
@@ -28290,6 +28391,11 @@ function obAvaliarTransicaoProducaoUni(item, statusAnterior, statusNovo){
           status: 'Planeada', priority: item.priority||'normal', assignee: '',
           date: '', notes: 'Criado automaticamente — produção do orçamento '+item.orcNum+' concluída.',
           orcNum: item.orcNum, projectId: (item.projectId || (orc&&orc.projectId) || null),
+          // Parte 2 (Fase 1) — propaga a Morada de Montagem e metadados
+          // administrativos já gravados no item de Produção (vindos da
+          // adjudicação) para a Instalação, que é quem a Guia de
+          // Transporte (instGerarGuiaTransporte) realmente lê.
+          moradaMontagem: item.moradaMontagem||'', os: item.os||'', cabimento: item.cabimento||'', eng: item.eng||'',
           historico: [{ de:null, para:'Planeada', em:new Date().toISOString(), por:autor }],
           dt: new Date().toLocaleDateString('pt-PT',{day:'2-digit',month:'2-digit',year:'numeric'})
         };
@@ -29388,6 +29494,22 @@ function obCriarProjetoProducao(orc, opts){
   if(opts.forcarAdmin){
     item.historico.push({de:'Entrada de Obra',para:'Entrada de Obra (exceção sem adiantamento)',em:new Date().toISOString(),por:opts.autor||'Admin',motivo:opts.motivo});
   }
+  // Parte 2 (Fase 1) — propaga a Morada de Montagem (e metadados
+  // administrativos da adjudicação) para o item de Produção, sem os
+  // quais a Guia de Transporte fica sempre em branco (item.moradaMontagem
+  // é o mesmo campo já consumido por instGerarGuiaTransporte()). Não
+  // inventa dados: só copia o que a adjudicação já tiver; nunca mexe na
+  // lógica/estado da Produção 2.0.
+  if(orc.leadId && typeof crmLeads!=='undefined'){
+    var _leadAdj = crmLeads.find(function(l){ return l.id===orc.leadId; });
+    _leadAdj = _leadAdj && _leadAdj.adjudicacao;
+    if(_leadAdj){
+      item.moradaMontagem = _leadAdj.moradaMontagem || '';
+      item.os = _leadAdj.os || '';
+      item.cabimento = _leadAdj.cabimento || '';
+      item.eng = _leadAdj.eng || '';
+    }
+  }
   uniItems.unshift(item);
   if(typeof saveUniItems==='function') saveUniItems();
   if(typeof _sbUniItemUpsert==='function') _sbUniItemUpsert(item, {isCreate:true});
@@ -29440,7 +29562,16 @@ function obCriarClienteDeLead(lead){
   if(typeof cliData==='undefined') return;
   var nome=lead.emp||lead.n;
   if(!nome) return;
-  var existente=(cliData||[]).find(function(c){ return (c.n||'').trim().toLowerCase()===nome.trim().toLowerCase(); });
+  // Parte 2 (Fase 1) — mesma prioridade segura usada no resto do CRM
+  // (clientId -> NIF normalizado -> nome normalizado): nunca cria um
+  // segundo Cliente quando já existe um vínculo seguro, mesmo com
+  // variações de caixa/pontuação no nome.
+  var adj = lead.adjudicacao || null;
+  var nifConhecido = adj && adj.nif;
+  var clientIdConhecido = lead.clientId || (adj && adj.clientId) || null;
+  var existente = (typeof crmEncontrarCliente==='function')
+    ? crmEncontrarCliente({ clientId: clientIdConhecido, nif: nifConhecido, nome: nome })
+    : (cliData||[]).find(function(c){ return (c.n||'').trim().toLowerCase()===nome.trim().toLowerCase(); });
   if(existente){
     // Bloco E — project_id: cliente já existe (cliente recorrente) — nunca
     // sobrescreve identidade nem cria cópia, só acrescenta o novo projeto à
@@ -29453,11 +29584,19 @@ function obCriarClienteDeLead(lead){
         if(typeof saveCliData==='function') saveCliData();
       }
     }
+    // Parte 2 (Fase 1) — completa dados fiscais que a adjudicação trouxe e
+    // o Cliente ainda não tinha; nunca sobrescreve o que já existe (só
+    // preenche o que estava vazio), nunca funde dois clientes.
+    var mudouDadosFiscais=false;
+    if(nifConhecido && !existente.nif){ existente.nif=nifConhecido; mudouDadosFiscais=true; }
+    if(adj && adj.moradaFiscal && !existente.morada){ existente.morada=adj.moradaFiscal; mudouDadosFiscais=true; }
+    if(mudouDadosFiscais && typeof saveCliData==='function') saveCliData();
     return;
   }
   cliData.unshift({
     id:Date.now(), n:nome, sec:'Outro', cont:lead.n||nome,
-    email:lead.email||'', tel:lead.tel||'', nif:'', morada:'',
+    email:lead.email||'', tel:lead.tel||'',
+    nif: nifConhecido||'', morada:(adj&&adj.moradaFiscal)||'',
     projs:1, rev:lead.val||0, last:'hoje', st:'active',
     projectIds: lead.projectId ? [lead.projectId] : []
   });
