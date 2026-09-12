@@ -18382,6 +18382,12 @@ async function crmSubmeterAdjudicacao(){
     var resultadoTarefaFin = await obGarantirTarefaFinanceiraAdjudicacao(lead, dados, orc);
     if(!resultadoTarefaFin || resultadoTarefaFin.ok!==true){
       if(typeof showToast==='function') showToast('⚠ Adjudicação gravada — mas não foi possível sincronizar a tarefa do Financeiro. Tenta novamente mais tarde.');
+    } else if(resultadoTarefaFin.alertaPersistidoRemotamente===false){
+      // A tarefa principal (dados administrativos) ficou gravada com sucesso —
+      // isto não é uma falha da tarefa. Só o estado da flag de deduplicação do
+      // alerta é que não foi confirmado no servidor (ver obGarantirTarefaFinanceiraAdjudicacao),
+      // por isso avisa especificamente disto, sem tratar a tarefa como falhada.
+      if(typeof showToast==='function') showToast('⚠ Tarefa Financeiro gravada, mas o estado do alerta não pôde ser sincronizado. O alerta poderá reaparecer até nova sincronização.');
     }
   }
 
