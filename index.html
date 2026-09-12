@@ -18369,12 +18369,20 @@ async function crmSubmeterAdjudicacao(){
     crmAddAtividade(leadId, 'adjudicacao', 'Adjudicação submetida — NIF '+dados.nif+(orc?' · Orçamento '+orc.num:' · sem orçamento associado'), autor);
   }
 
-  // Parte 2 (Fase 3) — tarefa administrativa para o Financeiro, reaproveitando
-  // ob_uni_items/admin-agenda (mesmo padrão de orcMarcarNecessitaDesign()).
-  // Nunca duplica: obGarantirTarefaFinanceiraAdjudicacao() localiza uma
-  // tarefa já existente por projectId (ou leadId+orcNum) antes de criar.
+  // Parte 2 (Fase 3, correção de concorrência) — tarefa administrativa para
+  // o Financeiro, reaproveitando ob_uni_items/admin-agenda (mesmo padrão de
+  // orcMarcarNecessitaDesign()). Nunca duplica: obGarantirTarefaFinanceiraAdjudicacao()
+  // localiza uma tarefa já existente por projectId (ou leadId+orcNum) antes
+  // de criar, e agora aguarda a confirmação remota (optimistic locking,
+  // mesmo padrão de uniSave/uniDrop/fpToggleSubtask) antes de considerar a
+  // tarefa gravada. A adjudicação em si JÁ FICOU persistida acima — o
+  // sucesso desta tarefa nunca é condição para a adjudicação: se falhar,
+  // avisa e segue em frente, nunca apaga/reverte o que já foi gravado.
   if(typeof obGarantirTarefaFinanceiraAdjudicacao==='function'){
-    obGarantirTarefaFinanceiraAdjudicacao(lead, dados, orc);
+    var resultadoTarefaFin = await obGarantirTarefaFinanceiraAdjudicacao(lead, dados, orc);
+    if(!resultadoTarefaFin || resultadoTarefaFin.ok!==true){
+      if(typeof showToast==='function') showToast('⚠ Adjudicação gravada — mas não foi possível sincronizar a tarefa do Financeiro. Tenta novamente mais tarde.');
+    }
   }
 
   if(orc && typeof orcChangeStatus==='function'){
@@ -18466,23 +18474,45 @@ function obRegistarAlertaAgente5PagamentoFalta(){
 // depois de uma adjudicação submetida com sucesso. Mesmo padrão de
 // orcMarcarNecessitaDesign(): objeto simples em uniItems + saveUniItems +
 // _sbUniItemUpsert. Sem tabela nova, sem 2º sistema de tarefas.
-function obGarantirTarefaFinanceiraAdjudicacao(lead, dados, orc){
-  if(typeof uniItems==='undefined' || !dados) return null;
+// Correção de concorrência (revisão externa) — mesmo padrão optimistic-
+// locking já usado em uniSave()/uniDrop()/fpToggleSubtask(): async, nunca
+// confia numa escrita local como "concluída" antes de saber que o Supabase
+// confirmou. Devolve sempre {ok, reason?, item?} — nunca finge sucesso.
+async function obGarantirTarefaFinanceiraAdjudicacao(lead, dados, orc){
+  if(typeof uniItems==='undefined' || !dados) return {ok:false, reason:'sem-uniItems'};
   var autor = (typeof CU!=='undefined'&&CU&&CU.name) ? CU.name : 'Sistema';
   var cliente = dados.empresa || (lead&&lead.emp) || '—';
   var existente = obEncontrarTarefaFinanceiraAdjudicacao(dados);
   var semPagamento = !dados.pagamento;
 
   if(existente){
-    // Atualiza dados administrativos relevantes — nunca cria um duplicado.
+    // Snapshot profundo ANTES de qualquer alteração — permite reverter por
+    // completo (nunca um merge parcial) se a gravação remota falhar. Nada
+    // (saveUniItems "definitivo", alerta, _alertaPagamentoEmitido) acontece
+    // antes de confirmar que a escrita realmente aconteceu.
+    var prevSnapshot = JSON.parse(JSON.stringify(existente));
     existente.client = cliente;
     existente.clientId = dados.clientId || existente.clientId || null;
     existente.projectId = dados.projectId || existente.projectId || null;
     existente.orcNum = dados.orcNum || existente.orcNum || null;
     existente.pagamento = dados.pagamento || '';
     existente.leadId = dados.leadId!=null ? dados.leadId : existente.leadId;
+    var resultado = (typeof _sbUniItemUpsert==='function')
+      ? await _sbUniItemUpsert(existente, {isCreate:false})
+      : {ok:true};
+    if(!resultado.ok){
+      // Reverte exatamente para o estado anterior — nunca faz auto-merge,
+      // nunca marca a atualização como concluída, nunca toca em
+      // _alertaPagamentoEmitido, nunca dispara o EventBus.
+      var idxExistente = uniItems.indexOf(existente);
+      if(idxExistente>=0) uniItems[idxExistente] = prevSnapshot;
+      if(typeof saveUniItems==='function') saveUniItems();
+      var msgFalhaUpd = resultado.message || 'Não foi possível sincronizar a tarefa financeira. Tenta novamente.';
+      if(typeof showToast==='function') showToast('⚠ '+msgFalhaUpd);
+      return {ok:false, reason: resultado.reason==='conflict' ? 'conflict' : 'error', item: prevSnapshot};
+    }
+    // Só a partir daqui a atualização conta como concluída.
     if(typeof saveUniItems==='function') saveUniItems();
-    if(typeof _sbUniItemUpsert==='function') _sbUniItemUpsert(existente, {isCreate:false});
     if(semPagamento && !existente._alertaPagamentoEmitido && typeof EventBus!=='undefined' && EventBus && typeof EventBus.publish==='function'){
       obRegistarAlertaAgente5PagamentoFalta();
       EventBus.publish('adjudicacao_sem_pagamento', { cliente:cliente, leadId:existente.leadId, orcNum:existente.orcNum, projectId:existente.projectId });
@@ -18493,7 +18523,7 @@ function obGarantirTarefaFinanceiraAdjudicacao(lead, dados, orc){
       existente._alertaPagamentoEmitido = false;
       if(typeof saveUniItems==='function') saveUniItems();
     }
-    return existente;
+    return {ok:true, item:existente};
   }
 
   var item = {
@@ -18513,9 +18543,19 @@ function obGarantirTarefaFinanceiraAdjudicacao(lead, dados, orc){
     historico: [{ de:null, para:'Outro', em:new Date().toISOString(), por:autor }],
     dt: new Date().toLocaleDateString('pt-PT',{day:'2-digit',month:'2-digit',year:'numeric'})
   };
+  // Concorrência segura na criação: tenta gravar no servidor ANTES de
+  // inserir definitivamente em uniItems — nunca fica uma tarefa "fantasma"
+  // visível localmente mas inexistente no Supabase.
+  var resultadoCriacao = (typeof _sbUniItemUpsert==='function')
+    ? await _sbUniItemUpsert(item, {isCreate:true})
+    : {ok:true};
+  if(!resultadoCriacao.ok){
+    var msgFalhaCriacao = resultadoCriacao.message || 'Não foi possível criar a tarefa financeira no servidor. Tenta novamente.';
+    if(typeof showToast==='function') showToast('⚠ '+msgFalhaCriacao);
+    return {ok:false, reason: resultadoCriacao.reason==='conflict' ? 'conflict' : 'error'};
+  }
   uniItems.unshift(item);
   if(typeof saveUniItems==='function') saveUniItems();
-  if(typeof _sbUniItemUpsert==='function') _sbUniItemUpsert(item, {isCreate:true});
   if(semPagamento && typeof EventBus!=='undefined' && EventBus && typeof EventBus.publish==='function'){
     obRegistarAlertaAgente5PagamentoFalta();
     EventBus.publish('adjudicacao_sem_pagamento', { cliente:cliente, leadId:item.leadId, orcNum:item.orcNum, projectId:item.projectId });
@@ -18523,7 +18563,7 @@ function obGarantirTarefaFinanceiraAdjudicacao(lead, dados, orc){
     if(typeof saveUniItems==='function') saveUniItems();
   }
   if(typeof showToast==='function') showToast('💰 Tarefa criada para o Financeiro — preparar faturação de '+cliente);
-  return item;
+  return {ok:true, item:item};
 }
 window.obGarantirTarefaFinanceiraAdjudicacao = obGarantirTarefaFinanceiraAdjudicacao;
 
