@@ -5988,7 +5988,14 @@ tbody td{padding:9px 13px;font-size:14px;vertical-align:middle}
 
 /* Kanban CRM */
 .crm-kanban{display:flex;gap:10px;overflow-x:auto;padding-bottom:6px}
-.crm-kanban::-webkit-scrollbar{height:3px;display:none}
+/* Parte 2 (Fase 2): "display:none" residual escondia a scrollbar horizontal
+   do Pipeline em WebKit/Chromium, apesar de o scroll continuar funcional
+   (só invisível) — a regra mais abaixo (.crm-kanban::-webkit-scrollbar,
+   perto de .k-col) já estiliza esta mesma barra para ficar visível e
+   discreta; esta aqui só define a cor do thumb, sem a esconder. Específico
+   a .crm-kanban — não é a regra global (::-webkit-scrollbar mais abaixo),
+   por isso não afeta nenhuma outra página do CRM. */
+.crm-kanban::-webkit-scrollbar{height:3px}
 .crm-kanban::-webkit-scrollbar-thumb{background:var(--bg4)}
 
 /* MR row */
@@ -6219,9 +6226,16 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
   .sidebar{display:none}
   .main{overflow-x:hidden}
 
-  /* CRM Kanban — stack columns vertically */
-  .crm-kanban{flex-direction:column;padding:10px 12px 20px;gap:8px;overflow-x:hidden}
-  .crm-col{min-width:calc(100vw - 40px)!important;width:calc(100vw - 40px)!important;flex-shrink:0}
+  /* CRM Kanban — stack columns vertically. Parte 2 (Fase 2): o seletor
+     era .crm-col, que nunca corresponde a nenhum elemento real (as colunas
+     do Pipeline usam a classe .k-col) — a largura mobile nunca era
+     aplicada, e cada coluna ficava presa aos 260px fixos do desktop
+     (ver .k-col mais abaixo), cortada sem hipótese de scroll porque
+     .crm-kanban tinha overflow-x:hidden. overflow-x:auto fica como rede de
+     segurança (nunca esconde conteúdo), sem afetar o layout desktop (só
+     dentro deste @media). */
+  .crm-kanban{flex-direction:column;padding:10px 12px 20px;gap:8px;overflow-x:auto}
+  .k-col{min-width:calc(100vw - 40px)!important;width:calc(100vw - 40px)!important;flex-shrink:0}
   
   .crm-stats{padding:8px 12px;gap:6px}
   .crm-stat{min-width:80px;flex:1}
@@ -8639,6 +8653,10 @@ tbody tr:hover{background:rgba(255,203,45,.05)}
         <div id="dash-alerts"></div>
       </div>
     </div>
+    <div class="cc" style="margin-top:16px">
+      <div class="sh"><h2>Tarefas Financeiras pendentes</h2></div>
+      <div id="dash-fin-tarefas"></div>
+    </div>
     </div>
 
 </div>
@@ -10837,11 +10855,41 @@ tbody tr:hover{background:rgba(255,203,45,.05)}
         <label class="dept-check-lbl" style="display:flex;align-items:center;gap:6px;background:var(--bg3);border:1px solid var(--border);border-radius:7px;padding:7px 12px;cursor:pointer;font-size:13px;color:var(--txt2);transition:border-color .15s">
           <input type="checkbox" class="dept-check" value="Montagem / Acabamento" style="accent-color:var(--y);width:13px;height:13px"/> ✨ Montagem / Acabamento
         </label>
+        <!-- Parte 2 (Fase 4) — aditivo: novos departamentos canónicos
+             (PROD_DEPTS_CANONICOS), sem separar Impressão/Vinil nem CNC/Laser. -->
+        <label class="dept-check-lbl" style="display:flex;align-items:center;gap:6px;background:var(--bg3);border:1px solid var(--border);border-radius:7px;padding:7px 12px;cursor:pointer;font-size:13px;color:var(--txt2);transition:border-color .15s">
+          <input type="checkbox" class="dept-check" value="Impressão 3D" style="accent-color:var(--y);width:13px;height:13px"/> 🖨️ Impressão 3D
+        </label>
+        <label class="dept-check-lbl" style="display:flex;align-items:center;gap:6px;background:var(--bg3);border:1px solid var(--border);border-radius:7px;padding:7px 12px;cursor:pointer;font-size:13px;color:var(--txt2);transition:border-color .15s">
+          <input type="checkbox" class="dept-check" value="Modelagem 3D" style="accent-color:var(--y);width:13px;height:13px"/> 🧊 Modelagem 3D
+        </label>
       </div>
       <!-- Subtarefas geradas -->
       <div id="uni-subtasks-preview" style="margin-top:12px;display:flex;flex-direction:column;gap:4px"></div>
       <!-- Actividades por departamento -->
       <div id="uni-dept-atividades" style="margin-top:14px;display:flex;flex-direction:column;gap:10px"></div>
+    </div>
+
+    <!-- Parte 2 (Fase 4) — Design: criar Ficheiro/Arte a partir da própria
+         tarefa, herdando os dados que a tarefa já conhece (projectId,
+         cliente, clientId, orcNum, responsável). Só visível ao editar uma
+         tarefa de Design já existente (ver uniOpen). -->
+    <div id="dt-novo-ficheiro-wrap" style="display:none;margin-top:12px;border-top:1px solid var(--border);padding-top:12px">
+      <button type="button" id="dt-btn-novo-ficheiro" class="tbtn y" onclick="if(typeof dtCriarFicheiroDeTarefa==='function' && uniEditingId) dtCriarFicheiroDeTarefa(uniEditingId)" style="font-size:13px">📁 + Ficheiro / Arte</button>
+    </div>
+
+    <!-- Parte 2 (Fase 4) — Design: histórico de versões do Ficheiro/Arte.
+         Só visível ao editar um item de design-ficheiros já existente. -->
+    <div id="fi-versoes-wrap" style="display:none;margin-top:12px;border-top:1px solid var(--border);padding-top:12px">
+      <div style="font-size:13px;font-weight:600;color:var(--y);letter-spacing:.05em;margin-bottom:10px">VERSÕES</div>
+      <div id="fi-versao-atual-info" style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:8px"></div>
+      <div style="display:flex;gap:8px;margin-bottom:8px">
+        <input class="form-input" id="fi-nova-versao-ficheiro" placeholder="Ficheiro / link da nova versão..." style="flex:1;font-size:13px"/>
+        <input class="form-input" id="fi-nova-versao-obs" placeholder="Observação (opcional)" style="flex:1;font-size:13px"/>
+        <button type="button" class="tbtn" onclick="if(typeof fiUINovaVersao==='function') fiUINovaVersao()" style="font-size:13px">+ Nova versão</button>
+      </div>
+      <button type="button" id="fi-toggle-versoes-antigas" onclick="if(typeof fiUIToggleVersoesAntigas==='function') fiUIToggleVersoesAntigas()" style="background:none;border:none;color:var(--muted);font-size:12.5px;cursor:pointer;text-decoration:underline;padding:0 0 8px">Ver versões anteriores</button>
+      <div id="fi-versoes-lista" style="display:none;flex-direction:column;gap:6px"></div>
     </div>
 
     <!-- ── ABAS: Subtarefas · Itens de Ação ── -->
@@ -11901,7 +11949,7 @@ window.goPage=function goPage(id){
   if(id==='admin-despesas')      { try{ despTab('crm'); despLoadCRM(); if(!EC_DESPESAS_APP.length) despSyncApp(); }catch(e){} }
   if(id==='admin-rh')            { try{ rhRender(); }catch(e){} }
   if(id==='admin-docs')          { crmDocsRender(); docsTab('crm'); }
-  if(id==='dashboard')           { try{ renderDashLeads(); setTimeout(initCharts,50); }catch(e){} }
+  if(id==='dashboard')           { try{ renderDashLeads(); setTimeout(initCharts,50); if(typeof renderDashboardCFO==='function') renderDashboardCFO(); }catch(e){} }
   if(id==='financeiro')          { try{ renderFinanceiro(); setTimeout(initCharts,50);
     // Bug 7 (auditoria 12/09): garantir CRM_DESPESAS carregado (mesmo loader
     // usado por admin-despesas) mesmo que o utilizador nunca tenha visitado
@@ -13874,19 +13922,80 @@ function crmRenderTimeline(leadId, orcId){
   }).join('');
 }
 
+// Parte 2 (Fase 1) — localiza TODOS os orçamentos já ligados a uma Lead,
+// com a mesma prioridade em toda a parte administrativa do CRM (badge
+// "Orçamentos ligados" + formulário de Adjudicação): nunca depende só do
+// sessionStorage efémero de criação (window._orcCurrentLeadId/'ob-orc-from-lead').
+// Ordem: orcNum já conhecido (ex.: adjudicação anterior) -> leadId explícito
+// -> projectId -> NIF (Adjudicação) -> nome normalizado (case-insensitive)
+// como último recurso. Devolve sempre um array (pode estar vazio), do mais
+// certo para o menos certo, sem duplicados. Só lê orcData — nunca mexe em
+// cálculo/linhas/pricing do orçamento.
+function crmOrcamentosLigadosALead(lead, criteriosExtra){
+  if(typeof orcData==='undefined' || !lead) return [];
+  criteriosExtra = criteriosExtra || {};
+  var vistos = {};
+  var resultado = [];
+  function add(o){ if(o && !vistos[o.num]){ vistos[o.num]=true; resultado.push(o); } }
+
+  var orcNumConhecido = criteriosExtra.orcNum || (lead.adjudicacao && lead.adjudicacao.orcNum) || null;
+  if(orcNumConhecido) add((orcData||[]).find(function(o){ return o && o.num===orcNumConhecido; }));
+
+  (orcData||[]).filter(function(o){ return o && o.leadId===lead.id; }).forEach(add);
+
+  if(lead.projectId){
+    (orcData||[]).filter(function(o){ return o && o.projectId && o.projectId===lead.projectId; }).forEach(add);
+  }
+
+  var nifConhecido = criteriosExtra.nif || (lead.adjudicacao && lead.adjudicacao.nif) || null;
+  if(nifConhecido && typeof cliNormalizarNif==='function'){
+    var nifNorm = cliNormalizarNif(nifConhecido);
+    (orcData||[]).filter(function(o){ return o && o.nif && cliNormalizarNif(o.nif)===nifNorm; }).forEach(add);
+  }
+
+  if(lead.emp){
+    var nomeNorm = String(lead.emp).trim().toLowerCase();
+    (orcData||[]).filter(function(o){ return o && !o.leadId && o.cli && String(o.cli).trim().toLowerCase()===nomeNorm; }).forEach(add);
+  }
+
+  return resultado;
+}
+window.crmOrcamentosLigadosALead = crmOrcamentosLigadosALead;
+
+// Parte 2 (Fase 2) — clique num orçamento ligado dentro do modal da Lead:
+// fecha o modal (nunca fica um overlay z-index por cima da página nova),
+// abre a página de Orçamentos, e reutiliza o filtro de busca JÁ EXISTENTE
+// (ORC_FILTERS.search, o mesmo campo #orc-filtro-busca) para identificar o
+// orçamento certo na lista — sem inventar nenhuma UI nova de "seleção", só
+// reaproveita o que já existe. window._crmUltimoOrcamentoLigadoLeadId
+// preserva o leadId de origem (nunca perdido), disponível para qualquer
+// funcionalidade futura de retorno — não cria, ela própria, nenhuma
+// navegação de volta nova nesta fase. Nunca mexe em cálculo/linhas/pricing
+// do orçamento.
+function crmAbrirOrcamentoLigado(orcNum, leadId){
+  if(typeof crmCloseLeadModal==='function') crmCloseLeadModal();
+  window._crmUltimoOrcamentoLigadoLeadId = leadId || null;
+  window._crmUltimoOrcamentoLigadoNum = orcNum || null;
+  if(typeof ORC_FILTERS!=='undefined' && orcNum){
+    ORC_FILTERS.search = orcNum;
+    var busca = document.getElementById('orc-filtro-busca');
+    if(busca) busca.value = orcNum;
+  }
+  if(typeof goPage==='function') goPage('comercial-orcamentos');
+}
+window.crmAbrirOrcamentoLigado = crmAbrirOrcamentoLigado;
+
 function crmRenderOrcLink(leadId){
   const el = document.getElementById('clm-orc-link');
   if(!el) return;
   const lead = (typeof crmLeads!=='undefined') ? crmLeads.find(l=>l.id===leadId) : null;
-  const ligados = (typeof orcData!=='undefined' && lead)
-    ? (orcData||[]).filter(o=>o.leadId===leadId || (!o.leadId && lead.emp && o.cli===lead.emp))
-    : [];
+  const ligados = lead ? crmOrcamentosLigadosALead(lead) : [];
   if(!ligados.length){ el.style.display='none'; el.innerHTML=''; return; }
   el.style.display='block';
   el.innerHTML = '<div style="font-size:11px;font-weight:700;color:var(--muted);letter-spacing:.06em;text-transform:uppercase;margin-bottom:6px">📄 Orçamentos ligados</div>'
     + ligados.map(o=>{
       const cor = o.st==='Aprovado' ? 'var(--g)' : (o.st==='Em Produção' ? 'var(--y)' : 'var(--muted)');
-      return '<span onclick="goPage(\'comercial-orcamentos\')" style="display:inline-flex;align-items:center;gap:5px;cursor:pointer;font-size:12.5px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:4px 9px;margin:0 6px 6px 0">'
+      return '<span onclick="crmAbrirOrcamentoLigado(\''+o.num+'\', '+leadId+')" style="display:inline-flex;align-items:center;gap:5px;cursor:pointer;font-size:12.5px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:4px 9px;margin:0 6px 6px 0">'
         + '<strong style="color:var(--txt2)">Nº '+o.num+'</strong>'
         + '<span style="color:'+cor+'">'+(o.st||'—')+'</span>'
         + '</span>';
@@ -14414,6 +14523,10 @@ function openUniModal(page){
   // Guardar página actual
   uniCurrentPage=page;
   uniEditingId=null;
+  // Parte 2 (Fase 4) — item novo: nunca mostra "+ Ficheiro / Arte" nem o
+  // painel de Versões (ambos exigem uma tarefa/ficheiro já existente).
+  var dtNovoFicheiroWrapNovo = m.querySelector('#dt-novo-ficheiro-wrap'); if(dtNovoFicheiroWrapNovo) dtNovoFicheiroWrapNovo.style.display='none';
+  var fiVersoesWrapNovo = m.querySelector('#fi-versoes-wrap'); if(fiVersoesWrapNovo) fiVersoesWrapNovo.style.display='none';
   // Departamentos (só para produção)
   uniToggleDeptSection(page);
   if(page==='fabrica-producao'){
@@ -14526,6 +14639,22 @@ function uniOpen(page, itemId){
   // Mostrar abas apenas em edição
   const editItem = itemId ? uniItems.find(i=>i.id===itemId) : null;
   if(typeof uniShowTabs==='function') uniShowTabs(editItem);
+  // Parte 2 (Fase 4) — "+ Ficheiro / Arte" só em edição de uma tarefa de
+  // Design já existente; painel de Versões só em edição de um
+  // design-ficheiros já existente (ambos escondidos ao criar um item novo).
+  const dtNovoFicheiroWrap = document.getElementById('dt-novo-ficheiro-wrap');
+  if(dtNovoFicheiroWrap) dtNovoFicheiroWrap.style.display = (page==='design-tarefas' && itemId) ? 'block' : 'none';
+  const fiVersoesWrap = document.getElementById('fi-versoes-wrap');
+  if(fiVersoesWrap){
+    fiVersoesWrap.style.display = (page==='design-ficheiros' && itemId && editItem) ? 'block' : 'none';
+    if(page==='design-ficheiros' && itemId && editItem){
+      const listaEl = document.getElementById('fi-versoes-lista');
+      if(listaEl) listaEl.style.display='none';
+      const toggleEl = document.getElementById('fi-toggle-versoes-antigas');
+      if(toggleEl) toggleEl.textContent='Ver versões anteriores';
+      if(typeof fiRenderVersoesPainel==='function') fiRenderVersoesPainel(editItem);
+    }
+  }
   m.classList.add('open');
 }
 
@@ -14536,7 +14665,13 @@ function uniOpen(page, itemId){
 // — é a fonte de verdade usada por uniSave() para decidir quais
 // subtarefas são "canónicas" (podem ser normalizadas) e quais são
 // legado (têm de ser sempre preservadas, mesmo sem checkbox próprio).
-var PROD_DEPTS_CANONICOS = ['Design','Impressão / Vinil','Pintura','Serralharia','Letras 3D','Eletrificação','CNC / Laser','Montagem / Acabamento'];
+// Parte 2 (Fase 4) — aditivo: 'Impressão 3D' e 'Modelagem 3D' juntam-se à
+// lista central sem separar 'Impressão / Vinil' nem 'CNC / Laser' (essa
+// separação fica fora do âmbito desta fase). Todos os consumidores
+// dinâmicos (uniSave, obProducaoPodeConcluir, filtros, "Meu Departamento")
+// já leem PROD_DEPTS_CANONICOS — não precisam de lógica extra por
+// departamento novo.
+var PROD_DEPTS_CANONICOS = ['Design','Impressão / Vinil','Pintura','Serralharia','Letras 3D','Eletrificação','CNC / Laser','Montagem / Acabamento','Impressão 3D','Modelagem 3D'];
 window.PROD_DEPTS_CANONICOS = PROD_DEPTS_CANONICOS;
 
 // Normaliza uma subtarefa de Produção para o formato enriquecido da
@@ -14867,17 +15002,268 @@ function fiRender(){
   const cfg=UNI_CFG['design-ficheiros'];
   el.innerHTML=items.map(i=>{
     const sc=cfg.colors[i.status]||'#6b7280';
+    // Parte 2 (Fase 4): mostra a versão APROVADA quando existir, senão a
+    // mais recente (fiVersaoAtual) — item.extra sozinho já não reflecte o
+    // histórico completo (ver item.versoes). Itens legado sem versoes
+    // continuam a mostrar exatamente o que mostravam antes.
+    const versaoLabel = (typeof fiVersaoAtual==='function') ? ((fiVersaoAtual(i)||{}).versao || i.extra || 'v1') : (i.extra||'v1');
     return `<tr onclick="uniOpen('design-ficheiros',${i.id})" style="cursor:pointer">
       <td><strong style="color:var(--txt2)">${i.n}</strong></td>
       <td style="font-size:13px">${i.client||'—'}</td>
       <td><span class="b bm" style="font-size:11px">Ficheiro</span></td>
-      <td style="font-size:13px">${i.extra||'v1'}</td>
+      <td style="font-size:13px">${versaoLabel}</td>
       <td><span class="b" style="background:${sc}22;color:${sc}">${i.status}</span></td>
       <td style="font-size:13px">${i.assignee||'—'}</td>
       <td style="font-size:13px;color:var(--muted)">${i.dt||'—'}</td>
     </tr>`;
   }).join('');
 }
+window.fiRender = fiRender;
+
+// ══ PARTE 2 (FASE 4) — DESIGN: HISTÓRICO DE VERSÕES DE design-ficheiros ═
+// A auditoria confirmou que o campo de versão (item.extra) era sempre
+// sobrescrito — sem migration, sem apagar nada: introduz item.versoes[],
+// um array aditivo (cada entrada preserva número/id, data/hora, autor,
+// observação, ficheiro/link, estado e se está aprovada). Itens antigos
+// sem versoes nunca quebram — fiObterVersoes() sintetiza, só em memória,
+// uma "versão inicial" a partir dos campos já existentes; só passam a ter
+// versoes[] persistido de verdade na próxima operação seguindem
+// (fiAdicionarVersao/fiAprovarVersao) — nunca por uma migration global.
+
+// Devolve sempre um array (nunca muta o item). Item legado sem versoes ->
+// sintetiza 1 única entrada "inicial" a partir do estado atual do item.
+function fiObterVersoes(item){
+  if(!item) return [];
+  if(Array.isArray(item.versoes) && item.versoes.length) return item.versoes;
+  return [{
+    id: item.id+'-legacy',
+    versao: item.extra || 'v1',
+    em: item.date || item.dt || null,
+    autor: item.assignee || '',
+    observacao: item.notes || '',
+    ficheiro: item.extra || null,
+    estado: item.status,
+    aprovada: item.status==='Aprovado'
+  }];
+}
+window.fiObterVersoes = fiObterVersoes;
+
+// Versão a mostrar por padrão: a aprovada, se existir; senão a mais
+// recente (última do array — fiAdicionarVersao só acrescenta no fim,
+// nunca reordena nem apaga as anteriores).
+function fiVersaoAtual(item){
+  var versoes = fiObterVersoes(item);
+  if(!versoes.length) return null;
+  var aprovada = versoes.find(function(v){ return v.aprovada===true; });
+  return aprovada || versoes[versoes.length-1];
+}
+window.fiVersaoAtual = fiVersaoAtual;
+
+// Adiciona uma nova versão a um design-ficheiros existente, respeitando o
+// optimistic locking já existente em _sbUniItemUpsert — nunca um blind
+// upsert (isCreate:false reutiliza sempre _sbVersaoConhecida). Em conflito
+// ou erro: snapshot restaurado por completo (nunca perde uma versão já
+// existente), aviso ao utilizador, sem auto-merge.
+async function fiAdicionarVersao(itemId, dadosVersao){
+  dadosVersao = dadosVersao || {};
+  if(typeof uniItems==='undefined') return {ok:false, reason:'sem-uniItems'};
+  var item = uniItems.find(function(i){ return i.id===itemId && i.page==='design-ficheiros'; });
+  if(!item) return {ok:false, reason:'nao-encontrado'};
+  var prevSnapshot = JSON.parse(JSON.stringify(item));
+  var versoesAtuais = fiObterVersoes(item).slice();
+  var autor = (typeof CU!=='undefined'&&CU&&CU.name) ? CU.name : 'Sistema';
+  var novoNumero = versoesAtuais.length+1;
+  var novaVersao = {
+    id: itemId+'-'+novoNumero,
+    versao: dadosVersao.versao || ('v'+novoNumero),
+    em: new Date().toISOString(),
+    autor: autor,
+    observacao: dadosVersao.observacao || '',
+    ficheiro: dadosVersao.ficheiro || null,
+    estado: dadosVersao.estado || item.status,
+    aprovada: false
+  };
+  item.versoes = versoesAtuais.concat([novaVersao]);
+  item.extra = novaVersao.versao;
+  var resultado = (typeof _sbUniItemUpsert==='function')
+    ? await _sbUniItemUpsert(item, {isCreate:false})
+    : {ok:true};
+  if(!resultado.ok){
+    var idx = uniItems.indexOf(item);
+    if(idx>=0) uniItems[idx] = prevSnapshot;
+    if(typeof saveUniItems==='function') saveUniItems();
+    var msg = resultado.message || 'Não foi possível gravar a nova versão no servidor. Tenta novamente.';
+    if(typeof showToast==='function') showToast('⚠ '+msg);
+    return {ok:false, reason: resultado.reason==='conflict' ? 'conflict' : 'error', item: prevSnapshot};
+  }
+  if(typeof saveUniItems==='function') saveUniItems();
+  return {ok:true, item:item, versao:novaVersao};
+}
+window.fiAdicionarVersao = fiAdicionarVersao;
+
+// Aprova uma versão específica — nunca mais que uma fica marcada como
+// aprovada ao mesmo tempo. Recalcula o array inteiro de versoes a partir
+// do estado atual (nunca apaga nenhuma), só troca o flag 'aprovada' da
+// anterior para a nova, e regista no histórico quem aprovou e quando.
+// Mesma proteção de concorrência (snapshot/rollback, sem blind upsert).
+async function fiAprovarVersao(itemId, versaoId){
+  if(typeof uniItems==='undefined') return {ok:false, reason:'sem-uniItems'};
+  var item = uniItems.find(function(i){ return i.id===itemId && i.page==='design-ficheiros'; });
+  if(!item) return {ok:false, reason:'nao-encontrado'};
+  var versoesAtuais = fiObterVersoes(item).slice();
+  var alvo = versoesAtuais.find(function(v){ return v.id===versaoId; });
+  if(!alvo) return {ok:false, reason:'versao-nao-encontrada'};
+  var prevSnapshot = JSON.parse(JSON.stringify(item));
+  var autor = (typeof CU!=='undefined'&&CU&&CU.name) ? CU.name : 'Sistema';
+  var agora = new Date().toISOString();
+  item.versoes = versoesAtuais.map(function(v){ return Object.assign({}, v, { aprovada: v.id===versaoId }); });
+  item.status = 'Aprovado';
+  item.extra = alvo.versao;
+  item.historico = (Array.isArray(item.historico) ? item.historico : []).concat([{
+    de: prevSnapshot.status||null, para:'Aprovado', em: agora, por: autor, nota: 'Versão '+alvo.versao+' aprovada'
+  }]);
+  var resultado = (typeof _sbUniItemUpsert==='function')
+    ? await _sbUniItemUpsert(item, {isCreate:false})
+    : {ok:true};
+  if(!resultado.ok){
+    var idx = uniItems.indexOf(item);
+    if(idx>=0) uniItems[idx] = prevSnapshot;
+    if(typeof saveUniItems==='function') saveUniItems();
+    var msg = resultado.message || 'Não foi possível aprovar esta versão no servidor. Tenta novamente.';
+    if(typeof showToast==='function') showToast('⚠ '+msg);
+    return {ok:false, reason: resultado.reason==='conflict' ? 'conflict' : 'error', item: prevSnapshot};
+  }
+  if(typeof saveUniItems==='function') saveUniItems();
+  return {ok:true, item:item};
+}
+window.fiAprovarVersao = fiAprovarVersao;
+
+// Painel de versões dentro do modal (ver #fi-versoes-wrap) — só
+// renderização, nenhuma lógica de negócio aqui (essa vive nas funções
+// acima, testáveis isoladamente).
+function fiRenderVersoesPainel(item){
+  var infoEl = document.getElementById('fi-versao-atual-info');
+  var listaEl = document.getElementById('fi-versoes-lista');
+  if(!infoEl || !item) return;
+  var escHtml = function(s){ return String(s==null?'':s).replace(/</g,'&lt;'); };
+  var atual = fiVersaoAtual(item);
+  var todas = fiObterVersoes(item);
+  infoEl.innerHTML = !atual ? '<div style="font-size:12.5px;color:var(--muted);font-style:italic">Sem versões registadas.</div>' : (
+    '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px">'
+    + '<div><strong style="color:var(--txt2)">'+escHtml(atual.versao)+'</strong>'
+    + (atual.aprovada ? ' <span class="b" style="background:#3fcf8e22;color:#3fcf8e;font-size:11px">Aprovada</span>' : '')
+    + '<div style="font-size:11.5px;color:var(--muted);margin-top:2px">'+escHtml(atual.autor||'—')+(atual.observacao?' · '+escHtml(atual.observacao):'')+'</div></div>'
+    + (!atual.aprovada ? '<button type="button" class="tbtn" onclick="if(typeof fiUIAprovarVersao===\'function\') fiUIAprovarVersao(\''+atual.id+'\')" style="font-size:12px">✓ Aprovar esta versão</button>' : '')
+    + '</div>'
+  );
+  if(listaEl){
+    listaEl.innerHTML = todas.slice().reverse().map(function(v){
+      return '<div style="background:var(--bg3);border:1px solid var(--border);border-radius:7px;padding:8px 10px;font-size:12.5px;display:flex;justify-content:space-between;align-items:center;gap:8px">'
+        + '<div><strong>'+escHtml(v.versao)+'</strong>'+(v.aprovada?' <span style="color:#3fcf8e">✓ Aprovada</span>':'')
+        + '<div style="color:var(--muted);font-size:11px">'+escHtml(v.autor||'—')+(v.observacao?' · '+escHtml(v.observacao):'')+'</div></div>'
+        + (!v.aprovada ? '<button type="button" class="tbtn" onclick="if(typeof fiUIAprovarVersao===\'function\') fiUIAprovarVersao(\''+v.id+'\')" style="font-size:11.5px">Aprovar</button>' : '')
+        + '</div>';
+    }).join('');
+  }
+}
+window.fiRenderVersoesPainel = fiRenderVersoesPainel;
+
+function fiUIToggleVersoesAntigas(){
+  var el = document.getElementById('fi-versoes-lista');
+  if(!el) return;
+  var aberto = el.style.display==='flex';
+  el.style.display = aberto ? 'none' : 'flex';
+  var btn = document.getElementById('fi-toggle-versoes-antigas');
+  if(btn) btn.textContent = aberto ? 'Ver versões anteriores' : 'Ocultar versões anteriores';
+}
+window.fiUIToggleVersoesAntigas = fiUIToggleVersoesAntigas;
+
+async function fiUINovaVersao(){
+  if(!uniEditingId) return;
+  var ficheiroEl = document.getElementById('fi-nova-versao-ficheiro');
+  var obsEl = document.getElementById('fi-nova-versao-obs');
+  var r = await fiAdicionarVersao(uniEditingId, { ficheiro: ficheiroEl?ficheiroEl.value:'', observacao: obsEl?obsEl.value:'' });
+  if(r.ok){
+    if(ficheiroEl) ficheiroEl.value='';
+    if(obsEl) obsEl.value='';
+    if(typeof showToast==='function') showToast('📁 Nova versão adicionada — '+r.versao.versao);
+    fiRenderVersoesPainel(r.item);
+    if(typeof fiRender==='function') fiRender();
+  }
+}
+window.fiUINovaVersao = fiUINovaVersao;
+
+async function fiUIAprovarVersao(versaoId){
+  if(!uniEditingId) return;
+  var r = await fiAprovarVersao(uniEditingId, versaoId);
+  if(r.ok){
+    if(typeof showToast==='function') showToast('✓ Versão aprovada.');
+    fiRenderVersoesPainel(r.item);
+    if(typeof fiRender==='function') fiRender();
+  }
+}
+window.fiUIAprovarVersao = fiUIAprovarVersao;
+
+// ══ PARTE 2 (FASE 4) — DESIGN: "+ Ficheiro / Arte" a partir da tarefa ═══
+// Cria um design-ficheiros diretamente ligado à tarefa de origem, herdando
+// tudo o que ela já sabe — nunca pede de novo cliente/projectId/clientId/
+// orcNum/responsável. Segue o mesmo padrão seguro de criação já usado em
+// obGarantirTarefaFinanceiraAdjudicacao: tenta gravar no servidor ANTES de
+// inserir em uniItems (nunca fica um ficheiro fantasma se a escrita
+// falhar). Guarda lógica própria (_dtFicheiroEmCriacao) torna o botão
+// resistente a duplo clique — uma criação já em curso para a mesma tarefa
+// é ignorada, nunca cria um segundo ficheiro.
+var _dtFicheiroEmCriacao = {};
+async function dtCriarFicheiroDeTarefa(tarefaId){
+  if(typeof uniItems==='undefined') return {ok:false, reason:'sem-uniItems'};
+  if(_dtFicheiroEmCriacao[tarefaId]) return {ok:false, reason:'em-curso'};
+  var tarefa = uniItems.find(function(i){ return i.id===tarefaId && i.page==='design-tarefas'; });
+  if(!tarefa) return {ok:false, reason:'tarefa-nao-encontrada'};
+  _dtFicheiroEmCriacao[tarefaId] = true;
+  var btn = (typeof document!=='undefined') ? document.getElementById('dt-btn-novo-ficheiro') : null;
+  if(btn) btn.disabled = true;
+  try{
+    var autor = (typeof CU!=='undefined'&&CU&&CU.name) ? CU.name : 'Sistema';
+    var clientIdHerdado = tarefa.clientId || ((typeof crmEncontrarCliente==='function' && tarefa.client) ? ((crmEncontrarCliente({nome:tarefa.client})||{}).id||null) : null);
+    var item = {
+      id: Date.now(), page: 'design-ficheiros',
+      n: tarefa.n || ('Arte — '+(tarefa.client||'')),
+      client: tarefa.client || '',
+      status: 'Rascunho', priority: tarefa.priority || 'normal',
+      assignee: tarefa.assignee || '',
+      date: new Date().toISOString().split('T')[0],
+      notes: '', extra: 'v1',
+      clientId: clientIdHerdado,
+      projectId: tarefa.projectId || null,
+      orcNum: tarefa.orcNum || null,
+      _tarefaOrigemId: tarefaId,
+      versoes: [{
+        id: null, versao:'v1', em:new Date().toISOString(), autor:autor,
+        observacao:'', ficheiro:null, estado:'Rascunho', aprovada:false
+      }],
+      historico: [{ de:null, para:'Rascunho', em:new Date().toISOString(), por:autor }],
+      dt: new Date().toLocaleDateString('pt-PT',{day:'2-digit',month:'2-digit',year:'numeric'})
+    };
+    item.versoes[0].id = item.id+'-1';
+    var resultado = (typeof _sbUniItemUpsert==='function')
+      ? await _sbUniItemUpsert(item, {isCreate:true})
+      : {ok:true};
+    if(!resultado.ok){
+      var msg = resultado.message || 'Não foi possível criar o ficheiro no servidor. Tenta novamente.';
+      if(typeof showToast==='function') showToast('⚠ '+msg);
+      return {ok:false, reason: resultado.reason==='conflict' ? 'conflict' : 'error'};
+    }
+    uniItems.unshift(item);
+    if(typeof saveUniItems==='function') saveUniItems();
+    if(typeof showToast==='function') showToast('📁 Ficheiro criado a partir da tarefa — '+(tarefa.n||''));
+    if(typeof uniOpen==='function') uniOpen('design-ficheiros', item.id);
+    return {ok:true, item:item};
+  } finally {
+    delete _dtFicheiroEmCriacao[tarefaId];
+    if(btn) btn.disabled = false;
+  }
+}
+window.dtCriarFicheiroDeTarefa = dtCriarFicheiroDeTarefa;
 
 // ══ FÁBRICA PRODUÇÃO ═════════════════════════════════════════════════
 var fpCurrentView = 'board';
@@ -16499,6 +16885,34 @@ function cliNormalizarNif(nif){
 }
 window.cliNormalizarNif = cliNormalizarNif;
 
+// Parte 2 (Fase 1) — localizador único de Cliente por identificador seguro,
+// com a mesma prioridade em toda a parte administrativa do CRM: id já
+// conhecido (clientId) -> NIF normalizado -> nome normalizado (só como
+// último recurso). Nunca cria, nunca funde, nunca apaga — só localiza um
+// Cliente já existente em cliData.
+function crmEncontrarCliente(criterios){
+  criterios = criterios || {};
+  if(typeof cliData==='undefined' || !Array.isArray(cliData)) return null;
+  if(criterios.clientId){
+    var porId = cliData.find(function(c){ return c.id===criterios.clientId; });
+    if(porId) return porId;
+  }
+  var nifNorm = criterios.nif ? cliNormalizarNif(criterios.nif) : '';
+  if(nifNorm){
+    var porNif = cliData.find(function(c){
+      return cliNormalizarNif(c.nif)===nifNorm || cliNormalizarNif(c.finNif)===nifNorm;
+    });
+    if(porNif) return porNif;
+  }
+  var nomeNorm = criterios.nome ? String(criterios.nome).trim().toLowerCase() : '';
+  if(nomeNorm){
+    var porNome = cliData.find(function(c){ return String(c.n||'').trim().toLowerCase()===nomeNorm; });
+    if(porNome) return porNome;
+  }
+  return null;
+}
+window.crmEncontrarCliente = crmEncontrarCliente;
+
 // Preenche o <datalist> de #cli-nome com os clientes existentes (cliData).
 function cliPopularAutocomplete(){
   var dl=document.getElementById('cli-nome-datalist');
@@ -18117,18 +18531,33 @@ function crmAbrirAdjudicacaoModal(leadId){
   const lead = crmLeads.find(l=>l.id===id);
   if(!lead) return;
 
-  const cli = (cliData||[]).find(c=>c.n.toLowerCase()===lead.emp.toLowerCase())||{};
-  const orc = (typeof orcData!=='undefined' ? ((orcData||[]).find(o=>o.leadId===lead.id) || (orcData||[]).find(o=>o.cli===lead.emp)) : null)||{};
+  // Parte 2 (Fase 1) — a adjudicação já submetida anteriormente (se
+  // existir) é sempre a fonte PRIORITÁRIA ao reabrir: nunca força um campo
+  // já persistido de volta a vazio. Regra por campo: adjudicacao guardada
+  // -> dados atuais da Lead/Cliente/Orçamento -> fallback vazio.
+  const adj = lead.adjudicacao || null;
+
+  const cli = (typeof crmEncontrarCliente==='function')
+    ? (crmEncontrarCliente({ clientId: adj&&adj.clientId, nif: adj&&adj.nif, nome: lead.emp }) || {})
+    : ((cliData||[]).find(c=>c.n.toLowerCase()===(lead.emp||'').toLowerCase())||{});
+  const ligados = crmOrcamentosLigadosALead(lead, { orcNum: adj&&adj.orcNum, nif: adj&&adj.nif });
+  const orc = ligados[0] || {};
 
   const pre = {
-    finNome:    cli.finNome||'',
-    finTel:     cli.finTel||cli.tel||'',
-    finEmail:   cli.finEmail||cli.email||lead.email||'',
-    nif:        cli.finNif||cli.nif||orc.nif||'',
-    empresa:    lead.emp||'',
-    moradaFiscal: cli.morada||orc.morada||'',
-    orcNum:     orc.num||'',
-    produto:    lead.prod||''
+    finNome:       (adj&&adj.finNome)       || cli.finNome || '',
+    finTel:        (adj&&adj.finTel)        || cli.finTel||cli.tel || '',
+    finEmail:      (adj&&adj.finEmail)      || cli.finEmail||cli.email||lead.email || '',
+    nif:           (adj&&adj.nif)           || cli.finNif||cli.nif||orc.nif || '',
+    empresa:       (adj&&adj.empresa)       || lead.emp || '',
+    moradaFiscal:  (adj&&adj.moradaFiscal)  || cli.morada||orc.morada || '',
+    moradaMontagem:(adj&&adj.moradaMontagem)|| '',
+    os:            (adj&&adj.os)            || '',
+    cabimento:     (adj&&adj.cabimento)     || '',
+    eng:           (adj&&adj.eng)           || '',
+    obs:           (adj&&adj.obs)           || '',
+    orcNum:        (adj&&adj.orcNum)        || orc.num || '',
+    produto:       (adj&&adj.produto)       || lead.prod || '',
+    pagamento:     (adj&&adj.pagamento)     || ''
   };
 
   const set = (id,v)=>{ const el=document.getElementById(id); if(el) el.value=v; };
@@ -18138,12 +18567,13 @@ function crmAbrirAdjudicacaoModal(leadId){
   set('adj-nif', pre.nif);
   set('adj-empresa', pre.empresa);
   set('adj-morada-fiscal', pre.moradaFiscal);
-  set('adj-morada-montagem', '');
-  set('adj-os', '');
-  set('adj-cabimento', '');
-  set('adj-eng', '');
+  set('adj-morada-montagem', pre.moradaMontagem);
+  set('adj-os', pre.os);
+  set('adj-cabimento', pre.cabimento);
+  set('adj-eng', pre.eng);
   set('adj-produto', pre.produto);
-  set('adj-obs', '');
+  set('adj-obs', pre.obs);
+  set('adj-pagamento', pre.pagamento);
   const ref = document.getElementById('adj-orc-ref');
   if(ref){ ref.style.display = pre.orcNum?'inline-block':'none'; ref.textContent = pre.orcNum?('Ref. '+pre.orcNum):''; }
 
@@ -18176,7 +18606,10 @@ async function crmSubmeterAdjudicacao(){
     cabimento: get('adj-cabimento'),
     eng: get('adj-eng'),
     produto: get('adj-produto'),
-    obs: get('adj-obs')
+    obs: get('adj-obs'),
+    // Parte 2 (Fase 3) — campo administrativo, nunca bloqueia a submissão
+    // se vier vazio (ver comentário mais abaixo, junto da validação).
+    pagamento: get('adj-pagamento')
   };
   if(!dados.finNome || !dados.finTel || !dados.finEmail || !dados.nif || !dados.empresa || !dados.moradaFiscal || !dados.moradaMontagem){
     alert('Preenche os campos obrigatórios da adjudicação.');
@@ -18186,10 +18619,13 @@ async function crmSubmeterAdjudicacao(){
   if(!lead){ alert('Lead não encontrada.'); return; }
   const autor = (typeof CU!=='undefined'&&CU&&CU.name)?CU.name:'Sistema';
 
-  // Liga a adjudicação ao orçamento desta lead (por leadId, com fallback por nome do cliente)
-  const orc = (typeof orcData!=='undefined')
-    ? ((orcData||[]).find(o=>o.leadId===leadId) || (orcData||[]).find(o=>o.cli===lead.emp))
-    : null;
+  // Parte 2 (Fase 1) — mesma prioridade usada em toda a parte
+  // administrativa do CRM para ligar a adjudicação ao orçamento certo:
+  // orcNum já conhecido -> leadId -> projectId -> NIF -> nome (último
+  // recurso). Nunca depende só do sessionStorage efémero de criação.
+  const adjAnterior = lead.adjudicacao || null;
+  const orcLigados = crmOrcamentosLigadosALead(lead, { orcNum: adjAnterior&&adjAnterior.orcNum, nif: dados.nif });
+  const orc = orcLigados[0] || null;
 
   // Bloco E — project_id nasce aqui (adjudicação/fecho), persistente e
   // imutável: uma vez atribuído a este orçamento, nunca muda nem é
@@ -18212,9 +18648,54 @@ async function crmSubmeterAdjudicacao(){
     }
   }
 
+  // Parte 2 (Fase 1) — enriquecer o payload com os identificadores já
+  // conhecidos pelo CRM (nunca inventados; ficam null/vazio se não
+  // existirem), para a adjudicação nunca mais ficar órfã/irrecuperável.
+  const clienteEncontrado = (typeof crmEncontrarCliente==='function')
+    ? crmEncontrarCliente({ clientId: adjAnterior&&adjAnterior.clientId, nif: dados.nif, nome: dados.empresa })
+    : null;
+  dados.clientId = (clienteEncontrado && clienteEncontrado.id) || (adjAnterior && adjAnterior.clientId) || null;
+  dados.projectId = lead.projectId || (adjAnterior && adjAnterior.projectId) || null;
+  dados.orcNum = (orc && orc.num) || (adjAnterior && adjAnterior.orcNum) || null;
+  // Correção pontual (revisão externa) — garantir explicitamente o vínculo
+  // à Lead real no payload persistido (já vinha correto via a propriedade
+  // "leadId," na criação de 'dados', mas fica aqui explícito e junto dos
+  // outros identificadores, sem inventar nenhum ID).
+  dados.leadId = leadId;
+
   lead.adjudicacao = dados;
+  // Persistência incondicional (Fase 1) — a adjudicação tem de ficar
+  // gravada já aqui, independentemente de a lead estar num estado
+  // terminal (Ganho/Perdido) ou de a transição de pipeline abaixo ser
+  // recusada pelas guards do motor central. Nunca decide essa transição
+  // por conta própria, só garante que 'adjudicacao' em si nunca fica presa
+  // só em memória (ver crmRegistarTransicaoEstado/crmAvaliarTransicaoAutomatica
+  // mais abaixo — essas guards continuam exatamente como estavam).
+  if(typeof saveCrmLeads==='function') saveCrmLeads();
   if(typeof crmAddAtividade==='function'){
     crmAddAtividade(leadId, 'adjudicacao', 'Adjudicação submetida — NIF '+dados.nif+(orc?' · Orçamento '+orc.num:' · sem orçamento associado'), autor);
+  }
+
+  // Parte 2 (Fase 3, correção de concorrência) — tarefa administrativa para
+  // o Financeiro, reaproveitando ob_uni_items/admin-agenda (mesmo padrão de
+  // orcMarcarNecessitaDesign()). Nunca duplica: obGarantirTarefaFinanceiraAdjudicacao()
+  // localiza uma tarefa já existente por projectId (ou leadId+orcNum) antes
+  // de criar, e agora aguarda a confirmação remota (optimistic locking,
+  // mesmo padrão de uniSave/uniDrop/fpToggleSubtask) antes de considerar a
+  // tarefa gravada. A adjudicação em si JÁ FICOU persistida acima — o
+  // sucesso desta tarefa nunca é condição para a adjudicação: se falhar,
+  // avisa e segue em frente, nunca apaga/reverte o que já foi gravado.
+  if(typeof obGarantirTarefaFinanceiraAdjudicacao==='function'){
+    var resultadoTarefaFin = await obGarantirTarefaFinanceiraAdjudicacao(lead, dados, orc);
+    if(!resultadoTarefaFin || resultadoTarefaFin.ok!==true){
+      if(typeof showToast==='function') showToast('⚠ Adjudicação gravada — mas não foi possível sincronizar a tarefa do Financeiro. Tenta novamente mais tarde.');
+    } else if(resultadoTarefaFin.alertaPersistidoRemotamente===false){
+      // A tarefa principal (dados administrativos) ficou gravada com sucesso —
+      // isto não é uma falha da tarefa. Só o estado da flag de deduplicação do
+      // alerta é que não foi confirmado no servidor (ver obGarantirTarefaFinanceiraAdjudicacao),
+      // por isso avisa especificamente disto, sem tratar a tarefa como falhada.
+      if(typeof showToast==='function') showToast('⚠ Tarefa Financeiro gravada, mas o estado do alerta não pôde ser sincronizado. O alerta poderá reaparecer até nova sincronização.');
+    }
   }
 
   if(orc && typeof orcChangeStatus==='function'){
@@ -18251,6 +18732,250 @@ async function crmSubmeterAdjudicacao(){
   crmFecharAdjudicacaoModal();
 }
 
+// ══════════════════════════════════════════════════════════════════
+// PARTE 2 (FASE 3) — FLUXO FINANCEIRO PÓS-ADJUDICAÇÃO
+// Reaproveita integralmente a infraestrutura já existente: ob_uni_items
+// (page:'admin-agenda', mesmo padrão de orcMarcarNecessitaDesign()),
+// EventBus/Agente 5 (alertas), e lead.adjudicacao (Fase 1/leitor read-only).
+// Nenhuma tabela nova, nenhum motor de cálculo tocado.
+// ══════════════════════════════════════════════════════════════════
+
+// Localiza uma tarefa Financeiro já existente para esta adjudicação —
+// nunca por Date.now()/id novo. Prioridade: projectId (identificador mais
+// estável, imutável) -> leadId+orcNum -> leadId sozinho (quando a
+// adjudicação não tem orçamento associado). Isto é a chave lógica de
+// deduplicação pedida: reabrir/ressubmeter a mesma adjudicação nunca cria
+// uma 2ª tarefa, só atualiza a existente.
+function obEncontrarTarefaFinanceiraAdjudicacao(dados){
+  if(typeof uniItems==='undefined' || !dados) return null;
+  var candidatos = uniItems.filter(function(i){ return i && i.page==='admin-agenda' && i._tarefaFinanceiraAdjudicacao===true; });
+  if(dados.projectId){
+    var porProjectId = candidatos.find(function(i){ return i.projectId && i.projectId===dados.projectId; });
+    if(porProjectId) return porProjectId;
+  }
+  if(dados.leadId!=null && dados.orcNum){
+    var porLeadOrc = candidatos.find(function(i){ return i.leadId===dados.leadId && i.orcNum===dados.orcNum; });
+    if(porLeadOrc) return porLeadOrc;
+  }
+  if(dados.leadId!=null){
+    var porLeadSo = candidatos.find(function(i){ return i.leadId===dados.leadId && !i.projectId && !i.orcNum; });
+    if(porLeadSo) return porLeadSo;
+  }
+  return null;
+}
+window.obEncontrarTarefaFinanceiraAdjudicacao = obEncontrarTarefaFinanceiraAdjudicacao;
+
+// AGENTE 5 — mapeamento do alerta "Forma de Pagamento em falta" (reaproveita
+// o EventBus/painel de agentes já existente, ver bloco "SISTEMA DE AGENTES
+// COLABORATIVOS" mais abaixo). Feito aqui, fora daquela IIFE, porque esta
+// função corre antes dela no ficheiro — window.AGENTE5_ICONES/NIVEL/MSG só
+// existem se essa IIFE já tiver corrido; por isso o registo é condicional
+// e tolerante (nunca cria um 2º sistema de alertas).
+function obRegistarAlertaAgente5PagamentoFalta(){
+  if(typeof window.AGENTE5_ICONES==='object' && window.AGENTE5_ICONES && !('adjudicacao_sem_pagamento' in window.AGENTE5_ICONES)){
+    window.AGENTE5_ICONES.adjudicacao_sem_pagamento = '🔴';
+  }
+  if(typeof window.AGENTE5_NIVEL==='object' && window.AGENTE5_NIVEL && !('adjudicacao_sem_pagamento' in window.AGENTE5_NIVEL)){
+    window.AGENTE5_NIVEL.adjudicacao_sem_pagamento = 'crit';
+  }
+  if(typeof window.AGENTE5_MSG==='object' && window.AGENTE5_MSG && !('adjudicacao_sem_pagamento' in window.AGENTE5_MSG)){
+    window.AGENTE5_MSG.adjudicacao_sem_pagamento = function(d){ return 'Forma de Pagamento em falta — ' + ((d&&d.cliente)||'adjudicação'); };
+  }
+}
+
+// Cria (ou atualiza, nunca duplica) a tarefa administrativa do Financeiro
+// depois de uma adjudicação submetida com sucesso. Mesmo padrão de
+// orcMarcarNecessitaDesign(): objeto simples em uniItems + saveUniItems +
+// _sbUniItemUpsert. Sem tabela nova, sem 2º sistema de tarefas.
+// Correção de concorrência (revisão externa) — mesmo padrão optimistic-
+// locking já usado em uniSave()/uniDrop()/fpToggleSubtask(): async, nunca
+// confia numa escrita local como "concluída" antes de saber que o Supabase
+// confirmou. Devolve sempre {ok, reason?, item?} — nunca finge sucesso.
+async function obGarantirTarefaFinanceiraAdjudicacao(lead, dados, orc){
+  if(typeof uniItems==='undefined' || !dados) return {ok:false, reason:'sem-uniItems'};
+  var autor = (typeof CU!=='undefined'&&CU&&CU.name) ? CU.name : 'Sistema';
+  var cliente = dados.empresa || (lead&&lead.emp) || '—';
+  var existente = obEncontrarTarefaFinanceiraAdjudicacao(dados);
+  var semPagamento = !dados.pagamento;
+
+  if(existente){
+    // Snapshot profundo ANTES de qualquer alteração — permite reverter por
+    // completo (nunca um merge parcial) se a gravação remota falhar. Nada
+    // (saveUniItems "definitivo", alerta, _alertaPagamentoEmitido) acontece
+    // antes de confirmar que a escrita realmente aconteceu.
+    var prevSnapshot = JSON.parse(JSON.stringify(existente));
+    existente.client = cliente;
+    existente.clientId = dados.clientId || existente.clientId || null;
+    existente.projectId = dados.projectId || existente.projectId || null;
+    existente.orcNum = dados.orcNum || existente.orcNum || null;
+    existente.pagamento = dados.pagamento || '';
+    existente.leadId = dados.leadId!=null ? dados.leadId : existente.leadId;
+    var resultado = (typeof _sbUniItemUpsert==='function')
+      ? await _sbUniItemUpsert(existente, {isCreate:false})
+      : {ok:true};
+    if(!resultado.ok){
+      // Reverte exatamente para o estado anterior — nunca faz auto-merge,
+      // nunca marca a atualização como concluída, nunca toca em
+      // _alertaPagamentoEmitido, nunca dispara o EventBus.
+      var idxExistente = uniItems.indexOf(existente);
+      if(idxExistente>=0) uniItems[idxExistente] = prevSnapshot;
+      if(typeof saveUniItems==='function') saveUniItems();
+      var msgFalhaUpd = resultado.message || 'Não foi possível sincronizar a tarefa financeira. Tenta novamente.';
+      if(typeof showToast==='function') showToast('⚠ '+msgFalhaUpd);
+      return {ok:false, reason: resultado.reason==='conflict' ? 'conflict' : 'error', item: prevSnapshot};
+    }
+    // Só a partir daqui a atualização conta como concluída.
+    if(typeof saveUniItems==='function') saveUniItems();
+    if(semPagamento && !existente._alertaPagamentoEmitido && typeof EventBus!=='undefined' && EventBus && typeof EventBus.publish==='function'){
+      obRegistarAlertaAgente5PagamentoFalta();
+      EventBus.publish('adjudicacao_sem_pagamento', { cliente:cliente, leadId:existente.leadId, orcNum:existente.orcNum, projectId:existente.projectId });
+      // O EventBus já foi publicado (uma única vez) — a partir daqui só resta
+      // persistir remotamente a flag de deduplicação, com optimistic locking
+      // e sem repetir o evento seja qual for o resultado desta escrita.
+      var flagAnteriorExistente = existente._alertaPagamentoEmitido;
+      existente._alertaPagamentoEmitido = true;
+      if(typeof saveUniItems==='function') saveUniItems();
+      var persistFlagExistente = (typeof _sbUniItemUpsert==='function')
+        ? await _sbUniItemUpsert(existente, {isCreate:false})
+        : {ok:true};
+      if(!persistFlagExistente.ok){
+        // Não fingir deduplicação persistente: reverte ao último estado
+        // remotamente confirmado, sem tocar de novo no EventBus.
+        existente._alertaPagamentoEmitido = flagAnteriorExistente;
+        if(typeof saveUniItems==='function') saveUniItems();
+        return {ok:true, item:existente, alertaPersistidoRemotamente:false};
+      }
+      return {ok:true, item:existente, alertaPersistidoRemotamente:true};
+    } else if(!semPagamento && existente._alertaPagamentoEmitido){
+      // Pagamento passou a existir — a próxima falta (noutra adjudicação) volta a poder alertar.
+      var flagAnteriorExistenteResolvido = existente._alertaPagamentoEmitido;
+      existente._alertaPagamentoEmitido = false;
+      if(typeof saveUniItems==='function') saveUniItems();
+      var persistFlagResolvido = (typeof _sbUniItemUpsert==='function')
+        ? await _sbUniItemUpsert(existente, {isCreate:false})
+        : {ok:true};
+      if(!persistFlagResolvido.ok){
+        existente._alertaPagamentoEmitido = flagAnteriorExistenteResolvido;
+        if(typeof saveUniItems==='function') saveUniItems();
+        return {ok:true, item:existente, alertaPersistidoRemotamente:false};
+      }
+      return {ok:true, item:existente, alertaPersistidoRemotamente:true};
+    }
+    return {ok:true, item:existente};
+  }
+
+  var item = {
+    id: Date.now(), page: 'admin-agenda',
+    n: 'Adjudicação — preparar faturação — '+cliente,
+    client: cliente, status: 'Outro', priority: 'normal', assignee: 'Financeiro',
+    date: new Date().toISOString().split('T')[0],
+    notes: 'Criado automaticamente após adjudicação'+(orc?(' — Orçamento '+orc.num):' (sem orçamento associado)')+'.',
+    extra: '',
+    leadId: dados.leadId!=null ? dados.leadId : null,
+    clientId: dados.clientId || null,
+    projectId: dados.projectId || null,
+    orcNum: dados.orcNum || null,
+    pagamento: dados.pagamento || '',
+    _tarefaFinanceiraAdjudicacao: true,
+    _alertaPagamentoEmitido: false,
+    historico: [{ de:null, para:'Outro', em:new Date().toISOString(), por:autor }],
+    dt: new Date().toLocaleDateString('pt-PT',{day:'2-digit',month:'2-digit',year:'numeric'})
+  };
+  // Concorrência segura na criação: tenta gravar no servidor ANTES de
+  // inserir definitivamente em uniItems — nunca fica uma tarefa "fantasma"
+  // visível localmente mas inexistente no Supabase.
+  var resultadoCriacao = (typeof _sbUniItemUpsert==='function')
+    ? await _sbUniItemUpsert(item, {isCreate:true})
+    : {ok:true};
+  if(!resultadoCriacao.ok){
+    var msgFalhaCriacao = resultadoCriacao.message || 'Não foi possível criar a tarefa financeira no servidor. Tenta novamente.';
+    if(typeof showToast==='function') showToast('⚠ '+msgFalhaCriacao);
+    return {ok:false, reason: resultadoCriacao.reason==='conflict' ? 'conflict' : 'error'};
+  }
+  uniItems.unshift(item);
+  if(typeof saveUniItems==='function') saveUniItems();
+  var alertaPersistidoRemotamenteCriacao;
+  if(semPagamento && typeof EventBus!=='undefined' && EventBus && typeof EventBus.publish==='function'){
+    obRegistarAlertaAgente5PagamentoFalta();
+    EventBus.publish('adjudicacao_sem_pagamento', { cliente:cliente, leadId:item.leadId, orcNum:item.orcNum, projectId:item.projectId });
+    // Igual ao ramo de atualização: o evento já foi publicado (uma única
+    // vez); resta persistir a flag remotamente, com optimistic locking,
+    // sem nunca repetir o EventBus consoante o resultado desta escrita.
+    item._alertaPagamentoEmitido = true;
+    if(typeof saveUniItems==='function') saveUniItems();
+    var persistFlagCriacao = (typeof _sbUniItemUpsert==='function')
+      ? await _sbUniItemUpsert(item, {isCreate:false})
+      : {ok:true};
+    if(!persistFlagCriacao.ok){
+      item._alertaPagamentoEmitido = false;
+      if(typeof saveUniItems==='function') saveUniItems();
+      alertaPersistidoRemotamenteCriacao = false;
+    } else {
+      alertaPersistidoRemotamenteCriacao = true;
+    }
+  }
+  if(typeof showToast==='function') showToast('💰 Tarefa criada para o Financeiro — preparar faturação de '+cliente);
+  return {ok:true, item:item, alertaPersistidoRemotamente: alertaPersistidoRemotamenteCriacao};
+}
+window.obGarantirTarefaFinanceiraAdjudicacao = obGarantirTarefaFinanceiraAdjudicacao;
+
+// ── Dashboard CFO — secção "Tarefas Financeiras pendentes" ──────────
+// Só lê uniItems/admin-agenda (nunca duplica em outra estrutura, nunca
+// constrói um novo dashboard — acrescenta uma secção ao CFO já existente).
+function renderTarefasFinanceirasCFO(){
+  var el = document.getElementById('dash-fin-tarefas');
+  if(!el) return;
+  if(typeof uniItems==='undefined'){ el.innerHTML=''; return; }
+  var tarefas = uniItems.filter(function(i){ return i && i.page==='admin-agenda' && i._tarefaFinanceiraAdjudicacao===true; });
+  if(!tarefas.length){ el.innerHTML = '<div style="font-size:12px;color:var(--muted);padding:6px 0">Sem tarefas financeiras pendentes.</div>'; return; }
+  el.innerHTML = tarefas.map(function(t){
+    var semPagamento = !t.pagamento;
+    var corBorda = semPagamento ? 'var(--r)' : 'var(--border)';
+    return '<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-left:3px solid '+corBorda+';background:var(--bg3);border-radius:6px;margin-bottom:6px;font-size:12.5px">'
+      + '<div style="flex:1">'
+      + '<div style="font-weight:600;color:var(--txt2)">'+(t.client||'—')+(t.orcNum?' · Nº '+t.orcNum:'')+'</div>'
+      + '<div style="color:var(--muted);font-size:11.5px">'+(semPagamento?'⚠ Forma de Pagamento em falta':('💳 '+t.pagamento))+' · '+(t.status||'—')+' · '+(t.dt||'—')+'</div>'
+      + '</div>'
+      + (t.leadId!=null ? '<button class="tbtn" style="font-size:11px;padding:3px 8px" onclick="crmAbrirVerAdjudicacao('+t.leadId+')">👁 Ver Adjudicação</button>' : '')
+      + '</div>';
+  }).join('');
+}
+window.renderTarefasFinanceirasCFO = renderTarefasFinanceirasCFO;
+
+// ── "👁 Ver Adjudicação" — leitor read-only, nunca duplica o formulário de
+// edição (#adj-modal) nem permite alterar nada por aqui. ────────────────
+function crmAbrirVerAdjudicacao(leadId){
+  var lead = (typeof crmLeads!=='undefined') ? crmLeads.find(function(l){ return l.id===leadId; }) : null;
+  var m = document.getElementById('adj-view-modal');
+  if(!m) return;
+  var adj = (lead && lead.adjudicacao) || {};
+  var val = function(v){ return (v===undefined||v===null||v==='') ? '—' : v; };
+  var set = function(id,v){ var el=document.getElementById(id); if(el) el.textContent = val(v); };
+  set('adjv-empresa', adj.empresa);
+  set('adjv-nif', adj.nif);
+  set('adjv-fin-nome', adj.finNome);
+  set('adjv-fin-tel', adj.finTel);
+  set('adjv-fin-email', adj.finEmail);
+  set('adjv-morada-fiscal', adj.moradaFiscal);
+  set('adjv-morada-montagem', adj.moradaMontagem);
+  set('adjv-pagamento', adj.pagamento);
+  set('adjv-os', adj.os);
+  set('adjv-cabimento', adj.cabimento);
+  set('adjv-eng', adj.eng);
+  set('adjv-obs', adj.obs);
+  set('adjv-orcnum', adj.orcNum);
+  set('adjv-projectid', adj.projectId);
+  set('adjv-leadid', adj.leadId!=null?adj.leadId:(lead?lead.id:null));
+  if(!lead && typeof showToast==='function') showToast('⚠ Lead não encontrada — a mostrar apenas os dados que existirem.');
+  m.classList.add('open');
+}
+window.crmAbrirVerAdjudicacao = crmAbrirVerAdjudicacao;
+function crmFecharVerAdjudicacao(){
+  var m = document.getElementById('adj-view-modal');
+  if(m) m.classList.remove('open');
+}
+window.crmFecharVerAdjudicacao = crmFecharVerAdjudicacao;
+
 // Liga eventos dos botões do modal de adjudicação e do botão "Adjudicação" do lead (sem onclick inline)
 document.addEventListener('DOMContentLoaded', function(){
   const adjBtn = document.getElementById('clm-adjud-btn');
@@ -18259,6 +18984,8 @@ document.addEventListener('DOMContentLoaded', function(){
   if(adjCancelBtn) adjCancelBtn.addEventListener('click', crmFecharAdjudicacaoModal);
   const adjSubmitBtn = document.getElementById('adj-submit-btn');
   if(adjSubmitBtn) adjSubmitBtn.addEventListener('click', crmSubmeterAdjudicacao);
+  const adjvCloseBtn = document.getElementById('adjv-close-btn');
+  if(adjvCloseBtn) adjvCloseBtn.addEventListener('click', crmFecharVerAdjudicacao);
 });
 
 // Converte um valor monetário (0 a 999.999,99) para texto por extenso em português
@@ -19696,6 +20423,10 @@ function renderDashboardCFO(){
 
   set('dash-kpi-vencido-val', fmt(totalVencido));
   set('dash-kpi-vencido-sub', vencidas.length+' fatura'+(vencidas.length===1?'':'s'));
+
+  // Parte 2 (Fase 3) — secção de tarefas financeiras pendentes, acrescentada
+  // ao CFO já existente (nunca um dashboard novo).
+  if(typeof renderTarefasFinanceirasCFO==='function') renderTarefasFinanceirasCFO();
 }
 
 function renderFinanceiro(){
@@ -27286,6 +28017,21 @@ function importarConfiguracao() {
         <input class="form-input" id="adj-produto" readonly style="opacity:.6;cursor:not-allowed"/>
       </div>
     </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Forma de Pagamento</label>
+        <!-- Parte 2 (Fase 3) — mesmas opções já usadas em #fat-pagamento
+             (Faturação); campo administrativo, não gera nenhum cálculo. -->
+        <select class="form-select" id="adj-pagamento">
+          <option value="">-- Selecione --</option>
+          <option value="Transferência Bancária">🏦 Transferência Bancária</option>
+          <option value="Multibanco">💳 Multibanco</option>
+          <option value="Cheque">📝 Cheque</option>
+          <option value="Numerário">💵 Numerário</option>
+          <option value="Débito Directo">📋 Débito Directo</option>
+        </select>
+      </div>
+    </div>
 
     <div style="margin:14px 0 8px;font-size:12px;font-weight:700;letter-spacing:.06em;color:var(--y);text-transform:uppercase;border-top:1px solid var(--border);padding-top:14px">Documentação</div>
     <div class="form-row full">
@@ -27298,6 +28044,57 @@ function importarConfiguracao() {
     <div class="crm-modal-btns">
       <button class="tbtn" id="adj-cancel-btn">Cancelar</button>
       <button class="tbtn y" id="adj-submit-btn">✓ Submeter</button>
+    </div>
+  </div>
+</div>
+
+<!-- Parte 2 (Fase 3) — leitor READ-ONLY de lead.adjudicacao: reaproveita os
+     mesmos rótulos/agrupamento visual de #adj-modal, mas com <div> em vez
+     de <input>/<select> — nunca permite editar nada, nunca é o mesmo
+     formulário de edição. -->
+<div id="adj-view-modal" class="crm-modal-overlay">
+  <div class="crm-modal" style="max-width:620px">
+    <h2>👁 Adjudicação (consulta)</h2>
+    <div style="margin:4px 0 8px;font-size:12px;font-weight:700;letter-spacing:.06em;color:var(--y);text-transform:uppercase">Área Financeira</div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Nome (Área Financeira)</label><div class="form-input" id="adjv-fin-nome" style="opacity:.85"></div></div>
+      <div class="form-group"><label class="form-label">Contacto</label><div class="form-input" id="adjv-fin-tel" style="opacity:.85"></div></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Email</label><div class="form-input" id="adjv-fin-email" style="opacity:.85"></div></div>
+      <div class="form-group"><label class="form-label">NIF</label><div class="form-input" id="adjv-nif" style="opacity:.85"></div></div>
+    </div>
+    <div style="margin:14px 0 8px;font-size:12px;font-weight:700;letter-spacing:.06em;color:var(--y);text-transform:uppercase;border-top:1px solid var(--border);padding-top:14px">Dados da Empresa</div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Nome de Empresa</label><div class="form-input" id="adjv-empresa" style="opacity:.85"></div></div>
+      <div class="form-group"><label class="form-label">Morada Fiscal</label><div class="form-input" id="adjv-morada-fiscal" style="opacity:.85"></div></div>
+    </div>
+    <div style="margin:14px 0 8px;font-size:12px;font-weight:700;letter-spacing:.06em;color:var(--y);text-transform:uppercase;border-top:1px solid var(--border);padding-top:14px">Instalação / Encomenda</div>
+    <div class="form-row full">
+      <div class="form-group"><label class="form-label">Morada de Montagem</label><div class="form-input" id="adjv-morada-montagem" style="opacity:.85"></div></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">N.º OS/PO</label><div class="form-input" id="adjv-os" style="opacity:.85"></div></div>
+      <div class="form-group"><label class="form-label">N.º Cabimento</label><div class="form-input" id="adjv-cabimento" style="opacity:.85"></div></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Engenheiro</label><div class="form-input" id="adjv-eng" style="opacity:.85"></div></div>
+      <div class="form-group"><label class="form-label">Forma de Pagamento</label><div class="form-input" id="adjv-pagamento" style="opacity:.85"></div></div>
+    </div>
+    <div style="margin:14px 0 8px;font-size:12px;font-weight:700;letter-spacing:.06em;color:var(--y);text-transform:uppercase;border-top:1px solid var(--border);padding-top:14px">Observações</div>
+    <div class="form-row full">
+      <div class="form-group"><div class="form-input" id="adjv-obs" style="opacity:.85;white-space:pre-wrap"></div></div>
+    </div>
+    <div style="margin:14px 0 8px;font-size:12px;font-weight:700;letter-spacing:.06em;color:var(--y);text-transform:uppercase;border-top:1px solid var(--border);padding-top:14px">Identificadores</div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Nº Orçamento</label><div class="form-input" id="adjv-orcnum" style="opacity:.85"></div></div>
+      <div class="form-group"><label class="form-label">Project ID</label><div class="form-input" id="adjv-projectid" style="opacity:.85"></div></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Lead ID</label><div class="form-input" id="adjv-leadid" style="opacity:.85"></div></div>
+    </div>
+    <div class="crm-modal-btns">
+      <button class="tbtn" id="adjv-close-btn">Fechar</button>
     </div>
   </div>
 </div>
@@ -28290,6 +29087,11 @@ function obAvaliarTransicaoProducaoUni(item, statusAnterior, statusNovo){
           status: 'Planeada', priority: item.priority||'normal', assignee: '',
           date: '', notes: 'Criado automaticamente — produção do orçamento '+item.orcNum+' concluída.',
           orcNum: item.orcNum, projectId: (item.projectId || (orc&&orc.projectId) || null),
+          // Parte 2 (Fase 1) — propaga a Morada de Montagem e metadados
+          // administrativos já gravados no item de Produção (vindos da
+          // adjudicação) para a Instalação, que é quem a Guia de
+          // Transporte (instGerarGuiaTransporte) realmente lê.
+          moradaMontagem: item.moradaMontagem||'', os: item.os||'', cabimento: item.cabimento||'', eng: item.eng||'',
           historico: [{ de:null, para:'Planeada', em:new Date().toISOString(), por:autor }],
           dt: new Date().toLocaleDateString('pt-PT',{day:'2-digit',month:'2-digit',year:'numeric'})
         };
@@ -29388,6 +30190,22 @@ function obCriarProjetoProducao(orc, opts){
   if(opts.forcarAdmin){
     item.historico.push({de:'Entrada de Obra',para:'Entrada de Obra (exceção sem adiantamento)',em:new Date().toISOString(),por:opts.autor||'Admin',motivo:opts.motivo});
   }
+  // Parte 2 (Fase 1) — propaga a Morada de Montagem (e metadados
+  // administrativos da adjudicação) para o item de Produção, sem os
+  // quais a Guia de Transporte fica sempre em branco (item.moradaMontagem
+  // é o mesmo campo já consumido por instGerarGuiaTransporte()). Não
+  // inventa dados: só copia o que a adjudicação já tiver; nunca mexe na
+  // lógica/estado da Produção 2.0.
+  if(orc.leadId && typeof crmLeads!=='undefined'){
+    var _leadAdj = crmLeads.find(function(l){ return l.id===orc.leadId; });
+    _leadAdj = _leadAdj && _leadAdj.adjudicacao;
+    if(_leadAdj){
+      item.moradaMontagem = _leadAdj.moradaMontagem || '';
+      item.os = _leadAdj.os || '';
+      item.cabimento = _leadAdj.cabimento || '';
+      item.eng = _leadAdj.eng || '';
+    }
+  }
   uniItems.unshift(item);
   if(typeof saveUniItems==='function') saveUniItems();
   if(typeof _sbUniItemUpsert==='function') _sbUniItemUpsert(item, {isCreate:true});
@@ -29440,7 +30258,16 @@ function obCriarClienteDeLead(lead){
   if(typeof cliData==='undefined') return;
   var nome=lead.emp||lead.n;
   if(!nome) return;
-  var existente=(cliData||[]).find(function(c){ return (c.n||'').trim().toLowerCase()===nome.trim().toLowerCase(); });
+  // Parte 2 (Fase 1) — mesma prioridade segura usada no resto do CRM
+  // (clientId -> NIF normalizado -> nome normalizado): nunca cria um
+  // segundo Cliente quando já existe um vínculo seguro, mesmo com
+  // variações de caixa/pontuação no nome.
+  var adj = lead.adjudicacao || null;
+  var nifConhecido = adj && adj.nif;
+  var clientIdConhecido = lead.clientId || (adj && adj.clientId) || null;
+  var existente = (typeof crmEncontrarCliente==='function')
+    ? crmEncontrarCliente({ clientId: clientIdConhecido, nif: nifConhecido, nome: nome })
+    : (cliData||[]).find(function(c){ return (c.n||'').trim().toLowerCase()===nome.trim().toLowerCase(); });
   if(existente){
     // Bloco E — project_id: cliente já existe (cliente recorrente) — nunca
     // sobrescreve identidade nem cria cópia, só acrescenta o novo projeto à
@@ -29453,11 +30280,19 @@ function obCriarClienteDeLead(lead){
         if(typeof saveCliData==='function') saveCliData();
       }
     }
+    // Parte 2 (Fase 1) — completa dados fiscais que a adjudicação trouxe e
+    // o Cliente ainda não tinha; nunca sobrescreve o que já existe (só
+    // preenche o que estava vazio), nunca funde dois clientes.
+    var mudouDadosFiscais=false;
+    if(nifConhecido && !existente.nif){ existente.nif=nifConhecido; mudouDadosFiscais=true; }
+    if(adj && adj.moradaFiscal && !existente.morada){ existente.morada=adj.moradaFiscal; mudouDadosFiscais=true; }
+    if(mudouDadosFiscais && typeof saveCliData==='function') saveCliData();
     return;
   }
   cliData.unshift({
     id:Date.now(), n:nome, sec:'Outro', cont:lead.n||nome,
-    email:lead.email||'', tel:lead.tel||'', nif:'', morada:'',
+    email:lead.email||'', tel:lead.tel||'',
+    nif: nifConhecido||'', morada:(adj&&adj.moradaFiscal)||'',
     projs:1, rev:lead.val||0, last:'hoje', st:'active',
     projectIds: lead.projectId ? [lead.projectId] : []
   });
@@ -31973,6 +32808,10 @@ function fuAgruparKanban(){
     var leadLigado=o.leadId?(crmLeads||[]).find(function(l){return l.id===o.leadId;}):null;
     grupos[com][col].push({
       orcId:o.num,
+      // Parte 2 (Fase 2) — leadId (quando existir) segue com o item para o
+      // card poder oferecer "Abrir Lead" (obAbrirLead), sem depender de
+      // recalcular nada aqui — mesmo leadLigado já usado acima.
+      leadId:o.leadId||null,
       cliente:o.cli||'—',
       valor:(typeof orcGetValorTotal==='function')?orcGetValorTotal(o):(o.val||0),
       dias:obDiasEntre(obOrcUltimaAtividade(o)),
@@ -32009,6 +32848,11 @@ function fuCardHTML(it){
   var classificarOpts=FU_CLASSIFICACOES_MENU.map(function(c){
     return '<option value="'+c.value+'">'+c.label+'</option>';
   }).join('');
+  // Parte 2 (Fase 2) — "Abrir Lead" reutiliza obAbrirLead() (a mesma
+  // função já usada no Dashboard, nunca um segundo modal de Lead); só
+  // aparece quando este item de Follow-up tem mesmo um leadId ligado. Abrir
+  // é só navegação/leitura — não muda estado da Lead nem cria atividade.
+  var abrirLeadBtn = it.leadId ? '<button class="tbtn" onclick="obAbrirLead('+it.leadId+')" title="Abrir esta Lead no Pipeline">👤 Lead</button>' : '';
   return '<div class="fu-card">'
     +'<div class="fu-card-cliente">'+it.cliente+'</div>'
     +'<div class="fu-card-valor">€'+(it.valor||0).toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2})+'</div>'
@@ -32016,6 +32860,7 @@ function fuCardHTML(it){
     +'<div class="fu-card-linha"><span>Próxima acção:</span> '+paTxt+'</div>'
     +'<div class="fu-card-linha"><span>Classificação:</span> '+classifTxt+'</div>'
     +'<div class="fu-card-acoes">'
+      +abrirLeadBtn
       +'<select onchange="fuAcaoClassificar(\''+idAttr+'\', this.value); this.value=\'\';">'
         +'<option value="">Classificar...</option>'+classificarOpts
       +'</select>'
