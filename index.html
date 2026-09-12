@@ -18304,6 +18304,11 @@ async function crmSubmeterAdjudicacao(){
   dados.clientId = (clienteEncontrado && clienteEncontrado.id) || (adjAnterior && adjAnterior.clientId) || null;
   dados.projectId = lead.projectId || (adjAnterior && adjAnterior.projectId) || null;
   dados.orcNum = (orc && orc.num) || (adjAnterior && adjAnterior.orcNum) || null;
+  // Correção pontual (revisão externa) — garantir explicitamente o vínculo
+  // à Lead real no payload persistido (já vinha correto via a propriedade
+  // "leadId," na criação de 'dados', mas fica aqui explícito e junto dos
+  // outros identificadores, sem inventar nenhum ID).
+  dados.leadId = leadId;
 
   lead.adjudicacao = dados;
   // Persistência incondicional (Fase 1) — a adjudicação tem de ficar
