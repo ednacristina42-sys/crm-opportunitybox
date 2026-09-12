@@ -6800,6 +6800,36 @@ thead th{background:linear-gradient(180deg,var(--bg3),var(--bg2))}
 tbody tr:hover{background:rgba(255,203,45,.05)}
 .tw{box-shadow:0 6px 22px rgba(0,0,0,.30)}
 .crm-modal{box-shadow:0 18px 50px rgba(0,0,0,.55);border-color:var(--border2)}
+
+/* ── CAMADA 6 — Ajuste tipográfico global (correção de Preview) ──────
+   Só font-size (nenhuma cor, layout, radius ou lógica tocada). Aditivo
+   e no fim da folha de estilos principal — vence a cascata sobre as
+   regras acima só nesta propriedade. Aumento controlado, mantendo a
+   hierarquia título > valor de KPI > cabeçalho de secção > rótulo >
+   texto de tabela > texto auxiliar. Não mexe em .toco-* (integração de
+   faturação eletrónica), nem nas folhas de estilo de impressão/PDF,
+   nem em .mv-* (Mapa de Vendas, grelha densa por colunas — fora deste
+   ajuste). Breakpoints existentes (@media) continuam intocados — a
+   responsividade em ecrãs estreitos não muda. ── */
+.pg-title{font-size:21px}
+.mp-daysummary{font-size:14px}
+.sh h2{font-size:15.5px}
+.tbtn{font-size:14px}
+.form-label{font-size:12.5px}
+.b{font-size:12.5px}
+thead th{font-size:11.5px}
+tbody td{font-size:15px}
+.kpi .klbl{font-size:12px}
+.kpi .kval{font-size:27px}
+.kpi .ksub{font-size:12.5px}
+.kpi .kdlt{font-size:13.5px}
+#page-meu-painel .mp2-kpi-lbl{font-size:12px}
+#page-meu-painel .mp2-kpi-val{font-size:21px}
+.crm-stat .n{font-size:21px}
+.crm-stat .l{font-size:12.5px}
+.k-card-title{font-size:15.5px}
+.k-card-sub{font-size:13.5px}
+.k-col-name{font-size:14.5px}
 </style>
 
 
