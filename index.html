@@ -2032,104 +2032,15 @@ window.moLinhaChange = moLinhaChange;
 window.moLinhaQty = moLinhaQty;
 window.moRemoverLinha = moRemoverLinha;
 
-// ════════════════════════════════════════════════════════════════════
-// MÓDULO 2: ARTES — Vista Lista / Kanban
-// ════════════════════════════════════════════════════════════════════
-var ARTES_VIEW = 'lista';
-var ARTES_DRAG_ID = null;
-var ARTES_ESTADOS = [
-  {id:'rascunho',      label:'Rascunho',           cor:'#6b7280'},
-  {id:'em-progresso',  label:'Em Progresso',        cor:'#3b82f6'},
-  {id:'aguarda-aprov', label:'Aguarda Aprovacao',   cor:'#f59e0b'},
-  {id:'aprovado',      label:'Aprovado',            cor:'#10b981'},
-];
-var ARTES_DATA = JSON.parse(localStorage.getItem('ob-artes') || '[]');
-function artesSave() { localStorage.setItem('ob-artes', JSON.stringify(ARTES_DATA)); }
-
-function artesSetView(view) {
-  ARTES_VIEW = view;
-  var lista = document.getElementById('artes-view-lista');
-  var kanban = document.getElementById('artes-view-kanban');
-  var btnL = document.getElementById('artes-btn-lista');
-  var btnK = document.getElementById('artes-btn-kanban');
-  if (lista)  lista.style.display  = view === 'lista'  ? '' : 'none';
-  if (kanban) kanban.style.display = view === 'kanban' ? 'block' : 'none';
-  if (btnL) { btnL.style.background = view==='lista' ? 'var(--bg4)' : ''; btnL.style.color = view==='lista' ? 'var(--txt2)' : 'var(--muted)'; }
-  if (btnK) { btnK.style.background = view==='kanban' ? 'var(--bg4)' : ''; btnK.style.color = view==='kanban' ? 'var(--txt2)' : 'var(--muted)'; }
-  if (view === 'kanban') artesRenderKanban();
-}
-
-function artesRenderKanban() {
-  var board = document.getElementById('artes-kanban-board');
-  if (!board) return;
-  var allArtes = _artesGetAll();
-  board.innerHTML = ARTES_ESTADOS.map(function(est) {
-    var cards = allArtes.filter(function(a){ return (a.estado||'rascunho') === est.id; });
-    return '<div class="artes-col" data-estado="' + est.id + '" ' +
-      'ondragover="event.preventDefault();this.classList.add(\'artes-col-over\')" ' +
-      'ondragleave="this.classList.remove(\'artes-col-over\')" ' +
-      'ondrop="artesDrop(event,\'' + est.id + '\')" ' +
-      'style="min-width:200px;flex:1;background:' + est.cor + '11;border:1px solid ' + est.cor + '33;border-radius:10px;padding:10px">' +
-      '<div style="font-size:13px;font-weight:700;color:' + est.cor + ';margin-bottom:10px;display:flex;align-items:center;justify-content:space-between">' +
-        '<span>' + est.label + '</span>' +
-        '<span style="background:' + est.cor + '22;border-radius:10px;padding:1px 7px;font-size:12px">' + cards.length + '</span>' +
-      '</div>' +
-      (cards.length ? cards.map(function(a) {
-        return '<div class="artes-card" draggable="true" data-arte-id="' + a.id + '" ' +
-          'ondragstart="artesDragStart(\'' + a.id + '\')" ' +
-          'ondragend="document.querySelectorAll(\'.artes-col\').forEach(function(c){c.classList.remove(\'artes-col-over\');})" ' +
-          'style="background:var(--bg2);border:1px solid var(--border);border-radius:7px;padding:9px 11px;margin-bottom:7px;cursor:grab">' +
-          '<div style="font-size:14px;font-weight:600;color:var(--txt2);margin-bottom:3px">' + (a.nome||a.title||'Arte') + '</div>' +
-          '<div style="font-size:12px;color:var(--muted)">' + (a.cliente||'') + '</div>' +
-          '<div style="font-size:11px;color:var(--muted);margin-top:4px">' + (a.responsavel||'') + '</div>' +
-        '</div>';
-      }).join('') : '<div style="font-size:12px;color:var(--muted);text-align:center;padding:20px 0">Vazio</div>') +
-    '</div>';
-  }).join('');
-}
-
-function _artesGetAll() {
-  var tbody = document.querySelector('[id^="ficheiros-"]');
-  var fromTable = [];
-  if (tbody) {
-    Array.from(tbody.querySelectorAll('tr')).forEach(function(tr, i) {
-      var tds = tr.querySelectorAll('td');
-      if (tds.length >= 4) {
-        fromTable.push({
-          id: 'tbl-' + i,
-          nome: tds[0] ? tds[0].textContent.trim() : 'Arte',
-          cliente: tds[1] ? tds[1].textContent.trim() : '',
-          estado: _artesNormalizarEstado(tds[3] ? tds[3].textContent.trim() : ''),
-          responsavel: tds[4] ? tds[4].textContent.trim() : '',
-        });
-      }
-    });
-  }
-  var ids = ARTES_DATA.map(function(a){ return a.id; });
-  return ARTES_DATA.concat(fromTable.filter(function(a){ return ids.indexOf(a.id) < 0; }));
-}
-
-function _artesNormalizarEstado(txt) {
-  var t = (txt||'').toLowerCase();
-  if (t.includes('progresso')) return 'em-progresso';
-  if (t.includes('aguarda') || t.includes('revisao')) return 'aguarda-aprov';
-  if (t.includes('aprovado') || t.includes('ok')) return 'aprovado';
-  return 'rascunho';
-}
-
-function artesDragStart(id) { ARTES_DRAG_ID = id; }
-function artesDrop(ev, novoEstado) {
-  ev.preventDefault();
-  if (!ARTES_DRAG_ID) return;
-  var arte = ARTES_DATA.find(function(a){ return a.id === ARTES_DRAG_ID; });
-  if (arte) { arte.estado = novoEstado; artesSave(); }
-  ARTES_DRAG_ID = null;
-  artesRenderKanban();
-}
-window.artesSetView = artesSetView;
-window.artesRenderKanban = artesRenderKanban;
-window.artesDragStart = artesDragStart;
-window.artesDrop = artesDrop;
+// MÓDULO 2 (ARTES — Vista Lista / Kanban) removido na correção de Preview
+// (Parte 2): era um segundo sistema de toggle Lista/Quadro, paralelo e
+// desligado dos dados reais (lia/escrevia 'ob-artes' à parte e fazia
+// scraping da tabela por DOM), com um bug onde a lista nunca era
+// escondida (o elemento #artes-view-lista referenciado no JS nunca
+// existiu no HTML) — daí o quadro aparecer "por baixo" da lista em vez de
+// alternar. Substituído por fiView()/fiRender() (perto de uniRenderKanban),
+// o mesmo padrão já usado em dtView/dtRender e fpView/fpRender, sobre os
+// dados reais de uniItems/design-ficheiros.
 
 // ════════════════════════════════════════════════════════════════════
 // MÓDULO 3: TESOURARIA — Modal moderno (sem prompts nativos)
@@ -6718,10 +6629,6 @@ table.av-years td.av-peak::after{content:'●';position:absolute;top:4px;right:3
 .fin-desp-form { background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:18px;margin-bottom:18px }
 
 
-/* Artes Kanban */
-.artes-col { transition:background .2s }
-.artes-col-over { outline:2px dashed var(--y) !important }
-.artes-card:hover { box-shadow:0 4px 14px rgba(0,0,0,.25);border-color:var(--y) !important }
 /* MO linhas */
 .mo-linha-row select:focus { border-color:#8b5cf6;outline:none }
 /* Modal Tesouraria */
@@ -8249,22 +8156,21 @@ tbody tr:hover{background:rgba(255,203,45,.05)}
       <div class="pg-space-icon" style="background:var(--dd)">D</div>
       <div class="pg-title">Ficheiros e Artes</div>
       <div class="pg-actions">
-        <div style="display:flex;gap:4px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:3px">
-          <button id="artes-btn-lista" class="tbtn" style="font-size:13px;background:var(--bg4);color:var(--txt2)" onclick="artesSetView('lista')">&#9776; Lista</button>
-          <button id="artes-btn-kanban" class="tbtn" style="font-size:13px;color:var(--muted)" onclick="artesSetView('kanban')">&#8862; Kanban</button>
-        </div>
+        <!-- Correção Preview (Parte 2) — mesmo padrão Lista/Quadro já usado
+             em Produção -> Obras (fpView/#fp-vlist/#fp-vboard), em vez do
+             toggle ARTES_* paralelo e desligado dos dados reais. -->
+        <button class="tbtn" id="fi-vlist" data-action="fiView" data-view="list">☰ Lista</button>
+        <button class="tbtn on" id="fi-vboard" data-action="fiView" data-view="board">⊞ Quadro</button>
         <button class="tbtn y" data-action="openUniModal" data-page="design-ficheiros">+ Registar Arte</button>
       </div>
     </div>
   </div>
-  <div class="task-content">
+  <div id="fi-list-view" class="task-content" style="display:none">
     <div class="tw"><table><thead><tr><th>Ficheiro / Arte</th><th>Cliente</th><th>Versão</th><th>Estado</th><th>Responsável</th><th>Data</th></tr></thead>
     <tbody id="ficheiros-tbody"></tbody></table></div>
-    </div><!-- /artes-view-lista -->
-    <div id="artes-view-kanban" style="display:none">
-      <div id="artes-kanban-board" style="display:flex;gap:14px;overflow-x:auto;padding:8px 0;min-height:280px"></div>
-    </div>
   </div>
+  <div id="fi-board-view" class="uni-kban" style="display:flex"></div>
+</div>
 
 <!-- ─── FÁBRICA PRODUÇÃO -->
 <div id="page-fabrica-producao" class="app-page">
@@ -14258,11 +14164,10 @@ function crmInit(){
 // ══════════════════════════════════════════════════════════════════
 // DESIGNERS — gestão similar aos comerciais
 // ══════════════════════════════════════════════════════════════════
-var designComerciais; try{ designComerciais=JSON.parse(localStorage.getItem('ob-designers')||'null'); }catch(e){ designComerciais=null; } designComerciais = designComerciais || [
-  {id:1, nome:'Sara Antunes',   email:'sara@opportunitybox.pt',   cor:'#e67e22', ativo:true},
-  {id:2, nome:'Tomás Figueiredo', email:'tomas@opportunitybox.pt', cor:'#8b5cf6', ativo:true},
-  {id:3, nome:'João Lopes',     email:'joao@opportunitybox.pt',   cor:'#3fcf8e', ativo:true},
-];
+// Correção Preview (Parte 2) — sem designers fictícios por omissão; a lista
+// só é preenchida quando um admin adiciona designers reais em "Gerir
+// Designers" (designAddDesigner). Nunca inventa utilizadores.
+var designComerciais; try{ designComerciais=JSON.parse(localStorage.getItem('ob-designers')||'null'); }catch(e){ designComerciais=null; } designComerciais = designComerciais || [];
 function saveDesignersData(){ localStorage.setItem('ob-designers',JSON.stringify(designComerciais)); }
 
 function designOpenGestao(){
@@ -14498,13 +14403,19 @@ function openUniModal(page){
     // fictícios); Produção/Design/Instalações mantêm a lista antiga.
     team=Object.keys(AG_COMERCIAIS_REAIS_IDS);
   } else if(page&&page.indexOf('design')>=0){
+    // Parte 2 (correção Preview) — nunca mais nomes fictícios fixos aqui.
+    // designComerciais (RH -> Colaboradores de Design, editável) continua a
+    // ser a fonte principal; se estiver vazio, reutiliza obListaResponsaveisAtivos()
+    // (mesmo roster canónico já usado pelas subtarefas de Produção) em vez
+    // de inventar utilizadores.
     team=(typeof designComerciais!=='undefined'?designComerciais:[]).filter(function(c){return c.ativo;}).map(function(c){return c.nome;});
-    if(!team.length) team=['Sara Antunes','Tomás Figueiredo','João Lopes'];
+    if(!team.length) team=(typeof obListaResponsaveisAtivos==='function') ? obListaResponsaveisAtivos() : [];
   } else {
     var com=(typeof crmComerciais!=='undefined'?crmComerciais:[]).filter(function(c){return c.ativo;}).map(function(c){return c.nome;});
     team=com.concat(['Ricardo Faria','Pedro Silva','Sérgio Nunes','Luís Cardoso']);
   }
-  aSel.innerHTML=team.map(function(n){return '<option value="'+n+'">'+n+'</option>';}).join('');
+  aSel.innerHTML=(page&&page.indexOf('design')>=0&&!team.length ? '<option value="">Selecionar responsável</option>' : '')
+    +team.map(function(n){return '<option value="'+n+'">'+n+'</option>';}).join('');
   // Extra row
   var er=m.querySelector('#uni-row-extra');
   if(er) er.style.display=cfg.extraRow?'grid':'none';
@@ -14565,13 +14476,18 @@ function uniOpen(page, itemId){
   } else if(page==='fabrica-producao' && typeof USERS!=='undefined' && USERS){
     teamList = USERS.filter(u=>u.dept==='Chão da Fábrica').map(u=>u.name);
   } else if(page && page.startsWith('design')){
-    teamList = typeof designComerciais!=='undefined' ? designComerciais.filter(c=>c.ativo).map(c=>c.nome) : ['Sara Antunes','Tomás Figueiredo','João Lopes'];
+    // Parte 2 (correção Preview) — sem nomes fictícios fixos: designComerciais
+    // (RH -> Colaboradores de Design) primeiro; sem ninguém ativo, reutiliza
+    // obListaResponsaveisAtivos() (mesmo roster canónico de Produção 2.0).
+    teamList = typeof designComerciais!=='undefined' ? designComerciais.filter(c=>c.ativo).map(c=>c.nome) : [];
+    if(!teamList.length) teamList = (typeof obListaResponsaveisAtivos==='function') ? obListaResponsaveisAtivos() : [];
   } else {
     const comTeam = typeof crmComerciais!=='undefined' ? crmComerciais.filter(c=>c.ativo).map(c=>c.nome) : [];
     teamList = [...comTeam,'Ricardo Faria','Pedro Silva','Sérgio Nunes','Luís Cardoso','Nuno Bento','Diogo Costa'];
   }
   const uTeam = [...new Set(teamList)];
-  aSel.innerHTML = uTeam.map(n=>`<option value="${n}">${n}</option>`).join('');
+  aSel.innerHTML = (page && page.startsWith('design') && !uTeam.length ? '<option value="">Selecionar responsável</option>' : '')
+    + uTeam.map(n=>`<option value="${n}">${n}</option>`).join('');
 
   // Extra row
   const er = document.getElementById('uni-row-extra');
@@ -14996,27 +14912,45 @@ function dtRender(){
 }
 
 // ══ DESIGN FICHEIROS ═════════════════════════════════════════════════
+// Correção Preview (Parte 2) — mesmo padrão Lista/Quadro de dtView/dtRender
+// e fpView/fpRender (Produção -> Obras): uma única view principal de cada
+// vez, nunca lista+quadro renderizados ao mesmo tempo.
+var fiCurrentView = 'board';
+function fiView(v){
+  fiCurrentView=v;
+  document.getElementById('fi-list-view').style.display=v==='list'?'block':'none';
+  document.getElementById('fi-board-view').style.display=v==='board'?'flex':'none';
+  document.getElementById('fi-vlist').classList.toggle('on',v==='list');
+  document.getElementById('fi-vboard').classList.toggle('on',v==='board');
+  fiRender();
+}
+window.fiView = fiView;
+
 function fiRender(){
-  const el=document.getElementById('ficheiros-tbody'); if(!el) return;
   const items=uniGetItems('design-ficheiros');
   const cfg=UNI_CFG['design-ficheiros'];
-  el.innerHTML=items.map(i=>{
-    const sc=cfg.colors[i.status]||'#6b7280';
-    // Parte 2 (Fase 4): mostra a versão APROVADA quando existir, senão a
-    // mais recente (fiVersaoAtual) — item.extra sozinho já não reflecte o
-    // histórico completo (ver item.versoes). Itens legado sem versoes
-    // continuam a mostrar exatamente o que mostravam antes.
-    const versaoLabel = (typeof fiVersaoAtual==='function') ? ((fiVersaoAtual(i)||{}).versao || i.extra || 'v1') : (i.extra||'v1');
-    return `<tr onclick="uniOpen('design-ficheiros',${i.id})" style="cursor:pointer">
-      <td><strong style="color:var(--txt2)">${i.n}</strong></td>
-      <td style="font-size:13px">${i.client||'—'}</td>
-      <td><span class="b bm" style="font-size:11px">Ficheiro</span></td>
-      <td style="font-size:13px">${versaoLabel}</td>
-      <td><span class="b" style="background:${sc}22;color:${sc}">${i.status}</span></td>
-      <td style="font-size:13px">${i.assignee||'—'}</td>
-      <td style="font-size:13px;color:var(--muted)">${i.dt||'—'}</td>
-    </tr>`;
-  }).join('');
+  if(fiCurrentView==='list'){
+    const el=document.getElementById('ficheiros-tbody'); if(!el) return;
+    el.innerHTML=items.map(i=>{
+      const sc=cfg.colors[i.status]||'#6b7280';
+      // Parte 2 (Fase 4): mostra a versão APROVADA quando existir, senão a
+      // mais recente (fiVersaoAtual) — item.extra sozinho já não reflecte o
+      // histórico completo (ver item.versoes). Itens legado sem versoes
+      // continuam a mostrar exatamente o que mostravam antes.
+      const versaoLabel = (typeof fiVersaoAtual==='function') ? ((fiVersaoAtual(i)||{}).versao || i.extra || 'v1') : (i.extra||'v1');
+      return `<tr onclick="uniOpen('design-ficheiros',${i.id})" style="cursor:pointer">
+        <td><strong style="color:var(--txt2)">${i.n}</strong></td>
+        <td style="font-size:13px">${i.client||'—'}</td>
+        <td><span class="b bm" style="font-size:11px">Ficheiro</span></td>
+        <td style="font-size:13px">${versaoLabel}</td>
+        <td><span class="b" style="background:${sc}22;color:${sc}">${i.status}</span></td>
+        <td style="font-size:13px">${i.assignee||'—'}</td>
+        <td style="font-size:13px;color:var(--muted)">${i.dt||'—'}</td>
+      </tr>`;
+    }).join('');
+  } else {
+    uniRenderKanban(document.getElementById('fi-board-view'),'design-ficheiros',items);
+  }
 }
 window.fiRender = fiRender;
 
@@ -26675,7 +26609,6 @@ window.goPage = function(id) {
   if (id === 'stock') { setTimeout(stockRender, 50); }
   if (id === 'financeiro') { setTimeout(finRenderDespesas, 50); }
   if (id === 'tesouraria') { setTimeout(function(){ tesRender(); if(typeof tesHidratarCanonico==='function') tesHidratarCanonico(); }, 50); }
-  if (id === 'design-ficheiros') { setTimeout(function(){ if(typeof ARTES_VIEW!=='undefined'&&ARTES_VIEW==='kanban'&&typeof artesRenderKanban==='function') artesRenderKanban(); }, 100); }
   if (id === 'admin-analise-vendas') {
     setTimeout(function(){
       if (typeof avVendedoresFiltrar === 'function') {
@@ -26763,6 +26696,7 @@ document.addEventListener('click', function(e){
       break;
     case 'dtView': safe(dtView,[vw]); break;
     case 'fpView': safe(fpView,[vw]); break;
+    case 'fiView': safe(fiView,[vw]); break;
     case 'closeUniModal':
       var m=document.getElementById('uni-modal'); if(m) m.classList.remove('open'); break;
     case 'closeCliModal':
