@@ -3,7 +3,54 @@
 Auditoria estática apenas — nenhuma alteração foi aplicada ao Supabase.
 Dados recolhidos por introspeção **só de leitura** (catálogo do Postgres +
 `get_advisors`) no projeto `Opportunitybox CRM` (`ddzlbmnmsdyodouqxbjx`), em
-2026-09-12.
+2026-09-12. Revalidada em 2026-09-14 (ver secção "Revalidação 2026-09-14"),
+sem nenhuma alteração aos objetos abaixo.
+
+## Revalidação 2026-09-14
+
+Nova corrida do Security Advisor (`get_advisors`, tipo `security`),
+só de leitura, para confirmar que o estado dos itens ainda não tratados do
+F6 não mudou desde 12/09. **Nenhum destes objetos foi alterado.**
+
+- **`public.v_toc_plano`** — continua assinalada `security_definer_view`
+  (`ERROR`). Continua com `anon` a ter `SELECT` (grants completos,
+  confirmados por `aclexplode`), continua `SECURITY DEFINER` (dono
+  `postgres`, sem `security_invoker`), e continua a expor `w_tel`, `w_email`,
+  `w_cont`, `w_cp`, `w_loc` — campos derivados de `public.ob_crm_dados`.
+  Nada mudou. **Não alterada.**
+- **`public.isp_get_tenant_id()`, `public.isp_is_tenant_member(uuid)`,
+  `public.isp_handle_new_user()`** — continuam listadas em
+  `function_search_path_mutable` (`WARN`) e em
+  `anon_security_definer_function_executable` /
+  `authenticated_security_definer_function_executable` (`anon` e
+  `authenticated` continuam a poder executá-las via RPC). Search_path
+  continua mutável. **Não alteradas.**
+- **`public.user_company()`** — continua em
+  `anon_security_definer_function_executable` /
+  `authenticated_security_definer_function_executable` (executável por
+  `anon` e `authenticated`). Search_path já estava fixo em 12/09 e continua
+  fixo — não é achado do linter para esta função. **Não alterada.**
+- **Funções `fu_*`** (`fu_classificar`, `fu_classificar_e_reativar`,
+  `fu_confirmar_estado`, `fu_desativar_followup`, `fu_reativar_simples`) —
+  continuam listadas apenas em
+  `authenticated_security_definer_function_executable` (esperado — são as
+  RPCs do fluxo de Follow-up chamadas pelo frontend autenticado).
+  Confirmado novamente que **não** aparecem em
+  `anon_security_definer_function_executable` — `anon` continua sem acesso.
+  Search_path continua fixo (não aparece em `function_search_path_mutable`).
+  **Não alteradas.**
+- **`auth_leaked_password_protection`** — continua `WARN`, continua
+  desativada. **Não alterada.**
+
+Achado novo nesta corrida, fora do âmbito de F6 (funções/views) — tratado à
+parte, na mesma ronda, como item de segurança independente: `rls_disabled_in_public`
+(`ERROR`) para `public.ob_orcamentos_backup_20260912` (tabela de backup
+criada em 12/09, sem RLS). Ver
+`supabase/migrations/20260914093000_security_backup_orcamentos_rls.sql`
+— migration preparada mas **não aplicada** nesta etapa.
+
+O achado `rls_enabled_no_policy` (INFO, 5 tabelas de backup antigas) mantém-se
+idêntico ao de 12/09, sem alteração.
 
 ## Resumo executivo
 
