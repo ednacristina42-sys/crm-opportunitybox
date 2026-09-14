@@ -6,6 +6,189 @@ Dados recolhidos por introspeção **só de leitura** (catálogo do Postgres +
 2026-09-12. Revalidada em 2026-09-14 (ver secção "Revalidação 2026-09-14"),
 sem nenhuma alteração aos objetos abaixo.
 
+## F6 — encerramento e riscos residuais aceites (2026-09-14)
+
+Ronda final, só de leitura, para encerrar formalmente o F6. Nenhuma SQL
+foi executada nesta ronda; nenhuma migration foi criada.
+
+### Estado já aplicado em produção (confirmado por introspeção + `get_advisors`)
+
+- `v_toc_plano` com `security_invoker=true` (confirmado: `pg_class.reloptions
+  = ["security_invoker=true"]`).
+- `ob_orcamentos_backup_20260912` com RLS ativo (`relrowsecurity=true`) e
+  acesso fechado a `public`/`anon`/`authenticated`.
+- `set_updated_at()` e `ob_colaboradores_touch()` com `search_path=public`.
+- 3 funções `isp_*` com `search_path=public`.
+- `EXECUTE` de `PUBLIC`/`anon` revogado nas 4 funções `isp_*`/
+  `user_company()` — confirmado agora: só `authenticated`, `postgres`,
+  `service_role` têm `EXECUTE` nestas 4 (`PUBLIC`/`anon` ausentes de
+  `information_schema.role_routine_grants`).
+- Advisor atual: `anon_security_definer_function_executable` = **0**,
+  `function_search_path_mutable` = **0**, `security_definer_view` = **0**,
+  `rls_disabled_in_public` = **0** (ausentes da lista de achados).
+
+### Auditoria das 13 funções em `authenticated_security_definer_function_executable`
+
+Para cada função: uso real confirmado (frontend/policy/trigger/outra
+função), validação interna de `auth.uid()`, `search_path`, tabelas
+lidas/escritas, e classificação.
+
+#### `fu_classificar(text, text, text)`, `fu_classificar_e_reativar(text, text, text)`, `fu_confirmar_estado(text, text)`, `fu_desativar_followup(text)`, `fu_reativar_simples(text)`
+
+- **Uso confirmado no frontend:** sim, as 5 — `index.html:32852`
+  (`fu_reativar_simples`), `32866` (`fu_classificar` /
+  `fu_classificar_e_reativar`, nome de RPC escolhido dinamicamente
+  consoante `def.reativa`), `32878` (`fu_desativar_followup`), `32892`
+  (`fu_confirmar_estado`). Fluxo de Follow-up/Pipeline de orçamentos.
+- **Validação interna de `auth.uid()`:** sim, explícita nas 5— `if
+  auth.uid() is null then raise exception 'não autenticado'; end if;` —
+  e todas verificam permissão de acesso ao orçamento via `if not
+  public.ob_can_see(v_owner) then raise exception 'sem permissão...';`
+  antes de qualquer escrita.
+- **`search_path`:** `public`, fixo nas 5 (`SET search_path TO 'public'`,
+  já estava assim antes do F6).
+- **Tabelas lidas/escritas:** leem `public.ob_orcamentos` (só
+  `owner_id`/`st`, para validar permissão); escrevem em
+  `public.ob_orcamento_triagem` e `public.ob_orcamento_triagem_historico`.
+  `fu_confirmar_estado` também faz `UPDATE public.ob_orcamentos SET st=...`.
+- **Chamam outra função internamente:** sim, todas chamam
+  `public.ob_can_see(v_owner)`.
+- **Classificação: LEGÍTIMA — manter authenticated.** Uso real
+  confirmado, validação de autenticação e autorização robusta, âmbito
+  claramente Opportunitybox.
+
+#### `ob_can_see(uuid)`, `ob_current_role()`, `ob_is_admin()`, `ob_manages(uuid)`
+
+- **Uso confirmado:** são os helpers centrais de RLS do Opportunitybox —
+  usados em **32 policies** só de leitura confirmadas nesta ronda,
+  cobrindo `ob_clientes`, `ob_colaboradores`, `ob_crm_dados`,
+  `ob_followup_emails`, `ob_leads`, `ob_orcamento_triagem`,
+  `ob_orcamento_triagem_historico`, `ob_orcamentos`, `ob_profiles`,
+  `ob_tasks`, `ob_uni_items`, `ob_visitas`. Também chamadas
+  internamente pelos `fu_*` acima (`ob_can_see`) e por si próprias:
+  `ob_can_see()` chama `ob_is_admin()` e `ob_manages()` no corpo.
+- **Validação interna de `auth.uid()`:** sim, as 4 comparam contra
+  `auth.uid()` (`owner_id = auth.uid()`, `id = auth.uid()`, `manager_id
+  = auth.uid()`) — para um utilizador não autenticado, `auth.uid()` é
+  `null` e as comparações resolvem para `false`/sem resultado,
+  negando acesso com segurança.
+- **`search_path`:** `public`, fixo nas 4 (já estava assim antes do F6
+  — não fazem parte do achado `function_search_path_mutable`).
+- **Tabelas lidas:** `ob_profiles` (`ob_current_role`, `ob_is_admin`,
+  `ob_manages`); `ob_can_see` não lê tabela diretamente, só compõe as
+  outras 3. Nenhuma escreve dados.
+- **Classificação: LEGÍTIMA — manter authenticated.** São infraestrutura
+  de RLS crítica e ativa — revogar `authenticated` quebraria o controlo
+  de acesso de praticamente todas as tabelas `ob_*`.
+
+#### `isp_get_tenant_id()`, `isp_is_tenant_member(uuid)`, `isp_handle_new_user()`
+
+- **Uso confirmado:** zero no `index.html`. `isp_is_tenant_member` usada
+  por 2 policies em `isp_tenants` (`delete_own_tenant`,
+  `update_own_tenant`); `isp_get_tenant_id` sem policy dependente
+  encontrada; `isp_handle_new_user` chamada pela trigger
+  `on_isp_user_created` (`AFTER INSERT ON auth.users`), confirmada
+  **ativa** nesta ronda.
+- **Validação interna de `auth.uid()`:** sim, implícita (`WHERE id =
+  auth.uid()` em `isp_profiles`).
+- **`search_path`:** `public`, fixo nas 3 (aplicado pela migration
+  `20260914113000`).
+- **Tabelas:** `isp_profiles` (leitura nas duas primeiras; escrita —
+  `INSERT ... ON CONFLICT DO NOTHING` — na terceira).
+- **Classificação: OUTRO SISTEMA — não alterar sem contexto desse
+  sistema.** Schema `isp_*` claramente pertence a outro produto/tenant
+  que partilha este projeto Supabase, com dados reais e trigger ativa.
+  `EXECUTE` de `authenticated` foi mantido deliberadamente (só
+  `PUBLIC`/`anon` foram fechados) porque não há confirmação de que
+  fechar totalmente o acesso autenticado não quebra esse outro sistema.
+
+#### `user_company()`
+
+- **Uso confirmado:** nenhum — 0 policies dependentes, 0 dependências
+  via `pg_depend`, 0 chamadas RPC ou de `company_id` em `index.html`
+  (confirmado outra vez nesta ronda). A tabela que lê
+  (`public.profiles`) é infraestrutura real do Opportunitybox (ver
+  ronda anterior — usada por `wdLoad()`), mas por acesso direto à
+  tabela, nunca através desta função.
+- **Validação interna de `auth.uid()`:** sim, implícita (`WHERE id =
+  auth.uid()`).
+- **`search_path`:** `public`, fixo (desde a criação da função).
+- **Tabelas:** lê `public.profiles` (`company_id`). Não escreve nada.
+- **Classificação: ÓRFÃ — candidata a revogar authenticated.** Pertence
+  ao Opportunitybox mas não tem nenhum chamador confirmado. É a única
+  das 13 com esta classificação — candidata a uma futura migration que
+  revogue também `authenticated` (mantendo só `service_role`, ou
+  removendo a função se se confirmar definitivamente que nunca será
+  usada). **Não alterada nesta ronda.**
+
+### Tabela-resumo das 13 funções
+
+| Função | Uso confirmado | `auth.uid()` interno | search_path | Classificação |
+|---|---|---|---|---|
+| `fu_classificar` | sim (frontend) | sim, explícito | fixo | LEGÍTIMA |
+| `fu_classificar_e_reativar` | sim (frontend) | sim, explícito | fixo | LEGÍTIMA |
+| `fu_confirmar_estado` | sim (frontend) | sim, explícito | fixo | LEGÍTIMA |
+| `fu_desativar_followup` | sim (frontend) | sim, explícito | fixo | LEGÍTIMA |
+| `fu_reativar_simples` | sim (frontend) | sim, explícito | fixo | LEGÍTIMA |
+| `isp_get_tenant_id` | outro sistema | sim, implícito | fixo | OUTRO SISTEMA |
+| `isp_handle_new_user` | outro sistema (trigger ativa) | sim, implícito | fixo | OUTRO SISTEMA |
+| `isp_is_tenant_member` | outro sistema (2 policies) | sim, implícito | fixo | OUTRO SISTEMA |
+| `ob_can_see` | sim (32 policies + fu_*) | sim, implícito | fixo | LEGÍTIMA |
+| `ob_current_role` | sim (policies ob_crm_dados) | sim, implícito | fixo | LEGÍTIMA |
+| `ob_is_admin` | sim (muitas policies + ob_can_see) | sim, implícito | fixo | LEGÍTIMA |
+| `ob_manages` | sim (ob_profiles_select + ob_can_see) | sim, implícito | fixo | LEGÍTIMA |
+| `user_company` | nenhum confirmado | sim, implícito | fixo | ÓRFÃ |
+
+Nenhuma das 13 caiu em **INCONCLUSIVA** — todas tiveram evidência
+suficiente para uma classificação segura.
+
+### Riscos residuais aceites
+
+- **`rls_enabled_no_policy` (6 tabelas, nível INFO):**
+  `ob_crm_dados_backup_20260901`, `ob_orcamentos_backup_20260901`,
+  `ob_orcamentos_backup_20260912`, `ob_orcamentos_bkp_20260808`,
+  `ob_uni_atividades_backup_20260811`, `ob_uni_items_backup_20260811` —
+  todas são **tabelas de backup fechadas** (RLS ativo, sem policy = nega
+  tudo a quem não for dono/`service_role`). Risco aceite,
+  nível INFO, sem ação necessária.
+- **`auth_leaked_password_protection` (WARN):** continua desativada.
+  **Fica pendente, fora do âmbito de SQL/migrations** — é uma
+  definição do painel de Auth do Supabase (Dashboard → Authentication →
+  Policies/Providers), não uma alteração de base de dados. Não pode ser
+  corrigida por migration.
+- **`authenticated_security_definer_function_executable` (WARN, 13
+  achados):** **não deve ser tratado em massa.** Cada função tem
+  contexto, dono e risco próprios (ver auditoria acima) — 8 são
+  infraestrutura Opportunitybox ativa e devem manter `authenticated`
+  (`fu_*` × 5, `ob_can_see`, `ob_is_admin`, `ob_current_role`,
+  `ob_manages`), 3 pertencem a outro sistema partilhado e não devem ser
+  alteradas sem coordenação com quem o gere (`isp_*`), e 1 é órfã e é
+  candidata a uma decisão futura isolada (`user_company`). Uma
+  correção em massa (ex.: revogar `authenticated` de todas) partiria o
+  fluxo de Follow-up e o controlo de acesso RLS de quase todas as
+  tabelas `ob_*`.
+
+### Estado final do F6
+
+**F6 fechado tecnicamente.** Todos os achados `ERROR` (`security_definer_view`,
+`rls_disabled_in_public`) e os achados `WARN`/`ERROR` de `search_path`
+mutável e de acesso `anon`/`PUBLIC` a funções `SECURITY DEFINER` foram
+tratados e aplicados em produção. Ficam dois riscos residuais aceites,
+ambos fora do âmbito de uma migration SQL:
+1. **Leaked password protection** — decisão/ação no painel de Auth,
+   não em SQL.
+2. **`authenticated_security_definer_function_executable`** — 13
+   achados remanescentes, todos avaliados e classificados
+   individualmente: 9 LEGÍTIMAS (`fu_classificar`,
+   `fu_classificar_e_reativar`, `fu_confirmar_estado`,
+   `fu_desativar_followup`, `fu_reativar_simples`, `ob_can_see`,
+   `ob_current_role`, `ob_is_admin`, `ob_manages` — mantêm
+   `authenticated`), 3 OUTRO SISTEMA (`isp_get_tenant_id`,
+   `isp_is_tenant_member`, `isp_handle_new_user` — não alteradas sem
+   coordenação com quem gere esse sistema) e 1 ÓRFÃ (`user_company` —
+   fica registada como candidata a decisão futura isolada). Nunca deve
+   ser tratado como correção em massa.
+
 ## F6 — fechar EXECUTE de PUBLIC/anon nas 4 funções (2026-09-14, preparada)
 
 Migration preparada:
