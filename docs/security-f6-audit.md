@@ -52,6 +52,55 @@ criada em 12/09, sem RLS). Ver
 O achado `rls_enabled_no_policy` (INFO, 5 tabelas de backup antigas) mantém-se
 idêntico ao de 12/09, sem alteração.
 
+## Correção preparada 2026-09-14 — `public.v_toc_plano` (ainda NÃO aplicada)
+
+Migration preparada:
+`supabase/migrations/20260914101500_security_f6_v_toc_plano.sql`
+Rollback preparado:
+`supabase/rollback/20260914_security_f6_v_toc_plano_rollback.sql`
+
+**Estado — nenhuma SQL foi executada no Supabase para este item.** Fica
+preparada para aplicação numa fase seguinte, mediante aprovação.
+
+Confirmações feitas antes de fechar a migration (introspeção só de
+leitura):
+- **Versão do Postgres do projeto:** `PostgreSQL 17.6` — suporta
+  `ALTER VIEW ... SET (security_invoker = true)` nativamente (disponível
+  desde o Postgres 15), pelo que a migration usa essa forma em vez de
+  `CREATE OR REPLACE VIEW`. A definição da view (a query em si, todas as
+  colunas) **não é alterada** — confirmado via `pg_get_viewdef()` antes e
+  depois teria de ser idêntico, porque a migration só toca em
+  `reloptions` (security_invoker) e em grants.
+- `reloptions` atual da view: `null` (security_invoker ainda não definido
+  → comportamento por omissão, `false`).
+- Dono: `postgres` (confirmado, sem alteração).
+- Grants **antes** (via `information_schema.role_table_grants`): `anon` e
+  `authenticated` com **todos** os privilégios (`SELECT`, `INSERT`,
+  `UPDATE`, `DELETE`, `TRUNCATE`, `TRIGGER`, `REFERENCES`); `service_role`
+  idem (não grantable); `postgres` idem, com grant option.
+
+O que a migration faz (resumo — ver ficheiro para o SQL completo e
+comentado):
+1. `alter view public.v_toc_plano set (security_invoker = true);` — a view
+   passa a correr com os privilégios/RLS de quem a consulta, em vez do
+   dono (`postgres`). Isto deixa de contornar o fecho de acesso anónimo a
+   `ob_crm_dados` já aplicado pelo F2/F3.
+2. `revoke all on public.v_toc_plano from public, anon, authenticated,
+   service_role;`
+3. `grant select on public.v_toc_plano to authenticated, service_role;`
+
+**Grants previstos depois** (só depois de aplicada): `anon` — nenhum
+privilégio; `authenticated` — só `SELECT`; `service_role` — só `SELECT`;
+`public` — nenhum. Nenhum `INSERT`/`UPDATE`/`DELETE`/`TRUNCATE`/
+`TRIGGER`/`REFERENCES` é concedido a ninguém.
+
+Não altera `public.ob_crm_dados` nem nenhum dado. Não apaga a view.
+
+O rollback restaura exatamente o estado anterior: `security_invoker`
+via `RESET` (não um valor arbitrário) e os mesmos grants de
+`public`/`anon`/`authenticated`/`service_role` apurados na auditoria
+acima — sem tocar na definição da view.
+
 ## Resumo executivo
 
 O achado mais grave desta ronda é o **`public.v_toc_plano`**: é uma view
@@ -102,13 +151,16 @@ aqui.
   **desconhecido para quem quer que a consuma externamente** — antes de
   fechar `anon`/mudar para `security_invoker`, é preciso confirmar que
   nenhum processo externo depende do acesso anónimo atual.
-- **Recomendação:** **restringir com prioridade alta**, numa fase própria
-  (não nesta migration): (a) `revoke all on public.v_toc_plano from anon,
-  public;` e (b) recriar a view com `security_invoker = true` (Postgres
-  15+/Supabase suporta esta opção em `CREATE VIEW ... WITH
-  (security_invoker = true)`), para que volte a respeitar a RLS de
-  `ob_crm_dados` como qualquer consulta direta já respeita depois do F2/F3.
-  **Não alterada nesta ronda**, conforme pedido.
+- **Recomendação:** **restringir com prioridade alta.** Migration
+  preparada em 2026-09-14 —
+  `supabase/migrations/20260914101500_security_f6_v_toc_plano.sql` — usa
+  `ALTER VIEW ... SET (security_invoker = true)` (o projeto corre
+  Postgres 17.6, que suporta esta forma nativamente) e fecha os grants a
+  `anon`/`public`, deixando só `SELECT` para `authenticated`/
+  `service_role`. Ver secção "Correção preparada 2026-09-14" acima para
+  detalhe completo. **Migration preparada mas ainda NÃO aplicada ao
+  Supabase** — fica pendente de aprovação para aplicação numa fase
+  seguinte.
 
 ---
 
