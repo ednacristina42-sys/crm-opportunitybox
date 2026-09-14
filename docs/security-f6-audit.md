@@ -98,8 +98,38 @@ Não altera `public.ob_crm_dados` nem nenhum dado. Não apaga a view.
 
 O rollback restaura exatamente o estado anterior: `security_invoker`
 via `RESET` (não um valor arbitrário) e os mesmos grants de
-`public`/`anon`/`authenticated`/`service_role` apurados na auditoria
-acima — sem tocar na definição da view.
+`anon`/`authenticated`/`service_role` apurados na auditoria acima — sem
+tocar na definição da view.
+
+### Correção ao rollback (2026-09-14, mesma ronda)
+
+A primeira versão do rollback usava `grant all ... to public, anon,
+authenticated, service_role;` — amplo demais. Reauditoria role a role e
+privilégio a privilégio (`information_schema.role_table_grants` +
+`pg_class.relacl` via `aclexplode`, cruzadas) confirmou:
+
+- **`PUBLIC` (pseudo-role) nunca teve nenhum privilégio** nesta view —
+  ausente das duas fontes. O rollback corrigido **não concede nada a
+  `public`**.
+- `anon`, `authenticated` e `service_role` tinham, cada um, exatamente
+  `DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE` — **sem
+  `MAINTAIN`** (privilégio novo do Postgres 17, que nenhum destes três
+  tinha). `GRANT ALL` teria incluído `MAINTAIN` incorretamente, por isso o
+  rollback corrigido lista os 7 privilégios explicitamente em vez de usar
+  `ALL`.
+- `postgres` (dono) não é tocado pela migration nem pelo rollback — mantém
+  os privilégios implícitos de dono.
+
+Rollback corrigido:
+
+```sql
+grant delete, insert, references, select, trigger, truncate, update
+  on public.v_toc_plano
+  to anon, authenticated, service_role;
+```
+
+Nenhuma SQL foi executada no Supabase para esta correção — só
+introspeção de leitura.
 
 ## Resumo executivo
 
