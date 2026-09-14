@@ -18,6 +18,26 @@
 --   com autor preenchido ................................ 1234 (100%)
 --   orcId cruzado com ob_orcamentos.num -> owner_id 100%
 --     resolvido (767/767 correspondencias, 0 sem match) ... 767 (62,2%)
+--
+--   BUG encontrado e corrigido nesta migration -- 'ts' (legacy_ts) NAO e
+--   chave natural segura sozinha:
+--     valores de ts distintos, no total das 1234 ......... 1125 (109
+--       duplicados no total -- geralmente lotes de TopHojeItem gerados
+--       de uma vez por agGerarTopHoje(), com o mesmo timestamp para
+--       varias atividades)
+--     dentro so do subconjunto das 767 com orcId (as que o backfill
+--       abaixo insere), valores de ts distintos .......... 704 (so 704
+--       de 767 -- ou seja, um unique(legacy_ts) sozinho, com
+--       ON CONFLICT (legacy_ts) DO NOTHING, descartaria 63 atividades
+--       reais em silencio, sem erro nem aviso)
+--     chave composta (ts, orcId) dentro desse mesmo
+--       subconjunto de 767 -- valores distintos ........... 767 (=767,
+--       0 colisoes -- confirmado tambem por md5(objeto completo), que
+--       da igualmente 767 distintos; (ts,orcId) foi preferida por ser
+--       mais legivel/debugavel que um hash)
+--   Por isso a coluna legacy_ts abaixo NAO tem 'unique' sozinha -- o
+--   unique constraint real e composto, sobre (legacy_ts, orc_num), e o
+--   ON CONFLICT do backfill usa a mesma dupla chave.
 --   leadId cruzado com donos -- NAO POSSIVEL com seguranca:
 --     ob_leads (tabela canonica) tem 0 registos; a chave
 --     ob_crm_dados['ob-leads'] (fonte real) tem hoje só 1 lead
@@ -47,7 +67,7 @@
 
 create table public.ob_crm_atividades (
   id uuid primary key default gen_random_uuid(),
-  legacy_ts text not null unique, -- ts original (string ISO) de crmAtividades -- chave natural, evita duplicar num re-run do backfill
+  legacy_ts text not null, -- ts original (string ISO) de crmAtividades -- NAO e unique sozinho: 767 atividades com orcId tem so 704 ts distintos (63 colisoes reais, tipicamente lotes TopHojeItem). Ver unique composto (legacy_ts, orc_num) abaixo.
   ts timestamptz not null,
   tipo text not null,
   texto text not null,
@@ -57,7 +77,8 @@ create table public.ob_crm_atividades (
   lead_id text, -- id do lead na origem (ob-leads), sem FK -- ob_leads (tabela) esta vazia, sem relacao fiavel
   resultado text,
   extra jsonb, -- campos adicionais confirmados na auditoria: acao, canal, clienteId, data, due, origem, prioridade, tags, e o objecto 'extra' original (TopHojeItem)
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  constraint ob_crm_atividades_legacy_uniq unique (legacy_ts, orc_num) -- chave natural composta: confirmado por SQL que (ts, orcId) tem 767/767 distintos no subconjunto inserido pelo backfill (ts sozinho so tem 704/767 -- ver nota acima). Evita duplicar num re-run do backfill sem descartar atividades legitimas com ts repetido.
 );
 
 comment on table public.ob_crm_atividades is
@@ -91,7 +112,9 @@ revoke all on public.ob_crm_atividades from authenticated;
 grant select on public.ob_crm_atividades to authenticated;
 
 -- ------------------------------------------------------------
--- BACKFILL (idempotente via ON CONFLICT (legacy_ts) DO NOTHING) -- só as
+-- BACKFILL (idempotente via ON CONFLICT (legacy_ts, orc_num) DO NOTHING
+-- -- chave composta, ver nota acima sobre o bug de 63 atividades
+-- descartadas por um unique(legacy_ts) sozinho) -- só as
 -- atividades cujo owner_id é 100% seguro (orcId casa com um
 -- ob_orcamentos.num real, cujo owner_id já vem preenchido). NÃO insere
 -- nenhuma linha para as 467 sem derivação segura -- essas continuam só em
@@ -120,4 +143,4 @@ join public.ob_orcamentos o on o.num = (a->>'orcId')
 where d.chave = 'ob-crm-atividades'
   and a->>'orcId' is not null and a->>'orcId' <> ''
   and a->>'ts' is not null and a->>'ts' <> ''
-on conflict (legacy_ts) do nothing;
+on conflict (legacy_ts, orc_num) do nothing;

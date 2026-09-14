@@ -185,11 +185,12 @@ ficheiro, **nunca executada** — nenhuma chamada a `apply_migration`):
 
 Conteúdo da migration:
 - `create table public.ob_crm_atividades` com `id uuid pk, legacy_ts text
-  unique (chave natural = o `ts` original, evita duplicar num re-run),
-  ts timestamptz, tipo, texto, autor (só exibição), owner_id uuid
+  (chave natural = o `ts` original — ver correção abaixo, NÃO é `unique`
+  sozinha), ts timestamptz, tipo, texto, autor (só exibição), owner_id uuid
   (nullable, `references ob_profiles`), orc_num text, lead_id text,
   resultado text, extra jsonb (acao/canal/clienteId/data/due/origem/
-  prioridade/tags/extra), created_at`.
+  prioridade/tags/extra), created_at, `unique(legacy_ts, orc_num)`
+  composto`.
 - RLS: `ob_crm_atividades_select` usa o mesmo padrão já estabelecido em
   `ob_orcamentos`/`ob_orcamento_triagem` (`ob_can_see(owner_id)`) — **mais**
   uma cláusula extra para as linhas com `owner_id is null` (dono não
@@ -200,13 +201,56 @@ Conteúdo da migration:
   padrão das RPCs `fu_*` já existentes; não implementado agora (sem
   dual-write, como pedido).
 - **Backfill incluído na própria migration** (`INSERT ... SELECT ...
-  jsonb_array_elements ... JOIN ob_orcamentos ... ON CONFLICT (legacy_ts)
-  DO NOTHING`), mas **só para as 767 atividades com `orcId` que casa** —
-  idempotente, sem duplicar se corrida mais de uma vez. As 467 sem
+  jsonb_array_elements ... JOIN ob_orcamentos ... ON CONFLICT (legacy_ts,
+  orc_num) DO NOTHING`), mas **só para as 767 atividades com `orcId` que
+  casa** — idempotente, sem duplicar se corrida mais de uma vez. As 467 sem
   derivação segura **não são inseridas** por este script.
 - A chave antiga `ob_crm_dados['ob-crm-atividades']` **não é tocada** —
   fica exatamente como está, blob completo, continua a ser a fonte real
   até uma fase futura decidir cortar/migrar o frontend.
+
+### 3d. Bug encontrado e corrigido nesta sessão: `legacy_ts` não é chave
+natural segura sozinha
+
+Antes de aplicar a migration (nunca aplicada — só revalidada por `SELECT`,
+projeto `ddzlbmnmsdyodouqxbjx`), foi feita uma segunda passagem de
+validação sobre a própria migration preparada na sessão anterior, que
+revelou um bug real no desenho da chave de idempotência:
+
+| Métrica (SQL de leitura, revalidada nesta sessão) | Valor |
+|---|---|
+| Total de atividades no blob | **1234** |
+| Valores de `ts` distintos, no total das 1234 | **1125** (109 duplicados — lotes `TopHojeItem` gerados de uma vez por `agGerarTopHoje()`, com o mesmo timestamp para várias atividades) |
+| Atividades com `orcId` preenchido (subconjunto que o backfill insere) | **767** |
+| Valores de `ts` distintos **dentro** desse subconjunto de 767 | **704** |
+| Atividades desse subconjunto que um `unique(legacy_ts)` sozinho, com `ON CONFLICT (legacy_ts) DO NOTHING`, descartaria em silêncio | **63** |
+| Valores distintos da chave composta `(ts, orcId)` dentro do mesmo subconjunto de 767 | **767** (0 colisões — confirmado também por `count(distinct md5(a::text))` = 767, o hash do objeto completo dá o mesmo resultado) |
+
+**Conclusão**: a migration original (sessão anterior) definia `legacy_ts
+text not null unique` e fazia `ON CONFLICT (legacy_ts) DO NOTHING` no
+backfill. Isso teria descartado **63 atividades reais em silêncio** (sem
+erro, sem aviso) logo na primeira aplicação da migration, porque 767
+atividades com `orcId` só têm 704 valores de `ts` distintos entre si.
+
+**Correção aplicada ao ficheiro** (ainda não aplicada à BD):
+1. `legacy_ts` deixou de ter `unique` sozinha na definição da coluna.
+2. Foi adicionado `constraint ob_crm_atividades_legacy_uniq unique
+   (legacy_ts, orc_num)` — chave composta, confirmada com 767/767 valores
+   distintos no subconjunto real que o backfill insere.
+3. O `ON CONFLICT` do `INSERT` de backfill passou de `(legacy_ts)` para
+   `(legacy_ts, orc_num)`, coerente com o novo constraint.
+4. Comentário no topo do ficheiro atualizado com os números exatos acima.
+5. `supabase/rollback/20260914_ob_crm_atividades_canonico_rollback.sql`
+   **não precisou de alteração** — continua a fazer só `drop table public.
+   ob_crm_atividades` (que remove automaticamente qualquer constraint/índice
+   associado à tabela, incluindo o novo `unique` composto, que é inline na
+   definição da tabela e não um índice nomeado à parte).
+6. Revalidado por `SELECT` (sem `INSERT`) que o `JOIN` do backfill com a
+   correção continua a produzir exatamente **767** linhas — a correção da
+   chave de conflito não muda a contagem esperada de atividades migradas.
+
+Estado final: migration corrigida, **continua preparada mas NÃO aplicada**
+(nenhuma chamada a `apply_migration` nesta sessão).
 
 **Tratamento proposto para as 467 sem dono seguro**: ficam de fora do
 backfill inicial (não migradas agora) e continuam disponíveis apenas na
@@ -228,67 +272,81 @@ entrega dedicada.
 
 ## 4. Reabrir orçamento existente
 
-**Classificação: ❌ NÃO EXISTE** (fluxo de edição completo do orçamento).
+**Classificação: ✅ IMPLEMENTADO** (nesta sessão, 2026-09-14).
 
-Investigação (Grep exaustivo por `orcEditar`, `orcAbrirEdicao`, padrões de
-pré-preenchimento de `#orc-cliente` a partir de um orçamento existente,
-`modoEdicao`/`orcamentoEmEdicao`): **não existe nenhuma função** que carregue
-um orçamento já existente de volta no formulário/construtor
-(`#orc-cliente`, `#orc-lines-container`, materiais, etc.) para o utilizador
-editar e regravar.
+### Estado da entrega anterior (contexto)
 
-`orcGuardar()` (linha 18371) é o único ponto de gravação ligado ao
-construtor visual, e **sempre cria um orçamento novo**:
-```js
-orcData.unshift(d);
-...
-const _syncRes = await _sbOrcUpsert(d, { isCreate: true });
-```
-`orcNew()` (linha 18408) só limpa o formulário para um orçamento em
-branco — não há contraparte que o preencha a partir de um `orcData`
+`orcGuardar()` (linha 18371, na versão anterior) era o único ponto de
+gravação ligado ao construtor visual, e **sempre criava** um orçamento
+novo (`orcData.unshift(d)` + `_sbOrcUpsert(d, {isCreate:true})`).
+`orcNew()` só limpava o formulário. O primitivo `_sbOrcUpsert(orc, opts)`
+(linha 17683) já suportava tudo o necessário para um UPDATE seguro (mesmo
+`id`/`num`, `owner_id`/`projectId`/históricos preservados via passthrough,
+optimistic locking real por `updated_at`) — só faltava um caminho no
+construtor visual que o chamasse com `isCreate:false` sobre um objeto já
 existente.
 
-O que **já existe e funciona bem** é o primitivo de escrita
-`_sbOrcUpsert(orc, opts)` (linha 17683), usado hoje só por fluxos
-pontuais e de campo único (`orcChangeStatus`, `orcAtribuirProjectId`,
-`orcRegistarFaturaFinal`, `orcConfirmarAdiantamento`,
-`orcForcarProducaoSemAdiantamento`, `orcMarcarNecessitaDesign`,
-`orcMarcarSemDesign`, `orcRegistarProforma`,
-`orcForcarLiquidacaoConcluida`) — mas que já suporta tudo o que seria
-preciso para "reabrir e editar":
-- mesmo `id`/`num` (nunca cria um novo);
-- `owner_id` preservado (`(cu.admin===true && opts.reassignOwnerId) ?
-  opts.reassignOwnerId : cu.id` — nunca vem livre do formulário);
-- `projectId`, `historicoFinanceiro`, `historicoProducao`,
-  `historicoLiquidacao` preservados (passthrough do objeto `orc`, dentro de
-  `extra` jsonb);
-- **optimistic locking real por `updated_at`**: `orc._sbVersaoConhecida`
-  (marca local, nunca enviada como coluna, vem de `_sbOrcLoadAll()` —
-  linha 17808 — ou da resposta da escrita anterior) é usada como condição
-  `.eq('updated_at', versaoConhecida)` num UPDATE condicional; se 0 linhas
-  forem afetadas e havia uma versão conhecida, devolve
-  `{ok:false, reason:'conflict'}` **sem sobrescrever nada** — nunca funde
-  campos financeiros/fases às cegas.
+### O que foi implementado
 
-**O que falta acrescentar** (não implementado, por instrução explícita de
-não inventar módulo novo): uma função tipo `orcEditar(num)` que (1)
-encontre o orçamento em `orcData`, (2) pré-preencha os campos do
-construtor a partir dele, (3) marque um "modo edição" (o próprio `num`,
-para saber que a próxima gravação é update, não create), e (4) troque a
-chamada de `orcGuardar()` para, nesse modo, chamar `_sbOrcUpsert(orcAtualizado,
-{isCreate:false})` sobre o objeto já existente em `orcData` (preservando
-`_sbVersaoConhecida`) em vez de `orcData.unshift(d)` + `isCreate:true`. Um
-botão "✏️ Editar" na lista (`orcRenderList()`, linha 19543) chamaria essa
-função.
+Reaproveitado **o mesmo formulário/construtor visual** já usado para criar
+orçamentos (`#orc-cliente`, `#orc-lines-container`, etc.) — nenhum modal
+ou sistema paralelo foi criado.
 
-### Teste executado (mock isolado, nunca dados reais)
-Extraída a lógica real de `_sbOrcUpsert()` (via Grep/leitura do código) e
-simulada em Node com um objeto `orcExistente` mock — confirmando: mesmo
-id/num mantido, `owner_id` preservado, `projectId`/históricos
-preservados, e que uma condição de `updated_at` divergente (simulando
-outra sessão a gravar entretanto) é recusada com `reason:'conflict'`, sem
-sobrescrever. Ver `test_b1_h1_reabrir_14set.js`, secção "Reabrir
-orçamento".
+**Estado explícito de edição**: `var _orcEmEdicaoId = null;` (linha
+~17638, declarada junto de `orcData`) — guarda o **próprio `orc.num`**
+(que é o que a BD usa como coluna `id`: `_sbOrcUpsert` faz `row.id =
+orc.num || orc.id`). Nunca é deduzido por nome/posição — é a **única**
+condição que decide se `orcGuardar()` grava um UPDATE ou um INSERT.
+Limpa-se: ao gravar uma edição com sucesso, ao cancelar
+(`orcCancelarEdicao()`), e ao abrir "Novo Orçamento" (`orcNew()`).
+
+**Funções alteradas/criadas** (linhas do ficheiro já corrigido):
+
+| Função | Linha aprox. | O que faz |
+|---|---|---|
+| `orcGuardar()` | ~18371 | **Alterada**: no topo, verifica `_orcEmEdicaoId`; se aponta para um orçamento existente em `orcData`, entra no ramo de edição — `Object.assign(_orcExistente, d)` (só sobrescreve os campos que `orcGetData()` devolve; tudo o resto — `owner_id`, `projectId`, históricos, pagamentos, `st`/`stc`/`dt`, `_sbVersaoConhecida`, campos `extra` não mapeados no formulário — fica intacto por não ser tocado), reposiciona o **mesmo objeto** (nunca uma cópia) para `orcData[0]` (mantém a convenção já usada por wrappers existentes — materiais, agente de margem — que assumem `orcData[0]` = orçamento acabado de gravar), e chama `_sbOrcUpsert(_orcExistente, {isCreate:false})`. O caminho de criação original (sem `_orcEmEdicaoId`) fica **inalterado**, mais abaixo na mesma função. |
+| `orcNew()` | ~18461 | **Alterada**: acrescentada uma linha `_orcEmEdicaoId = null;` + `orcCancelarEdicaoUI()` no início — garante que abrir "Novo Orçamento" nunca deixa um estado de edição pendurado. Resto da função **inalterado**. |
+| `orcEditar(num)` | ~18491 | **Nova**. Procura `num` em `orcData` (só lá está o que a RLS já devolveu a esta sessão via `_sbOrcLoadAll()` — sem bypass de permissões possível); se não encontrar, avisa (`showToast`/`alert`) e não faz mais nada. Se encontrar: marca `_orcEmEdicaoId = orc.num`, pré-preenche cliente/morada/NIF/email/WhatsApp/prazo/prazo de entrega/validade/desconto/IVA, mostra o **número real** no badge (nunca `orcNextNum()`), reconstrói as linhas de produto a partir de `orc.linhas`, restaura imagem/imagem de fachada, e ativa a UI de modo edição (título do formulário + botão "Cancelar edição"). **Só lê `orcData` — nunca escreve nele.** |
+| `orcCancelarEdicao()` | ~18559 | **Nova**. Limpa `_orcEmEdicaoId` e chama `orcNew()` — como `orcEditar()` nunca escreve em `orcData`, cancelar antes de gravar deixa o orçamento original intacto. |
+| `orcMostrarEdicaoUI(num)` / `orcCancelarEdicaoUI()` | ~18568 / ~18574 | **Novas**, auxiliares — alternam o título do formulário ("Editar Orçamento X" vs "Novo Orçamento") e a visibilidade do botão "✖ Cancelar edição". |
+| `orcRenderList()` | ~19543 (linha confirmada por Grep nesta sessão) | **Alterada**: acrescentado um botão `✏️ Editar` em cada linha da tabela, chamando `orcEditar('${o.num}')`. |
+| HTML do formulário | ~7572 / ~7987 | `<h2>` do formulário ganhou `id="orc-form-titulo"`; acrescentado botão `#orc-cancel-edicao-btn` (escondido por omissão) junto ao botão "💾 Guardar". |
+
+### Requisitos cumpridos
+- reutiliza o mesmo formulário/modal existente — confirmado (nenhum HTML novo de formulário, só um título dinâmico e um botão de cancelar);
+- ação clara "✏️ Editar" na lista (`orcRenderList()`);
+- pré-preenche cliente, morada, NIF, email, WhatsApp, prazo, prazo de entrega, validade, desconto, IVA, linhas de produto, imagem e imagem de fachada a partir do objeto real em `orcData`;
+- estado de edição explícito (`_orcEmEdicaoId`, o próprio `num`) — nunca deduzido por nome/posição;
+- grava via `_sbOrcUpsert(orcAtualizado, {isCreate:false})` sobre o objeto já existente — nunca `orcData.unshift`/`isCreate:true` no caminho de edição;
+- mantém `id`/`num` (nunca gera novo), `owner_id`, `created_by`, `projectId`, `leadId`, `historicoFinanceiro`/`historicoProducao`/`historicoLiquidacao`, `pagamentosAdiantamento`, informação TOConline/faturação e campos `extra` já conhecidos por este código (todo o conjunto que `_sbOrcLoadAll()` já sabe ler de volta — ver limitação abaixo) — passthrough automático por só sobrescrever o que `orcGetData()` devolve;
+- respeita optimistic locking: conflito devolve `{ok:false, reason:'conflict'}`, mostra a mensagem já existente em `_sbOrcUpsert` (a mesma reutilizada por `orcChangeStatus`), e **não** limpa `_orcEmEdicaoId` nem sobrescreve nada — utilizador pode recarregar e tentar de novo;
+- nunca gera novo número ao editar, nunca duplica;
+- permissões: o botão "Editar" só pode agir sobre orçamentos já presentes em `orcData` (só o que a RLS já devolveu); sem bypass no frontend;
+- modo de criação original **inalterado** — testado explicitamente (cenário 1 dos testes abaixo).
+
+### Limitação conhecida, encontrada e documentada (não corrigida nesta entrega, fora do âmbito)
+`_sbOrcUpsert()` reconstrói o campo `extra` (jsonb) a partir de uma lista
+fixa de nomes (`dtProducao`, `aprovado_em`, `leadId`, `historicoFinanceiro`,
+`projectId`, etc. — a mesma lista que `_sbOrcLoadAll()` sabe ler de volta).
+Isto é **suficiente e seguro** para tudo o que este próprio ficheiro já
+conhece (passthrough real, testado — ver cenário 9 abaixo), mas significa
+que um campo **genuinamente novo** dentro de `extra`, nunca antes mapeado
+por este JS (ex.: escrito diretamente na BD por outro sistema), **seria
+perdido** numa escrita via `_sbOrcUpsert`. Esta é uma característica
+**pré-existente e partilhada** do primitivo (usada tal e qual por
+`orcChangeStatus`, `orcAtribuirProjectId`, etc. muito antes desta entrega)
+— não foi introduzida pela funcionalidade de edição, e corrigi-la exigiria
+alterar `_sbOrcUpsert()` para todos os seus 9 chamadores, o que está fora
+do âmbito pedido ("só os 2 pontos", sem reabrir auditoria geral). Testado
+e confirmado explicitamente (cenário "9b" no ficheiro de teste).
+
+### Testes executados (mock isolado, nunca dados reais — ver Parte 3 abaixo)
+Extraídas as funções reais (`_sbOrcUpsert`, `orcGuardar`, `orcNew`,
+`orcEditar`, `orcCancelarEdicao`, `orcMostrarEdicaoUI`,
+`orcCancelarEdicaoUI`) diretamente de `index.html` e executadas em sandbox
+Node, com um cliente Supabase falso em memória (nunca liga à rede/BD
+real). Ver `test_reabrir_orcamento_14set.js` — 56 asserções, **56/56
+PASS**. Resultados detalhados na Parte 3 abaixo.
 
 ---
 
@@ -423,6 +481,86 @@ ficheiros de teste avulsos deste projeto).
 
 ---
 
+## Anexo — Sessão seguinte (2026-09-14): G1 corrigido + Reabrir orçamento implementado
+
+Sessão dedicada só a dois pontos: (1) validar/corrigir o bug de chave
+natural da migration G1 (secção 3d acima) e (2) implementar de facto
+"Reabrir orçamento existente" (secção 4 acima, atualizada de ❌ para ✅).
+Não reabriu nenhuma auditoria geral nova — usou este documento como
+ponto de partida, mesma regra da sessão anterior.
+
+### Testes desta sessão — execução real
+
+**1. Sintaxe integral de `index.html` (depois das alterações de Reabrir Orçamento)**
+Mesmo método já usado na sessão anterior — todo o JS inline extraído
+(17 blocos, 1.660.418 caracteres) para um `.js` único e corrido:
+```
+node --check index_inline.js
+EXIT CODE: 0
+```
+
+**2. Regressão — scripts de teste da sessão anterior, corridos de novo**
+Ambos encontrados no mesmo scratchpad de sessão e corridos sem alteração,
+depois das edições desta sessão a `index.html`, para confirmar que nada
+regrediu:
+```
+node test_b1_h1_reabrir_14set.js
+PASS: 33   FAIL: 0   EXIT: 0
+
+node test_pesquisa_leads_tarefas_14set.js
+PASS: 24   FAIL: 0   EXIT: 0
+```
+Nota: `test_b1_h1_reabrir_14set.js` tem uma asserção antiga cuja
+**etiqueta** de texto ("orcGuardar() confirmado: SEMPRE cria um novo
+orçamento... não há caminho de edição no construtor") ficou desatualizada
+em relação à nova funcionalidade — mas a asserção em si só verifica que os
+padrões literais `orcData.unshift(d);` e `_sbOrcUpsert(d, { isCreate: true
+})` **continuam presentes** no ficheiro, o que é verdade (o caminho de
+criação original foi mantido 100% intacto) — por isso continua a passar
+legitimamente, sem falso positivo. Documentado aqui para transparência;
+não foi alterado o script da sessão anterior (fora do âmbito desta
+entrega).
+
+**3. Teste novo — "Reabrir orçamento existente" (14 cenários pedidos)**
+`node test_reabrir_orcamento_14set.js` — **56 asserções, 56 PASS, 0 FAIL**
+(8 de verificação de código-fonte + 46 de comportamento, cobrindo os 14
+cenários pedidos + 1 limitação conhecida documentada à parte). Extrai as
+funções reais de `index.html` (`_sbOrcUpsert`, `orcGuardar`, `orcNew`,
+`orcEditar`, `orcCancelarEdicao`, `orcMostrarEdicaoUI`,
+`orcCancelarEdicaoUI`) e corre-as em sandbox Node com um cliente Supabase
+falso em memória (nunca liga à rede/BD real — nenhum UPDATE real em
+nenhum momento). Mapeamento cenário → resultado:
+
+| # | Cenário pedido | Resultado |
+|---|---|---|
+| 1 | criar orçamento novo continua a criar 1 registo | PASS — orcData 1→2, servidor recebe 1 linha nova |
+| 2 | editar existente não cria segundo registo | PASS — orcData length inalterado, servidor com 1 única linha |
+| 3 | `id` permanece após editar | PASS |
+| 4 | `num` permanece após editar | PASS |
+| 5 | `owner_id` permanece após editar | PASS (local e no valor gravado no servidor) |
+| 6 | `projectId` permanece após editar | PASS (local e no servidor) |
+| 7 | históricos (financeiro/produção/liquidação) permanecem | PASS (local e no servidor) |
+| 8 | pagamentos/adiantamentos permanecem | PASS — `pagamentosAdiantamento` passthrough real; `pagamento50`/`sinal`/`saldo` recalculados a partir do `prazo` tal como na criação (inalterados porque o `prazo` não mudou no cenário) |
+| 9 | campos `extra` desconhecidos (não mapeados no formulário) permanecem | PASS — testado com `recebimentoTesourariaId` (campo real, não editável em UI nenhuma) |
+| 10 | optimistic locking bloqueia edição com versão antiga | PASS — servidor não sobrescrito, `updated_at` inalterado, `_orcEmEdicaoId` não limpo, mensagem de conflito reutilizada |
+| 11 | editar funciona sobre `orcData` recarregado do zero | PASS — `orcEditar()` chamado sobre um objeto "fresco" (sem estado de sessões anteriores) funciona igual |
+| 12 | cancelar edição não altera nada | PASS — `orcData[0]` byte-a-byte igual antes/depois de `orcEditar()`+`orcCancelarEdicao()` |
+| 13 | editar e guardar sem modificar nada não destrói dados | PASS — todos os campos (form + passthrough) idênticos antes/depois |
+| 14 | utilizador sem permissão não ganha acesso | PASS — orçamento fora de `orcData` nunca fica editável; `_orcEmEdicaoId` continua `null`; nenhum bypass |
+
+Bónus (fora dos 14, documentado à parte, não escondido): um cenário "9b"
+confirma a limitação conhecida de `_sbOrcUpsert()` descrita na secção 4
+acima (campo `extra` **genuinamente novo**, nunca antes mapeado por este
+JS, não sobrevive — característica pré-existente e partilhada do
+primitivo, não introduzida por esta funcionalidade).
+
+### Resumo dos totais de testes desta sessão
+`node --check`: 1 execução, exit 0. Regressão: 2 scripts, 57 asserções,
+0 falhas. Teste novo: 1 script, 56 asserções, 0 falhas. **Total: 113
+asserções automatizadas, 0 falhas.**
+
+---
+
 ## Ficheiros alterados/criados nesta entrega
 
 - `index.html` — editado (92 inserções, 20 remoções, `git diff --stat`):
@@ -436,11 +574,32 @@ ficheiros de teste avulsos deste projeto).
   novo, corresponde à migration acima.
 - `docs/final-gaps-audit.md` — este ficheiro.
 
+### Sessão seguinte (2026-09-14) — adicionalmente:
+- `index.html` — editado de novo: `_orcEmEdicaoId` (estado global, linha
+  ~17638), `orcGuardar()` (~18371, ramo de edição acrescentado),
+  `orcNew()` (~18461, limpa `_orcEmEdicaoId`), `orcEditar()` (~18491,
+  nova), `orcCancelarEdicao()`/`orcMostrarEdicaoUI()`/
+  `orcCancelarEdicaoUI()` (~18559-18578, novas), `orcRenderList()`
+  (~19543, botão "✏️ Editar"), HTML do formulário (~7572 título dinâmico,
+  ~7987 botão "Cancelar edição"). `node --check` ao JS inline completo:
+  exit 0.
+- `supabase/migrations/20260914150000_ob_crm_atividades_canonico.sql` —
+  corrigido (chave `(legacy_ts, orc_num)` composta em vez de `legacy_ts`
+  sozinha — ver secção 3d). **Continua não aplicado.**
+- `supabase/rollback/20260914_ob_crm_atividades_canonico_rollback.sql` —
+  revisto, **sem alterações necessárias** (`drop table` já remove o
+  constraint composto automaticamente).
+- `docs/final-gaps-audit.md` — este ficheiro (secções 3c/3d e 4
+  reescritas, anexo de testes acrescentado).
+
 ## Confirmação explícita
 
-Nenhuma SQL de escrita foi executada (só `SELECT`/`jsonb_array_elements`
-via `mcp__Supabase__execute_sql`, projeto `ddzlbmnmsdyodouqxbjx`). Nenhuma
-migration foi aplicada (`apply_migration` nunca foi chamada). Nada foi
-tocado em `main`, `preview`, nem em produção. Nenhum commit nem push foi
-feito — o repositório fica com as alterações no working tree, para
-revisão por outra sessão, conforme instruído.
+Nenhuma SQL de escrita foi executada em nenhuma das duas sessões (só
+`SELECT`/`jsonb_array_elements` via `mcp__Supabase__execute_sql`, projeto
+`ddzlbmnmsdyodouqxbjx`). Nenhuma migration foi aplicada (`apply_migration`
+nunca foi chamada, em nenhuma das duas sessões). Nada foi tocado em
+`main`, `preview`, nem em produção. Nenhum commit nem push foi feito em
+nenhuma das duas sessões — o repositório fica com todas as alterações no
+working tree (`git status --short` confirma só `index.html` e a migration
+modificados, nada staged/committed), para revisão por outra sessão,
+conforme instruído.
