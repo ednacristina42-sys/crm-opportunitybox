@@ -6,6 +6,69 @@ Dados recolhidos por introspeção **só de leitura** (catálogo do Postgres +
 2026-09-12. Revalidada em 2026-09-14 (ver secção "Revalidação 2026-09-14"),
 sem nenhuma alteração aos objetos abaixo.
 
+## F6 — fechar EXECUTE de PUBLIC/anon nas 4 funções (2026-09-14, preparada)
+
+Migration preparada:
+`supabase/migrations/20260914134500_security_f6_close_anon_function_execute.sql`
+Rollback preparado:
+`supabase/rollback/20260914_security_f6_close_anon_function_execute_rollback.sql`
+
+**Estado — nenhuma SQL foi executada no Supabase para este item.** Fica
+preparada para aplicação numa fase seguinte, mediante aprovação.
+
+Contexto: a migration `20260914113000_security_f6_residual_functions.sql`
+(hardening de `search_path` nas 3 funções `isp_*`) já foi aplicada em
+produção — confirmado nesta ronda por introspeção: as 3 funções `isp_*`
+têm `proconfig = ["search_path=public"]`, e `user_company()` já tinha o
+mesmo `proconfig` desde antes. O achado `function_search_path_mutable`
+já não aparece no advisor para nenhuma das 4. Esta nova migration trata
+o achado seguinte, ainda aberto: `anon_security_definer_function_executable`
+/ `authenticated_security_definer_function_executable` — as 4 funções
+continuam executáveis por `PUBLIC` e `anon`, não só por
+`authenticated`/`service_role`.
+
+Confirmações feitas por introspeção **só de leitura**, antes de fechar a
+migration:
+
+- **Grants `EXECUTE` atuais (antes desta migration) nas 4 funções** —
+  confirmado via `information_schema.role_routine_grants`: `PUBLIC`,
+  `anon`, `authenticated`, `postgres`, `service_role` têm todos
+  `EXECUTE` em `isp_get_tenant_id()`, `isp_is_tenant_member(uuid)`,
+  `isp_handle_new_user()` e `user_company()` — sem exceção, nas 4.
+- **`search_path`:** as 3 `isp_*` confirmadas com `search_path=public`
+  (aplicado pela migration anterior); `user_company()` confirmada com
+  `search_path=public` (já tinha, desde a criação).
+- **Trigger `on_isp_user_created`:** confirmada `AFTER INSERT ON
+  auth.users EXECUTE FUNCTION isp_handle_new_user()`, `tgenabled='O'`
+  (ativa) — inalterada.
+- **Chamadas destas 4 funções em `index.html`:** zero ocorrências
+  (`isp_get_tenant_id`, `isp_is_tenant_member`, `isp_handle_new_user`,
+  `user_company` — nenhuma aparece no frontend do CRM).
+- **Policies que dependem de `isp_get_tenant_id()` ou `user_company()`:**
+  nenhuma (confirmado via `pg_policies`, todos os schemas).
+- **Policies que dependem de `isp_is_tenant_member(uuid)`:** confirmado
+  que continuam a ser exatamente as mesmas 2 já identificadas —
+  `public.isp_tenants` / `delete_own_tenant` / `DELETE` e
+  `public.isp_tenants` / `update_own_tenant` / `UPDATE`. Nenhuma nova
+  policy encontrada.
+- **Corpo, trigger, `SECURITY DEFINER`, dados, RLS:** nada disto é
+  tocado por esta migration — confirmado que continua tudo igual ao
+  estado da ronda anterior (`SECURITY DEFINER=true` nas 4, corpo
+  inalterado, RLS das tabelas relacionadas inalterado).
+
+O que a migration faz: revoga `EXECUTE` de `public`/`anon` nas 4 funções
+e (re)concede `EXECUTE` só a `authenticated`/`service_role`. Não altera
+`search_path`, `SECURITY DEFINER`/`INVOKER`, corpo, grants de tabela,
+triggers, policies ou dados.
+
+**Grants previstos depois (só depois de aplicada):** `PUBLIC` — nenhum;
+`anon` — nenhum; `authenticated` — `EXECUTE`; `service_role` —
+`EXECUTE`; `postgres` (dono) — inalterado (não tocado pela migration).
+
+O rollback restaura exatamente `public, anon, authenticated,
+service_role` com `EXECUTE` nas 4 funções — o estado apurado nesta
+auditoria, antes da migration.
+
 ## F6 — auditoria final isp_* / user_company (2026-09-14)
 
 Ronda dedicada, só de leitura, às 4 funções residuais do F6:
