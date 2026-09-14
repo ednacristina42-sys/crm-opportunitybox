@@ -6,6 +6,235 @@ Dados recolhidos por introspeção **só de leitura** (catálogo do Postgres +
 2026-09-12. Revalidada em 2026-09-14 (ver secção "Revalidação 2026-09-14"),
 sem nenhuma alteração aos objetos abaixo.
 
+## F6 — auditoria final isp_* / user_company (2026-09-14)
+
+Ronda dedicada, só de leitura, às 4 funções residuais do F6:
+`isp_get_tenant_id()`, `isp_is_tenant_member(uuid)`, `isp_handle_new_user()`,
+`user_company()`. Nenhuma SQL foi executada; **`fu_*`, helpers `ob_*`,
+`v_toc_plano`, tabelas de backup e leaked password protection não foram
+tocados nem reavaliados nesta ronda** (fora do âmbito pedido).
+
+### Correção importante face à auditoria de 12/09
+
+A auditoria de 12/09 tinha concluído que `public.profiles` (lida por
+`user_company()`) "parece pertencer a um produto/tenant diferente... não
+ao Opportunitybox CRM". **Essa conclusão estava errada** — confirmado
+nesta ronda por leitura direta de `index.html`:
+
+- `avGetSupabase()` (`index.html:2284-2291`) cria um cliente Supabase
+  apontando explicitamente para `https://ddzlbmnmsdyodouqxbjx.supabase.co`
+  — **o mesmo projeto do Opportunitybox CRM** (mesma URL/anon key que
+  `CRM_SB_URL`/`CRM_SB_KEY`).
+- A função `wdLoad()` (`index.html:4050-4076`, ecrã de "work days"/equipa em
+  campo) usa esse cliente para `sb.from('profiles').select('id, full_name')`
+  e mapear `user_id → full_name` dos registos de `work_days`.
+- As colunas de `public.profiles` (`id, company_id, created_at, full_name,
+  phone, team_label`) coincidem exactamente com o que `wdLoad()` e
+  `ecLoadProfiles()` consomem.
+
+**Nota:** existe também um `ecSupabase` (`index.html:3034-3044`), com
+`EC_SB_URL = "https://xtiguuyvotnpwqzmggnc.supabase.co"` — esse sim é **um
+projeto Supabase completamente diferente**; a chamada
+`ecSupabase.from('profiles')` em `ecLoadProfiles()` (linha 3164-3166) não
+toca na base de dados aqui auditada. Só o `sb`/`avGetSupabase()` (linha
+4072-4074) é relevante para este projeto.
+
+**Conclusão corrigida:** `public.profiles` é infraestrutura real do
+Opportunitybox CRM (usada pelo ecrã de equipa em campo), não de outro
+tenant. Atualmente tem **0 registos** — a funcionalidade existe no código
+mas a tabela está vazia neste momento.
+
+### Auditoria função a função
+
+#### `public.isp_get_tenant_id()`
+
+```sql
+CREATE OR REPLACE FUNCTION public.isp_get_tenant_id()
+ RETURNS uuid
+ LANGUAGE sql STABLE SECURITY DEFINER
+AS $function$
+  SELECT tenant_id FROM isp_profiles WHERE id = auth.uid()
+$function$
+```
+
+- **SECURITY DEFINER**, dono `postgres`, `search_path` **mutável**
+  (`proconfig` = `null`).
+- **Grants (EXECUTE):** confirmados por duas fontes cruzadas
+  (`pg_proc.proacl`/`aclexplode` e `information_schema.role_routine_grants`)
+  — **`PUBLIC`**, `anon`, `authenticated`, `service_role` têm todos
+  `EXECUTE`, nenhum `is_grantable`; `postgres` (dono) grantable. Achado
+  novo face a 12/09: o grant a `PUBLIC` explícito não tinha sido
+  confirmado antes (a auditoria anterior só mencionava anon/authenticated/
+  service_role).
+- **Tabela lida:** `isp_profiles` (não qualificada com schema). Não
+  escreve nada.
+- **Policies que dependem dela:** nenhuma (`pg_policies`, procurado em
+  todos os schemas).
+- **Chamada por função/view (via `pg_depend`):** nenhuma.
+- **Frontend/migrations deste repo:** zero ocorrências de
+  `isp_get_tenant_id` em `index.html`; a única menção no repo é em
+  comentário de `docs/security-f6-audit.md` e da migration
+  `20260912143000_security_f6_search_path_hardening.sql` (que
+  explicitamente a deixou de fora).
+- **Tabela `isp_profiles`:** existe só no schema `public` (confirmado por
+  `select table_schema, table_name from information_schema.tables where
+  table_name='isp_profiles'` — 1 linha só, schema `public`; e por
+  enumeração completa de todos os schemas da base de dados — nenhum outro
+  schema tem tabela com este nome). **2 registos.** RLS ativo, 1 policy
+  (`open_all`, `ALL`, `qual=true`, `with_check=true` — totalmente aberta;
+  não é problema desta auditoria, é de quem gere esse sistema).
+- **Classificação: B — pertence a outro sistema ativo** (schema/tabelas
+  `isp_*` sem qualquer referência no CRM, mas com dados reais e RLS/policy
+  a funcionar — não é código morto).
+- **Search_path=public sem mudar comportamento — comprovado:** como
+  `isp_profiles` só existe no schema `public` em toda a base de dados,
+  fixar `search_path=public` não pode alterar a resolução de
+  `isp_profiles` para nenhuma outra tabela — o comportamento atual e o
+  comportamento após a correção são idênticos para qualquer chamador com
+  o `search_path` por omissão do Supabase (que sempre inclui `public`).
+  **Incluída na migration.**
+
+#### `public.isp_is_tenant_member(uuid)`
+
+```sql
+CREATE OR REPLACE FUNCTION public.isp_is_tenant_member(tid uuid)
+ RETURNS boolean
+ LANGUAGE sql STABLE SECURITY DEFINER
+AS $function$
+  SELECT EXISTS (SELECT 1 FROM isp_profiles WHERE id = auth.uid() AND tenant_id = tid)
+$function$
+```
+
+- Mesmo padrão de `isp_get_tenant_id()`: SECURITY DEFINER, dono
+  `postgres`, `search_path` mutável, mesma tabela `isp_profiles`, mesmos
+  grants (`PUBLIC`/`anon`/`authenticated`/`service_role`/`postgres`).
+- **Policies que dependem dela (confirmado, tabela + operação exatas):**
+  - `public.isp_tenants` / `delete_own_tenant` / `DELETE` — `qual:
+    isp_is_tenant_member(id)`
+  - `public.isp_tenants` / `update_own_tenant` / `UPDATE` — `qual:
+    isp_is_tenant_member(id)`
+- **Tabela `isp_tenants`:** RLS ativo, 3 policies (as 2 acima + `open_all`
+  `ALL` `true/true`). **1 registo.**
+- **Classificação: B — pertence a outro sistema ativo.**
+- **Search_path=public sem mudar comportamento — comprovado** (mesmo
+  argumento de `isp_get_tenant_id()`: `isp_profiles` só existe em
+  `public`). **Incluída na migration.**
+
+#### `public.isp_handle_new_user()`
+
+```sql
+CREATE OR REPLACE FUNCTION public.isp_handle_new_user()
+ RETURNS trigger
+ LANGUAGE plpgsql SECURITY DEFINER
+AS $function$
+BEGIN
+  IF NEW.raw_user_meta_data->>'tenant_id' IS NOT NULL THEN
+    INSERT INTO isp_profiles (id, tenant_id, full_name, email, role)
+    VALUES (...) ON CONFLICT (id) DO NOTHING;
+  END IF;
+  RETURN NEW;
+END;
+$function$
+```
+
+- SECURITY DEFINER, dono `postgres`, `search_path` mutável, mesmos grants
+  de EXECUTE (`PUBLIC`/`anon`/`authenticated`/`service_role`).
+- **Trigger confirmada em `auth.users`:**
+  - **Nome:** `on_isp_user_created`
+  - **Evento:** `AFTER INSERT`
+  - **Schema/tabela:** `auth.users`
+  - **Função chamada:** `isp_handle_new_user()`
+  - **Ativa:** sim (`tgenabled = 'O'` — origin, ativa para operações
+    normais). **Não foi alterada.**
+  - Corre em paralelo com a trigger própria do Opportunitybox
+    (`ob_on_auth_user_created → ob_handle_new_user()`) na mesma tabela —
+    ambas disparam em todo o registo de utilizador; cada uma só actua se
+    o metadata correspondente (`tenant_id` vs. `ob_role`) estiver
+    presente.
+- **Classificação: B — pertence a outro sistema ativo** (mesma
+  infraestrutura `isp_*`, trigger ativa e a inserir dados reais).
+- **Search_path=public sem mudar comportamento — comprovado:** só
+  referencia `isp_profiles` (sem qualificar schema), que só existe em
+  `public`. Não muda `SECURITY DEFINER`, corpo, grants, nem a trigger.
+  **Incluída na migration.**
+
+#### `public.user_company()`
+
+```sql
+CREATE OR REPLACE FUNCTION public.user_company()
+ RETURNS uuid
+ LANGUAGE sql STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+  SELECT company_id FROM public.profiles WHERE id = auth.uid();
+$function$
+```
+
+- SECURITY DEFINER, dono `postgres`, **`search_path` já fixo**
+  (`proconfig = ["search_path=public"]`) — confirmado, nada a corrigir
+  aqui.
+- **Grants (EXECUTE):** `PUBLIC`, `anon`, `authenticated`, `service_role`
+  todos com `EXECUTE`, `postgres` grantable.
+- **Tabela lida:** `public.profiles` (já schema-qualificada no corpo).
+  Não escreve nada.
+- **Uso confirmado da FUNÇÃO em si:** nenhum — 0 policies dependentes, 0
+  dependências via `pg_depend`, 0 ocorrências de `rpc('user_company'` ou
+  `company_id` em `index.html`.
+- **Uso confirmado da TABELA `public.profiles`:** **sim** — ver correção
+  acima (`wdLoad()`/`avGetSupabase()`), mas por acesso direto
+  (`sb.from('profiles')`), **sem passar por `user_company()`**. 0 registos
+  atualmente. RLS ativo, 2 policies (`Users can view own profile` /
+  `SELECT` / `auth.uid()=id`; `read all profiles` / `SELECT` /
+  `qual=true` — esta última totalmente aberta a qualquer autenticado).
+- **Classificação: C — legado/órfão, sem dependências** (corrige a
+  classificação anterior de "outro tenant": a função *pertence* ao
+  Opportunitybox — lê a sua própria tabela `profiles`, distinta de
+  `ob_profiles` — mas não tem nenhum chamador confirmado; quem usa a
+  tabela fá-lo diretamente, sem passar pela função).
+- **Nada a incluir na migration** — o único achado do linter para esta
+  função é a exposição a `anon`/`PUBLIC` via EXECUTE (não é `search_path`,
+  que já está corrigido); revogar `EXECUTE` está fora do âmbito pedido
+  nesta ronda ("NÃO revogar EXECUTE ainda").
+
+### `public.profiles` vs. `public.ob_profiles` — distinção confirmada
+
+Duas tabelas distintas no catálogo, confirmadas por
+`information_schema.tables`:
+
+| | `public.profiles` | `public.ob_profiles` |
+|---|---|---|
+| Colunas | `id, company_id, created_at, full_name, phone, team_label` | (schema próprio do Opportunitybox, não alterado nesta auditoria) |
+| Registos | 0 | 5 |
+| RLS | ativo, 2 policies | ativo, 3 policies |
+| Uso confirmado no CRM | sim — `wdLoad()` via `avGetSupabase()` (mesmo projeto Supabase) | sim — infraestrutura principal do CRM (RH/colaboradores) |
+
+Não são a mesma tabela; `user_company()`/`isp_*` não leem `ob_profiles`
+em nenhum momento.
+
+### Tabela-resumo desta ronda
+
+| Função | Classificação | search_path | Grants EXECUTE | Na migration? |
+|---|---|---|---|---|
+| `isp_get_tenant_id()` | B — outro sistema ativo | mutável → fixável com segurança comprovada | PUBLIC/anon/auth/service | **Sim** |
+| `isp_is_tenant_member(uuid)` | B — outro sistema ativo | mutável → fixável com segurança comprovada | PUBLIC/anon/auth/service | **Sim** |
+| `isp_handle_new_user()` | B — outro sistema ativo | mutável → fixável com segurança comprovada | PUBLIC/anon/auth/service | **Sim** |
+| `user_company()` | C — legado/órfão (pertence ao Opportunitybox) | já fixo | PUBLIC/anon/auth/service | Não (nada a fazer) |
+
+### Migration preparada (ainda NÃO aplicada)
+
+`supabase/migrations/20260914113000_security_f6_residual_functions.sql` —
+contém **só** `alter function ... set search_path = public;` para as 3
+funções `isp_*` acima. Não revoga EXECUTE, não muda SECURITY
+DEFINER/INVOKER, não altera corpo, não remove a trigger
+`on_isp_user_created`, não apaga nenhuma função.
+
+Rollback:
+`supabase/rollback/20260914_security_f6_residual_functions_rollback.sql`
+— `alter function ... reset search_path;` para as mesmas 3 funções.
+
+**Estado — nenhuma SQL foi executada no Supabase.** Fica preparada para
+aplicação numa fase seguinte, mediante aprovação.
+
 ## Revalidação 2026-09-14
 
 Nova corrida do Security Advisor (`get_advisors`, tipo `security`),
