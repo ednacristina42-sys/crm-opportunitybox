@@ -7193,6 +7193,7 @@ tbody td{font-size:15px}
     </div>
   </div>
   <div class="filters-bar">
+    <input class="filter-btn" type="text" id="hflt-texto" placeholder="🔍 Pesquisar tarefas (título, responsável, estado, notas)" oninput="HOME_FILTERS.texto=this.value;homeApplyFilters()" style="width:260px"/>
     <select class="filter-btn" id="hflt-resp" onchange="HOME_FILTERS.responsavel=this.value;homeApplyFilters()">
       <option value="">👤 Responsável</option>
     </select>
@@ -12098,11 +12099,24 @@ function homeGetFilteredTasks(){
   if(HOME_FILTERS.estado) all = all.filter(t=>t.status===HOME_FILTERS.estado);
   if(HOME_FILTERS.prioridade) all = all.filter(t=>t.prio===HOME_FILTERS.prioridade);
   if(HOME_FILTERS.data) all = all.filter(t=>t.dateEndIso===HOME_FILTERS.data);
+  // Pesquisa livre (título/responsável/estado/notas) — filtro de interface
+  // sobre dados já carregados em memória (homeAppTasks/getMyTasks()), sem
+  // nova query nem nova tabela (Gap "pesquisa em Tarefas").
+  if(HOME_FILTERS.texto && HOME_FILTERS.texto.trim()){
+    var lq=HOME_FILTERS.texto.trim().toLowerCase();
+    all = all.filter(function(t){
+      var titulo=String(t.title||'').toLowerCase();
+      var resp=String(t.assNome||t.ass||'').toLowerCase();
+      var estado=String(t.status||'').toLowerCase();
+      var notas=String((t.extras&&t.extras.descricao)||'').toLowerCase();
+      return titulo.includes(lq)||resp.includes(lq)||estado.includes(lq)||notas.includes(lq);
+    });
+  }
   return all;
 }
 
 // ── FILTROS DA BARRA (Home) ──────────────────────────────
-var HOME_FILTERS = { responsavel:'', estado:'', prioridade:'', data:'' };
+var HOME_FILTERS = { responsavel:'', estado:'', prioridade:'', data:'', texto:'' };
 var _homeMeusFiltrosAtivo = false;
 
 function homeApplyFilters(){
@@ -17868,11 +17882,26 @@ async function _orcInitFromSB() {
     console.warn('[SB-ORC] não foi possível carregar orçamentos do Supabase (' + res.reason + ') — mantém-se a última cópia local conhecida.');
     if (typeof showToast === 'function' && res.reason !== 'no-session') showToast('⚠ ' + (res.message || 'Falha ao sincronizar orçamentos.'));
     if (typeof orcRenderList === 'function') orcRenderList();
+    // Bug H1: mesmo em falha, NÃO travar o login nem reagendar — a app
+    // continua com o que já tiver em memória (possivelmente desatualizado),
+    // só sem a garantia de estar atualizado (ver docs/final-gaps-audit.md).
     return;
   }
   orcData = res.rows;
   localStorage.setItem('ob-orcamentos', JSON.stringify(orcData.slice(0, 5000)));
   if (typeof orcRenderList === 'function') orcRenderList();
+  // Bug H1 (corrigido): crmEnterAppWithProfile() já chamou renderMeuPainel()
+  // de forma síncrona, antes de orcData estar atualizado (cache local,
+  // possivelmente stale/vazia) — refresco idempotente aqui, mesmo padrão já
+  // usado noutros pontos do ficheiro (checar a página ativa via
+  // .classList.contains('on') antes de re-renderizar, ex. linhas ~22572,
+  // ~28501). Só re-renderiza se o utilizador ainda estiver no Meu Painel
+  // (não interfere se já navegou para outro ecrã) e não duplica o render
+  // inicial (só corre depois de orcData já estar atualizado pelo Supabase).
+  var mpPage = document.getElementById('page-meu-painel');
+  if (mpPage && mpPage.classList.contains('on') && typeof renderMeuPainel === 'function') {
+    try { renderMeuPainel(); } catch (e) {}
+  }
 }
 window._orcInitFromSB = _orcInitFromSB;
 
@@ -19701,10 +19730,26 @@ function globalSearch(q){
       results.push({type:'👤 Cliente',title:c.n,sub:c.sec+' · '+c.cont,action:`goPage('comercial-clientes');cliOpenEdit(${c.id})`});
     }
   });
-  // Pesquisar leads CRM
+  // Pesquisar leads CRM — corrigido: l.title/l.company nunca existiram nos
+  // objetos reais de crmLeads (estrutura real usa n/emp/tel/email/numLead,
+  // ver docs/canonical-data-map.md), por isso este bloco nunca encontrava
+  // nada e lançava TypeError (l.title é undefined) ao primeiro lead real,
+  // interrompendo a pesquisa global antes de chegar aos Membros de equipa.
+  // Agora pesquisa por nome/empresa, telefone, email, nº lead e, quando
+  // aplicável, o orçamento relacionado (orcData.leadId === l.id).
   (crmLeads||[]).forEach(l=>{
-    if(l.title.toLowerCase().includes(lq)||l.company.toLowerCase().includes(lq)){
-      results.push({type:'💼 Lead',title:l.title,sub:l.company,action:`goPage('comercial-pipeline')`});
+    if(!l) return;
+    var nome=String(l.emp||l.n||'').toLowerCase();
+    var pessoa=String(l.n||'').toLowerCase();
+    var tel=String(l.tel||'').toLowerCase();
+    var email=String(l.email||'').toLowerCase();
+    var numLead=String(l.numLead!=null?l.numLead:'').toLowerCase();
+    var orcRelacionado=(typeof orcData!=='undefined'&&orcData)?orcData.find(function(o){ return o&&o.leadId===l.id; }):null;
+    var orcNum=orcRelacionado?String(orcRelacionado.num||'').toLowerCase():'';
+    if(nome.includes(lq)||pessoa.includes(lq)||tel.includes(lq)||email.includes(lq)||(numLead&&numLead.includes(lq))||(orcNum&&orcNum.includes(lq))){
+      var subPartes=[l.tel||'—'];
+      if(orcRelacionado) subPartes.push('Orç. '+orcRelacionado.num);
+      results.push({type:'💼 Lead',title:l.emp||l.n||'—',sub:subPartes.join(' · '),action:`obAbrirLead(${JSON.stringify(l.id)})`});
     }
   });
   // Pesquisar membros equipa
@@ -30442,16 +30487,21 @@ function renderMeuPainel(){
 
   var isAdmin=!!(typeof CU!=='undefined'&&CU&&CU.admin);
   var nome=(typeof CU!=='undefined'&&CU)?CU.name:null;
-  var minhas=function(v){ return isAdmin||!nome||v===nome; };
+  var meuId=(typeof CU!=='undefined'&&CU)?CU.id:null;
+  // Bug B1 (corrigido): dono real de um orçamento é o.owner_id (uuid, já
+  // vem em orcData — _sbOrcLoadAll linha ~17843), não o.vendedor (texto
+  // livre, pode divergir do perfil atual — confirmado em produção,
+  // ORC-719-2026OB). o.vendedor continua a existir só para apresentação.
+  var minhasOrcamentos=function(o){ return isAdmin||!meuId||o.owner_id===meuId; };
 
   var orcAll=(typeof orcData!=='undefined'&&orcData)?orcData:[];
-  var minhasOrc=orcAll.filter(function(o){ return minhas(o.vendedor); });
+  var minhasOrc=orcAll.filter(minhasOrcamentos);
   var valorOrc=function(o){ return (typeof orcGetValorTotal==='function')?orcGetValorTotal(o):(o.val||0); };
 
   // Orçamentos "em aberto"/follow-up activo do comercial — mesmo critério
   // já usado no motor de Follow-up (fuOrcamentosAtivos), filtrado por dono.
   var ativosTodos=(typeof fuOrcamentosAtivos==='function')?fuOrcamentosAtivos():[];
-  var ativosMeus=ativosTodos.filter(function(o){ return minhas(o.vendedor); });
+  var ativosMeus=ativosTodos.filter(minhasOrcamentos);
 
   // Valor em negociação
   var valorNegociacao=ativosMeus.reduce(function(s,o){ return s+valorOrc(o); },0);
@@ -31687,7 +31737,7 @@ function agItensLeadsOrcamentos(){
     var prio=fuPrioridade(dias);
     var tier=AG_TIER_DE_FU[prio.key];
     if(!tier) return;
-    itens.push({tipo:'orc', nome:o.cli||'—', comercial:o.vendedor||'—',
+    itens.push({tipo:'orc', nome:o.cli||'—', comercial:o.vendedor||'—', ownerId:o.owner_id||null,
       valor:(typeof orcGetValorTotal==='function')?orcGetValorTotal(o):(o.val||0), dias:dias,
       tier:tier, motivo:'Orçamento "'+(o.cli||'—')+'" sem resposta há '+dias+' dia'+(dias===1?'':'s'),
       proximaAcao:'Fazer follow-up do orçamento', origId:o.num, leadId:o.leadId||null});
@@ -31760,12 +31810,20 @@ window.agListaCanonica = agListaCanonica;
 function agListaUnificada(){
   var isAdmin=!!(typeof CU!=='undefined'&&CU&&CU.admin);
   var nomeCU=(typeof CU!=='undefined'&&CU)?CU.name:null;
-  var minhas=function(v){ return isAdmin||!nomeCU||v===nomeCU; };
+  var meuId=(typeof CU!=='undefined'&&CU)?CU.id:null;
+  // Bug B1 (corrigido): itens de orçamento (it.ownerId, ver
+  // agItensLeadsOrcamentos) usam owner_id real; itens de lead/cliente,
+  // sem owner_id disponível na fonte, continuam por nome (it.comercial).
+  var minhas=function(it){
+    if(isAdmin||!nomeCU) return true;
+    if(it && it.ownerId) return it.ownerId===meuId;
+    return it && it.comercial===nomeCU;
+  };
 
   var canon=agListaCanonica();
   var lista=canon.lista
     .filter(function(it){ return it.categoriaIdx!==1; })
-    .filter(function(it){ return minhas(it.comercial); });
+    .filter(minhas);
   lista.sort(function(a,b){
     var oa=AG_TIER_ORDEM[a.tier], ob=AG_TIER_ORDEM[b.tier];
     if(oa!==ob) return oa-ob;
@@ -32011,8 +32069,18 @@ function agItensHoje(){
 // sempre por pessoa). Lê a MESMA lista canónica que agListaUnificada() usa
 // (agListaCanonica) — mesma identidade/desduplicação em ambos, incluindo a
 // categoria "hoje" que o Centro esconde mas o Top Hoje precisa de considerar.
-function agCandidatosTopHoje(comercialAlvo){
-  var lista=agListaCanonica().lista.filter(function(it){ return it.comercial===comercialAlvo; });
+function agCandidatosTopHoje(comercialAlvo, ownerIdAlvo){
+  // Bug B1 (corrigido): itens de orçamento trazem ownerId (o.owner_id,
+  // uuid) — quando o chamador sabe o próprio CU.id, comparamos por aí em
+  // vez de it.comercial (texto o.vendedor, pode divergir do perfil).
+  // Itens de lead/cliente não têm owner_id disponível na fonte (ver
+  // docs/canonical-data-map.md — ob_leads vazia, ob-leads usa 'ass' de
+  // texto) e continuam a ser filtrados por nome — limitação documentada,
+  // não corrigível só no frontend sem migrar Leads.
+  var lista=agListaCanonica().lista.filter(function(it){
+    if(ownerIdAlvo && it.ownerId) return it.ownerId===ownerIdAlvo;
+    return it.comercial===comercialAlvo;
+  });
   lista=lista.slice();
   lista.sort(function(a,b){
     if(a.categoriaIdx!==b.categoriaIdx) return a.categoriaIdx-b.categoriaIdx;
@@ -32037,8 +32105,8 @@ function _agTopHojeArmazenado(comercialAlvo){
 // atuais — só deve ser chamado quando ainda não existe nenhum registo de
 // hoje para ele (ver agObterTopHoje). Grava no máximo 10, podendo gravar
 // menos se não houver 10 sinais reais (não preenche artificialmente).
-function agGerarTopHoje(comercialAlvo){
-  var candidatos=agCandidatosTopHoje(comercialAlvo).slice(0,10);
+function agGerarTopHoje(comercialAlvo, ownerIdAlvo){
+  var candidatos=agCandidatosTopHoje(comercialAlvo, ownerIdAlvo).slice(0,10);
   candidatos.forEach(function(it,i){
     crmAddAtividade(it.leadId||null, 'TopHojeItem', 'Selecionado p/ Top 10 de hoje: '+it.nome+' — '+it.motivo, comercialAlvo, {
       clienteId: it.tipo==='cliente'?it.origId:null,
@@ -32054,10 +32122,10 @@ function agGerarTopHoje(comercialAlvo){
 // Orquestrador: devolve o Top 10 (fixo) de hoje para um comercial, gerando-o
 // na primeira vez que for pedido hoje. Cada item já traz .estado
 // ('pendente'|'concluida'|'adiada') lido do próprio registo persistido.
-function agObterTopHoje(comercialAlvo){
+function agObterTopHoje(comercialAlvo, ownerIdAlvo){
   var existentes=_agTopHojeArmazenado(comercialAlvo);
   if(!existentes.length){
-    agGerarTopHoje(comercialAlvo);
+    agGerarTopHoje(comercialAlvo, ownerIdAlvo);
     existentes=_agTopHojeArmazenado(comercialAlvo);
   }
   return existentes.map(function(a){
@@ -32162,8 +32230,9 @@ function agRenderTopHoje(){
   var wrap=document.getElementById('ag-tophoje-cards');
   if(!wrap) return;
   var nome=(typeof CU!=='undefined'&&CU)?CU.name:null;
+  var meuId=(typeof CU!=='undefined'&&CU)?CU.id:null;
   if(!nome){ wrap.innerHTML=''; return; }
-  var top=agObterTopHoje(nome);
+  var top=agObterTopHoje(nome, meuId);
   var pendentes=top.filter(function(x){ return x.estado==='pendente'; });
   var concluidas=top.filter(function(x){ return x.estado==='concluida'; });
   var adiadas=top.filter(function(x){ return x.estado==='adiada'; });
@@ -32753,9 +32822,12 @@ function fuOrcamentosAtivos(){
 // pode assumir que a RLS já tratou disto por "Ver como".
 function fuMinhasOrc(rows){
   var isAdmin = !!(typeof CU!=='undefined' && CU && CU.admin);
-  var nome = (typeof CU!=='undefined' && CU) ? CU.name : null;
-  if(isAdmin || !nome) return rows;
-  return rows.filter(function(o){ return o.vendedor === nome; });
+  var meuId = (typeof CU!=='undefined' && CU) ? CU.id : null;
+  // Bug B1 (corrigido): dono real é o.owner_id (uuid), não o.vendedor
+  // (texto livre, pode divergir do perfil atual — mesma causa raiz do
+  // corte em renderMeuPainel). o.vendedor fica só como campo de exibição.
+  if(isAdmin || !meuId) return rows;
+  return rows.filter(function(o){ return o.owner_id === meuId; });
 }
 window.fuMinhasOrc = fuMinhasOrc;
 
