@@ -35607,43 +35607,85 @@ window.tocoSyncPainel = tocoSyncPainel;
 window.tocoSyncAgora = tocoSyncAgora;
 
 // ══ DIAGNÓSTICO TEMPORÁRIO — Compras/Pagamentos TOConline (17/09/2026) ══
-// Testa os recursos novos purchase_documents/purchase_payments (edge
-// function crm-toconline, deploy v24) directamente contra a conta real,
-// via tocoEF() — a mesma função/autenticação já usada por toda a
-// Tesouraria, nenhuma credencial nova. SÓ LEITURA: nunca escreve em
-// TES_CONTAS nem em ob_crm_dados. Objectivo: confirmar o endpoint real que
-// respondeu, contagens, e a forma real do JSON antes de construir os
-// normalizadores definitivos (mesmo padrão já usado para NC — ver
-// nc_raw_probe/achatarDocumento no histórico desta função).
+// Pagina TUDO de um recurso de compras via resource=sync_purchases (edge
+// function crm-toconline v25+), em lotes de 15 páginas por chamada — mesmo
+// esquema já usado para vendas (sync_docs). Pára só quando
+// paginacao_completa:true (nunca um limite de negócio como os 5.000 do
+// endpoint directo). MAX_CHAMADAS é só rede de segurança contra ciclo
+// infinito (nunca deveria ser atingido com dados reais), não um tecto de
+// negócio — 40×15×100 = até 60.000 registos.
+async function tocoPaginarCompras(tipo, aoProgredir){
+  var pagina = 1, todos = [], chamadas = 0, completo = false, parcial = false;
+  var MAX_CHAMADAS = 40;
+  while(!completo && chamadas < MAX_CHAMADAS){
+    chamadas++;
+    var resp = await tocoEF('sync_purchases', 'tipo='+encodeURIComponent(tipo)+'&pagina='+pagina+'&paginas=15');
+    todos = todos.concat(resp.data||[]);
+    completo = !!resp.paginacao_completa;
+    parcial = !!resp.parcial;
+    pagina = resp.pagina_seguinte;
+    if(typeof aoProgredir==='function') aoProgredir(todos.length, chamadas);
+    if(parcial && !completo) continue; // orçamento de tempo desta chamada esgotado — a próxima retoma de pagina_seguinte
+  }
+  return { data: todos, paginacao_completa: completo, chamadas_feitas: chamadas, atingiu_teto_seguranca: !completo && chamadas>=MAX_CHAMADAS };
+}
+window.tocoPaginarCompras = tocoPaginarCompras;
+
+// Testa os recursos de compras (edge function crm-toconline v25+)
+// directamente contra a conta real, via tocoEF() — a mesma função/
+// autenticação já usada por toda a Tesouraria, nenhuma credencial nova.
+// SÓ LEITURA: nunca escreve em TES_CONTAS nem em ob_crm_dados. Pagina TUDO
+// (nunca só os primeiros 5.000) e, se encontrar pelo menos um pagamento com
+// linhas, sonda automaticamente UMA linha real (purchase_payment_line_detail)
+// para confirmar payable_id/paid_value antes de esses campos entrarem em
+// qualquer normalizador definitivo.
 async function tocoTestarComprasReal(){
   if(typeof homeIsAdmin==='function' && !homeIsAdmin()){ if(typeof showToast==='function') showToast('Só Admin.'); return; }
   var btn = document.getElementById('toco-testar-compras-btn');
   var out = document.getElementById('toco-testar-compras-out');
   var pre = document.getElementById('toco-testar-compras-json');
-  if(btn){ btn.disabled = true; btn.textContent = '⏳ A testar…'; }
+  var progresso = function(txt){ if(btn) btn.textContent = '⏳ ' + txt; };
+  if(btn) btn.disabled = true;
   var resultado = { ts: new Date().toISOString(), aviso: 'SÓ LEITURA — nada foi escrito no TOConline nem no CRM.' };
   try{
     try{
-      var docs = await tocoEF('purchase_documents');
+      progresso('Compras: a paginar…');
+      var docs = await tocoPaginarCompras('documents', function(n){ progresso('Compras: '+n+' documentos…'); });
+      var comPendente = docs.data.filter(function(d){ return typeof d.pending_total==='number' && d.pending_total > 0.005; });
       resultado.purchase_documents = {
-        endpoint_resolvido: docs.path || null,
-        total_encontrado: docs.count,
-        com_pending_total_maior_que_0: (docs.data||[]).filter(function(d){
-          var a = (d && d.attributes) || d || {};
-          var p = parseFloat(a.pending_total ?? a.PendingAmount ?? a.pending_amount);
-          return !isNaN(p) && p > 0.005;
-        }).length,
-        amostra_3: (docs.data||[]).slice(0,3)
+        endpoint_resolvido: '/commercial_purchases_documents (confirmado no teste anterior)',
+        paginacao_completa: docs.paginacao_completa, chamadas_feitas: docs.chamadas_feitas,
+        atingiu_teto_seguranca: docs.atingiu_teto_seguranca,
+        total_real: docs.data.length,
+        total_com_pending_total_maior_que_0_005: comPendente.length,
+        amostra_3: docs.data.slice(0,3),
+        amostra_3_com_pendente: comPendente.slice(0,3)
       };
     }catch(e){ resultado.purchase_documents_erro = e.message; }
 
     try{
-      var pags = await tocoEF('purchase_payments');
+      progresso('Pagamentos: a paginar…');
+      var pags = await tocoPaginarCompras('payments', function(n){ progresso('Pagamentos: '+n+'…'); });
       resultado.purchase_payments = {
-        endpoint_resolvido: pags.path || null,
-        total_encontrado: pags.count,
-        amostra_3: (pags.data||[]).slice(0,3)
+        endpoint_resolvido: '/commercial_purchases_payments (confirmado no teste anterior)',
+        paginacao_completa: pags.paginacao_completa, chamadas_feitas: pags.chamadas_feitas,
+        atingiu_teto_seguranca: pags.atingiu_teto_seguranca,
+        total_real: pags.data.length,
+        amostra_3: pags.data.slice(0,3)
       };
+
+      // Sonda 1 linha de pagamento real (primeira encontrada com lines_ids) —
+      // só leitura, para confirmar payable_id/payable_type/paid_value.
+      var comLinhas = pags.data.find(function(p){ return p.lines_ids && p.lines_ids.length; });
+      if(comLinhas){
+        progresso('A confirmar 1 linha de pagamento real…');
+        try{
+          var linha = await tocoEF('purchase_payment_line_detail', 'id='+encodeURIComponent(comLinhas.lines_ids[0]));
+          resultado.purchase_payment_line_detail_amostra = linha;
+        }catch(e){ resultado.purchase_payment_line_detail_erro = e.message; }
+      } else {
+        resultado.purchase_payment_line_detail_aviso = 'Nenhum pagamento encontrado com lines_ids — não foi possível sondar nenhuma linha.';
+      }
     }catch(e){ resultado.purchase_payments_erro = e.message; }
   }finally{
     if(btn){ btn.disabled = false; btn.textContent = '🔍 Testar Compras TOConline'; }
