@@ -873,6 +873,20 @@ function achatarLinhaPagamentoCompra(c: Record<string, unknown>) {
 }
 type LinhaPagCompraAchatada = ReturnType<typeof achatarLinhaPagamentoCompra>;
 
+// ── Classificação de document_type de compra (17/09/2026) ─────────────────
+// Espelha EXACTAMENTE TOCO_COMPRA_TIPOS_DEBITO/CREDITO em index.html — as
+// duas listas têm de ficar sincronizadas manualmente (não há módulo
+// partilhado entre a edge function e o frontend). NCF = nota de crédito de
+// fornecedor, nunca somada como dívida; FC = fatura de compra (débito);
+// qualquer outro tipo fica "por_validar", nunca somado silenciosamente.
+const COMPRA_TIPOS_DEBITO = ["FC"];
+const COMPRA_TIPOS_CREDITO = ["NCF"];
+function classificarTipoDocumentoCompra(tipo: string): "debito" | "credito" | "por_validar" {
+  if (COMPRA_TIPOS_CREDITO.includes(tipo)) return "credito";
+  if (COMPRA_TIPOS_DEBITO.includes(tipo)) return "debito";
+  return "por_validar";
+}
+
 // ── Hidratação de NC incompletas (sync_docs&tipo=credit_notes) ────────────
 // Causa confirmada em 07/09 com JSON real: a listagem de credit_notes vem
 // com attributes essencialmente vazios; o endpoint de detalhe
@@ -1733,6 +1747,255 @@ async function pagamentoLinhaProbe(id: string): Promise<Record<string, unknown>>
   return { erro: "Nenhum caminho respondeu para a linha de pagamento.", tentativas };
 }
 
+// ══ SNAPSHOT DE COMPRAS/PAGAMENTOS, POR LOTES COM CHECKPOINT NO SUPABASE ═══
+// (17/09/2026, correção do bug "sincronização para no meio, nenhuma linha
+// gravada"). Causa raiz do bug anterior: o browser acumulava os 15.939
+// documentos + 12.597 pagamentos + linhas de pagamento em memória/
+// localStorage e só tentava gravar tudo de uma vez no fim, num único POST
+// gigante — se a aba fechasse, a rede caísse, ou o payload excedesse
+// qualquer limite (do browser ou da própria chamada), nada era gravado e o
+// trabalho perdia-se por completo, sem nenhum registo intermédio.
+//
+// Correção: a PRÓPRIA edge function acumula e persiste o progresso no
+// Supabase (service_role, via guardarNaBase() já existente — os mesmos
+// bypasses de RLS já usados por CHAVE_OAUTH/CHAVE_SNAPSHOT/
+// CHAVE_FINANCE_AUDIT), em 3 fases sequenciais — documents -> payments ->
+// payment_lines -> concluído — cada uma paginada e retomável, exactamente
+// como auditoriaFaturasLote() já faz para faturas de venda. O browser só
+// dispara chamadas sucessivas a resource=sync_purchases_snapshot e mostra
+// o progresso devolvido; se uma chamada não terminar a tempo (orçamento de
+// 90s por chamada, mesma rede de segurança de sempre), a PRÓXIMA chamada
+// retoma exactamente de onde ficou — nunca começa do zero, nunca depende
+// de o browser manter nada em memória entre chamadas.
+//
+// O CHECKPOINT (CHAVE_COMPRAS_CKPT) guarda os índices intermédios
+// necessários para ligar payment_lines a documentos/pagamentos
+// (docIndex/paymentIndex — só os 4 campos por entrada realmente precisos
+// para essa ligação, nunca o documento bruto completo) — mas o SNAPSHOT
+// FINAL (CHAVE_COMPRAS_SNAPSHOT, a chave que o frontend lê) nunca inclui
+// esses índices: só o que a Tesouraria precisa mesmo para mostrar (A
+// Pagar, Créditos, Por validar, Pagas, auditoria por tipo, KPIs,
+// contagens) — nunca os 15.939+12.597+ registos brutos.
+const CHAVE_COMPRAS_CKPT = "toc-purchases-sync-checkpoint";
+const CHAVE_COMPRAS_SNAPSHOT = "ob-tes-compras-toconline";
+
+interface AuditoriaTipoAc { tipo: string; quantidade: number; quantidade_pendente: number; soma_pendente: number; classificacao: string; }
+interface DocIndexEntry { document_no: string; supplier_business_name: string; gross_total: number; pending_total: number; }
+interface PaymentIndexEntry { document_no: string; date: string; payment_mechanism: string; deleted: boolean; }
+interface PagaAc { pagamentoId: string; numeroPagamento: string; documentoAssociadoId: string; documentoNumero: string | null; fornecedor: string | null; dataPagamento: string; valorPago: number; valorOriginal: number | null; saldoRestante: number | null; formaPagamento: string; }
+
+interface CheckpointCompras {
+  fase: "documents" | "payments" | "payment_lines";
+  next_page: number;
+  paginas_processadas_fase: number;
+  iniciado_em: string;
+  aPagar: Record<string, unknown>[];
+  creditos: Record<string, unknown>[];
+  porValidar: Record<string, unknown>[];
+  auditoriaTipos: Record<string, AuditoriaTipoAc>;
+  totalDocumentosProcessados: number;
+  totalPagamentosProcessados: number;
+  totalLinhasProcessadas: number;
+  nAnulados: number;
+  docIndex: Record<string, DocIndexEntry>;
+  paymentIndex: Record<string, PaymentIndexEntry>;
+  pagas: PagaAc[];
+  pagoEsteMesAc: number;
+  pagamentosMes: string[];
+}
+
+function checkpointComprasVazio(): CheckpointCompras {
+  return {
+    fase: "documents", next_page: 1, paginas_processadas_fase: 0, iniciado_em: new Date().toISOString(),
+    aPagar: [], creditos: [], porValidar: [], auditoriaTipos: {},
+    totalDocumentosProcessados: 0, totalPagamentosProcessados: 0, totalLinhasProcessadas: 0, nAnulados: 0,
+    docIndex: {}, paymentIndex: {}, pagas: [], pagoEsteMesAc: 0, pagamentosMes: [],
+  };
+}
+
+async function sincComprasSnapshotLote(paginasPorChamada: number, reiniciar: boolean): Promise<Record<string, unknown>> {
+  const inicioChamada = Date.now();
+  const token = await getAccessToken();
+
+  let ckpt = reiniciar ? null : (await lerDaBase(CHAVE_COMPRAS_CKPT)) as CheckpointCompras | null;
+  if (!ckpt || !ckpt.fase) ckpt = checkpointComprasVazio();
+
+  const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
+  const em30 = new Date(hoje); em30.setDate(em30.getDate() + 30);
+  const mesAtual = new Date().toISOString().slice(0, 7);
+  const round2 = (x: number) => Math.round(x * 100) / 100;
+
+  let paginasNesteLote = 0;
+  let faseTerminouNesteLote = false;
+
+  if (ckpt.fase === "documents") {
+    const recurso = "purchase_documents";
+    const path = await resolverPath(recurso, token);
+    const cfg = RECURSOS[recurso];
+    let pagina = ckpt.next_page;
+    for (; paginasNesteLote < paginasPorChamada; paginasNesteLote++) {
+      if (Date.now() - inicioChamada > 90000) break;
+      const qs = [cfg.query, `page[size]=${PAGE_SIZE}`, `page[number]=${pagina}`].filter(Boolean).join("&");
+      const res = await tocGet(`${path}?${qs}`, token);
+      if (!res.ok) {
+        if (paginasNesteLote === 0 && ckpt.paginas_processadas_fase === 0) throw new HttpError(502, `TOConline devolveu HTTP ${res.status} em ${path}`);
+        faseTerminouNesteLote = true; break;
+      }
+      let payload: Record<string, unknown>; try { payload = await res.json(); } catch { faseTerminouNesteLote = true; break; }
+      const lote = extrairLista(payload);
+      if (!lote.length) { faseTerminouNesteLote = true; break; }
+      for (const docBruto of lote as Record<string, unknown>[]) {
+        const d = achatarDocumentoCompra(docBruto);
+        ckpt.totalDocumentosProcessados++;
+        ckpt.docIndex[d.id] = { document_no: d.document_no, supplier_business_name: d.supplier_business_name, gross_total: d.gross_total ?? 0, pending_total: d.pending_total ?? 0 };
+        const key = d.document_type || "(vazio)";
+        if (!ckpt.auditoriaTipos[key]) ckpt.auditoriaTipos[key] = { tipo: key, quantidade: 0, quantidade_pendente: 0, soma_pendente: 0, classificacao: classificarTipoDocumentoCompra(d.document_type) };
+        const a = ckpt.auditoriaTipos[key];
+        a.quantidade++;
+        const pendente = d.pending_total ?? 0;
+        if (pendente > 0.005) { a.quantidade_pendente++; a.soma_pendente = round2(a.soma_pendente + pendente); }
+        if (d.voided_reason) { ckpt.nAnulados++; continue; }
+        const classe = classificarTipoDocumentoCompra(d.document_type);
+        if (classe === "credito") {
+          if (pendente > 0.005) ckpt.creditos.push({ tocoId: d.id, documento: d.document_no, fornecedor: d.supplier_business_name, dataEmissao: d.date, valor: pendente, referencia: d.external_reference, estado: d.status });
+          continue;
+        }
+        if (pendente <= 0.005) continue;
+        const item = { tocoId: d.id, documento: d.document_no, tipo: d.document_type, fornecedor: d.supplier_business_name, referencia: d.external_reference, dataEmissao: d.date, vencimento: d.due_date, total: d.gross_total, pendente, estado: d.status };
+        if (classe === "por_validar") ckpt.porValidar.push(item); else ckpt.aPagar.push(item);
+      }
+      ckpt.paginas_processadas_fase++;
+      pagina++;
+      if (lote.length < PAGE_SIZE) { faseTerminouNesteLote = true; break; }
+    }
+    ckpt.next_page = pagina;
+    if (faseTerminouNesteLote) { ckpt.fase = "payments"; ckpt.next_page = 1; ckpt.paginas_processadas_fase = 0; }
+  } else if (ckpt.fase === "payments") {
+    const recurso = "purchase_payments";
+    const path = await resolverPath(recurso, token);
+    const cfg = RECURSOS[recurso];
+    let pagina = ckpt.next_page;
+    for (; paginasNesteLote < paginasPorChamada; paginasNesteLote++) {
+      if (Date.now() - inicioChamada > 90000) break;
+      const qs = [cfg.query, `page[size]=${PAGE_SIZE}`, `page[number]=${pagina}`].filter(Boolean).join("&");
+      const res = await tocGet(`${path}?${qs}`, token);
+      if (!res.ok) {
+        if (paginasNesteLote === 0 && ckpt.paginas_processadas_fase === 0) throw new HttpError(502, `TOConline devolveu HTTP ${res.status} em ${path}`);
+        faseTerminouNesteLote = true; break;
+      }
+      let payload: Record<string, unknown>; try { payload = await res.json(); } catch { faseTerminouNesteLote = true; break; }
+      const lote = extrairLista(payload);
+      if (!lote.length) { faseTerminouNesteLote = true; break; }
+      for (const pagBruto of lote as Record<string, unknown>[]) {
+        const p = achatarPagamentoCompra(pagBruto);
+        ckpt.totalPagamentosProcessados++;
+        ckpt.paymentIndex[p.id] = { document_no: p.document_no, date: p.date, payment_mechanism: p.payment_mechanism, deleted: p.deleted === true };
+      }
+      ckpt.paginas_processadas_fase++;
+      pagina++;
+      if (lote.length < PAGE_SIZE) { faseTerminouNesteLote = true; break; }
+    }
+    ckpt.next_page = pagina;
+    if (faseTerminouNesteLote) { ckpt.fase = "payment_lines"; ckpt.next_page = 1; ckpt.paginas_processadas_fase = 0; }
+  } else {
+    // ckpt.fase === "payment_lines"
+    const recurso = "purchase_payment_lines";
+    const path = await resolverPath(recurso, token);
+    const cfg = RECURSOS[recurso];
+    let pagina = ckpt.next_page;
+    const pagamentosMesSet = new Set(ckpt.pagamentosMes);
+    for (; paginasNesteLote < paginasPorChamada; paginasNesteLote++) {
+      if (Date.now() - inicioChamada > 90000) break;
+      const qs = [cfg.query, `page[size]=${PAGE_SIZE}`, `page[number]=${pagina}`].filter(Boolean).join("&");
+      const res = await tocGet(`${path}?${qs}`, token);
+      if (!res.ok) {
+        if (paginasNesteLote === 0 && ckpt.paginas_processadas_fase === 0) throw new HttpError(502, `TOConline devolveu HTTP ${res.status} em ${path}`);
+        faseTerminouNesteLote = true; break;
+      }
+      let payload: Record<string, unknown>; try { payload = await res.json(); } catch { faseTerminouNesteLote = true; break; }
+      const lote = extrairLista(payload);
+      if (!lote.length) { faseTerminouNesteLote = true; break; }
+      for (const linhaBruta of lote as Record<string, unknown>[]) {
+        const l = achatarLinhaPagamentoCompra(linhaBruta);
+        ckpt.totalLinhasProcessadas++;
+        const pag = ckpt.paymentIndex[l.payment_id];
+        if (!pag || pag.deleted) continue; // pagamento apagado — nunca conta como pago
+        const doc = ckpt.docIndex[l.payable_id];
+        ckpt.pagas.push({
+          pagamentoId: l.payment_id, numeroPagamento: pag.document_no, documentoAssociadoId: l.payable_id,
+          documentoNumero: doc ? doc.document_no : null, fornecedor: doc ? doc.supplier_business_name : null,
+          dataPagamento: pag.date, valorPago: l.paid_value,
+          valorOriginal: doc ? doc.gross_total : null, saldoRestante: doc ? doc.pending_total : null,
+          formaPagamento: pag.payment_mechanism,
+        });
+        if (pag.date && pag.date.slice(0, 7) === mesAtual) {
+          ckpt.pagoEsteMesAc = round2(ckpt.pagoEsteMesAc + l.paid_value);
+          pagamentosMesSet.add(l.payment_id);
+        }
+      }
+      ckpt.paginas_processadas_fase++;
+      pagina++;
+      if (lote.length < PAGE_SIZE) { faseTerminouNesteLote = true; break; }
+    }
+    ckpt.next_page = pagina;
+    ckpt.pagamentosMes = [...pagamentosMesSet];
+    if (faseTerminouNesteLote) {
+      // Concluído — monta o snapshot final compacto e grava-o na chave que
+      // o frontend lê. Nunca inclui docIndex/paymentIndex (só serviam para
+      // esta ligação, aqui, dentro da edge function).
+      let totalAPagar = 0, vencido = 0, vence30 = 0;
+      for (const item of ckpt.aPagar as { pendente: number; vencimento: string | null }[]) {
+        totalAPagar += item.pendente;
+        if (item.vencimento) {
+          const venc = new Date(item.vencimento);
+          if (!isNaN(venc.getTime())) {
+            if (venc < hoje) vencido += item.pendente;
+            else if (venc <= em30) vence30 += item.pendente;
+          }
+        }
+      }
+      const creditosFornecedores = (ckpt.creditos as { valor: number }[]).reduce((s, c) => s + c.valor, 0);
+      const snapshot = {
+        ultimaSync: new Date().toISOString(),
+        auditoriaTipos: Object.values(ckpt.auditoriaTipos),
+        aPagar: ckpt.aPagar, creditos: ckpt.creditos, porValidar: ckpt.porValidar, pagas: ckpt.pagas,
+        kpis: {
+          totalAPagar: round2(totalAPagar), vencido: round2(vencido), vence30: round2(vence30),
+          pagoEsteMes: round2(ckpt.pagoEsteMesAc), nDocumentosPendentes: ckpt.aPagar.length,
+          nPagamentosMes: ckpt.pagamentosMes.length, creditosFornecedores: round2(creditosFornecedores),
+        },
+        totais: {
+          totalDocumentosAnalisados: ckpt.totalDocumentosProcessados, totalPagamentosAnalisados: ckpt.totalPagamentosProcessados,
+          totalLinhasAnalisadas: ckpt.totalLinhasProcessadas, anulados: ckpt.nAnulados,
+          paginacaoCompletaDocumentos: true, paginacaoCompletaPagamentos: true, paginacaoCompletaLinhas: true,
+        },
+      };
+      const gravouSnapshot = await guardarNaBase(CHAVE_COMPRAS_SNAPSHOT, snapshot);
+      await guardarNaBase(CHAVE_COMPRAS_CKPT, checkpointComprasVazio()); // limpa para a próxima sincronização começar limpa
+      return {
+        concluido: true, fase: "concluido", gravou_snapshot: gravouSnapshot,
+        resumo: {
+          total_a_pagar: snapshot.kpis.totalAPagar, vencido: snapshot.kpis.vencido, vence_30: snapshot.kpis.vence30,
+          pago_este_mes: snapshot.kpis.pagoEsteMes, n_documentos_pendentes: snapshot.kpis.nDocumentosPendentes,
+          n_pagamentos_mes: snapshot.kpis.nPagamentosMes, creditos_fornecedores: snapshot.kpis.creditosFornecedores,
+          n_creditos: ckpt.creditos.length, n_por_validar: ckpt.porValidar.length, n_pagas: ckpt.pagas.length,
+          total_documentos_analisados: ckpt.totalDocumentosProcessados, total_pagamentos_analisados: ckpt.totalPagamentosProcessados,
+          total_linhas_analisadas: ckpt.totalLinhasProcessadas, anulados: ckpt.nAnulados,
+        },
+        nota: "Snapshot gravado em ob-tes-compras-toconline. Checkpoint limpo — a próxima sincronização começa do zero.",
+      };
+    }
+  }
+
+  await guardarNaBase(CHAVE_COMPRAS_CKPT, ckpt);
+  return {
+    concluido: false, fase: ckpt.fase, paginas_processadas_fase: ckpt.paginas_processadas_fase,
+    total_documentos_processados: ckpt.totalDocumentosProcessados, total_pagamentos_processados: ckpt.totalPagamentosProcessados,
+    total_linhas_processadas: ckpt.totalLinhasProcessadas,
+    nota: "Lote gravado no checkpoint (toc-purchases-sync-checkpoint). Chame de novo resource=sync_purchases_snapshot para continuar.",
+  };
+}
+
 // ── DIAGNÓSTICO TEMPORÁRIO — resource=nc_raw_probe&id=<id> ─────────────────
 // Só leitura, exige autenticação normal (JWT/x-api-key), nunca escreve nada.
 // A hidratação de NC (v21) foi revertida em v22 por ter reduzido o universo
@@ -1992,6 +2255,19 @@ Deno.serve(async (req: Request) => {
       return json(await sincComprasLote(recursoCompra, paginaInicioC, paginasC), 200);
     }
 
+    // Snapshot de compras/pagamentos por lotes com checkpoint no Supabase
+    // (ver sincComprasSnapshotLote() acima) — substitui a acumulação no
+    // browser. ?paginas=N (default 15, como os outros); ?reiniciar=1
+    // ignora o checkpoint e começa do zero (mesma convenção de
+    // finance_audit/finance_reconcile).
+    if (pedido === "sync_purchases_snapshot") {
+      const paginasParamS = Number(url.searchParams.get("paginas"));
+      const paginasS = Number.isFinite(paginasParamS) && paginasParamS > 0
+        ? Math.min(50, Math.floor(paginasParamS)) : PAGINAS_POR_LOTE_DEFAULT;
+      const reiniciarS = url.searchParams.get("reiniciar") === "1";
+      return json(await sincComprasSnapshotLote(paginasS, reiniciarS), 200);
+    }
+
     // Diagnóstico temporário — confirma o JSON real de UMA linha de
     // pagamento de compra (ver pagamentoLinhaProbe() acima).
     if (pedido === "purchase_payment_line_detail") {
@@ -2029,7 +2305,7 @@ Deno.serve(async (req: Request) => {
       return json({ resource: pedido, resolved: recurso, path: pathCache[recurso], count: data.length, data }, 200);
     }
 
-    return json({ error: "resource invalido. Use: sync | estado | customers | clients | invoices | credit_notes | receipts | purchase_documents | purchase_payments | purchase_payment_lines | purchase_document_detail | purchase_payment_line_detail | token | diag | auth | finance_audit | finance_audit_estado | finance_reconcile | finance_reconcile_estado | sync_docs | sync_purchases | nc_raw_probe" }, 400);
+    return json({ error: "resource invalido. Use: sync | estado | customers | clients | invoices | credit_notes | receipts | purchase_documents | purchase_payments | purchase_payment_lines | purchase_document_detail | purchase_payment_line_detail | token | diag | auth | finance_audit | finance_audit_estado | finance_reconcile | finance_reconcile_estado | sync_docs | sync_purchases | sync_purchases_snapshot | nc_raw_probe" }, 400);
   } catch (e) {
     if (e instanceof HttpError) {
       // So o callback devolve HTML (e uma pagina para pessoa ler). O auth
