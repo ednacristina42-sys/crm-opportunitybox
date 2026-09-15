@@ -8258,14 +8258,21 @@ tbody td{font-size:15px}
       <div class="pg-space-icon" style="background:var(--cf)">C</div>
       <div class="pg-title">Instalações</div>
       <div class="pg-actions">
+        <!-- Mesmo padrão Lista/Quadro já usado em Produção -> Obras
+             (fpView/#fp-vlist/#fp-vboard) e Design (dtView/fiView) —
+             reutiliza uniRenderKanban()/UNI_CFG['fabrica-instalacoes'],
+             nunca inventa estados nem duplica dados. -->
+        <button class="tbtn on" id="inst-vlist" data-action="instView" data-view="list">☰ Lista</button>
+        <button class="tbtn" id="inst-vboard" data-action="instView" data-view="board">⊞ Quadro</button>
         <button class="tbtn y" data-action="openUniModal" data-page="fabrica-instalacoes">+ Agendar</button>
       </div>
     </div>
   </div>
-  <div class="task-content">
+  <div id="inst-list-view" class="task-content">
     <div class="tw"><table><thead><tr><th>Trabalho</th><th>Cliente</th><th>Data</th><th>Hora</th><th>Equipa de Montagem</th><th>Estado</th></tr></thead>
     <tbody id="inst-tbody"></tbody></table></div>
   </div>
+  <div id="inst-board-view" class="uni-kban" style="display:none"></div>
 </div>
 
 <!-- ─── ADMIN AGENDA -->
@@ -12304,6 +12311,55 @@ function homeDeleteTaskConfirmed(id){
   }
 }
 
+// ── Seleção em massa: alternar 1 tarefa / todas as visíveis ──────────
+function homeToggleSelecionada(id, checked){
+  if(!homeIsAdmin()) return;
+  if(checked) HOME_SELECIONADAS[id]=true; else delete HOME_SELECIONADAS[id];
+  renderTasksList();
+}
+window.homeToggleSelecionada = homeToggleSelecionada;
+
+// "Selecionar todas": actua só sobre as tarefas actualmente visíveis (após
+// filtros aplicados) — nunca toca em tarefas escondidas pelos filtros
+// activos, em qualquer dos dois sentidos (marcar/desmarcar).
+function homeSelecionarTodas(checked){
+  if(!homeIsAdmin()) return;
+  var visiveis=homeGetFilteredTasks();
+  visiveis.forEach(function(t){
+    if(checked) HOME_SELECIONADAS[t.id]=true; else delete HOME_SELECIONADAS[t.id];
+  });
+  renderTasksList();
+}
+window.homeSelecionarTodas = homeSelecionarTodas;
+
+function homeConfirmEliminarSelecionadas(){
+  if(!homeIsAdmin()) return;
+  var ids=Object.keys(HOME_SELECIONADAS).filter(function(id){return HOME_SELECIONADAS[id];}).map(Number);
+  if(!ids.length) return;
+  homeOpenConfirmModal(
+    'Eliminar tarefas selecionadas',
+    'Tem certeza que deseja eliminar '+ids.length+' tarefas selecionadas? Esta ação não pode ser desfeita.',
+    'Eliminar',
+    function(){ homeEliminarSelecionadasConfirmed(ids); }
+  );
+}
+window.homeConfirmEliminarSelecionadas = homeConfirmEliminarSelecionadas;
+
+// Reutiliza exactamente o mesmo mecanismo de homeDeleteTaskConfirmed()
+// (filtrar homeTasksData + saveHomeTasksData + re-render) só em lote — não
+// introduz um caminho de eliminação paralelo, nem simula N cliques
+// individuais (o que abriria N confirmações).
+function homeEliminarSelecionadasConfirmed(ids){
+  if(!homeIsAdmin()) return;
+  var idSet={}; ids.forEach(function(id){ idSet[id]=true; });
+  homeTasksData=homeTasksData.filter(function(t){ return !idSet[t.id]; });
+  saveHomeTasksData();
+  HOME_SELECIONADAS={};
+  renderTasksList(); renderTasksBoard();
+  if(typeof showToast==='function') showToast('🗑 '+ids.length+' tarefa'+(ids.length===1?'':'s')+' eliminada'+(ids.length===1?'':'s'));
+}
+window.homeEliminarSelecionadasConfirmed = homeEliminarSelecionadasConfirmed;
+
 // ── Eliminar / gerir listas ────────────────────────────────────────
 function homeConfirmDeleteLista(nome){
   homeFecharMenus();
@@ -12358,17 +12414,45 @@ function homeListaArquivar(nome){
 }
 
 // ── RENDER TASKS LIST ─────────────────────────────────────
+// ── Seleção em massa (Admin) ─────────────────────────────────────────
+// Só existe para Admin: nem o botão nem a lógica de eliminação em massa
+// ficam acessíveis a outros perfis (comercial/manager/etc.) — verificação
+// centralizada em homeIsAdmin(), no mesmo padrão de CU.admin já usado no
+// resto do ficheiro (nunca um estado paralelo de permissões).
+var HOME_SELECIONADAS = {};
+function homeIsAdmin(){ return !!(typeof CU!=='undefined' && CU && CU.admin===true); }
+
 function renderTasksList(){
   homePopularFiltroResponsavel();
   const tasks=homeGetFilteredTasks();
   const groups=homeListasVisiveis(tasks);
   const el=document.getElementById('tasks-list-view');
   if(!el)return;
+  if(!homeIsAdmin()){
+    // Sem Admin: nunca deixa seleções "fantasma" activas se o utilizador
+    // mudar de perfil (ex.: Admin a "ver como comercial").
+    HOME_SELECIONADAS = {};
+  }
   if(!groups.length){
     el.innerHTML=homeListasEmptyStateHtml();
     return;
   }
-  el.innerHTML=groups.map((grp,gi)=>{
+  var barraSelecao='';
+  if(homeIsAdmin()){
+    var idsVisiveis=tasks.map(t=>t.id);
+    var nSel=idsVisiveis.filter(id=>HOME_SELECIONADAS[id]).length;
+    var todasSelecionadas=idsVisiveis.length>0 && nSel===idsVisiveis.length;
+    barraSelecao='<div class="home-bulk-bar" style="display:flex;align-items:center;gap:10px;padding:8px 10px;margin-bottom:8px">'
+      +'<label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:var(--txt2)">'
+      +'<input type="checkbox" id="home-select-all" '+(todasSelecionadas?'checked':'')+' onchange="homeSelecionarTodas(this.checked)"/> Selecionar todas'
+      +'</label>'
+      +(nSel>0
+        ? '<span style="font-size:12.5px;color:var(--muted)">'+nSel+' selecionada'+(nSel===1?'':'s')+'</span>'
+          +'<button class="tbtn" style="color:var(--r);margin-left:auto" onclick="homeConfirmEliminarSelecionadas()">🗑 Eliminar selecionadas</button>'
+        : '')
+      +'</div>';
+  }
+  el.innerHTML=barraSelecao+groups.map((grp,gi)=>{
     const gtasks=homeSortTasks(tasks.filter(t=>t.group===grp));
     const deptColors={'Dep. Comercial':'#e74c3c','Dep. Design':'#e67e22','Chão da Fábrica':'#3b82f6','Gestão Administrativa':'#8b5cf6'};
     const dc=deptColors[grp]||'#888';
@@ -12396,7 +12480,7 @@ function renderTasksList(){
           </tr></thead>
           <tbody>
           ${gtasks.map(t=>`<tr id="htask-row-${t.id}" onclick="homeOpenFullEdit(${t.id})" style="cursor:pointer">
-            <td><div class="task-name-cell"><div class="task-check"></div><div class="task-name">${t.title}</div></div></td>
+            <td><div class="task-name-cell">${homeIsAdmin()?`<input type="checkbox" class="task-check" onclick="event.stopPropagation()" ${HOME_SELECIONADAS[t.id]?'checked':''} onchange="homeToggleSelecionada(${t.id},this.checked)"/>`:'<div class="task-check"></div>'}<div class="task-name">${t.title}</div></div></td>
             <td><span class="status" style="background:${t.statusC}20;color:${t.statusC};border:1px solid ${t.statusC}40">${t.status}</span></td>
             <td><div class="prio"><div class="prio-dot" style="background:${t.prioBg}"></div>${t.prio}</div></td>
             <td><div class="ass" style="background:${t.assC}">${t.ass}</div></td>
@@ -15317,10 +15401,53 @@ function fpRender(){
 }
 
 // ══ INSTALAÇÕES ══════════════════════════════════════════════════════
+// Toggle Lista/Quadro (17/09/2026) — mesmo padrão de dtView/fpView/fiView:
+// só troca a view activa, nunca altera uniItems nem duplica dados. Por
+// omissão fica em 'list' (comportamento existente antes desta alteração),
+// sem persistência em localStorage — os outros toggles (dt/fi/fp) também
+// não persistem a preferência, por isso este segue a mesma convenção.
+var instCurrentView = 'list';
+function instView(v){
+  instCurrentView=v;
+  document.getElementById('inst-list-view').style.display=v==='list'?'block':'none';
+  document.getElementById('inst-board-view').style.display=v==='board'?'flex':'none';
+  document.getElementById('inst-vlist').classList.toggle('on',v==='list');
+  document.getElementById('inst-vboard').classList.toggle('on',v==='board');
+  instRender();
+}
+window.instView = instView;
+
+// Card extra info no Quadro de Instalações: Hora + Equipa de Montagem +
+// Estado (a lista já mostra estes campos; o Quadro herdava só o que
+// uniRenderKanban() mostra por omissão — título/cliente/data/responsável).
+// Reaproveita o hook obCardExtras() já previsto dentro de uniRenderKanban()
+// (chamado para todas as páginas UNI, sem efeito até agora por não existir
+// nenhuma implementação) — não altera uniRenderKanban(), só acrescenta.
+// Mantém a acção "💬 WA" (instEnviarWA) acessível também no cartão.
+function obCardExtras(i, page){
+  if(page!=='fabrica-instalacoes') return '';
+  const cfg=UNI_CFG['fabrica-instalacoes'];
+  const sc=(cfg.colors[i.status])||'#6b7280';
+  const equipa=(i.equipa&&i.equipa.length)?i.equipa.join(', '):(i.assignee||'—');
+  return `<div style="margin-top:6px;padding-top:6px;border-top:1px solid var(--border);font-size:12px;color:var(--muted)">
+    ${i.extra?`<div>🕐 ${i.extra}</div>`:''}
+    <div title="${equipa}" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">👥 ${equipa}</div>
+    <div style="margin-top:4px;display:flex;align-items:center;gap:6px">
+      <span class="b" style="background:${sc}22;color:${sc}">${i.status}</span>
+      ${i.status==='Agendada'&&i.client?`<button onclick="event.stopPropagation();instEnviarWA(${i.id})" style="background:rgba(63,207,142,.1);border:1px solid rgba(63,207,142,.3);color:var(--g);border-radius:5px;font-size:11px;padding:2px 6px;cursor:pointer" title="Enviar WhatsApp ao cliente">💬 WA</button>`:''}
+    </div>
+  </div>`;
+}
+window.obCardExtras = obCardExtras;
+
 function instRender(){
-  const el=document.getElementById('inst-tbody'); if(!el) return;
   const items=uniGetItems('fabrica-instalacoes');
   const cfg=UNI_CFG['fabrica-instalacoes'];
+  if(instCurrentView==='board'){
+    uniRenderKanban(document.getElementById('inst-board-view'),'fabrica-instalacoes',items);
+    return;
+  }
+  const el=document.getElementById('inst-tbody'); if(!el) return;
   el.innerHTML=items.map(i=>{
     const sc=cfg.colors[i.status]||'#6b7280';
     const dStr=i.date?new Date(i.date).toLocaleDateString('pt-PT',{weekday:'short',day:'2-digit',month:'short'}):'—';
@@ -19844,11 +19971,47 @@ var alerts_data=[
   {lv:'info',ico:'⚡',ttl:'TOConline sincronizado — 23 registos actualizados',dsc:'Sincronização automática concluída. Dados financeiros em dia.',tm:'há 20 min'},
   {lv:'info',ico:'⚡',ttl:'Novo lead entrada — CC Mira Sintra (€12.400)',dsc:'Lead criado via formulário site. Assign: Humberto Estrelinha.',tm:'há 2h'},
 ];
+// Eliminar Alertas Activos (Admin, 17/09/2026) — só estes cards, nunca os
+// eventos de Agentes Colaborativos (dados_financeiros_atualizados,
+// lead_atualizado, painel próprio inserido a seguir a #dash-alerts, ver
+// linha ~28572) que ficam intocados. alerts_data não tem id próprio; o
+// índice em alerts_data (nunca a posição dentro da slice(0,3) de
+// #dash-alerts) identifica sempre o alerta certo em qualquer dos 2 sítios.
+function dashConfirmEliminarAlerta(idx){
+  if(!homeIsAdmin()) return;
+  var a=alerts_data[idx]; if(!a) return;
+  if(typeof homeOpenConfirmModal==='function'){
+    homeOpenConfirmModal(
+      'Eliminar alerta',
+      'Tem certeza que deseja eliminar este alerta? Esta ação não pode ser desfeita.',
+      'Eliminar',
+      function(){ dashEliminarAlertaConfirmed(idx); }
+    );
+  } else if(confirm('Tem certeza que deseja eliminar este alerta? Esta ação não pode ser desfeita.')){
+    dashEliminarAlertaConfirmed(idx);
+  }
+}
+window.dashConfirmEliminarAlerta = dashConfirmEliminarAlerta;
+
+function dashEliminarAlertaConfirmed(idx){
+  if(!homeIsAdmin()) return;
+  alerts_data.splice(idx,1);
+  renderAlerts();
+  if(typeof showToast==='function') showToast('🗑 Alerta eliminado');
+}
+window.dashEliminarAlertaConfirmed = dashEliminarAlertaConfirmed;
+
 function renderAlerts(){
   ['dash-alerts','all-alerts'].forEach(id=>{
     const el=document.getElementById(id);if(!el)return;
     const list=id==='dash-alerts'?alerts_data.slice(0,3):alerts_data;
-    el.innerHTML=list.map(a=>`<div class="al ${a.lv}"><div class="al-ico">${a.ico}</div><div style="flex:1"><div class="al-ttl">${a.ttl}</div><div class="al-dsc">${a.dsc}</div></div><div class="al-tm">${a.tm}</div></div>`).join('');
+    el.innerHTML=list.map(a=>{
+      var idx=alerts_data.indexOf(a);
+      var delBtn=(typeof homeIsAdmin==='function' && homeIsAdmin())
+        ? `<button onclick="event.stopPropagation();dashConfirmEliminarAlerta(${idx})" title="Eliminar alerta" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:15px;padding:2px 4px;line-height:1">×</button>`
+        : '';
+      return `<div class="al ${a.lv}"><div class="al-ico">${a.ico}</div><div style="flex:1"><div class="al-ttl">${a.ttl}</div><div class="al-dsc">${a.dsc}</div></div><div class="al-tm">${a.tm}</div>${delBtn}</div>`;
+    }).join('');
   });
 }
 
@@ -26957,6 +27120,7 @@ document.addEventListener('click', function(e){
     case 'dtView': safe(dtView,[vw]); break;
     case 'fpView': safe(fpView,[vw]); break;
     case 'fiView': safe(fiView,[vw]); break;
+    case 'instView': safe(instView,[vw]); break;
     case 'closeUniModal':
       var m=document.getElementById('uni-modal'); if(m) m.classList.remove('open'); break;
     case 'closeCliModal':
@@ -32031,6 +32195,17 @@ var AG_TIER_LABEL = {urgente:'Urgente', alta:'Alta', media:'Média', baixa:'Baix
 // como simplificação da v1 desta unificação.
 function agAbrirOrigem(item){
   if(item.tipo==='cliente'){ cliOpenEdit(item.origId); return; }
+  // Orçamento: abre directamente o orçamento correspondente (mesmo
+  // mecanismo do botão "✏️ Editar" em orcRenderList — orcEditar() já muda
+  // para o separador "orcamentos" e preenche o formulário com o orçamento
+  // real, nunca cria uma cópia). Tem de vir ANTES do teste de leadId: um
+  // orçamento pode ter leadId associado e antes isso fazia abrir o lead em
+  // vez do próprio orçamento.
+  if(item.tipo==='orc' && item.origId!=null){
+    goPage('comercial-orcamentos');
+    if(typeof orcEditar==='function') orcEditar(item.origId);
+    return;
+  }
   if(item.leadId!=null){ obAbrirLead(item.leadId); return; }
   goPage('comercial-orcamentos');
 }
