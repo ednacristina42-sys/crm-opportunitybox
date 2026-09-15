@@ -795,6 +795,58 @@ function achatarDocumento(c: Record<string, unknown>) {
 }
 type DocAchatado = ReturnType<typeof achatarDocumento>;
 
+// ── Documentos/pagamentos de COMPRA, achatados (17/09/2026) ────────────────
+// Campos confirmados com JSON real (diagnóstico do CRM, purchase_documents/
+// purchase_payments) — nunca adivinhados. achatarDocumentoCompra() espelha
+// achatarDocumento() acima, mas com os nomes reais do lado das compras
+// (supplier_business_name, pending_total, external_reference, etc., que são
+// diferentes dos das vendas). A regra "A Pagar" é pending_total>0.005 &&
+// !voided_reason — decidida no frontend a partir destes campos, nunca aqui.
+function achatarDocumentoCompra(c: Record<string, unknown>) {
+  const a = (c.attributes ?? c) as Record<string, unknown>;
+  const num = (x: unknown) => (typeof x === "number" ? x : parseFloat(String(x ?? "")) || 0);
+  return {
+    id: String(c.id ?? a.id ?? ""),
+    document_no: val(a.document_no), document_type: val(a.document_type), status: val(a.status),
+    date: val(a.date), due_date: val(a.due_date),
+    gross_total: num(a.gross_total), net_total: num(a.net_total), tax_payable: num(a.tax_payable),
+    pending_total: num(a.pending_total),
+    supplier_business_name: val(a.supplier_business_name),
+    supplier_tax_registration_number: val(a.supplier_tax_registration_number),
+    external_reference: val(a.external_reference),
+    voided_reason: val(a.voided_reason),
+    payments_ids: Array.isArray(a.payments_ids) ? (a.payments_ids as unknown[]).map(String) : [],
+  };
+}
+type DocCompraAchatado = ReturnType<typeof achatarDocumentoCompra>;
+
+// Cabeçalho do pagamento — campos confirmados: date, document_no,
+// payment_mechanism, gross_total, deleted, e as relationships supplier/
+// lines (só os IDs; o valor pago e o documento associado (payable_id) só
+// existem nas LINHAS — commercial_purchases_payment_lines — ainda por
+// confirmar via purchase_payment_line_detail. Por isso lines_ids fica
+// exposto: é o que o frontend precisa para ir buscar cada linha.
+function achatarPagamentoCompra(c: Record<string, unknown>) {
+  const a = (c.attributes ?? c) as Record<string, unknown>;
+  const rel = (c.relationships ?? {}) as Record<string, { data?: unknown }>;
+  const num = (x: unknown) => (typeof x === "number" ? x : parseFloat(String(x ?? "")) || 0);
+  const supplierData = rel.supplier?.data as { id?: string } | undefined;
+  const linesData = rel.lines?.data;
+  const linesIds = Array.isArray(linesData)
+    ? (linesData as { id?: string }[]).map((l) => String(l.id ?? "")).filter(Boolean)
+    : [];
+  return {
+    id: String(c.id ?? a.id ?? ""),
+    date: val(a.date), document_no: val(a.document_no),
+    payment_mechanism: val(a.payment_mechanism),
+    gross_total: num(a.gross_total),
+    deleted: a.deleted === true,
+    supplier_id: supplierData?.id ? String(supplierData.id) : "",
+    lines_ids: linesIds,
+  };
+}
+type PagCompraAchatado = ReturnType<typeof achatarPagamentoCompra>;
+
 // ── Hidratação de NC incompletas (sync_docs&tipo=credit_notes) ────────────
 // Causa confirmada em 07/09 com JSON real: a listagem de credit_notes vem
 // com attributes essencialmente vazios; o endpoint de detalhe
@@ -1568,6 +1620,89 @@ async function sincDocsLote(
   return resultado;
 }
 
+// ── COMPRAS (purchase_documents/purchase_payments), paginação completa por
+// lotes, sem checkpoint (17/09/2026) — mesmo padrão de sincDocsLote() acima,
+// mas para o lado das compras: nunca carrega tudo de uma vez (o teste real
+// confirmou que ambos os recursos batiam no teto de MAX_PAGES=50×100=5.000,
+// que é só o limite dos endpoints diretos resource=purchase_documents/
+// purchase_payments — nunca um limite de negócio). ?tipo=documents|payments
+// (obrigatório), ?pagina=N (default 1), ?paginas=N (default 15, como
+// sync_docs). Achata cada página com achatarDocumentoCompra()/
+// achatarPagamentoCompra() — nunca retém o payload bruto entre páginas.
+// Só GET; nunca cria, altera, paga ou anula nada no TOConline; nunca
+// escreve em TES_CONTAS nem em nenhuma chave de ob_crm_dados.
+async function sincComprasLote(
+  recurso: "purchase_documents" | "purchase_payments",
+  paginaInicio: number,
+  paginasPorChamada: number,
+): Promise<Record<string, unknown>> {
+  const inicioChamada = Date.now();
+  const token = await getAccessToken();
+  const path = await resolverPath(recurso, token);
+  const cfg = RECURSOS[recurso];
+
+  const data: (DocCompraAchatado | PagCompraAchatado)[] = [];
+  let pagina = paginaInicio;
+  let paginasProcessadas = 0;
+  let terminou = false;
+  let parcial = false;
+
+  for (; paginasProcessadas < paginasPorChamada; paginasProcessadas++) {
+    if (Date.now() - inicioChamada > 90000) { parcial = true; break; }
+    const qs = [cfg.query, `page[size]=${PAGE_SIZE}`, `page[number]=${pagina}`].filter(Boolean).join("&");
+    const res = await tocGet(`${path}?${qs}`, token);
+    if (!res.ok) {
+      if (pagina === paginaInicio && paginasProcessadas === 0) throw new HttpError(502, `TOConline devolveu HTTP ${res.status} em ${path}`);
+      terminou = true; break;
+    }
+    let payload: Record<string, unknown>;
+    try { payload = await res.json(); } catch { terminou = true; break; }
+    const lote = extrairLista(payload);
+    if (!lote.length) { terminou = true; break; }
+    for (const doc of lote as Record<string, unknown>[]) {
+      data.push(recurso === "purchase_documents" ? achatarDocumentoCompra(doc) : achatarPagamentoCompra(doc));
+    }
+    pagina++;
+    if (lote.length < PAGE_SIZE) { terminou = true; break; }
+    // `payload`/`lote` saem de scope aqui — nada retem os campos brutos.
+  }
+
+  return {
+    tipo: recurso, pagina_inicio: paginaInicio, pagina_seguinte: pagina,
+    paginas_processadas: paginasProcessadas, contagem: data.length,
+    paginacao_completa: terminou, parcial,
+    data,
+  };
+}
+
+// ── DIAGNÓSTICO TEMPORÁRIO — resource=purchase_payment_line_detail&id=<id> ──
+// Só leitura. Confirma o JSON real de UMA linha de pagamento de compra
+// (commercial_purchases_payment_lines/{id}) — é aí, não no cabeçalho do
+// pagamento, que devem estar payable_id/payable_type/paid_value (o
+// cabeçalho só trouxe as relationships/IDs das linhas). Tenta os dois
+// caminhos possíveis (com e sem /api/v1), como resolverPath() faz para os
+// outros recursos — nunca assume qual responde nesta conta. Corpo bruto,
+// sem achatar: é exactamente para decidir os nomes de campos reais antes de
+// os codificar em achatarPagamentoCompra().
+async function pagamentoLinhaProbe(id: string): Promise<Record<string, unknown>> {
+  const token = await getAccessToken();
+  const candidatos = [
+    `/commercial_purchases_payment_lines/${encodeURIComponent(id)}`,
+    `/api/v1/commercial_purchases_payment_lines/${encodeURIComponent(id)}`,
+  ];
+  const tentativas: string[] = [];
+  for (const p of candidatos) {
+    const r = await tocGet(p, token);
+    const texto = await r.text();
+    tentativas.push(`${p} -> HTTP ${r.status}`);
+    if (r.ok) {
+      let corpo: unknown; try { corpo = JSON.parse(texto); } catch { corpo = texto; }
+      return { endpoint: `${apiBase()}${p}`, http_status: r.status, corpo_bruto: corpo, tentativas };
+    }
+  }
+  return { erro: "Nenhum caminho respondeu para a linha de pagamento.", tentativas };
+}
+
 // ── DIAGNÓSTICO TEMPORÁRIO — resource=nc_raw_probe&id=<id> ─────────────────
 // Só leitura, exige autenticação normal (JWT/x-api-key), nunca escreve nada.
 // A hidratação de NC (v21) foi revertida em v22 por ter reduzido o universo
@@ -1808,6 +1943,29 @@ Deno.serve(async (req: Request) => {
       return json(await sincDocsLote(tipoParam, paginaInicio, paginas), 200);
     }
 
+    // Compras (purchase_documents/purchase_payments), paginação completa por
+    // lotes — mesmo esquema de sync_docs acima, ver sincComprasLote().
+    // ?tipo=documents|payments (obrigatório), ?pagina=N, ?paginas=N.
+    if (pedido === "sync_purchases") {
+      const tipoParam = url.searchParams.get("tipo") ?? "";
+      const recursoCompra = tipoParam === "documents" ? "purchase_documents" : tipoParam === "payments" ? "purchase_payments" : null;
+      if (!recursoCompra) return json({ error: "tipo invalido. Use: documents | payments" }, 400);
+      const paginaParamC = Number(url.searchParams.get("pagina"));
+      const paginaInicioC = Number.isFinite(paginaParamC) && paginaParamC > 0 ? Math.floor(paginaParamC) : 1;
+      const paginasParamC = Number(url.searchParams.get("paginas"));
+      const paginasC = Number.isFinite(paginasParamC) && paginasParamC > 0
+        ? Math.min(50, Math.floor(paginasParamC)) : PAGINAS_POR_LOTE_DEFAULT;
+      return json(await sincComprasLote(recursoCompra, paginaInicioC, paginasC), 200);
+    }
+
+    // Diagnóstico temporário — confirma o JSON real de UMA linha de
+    // pagamento de compra (ver pagamentoLinhaProbe() acima).
+    if (pedido === "purchase_payment_line_detail") {
+      const id = url.searchParams.get("id") ?? "";
+      if (!id) return json({ error: "Falta ?id=<id real de uma linha de pagamento, obtido em purchase_payments.lines_ids>" }, 400);
+      return json(await pagamentoLinhaProbe(id), 200);
+    }
+
     if (pedido === "token") {
       await getAccessToken();
       return json({ ok: true, grant_type: "refresh_token",
@@ -1837,7 +1995,7 @@ Deno.serve(async (req: Request) => {
       return json({ resource: pedido, resolved: recurso, path: pathCache[recurso], count: data.length, data }, 200);
     }
 
-    return json({ error: "resource invalido. Use: sync | estado | customers | clients | invoices | credit_notes | receipts | purchase_documents | purchase_payments | purchase_document_detail | token | diag | auth | finance_audit | finance_audit_estado | finance_reconcile | finance_reconcile_estado | sync_docs | nc_raw_probe" }, 400);
+    return json({ error: "resource invalido. Use: sync | estado | customers | clients | invoices | credit_notes | receipts | purchase_documents | purchase_payments | purchase_document_detail | purchase_payment_line_detail | token | diag | auth | finance_audit | finance_audit_estado | finance_reconcile | finance_reconcile_estado | sync_docs | sync_purchases | nc_raw_probe" }, 400);
   } catch (e) {
     if (e instanceof HttpError) {
       // So o callback devolve HTML (e uma pagina para pessoa ler). O auth
