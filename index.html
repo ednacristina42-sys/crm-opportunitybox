@@ -8691,12 +8691,27 @@ tbody td{font-size:15px}
         <button class="tbtn" style="font-size:13px" onclick="tocoSincronizarFaturas(false).then(function(){ tocoAtualizarTesourariaComFaturas(); })" title="Vai buscar as faturas mais recentes ao TocOnline e atualiza A Receber/Recebidos">🔄 Sincronizar TocOnline</button>
         <button class="tbtn y" onclick="tesNovaContaPagar()">+ Conta a Pagar</button>
         <button class="tbtn" onclick="tesExportar()">⬇ Exportar</button>
+        <!-- Diagnóstico temporário (17/09/2026) — testa os novos recursos
+             purchase_documents/purchase_payments contra a conta real, sem
+             gravar nada. Reutiliza tocoEF() (mesma sessão/autenticação já
+             usada por todo o resto da Tesouraria) — nenhuma credencial nova,
+             nenhum caminho de autenticação novo. Só Admin. -->
+        <button class="tbtn" id="toco-testar-compras-btn" style="font-size:13px" onclick="tocoTestarComprasReal()" title="Testa os endpoints reais de Faturas de Compra/Pagamentos do TOConline (só leitura, nada é gravado)">🔍 Testar Compras TOConline</button>
       </div>
     </div>
     <!-- Estado da hidratação canónica (tesHidratarCanonico(), correção
          09/09/2026) — nunca deixa "zero dados" e "ainda a carregar/erro"
          parecerem a mesma coisa. Escondido quando tudo carregou bem. -->
     <div id="tes-hidratacao-status" style="display:none;font-size:12.5px;padding:7px 12px;border-radius:7px;margin-top:8px"></div>
+    <!-- Resultado do diagnóstico de Compras/Pagamentos — só leitura, nunca
+         escreve em TES_CONTAS nem em mais nada. -->
+    <div id="toco-testar-compras-out" style="display:none;margin-top:8px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px 12px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+        <strong style="font-size:12.5px;color:var(--txt2)">Diagnóstico TOConline — Compras/Pagamentos</strong>
+        <button class="tbtn" style="font-size:11px;padding:3px 8px" onclick="tocoCopiarDiagnosticoCompras()">📋 Copiar</button>
+      </div>
+      <pre id="toco-testar-compras-json" style="white-space:pre-wrap;font-size:11.5px;max-height:340px;overflow:auto;margin:0;color:var(--muted)"></pre>
+    </div>
   </div>
   <div class="admin-page">
 
@@ -35590,6 +35605,65 @@ async function tocoSyncAgora(simular){
 }
 window.tocoSyncPainel = tocoSyncPainel;
 window.tocoSyncAgora = tocoSyncAgora;
+
+// ══ DIAGNÓSTICO TEMPORÁRIO — Compras/Pagamentos TOConline (17/09/2026) ══
+// Testa os recursos novos purchase_documents/purchase_payments (edge
+// function crm-toconline, deploy v24) directamente contra a conta real,
+// via tocoEF() — a mesma função/autenticação já usada por toda a
+// Tesouraria, nenhuma credencial nova. SÓ LEITURA: nunca escreve em
+// TES_CONTAS nem em ob_crm_dados. Objectivo: confirmar o endpoint real que
+// respondeu, contagens, e a forma real do JSON antes de construir os
+// normalizadores definitivos (mesmo padrão já usado para NC — ver
+// nc_raw_probe/achatarDocumento no histórico desta função).
+async function tocoTestarComprasReal(){
+  if(typeof homeIsAdmin==='function' && !homeIsAdmin()){ if(typeof showToast==='function') showToast('Só Admin.'); return; }
+  var btn = document.getElementById('toco-testar-compras-btn');
+  var out = document.getElementById('toco-testar-compras-out');
+  var pre = document.getElementById('toco-testar-compras-json');
+  if(btn){ btn.disabled = true; btn.textContent = '⏳ A testar…'; }
+  var resultado = { ts: new Date().toISOString(), aviso: 'SÓ LEITURA — nada foi escrito no TOConline nem no CRM.' };
+  try{
+    try{
+      var docs = await tocoEF('purchase_documents');
+      resultado.purchase_documents = {
+        endpoint_resolvido: docs.path || null,
+        total_encontrado: docs.count,
+        com_pending_total_maior_que_0: (docs.data||[]).filter(function(d){
+          var a = (d && d.attributes) || d || {};
+          var p = parseFloat(a.pending_total ?? a.PendingAmount ?? a.pending_amount);
+          return !isNaN(p) && p > 0.005;
+        }).length,
+        amostra_3: (docs.data||[]).slice(0,3)
+      };
+    }catch(e){ resultado.purchase_documents_erro = e.message; }
+
+    try{
+      var pags = await tocoEF('purchase_payments');
+      resultado.purchase_payments = {
+        endpoint_resolvido: pags.path || null,
+        total_encontrado: pags.count,
+        amostra_3: (pags.data||[]).slice(0,3)
+      };
+    }catch(e){ resultado.purchase_payments_erro = e.message; }
+  }finally{
+    if(btn){ btn.disabled = false; btn.textContent = '🔍 Testar Compras TOConline'; }
+  }
+  if(out) out.style.display = 'block';
+  if(pre) pre.textContent = JSON.stringify(resultado, null, 2);
+  return resultado;
+}
+window.tocoTestarComprasReal = tocoTestarComprasReal;
+
+function tocoCopiarDiagnosticoCompras(){
+  var pre = document.getElementById('toco-testar-compras-json');
+  if(!pre || !pre.textContent) return;
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(pre.textContent).then(function(){
+      if(typeof showToast==='function') showToast('📋 Copiado.');
+    }).catch(function(){});
+  }
+}
+window.tocoCopiarDiagnosticoCompras = tocoCopiarDiagnosticoCompras;
 
 </script>
 
