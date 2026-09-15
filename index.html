@@ -24166,15 +24166,10 @@ async function tocoSincronizarComprasPagamentosReal(){
       }
     });
 
-    // Ordenação pedida: vencidos primeiro, depois vencimento mais próximo, depois data.
-    aPagar.sort(function(a,b){
-      var va = a.vencimento ? new Date(a.vencimento) : null, vb = b.vencimento ? new Date(b.vencimento) : null;
-      var aVenceu = !!(va && va<hoje), bVenceu = !!(vb && vb<hoje);
-      if(aVenceu !== bVenceu) return aVenceu ? -1 : 1;
-      if(va && vb) return va-vb;
-      if(va) return -1; if(vb) return 1;
-      return (a.dataEmissao||'') < (b.dataEmissao||'') ? 1 : -1;
-    });
+    // Ordenação de A Pagar fica a cargo de tesRenderAPagarToco() (due_date
+    // DESC, empate: date DESC) — nunca filtrada por ano (correção 17/09,
+    // parte 2: uma dívida antiga de 2018 ainda pendente tem de continuar
+    // visível). Aqui guarda-se só na ordem em que veio da paginação.
 
     // Pagas: cada LINHA de pagamento (não o cabeçalho) é a unidade real —
     // suporta 1 pagamento -> vários documentos e vários pagamentos -> 1 documento.
@@ -24281,13 +24276,34 @@ function tesRenderTocoComprasStatus(){
 }
 window.tesRenderTocoComprasStatus = tesRenderTocoComprasStatus;
 
+// Ordem pedida (correção 17/09, parte 1): due_date DESC, empate: date DESC
+// (mais recente primeiro). Nunca filtrado por ano — ver tesRenderAPagarToco.
+// Documentos sem vencimento ficam depois dos que têm (não há "mais recente"
+// sem data para comparar), ordenados entre si por date DESC.
+function tesOrdenarAPagarToco(lista){
+  return lista.slice().sort(function(a,b){
+    var va = a.vencimento ? new Date(a.vencimento) : null;
+    var vb = b.vencimento ? new Date(b.vencimento) : null;
+    var vaOk = va && !isNaN(va.getTime()), vbOk = vb && !isNaN(vb.getTime());
+    if(vaOk && vbOk){ var diff = vb - va; if(diff!==0) return diff; } // due_date DESC
+    else if(vaOk !== vbOk) return vaOk ? -1 : 1; // quem tem vencimento vem antes de quem não tem
+    // empate no vencimento (ou nenhum dos dois tem) -> date DESC
+    var da = a.dataEmissao||'', db = b.dataEmissao||'';
+    return da < db ? 1 : (da > db ? -1 : 0);
+  });
+}
+window.tesOrdenarAPagarToco = tesOrdenarAPagarToco;
+
 function tesRenderAPagarToco(){
   var el = document.getElementById('tes-tbody-pagar-toco');
   if(!el) return;
   if(!tesTocoComprasDisponivel()){ el.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:20px">Ainda sem sincronização TOConline — clique em "🔄 Sincronizar TOConline".</td></tr>'; return; }
   var hoje = new Date(); hoje.setHours(0,0,0,0);
   var em30 = new Date(hoje); em30.setDate(em30.getDate()+30);
-  var lista = TES_COMPRAS_TOCO.aPagar || [];
+  // Nunca aplica o filtro de ano (TES_FILTRO_ANO): uma dívida antiga ainda
+  // pendente no TOConline continua relevante, independentemente do período
+  // seleccionado — pedido explícito, 17/09/2026.
+  var lista = tesOrdenarAPagarToco(TES_COMPRAS_TOCO.aPagar || []);
   el.innerHTML = lista.map(function(d){
     var venc = d.vencimento ? new Date(d.vencimento) : null;
     var vencido = venc && !isNaN(venc.getTime()) && venc<hoje;
@@ -24326,7 +24342,14 @@ function tesRenderCreditosToco(){
   var el = document.getElementById('tes-tbody-creditos-toco');
   if(!el) return;
   if(!tesTocoComprasDisponivel()){ el.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:16px">Sem créditos de fornecedores pendentes.</td></tr>'; return; }
-  var lista = TES_COMPRAS_TOCO.creditos || [];
+  // Respeita o Período seleccionado (correção 17/09, parte 2) — nunca
+  // mistura anos: 2026 seleccionado só mostra NCF de 2026. date DESC.
+  var lista = (TES_COMPRAS_TOCO.creditos || []).filter(function(c){
+    return (typeof tesPassaFiltroAno==='function') ? tesPassaFiltroAno(c.dataEmissao) : true;
+  }).sort(function(a,b){
+    var da=a.dataEmissao||'', db=b.dataEmissao||'';
+    return da<db ? 1 : (da>db ? -1 : 0);
+  });
   el.innerHTML = lista.map(function(c){
     return '<tr><td style="font-size:13px">'+(c.documento||'—')+'</td><td style="font-size:13px">'+(c.fornecedor||'—')+'</td>'
       + '<td style="font-size:13px">'+tesFmtDataToco(c.dataEmissao)+'</td><td style="font-weight:700;color:var(--g)">'+fmtEurT(c.valor)+'</td>'
@@ -24339,7 +24362,12 @@ function tesRenderPagasToco(){
   var el = document.getElementById('tes-tbody-pagas-toco');
   if(!el) return;
   if(!tesTocoComprasDisponivel()){ el.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:20px">Ainda sem sincronização TOConline — clique em "🔄 Sincronizar TOConline".</td></tr>'; return; }
-  var lista = TES_COMPRAS_TOCO.pagas || [];
+  // Respeita o Período seleccionado e fica em date DESC (correção 17/09,
+  // parte 3) — já vem ordenada de tocoSincronizarComprasPagamentosReal(),
+  // só falta filtrar por ano (o filtro nunca reordena, só remove).
+  var lista = (TES_COMPRAS_TOCO.pagas || []).filter(function(p){
+    return (typeof tesPassaFiltroAno==='function') ? tesPassaFiltroAno(p.dataPagamento) : true;
+  });
   el.innerHTML = lista.map(function(p){
     return '<tr>'
       + '<td style="font-size:13px">'+(p.numeroPagamento||'—')+'</td>'
@@ -24602,13 +24630,20 @@ function tesUpdateKPIs(tab){
     // débito válidos (voided_reason excluídos, NCF tratado à parte —
     // ver tocoSincronizarComprasPagamentosReal()).
     var k = TES_COMPRAS_TOCO.kpis;
+    // Créditos fornecedores recalculado aqui (nunca o total histórico de
+    // k.creditosFornecedores) para acompanhar o Período seleccionado —
+    // correção 17/09, parte 2: o KPI tem de bater com a tabela de Créditos.
+    // Total a Pagar/Vencido/Vence30 NUNCA filtrados por ano (parte 1).
+    var creditosPeriodo = (TES_COMPRAS_TOCO.creditos||[]).filter(function(c){
+      return (typeof tesPassaFiltroAno==='function') ? tesPassaFiltroAno(c.dataEmissao) : true;
+    }).reduce(function(s,c){ return s+(c.valor||0); },0);
     if(l1)l1.textContent='A Pagar (Total)'; if(s1)s1.textContent='TOConline — '+k.nDocumentosPendentes+' documento'+(k.nDocumentosPendentes===1?'':'s')+' pendente'+(k.nDocumentosPendentes===1?'':'s');
     if(v1)v1.textContent=fmtEurT(k.totalAPagar); if(v1)v1.style.color='var(--r)';
     if(l2)l2.textContent='Vencido'; if(s2)s2.textContent='TOConline';
     if(v2)v2.textContent=fmtEurT(k.vencido); if(v2)v2.style.color='var(--r)';
     if(l3)l3.textContent='Vence em 30 dias'; if(s3)s3.textContent='TOConline';
     if(v3)v3.textContent=fmtEurT(k.vence30);
-    if(l4)l4.textContent='Pago este mês'; if(s4)s4.textContent=k.nPagamentosMes+' pagamento'+(k.nPagamentosMes===1?'':'s')+' · Créditos fornecedores: '+fmtEurT(k.creditosFornecedores);
+    if(l4)l4.textContent='Pago este mês'; if(s4)s4.textContent=k.nPagamentosMes+' pagamento'+(k.nPagamentosMes===1?'':'s')+' · Créditos fornecedores: '+fmtEurT(creditosPeriodo);
     if(v4)v4.textContent=fmtEurT(k.pagoEsteMes);
   } else {
     // KPIs de despesas (Contas Manuais — comportamento anterior, preservado
@@ -24679,6 +24714,11 @@ function tesMudarFiltroAno(valor){
   if(typeof tesUpdateKPIs==='function') tesUpdateKPIs(tabAtiva);
   if(typeof tesRenderReceber==='function') tesRenderReceber();
   if(typeof tesRenderRecebidos==='function') tesRenderRecebidos();
+  // Créditos de Fornecedores/Pagas (TOConline) respeitam o Período — A
+  // Pagar nunca é filtrado por ano (correção 17/09), por isso não é
+  // preciso repintá-lo aqui.
+  if(typeof tesRenderCreditosToco==='function') tesRenderCreditosToco();
+  if(typeof tesRenderPagasToco==='function') tesRenderPagasToco();
   if(typeof tesRenderCharts==='function') tesRenderCharts(tabAtiva);
 }
 window.tesMudarFiltroAno = tesMudarFiltroAno;
