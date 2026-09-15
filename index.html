@@ -33251,6 +33251,32 @@ var OB_SB_SYNC_KEYS=['ob-leads','ob-clients','ob-crm-atividades','ob-crm-histori
   'ob-followups'];
 var _obSbTimers={};
 
+// Correção de segurança (F2/F3 hardening, 15/09/2026): ob_crm_dados já não
+// permite leitura/escrita anónima — as policies de RLS exigem auth.uid()
+// resolvido (ob_is_admin()/ob_current_role()). As chamadas fetch() diretas
+// desta secção usavam _ORC_SB_KEY (a anon key) também como Authorization
+// Bearer, o que deixou de autenticar como utilizador depois do F2/F3 —
+// qualquer leitura/escrita passou a falhar por RLS. Esta função devolve os
+// headers corretos usando o access_token da sessão Supabase Auth já
+// autenticada no CRM (a mesma sessão de crmSBClient()) — nunca a anon key
+// como token de utilizador, e NUNCA inventa um fallback anónimo: se não
+// houver sessão válida ainda (ex.: login a decorrer), devolve null e quem
+// chamar tem de tratar isso como falha real, exatamente como já trata um
+// HTTP não-ok — nunca como "vazio"/dado inexistente.
+async function _obCrmDadosAuthHeaders(extra){
+  var sb = (typeof crmSBClient==='function') ? crmSBClient() : null;
+  if(!sb || !sb.auth || typeof sb.auth.getSession!=='function') return null;
+  var token = null;
+  try{
+    var res = await sb.auth.getSession();
+    token = (res && res.data && res.data.session) ? res.data.session.access_token : null;
+  }catch(e){ token = null; }
+  if(!token) return null;
+  var headers = { 'apikey': _ORC_SB_KEY, 'Authorization': 'Bearer ' + token };
+  if(extra){ for(var k in extra){ headers[k] = extra[k]; } }
+  return headers;
+}
+
 // ── Proteção específica de 'ob-clients' contra sobrescrita por dados locais
 // desatualizados (14/08/2026) — um browser com um localStorage antigo (ex.:
 // os 30 clientes de teste) não pode apagar a base remota mais completa.
@@ -33274,8 +33300,10 @@ window._obClientsRemoteUpdatedAt = null;
 async function obClientsLerRemotoComVersao(){
   if(typeof _ORC_SB_URL==='undefined'||typeof _ORC_SB_KEY==='undefined') return undefined;
   try{
+    var headers = await _obCrmDadosAuthHeaders();
+    if(!headers) return undefined; // sem sessão autenticada — trata como falha real, nunca como "vazio"
     var r=await fetch(_ORC_SB_URL+'/rest/v1/ob_crm_dados?chave=eq.ob-clients&select=dados,updated_at',{
-      headers:{'apikey':_ORC_SB_KEY,'Authorization':'Bearer '+_ORC_SB_KEY}
+      headers: headers
     });
     if(!r.ok) return undefined;
     var rows=await r.json();
@@ -33303,9 +33331,14 @@ async function obSbPushClientesInterno(dados){
   if(versao===null){
     // Linha ainda não existe remotamente — primeira criação (POST/upsert).
     try{
+      var headersNovo = await _obCrmDadosAuthHeaders({'Content-Type':'application/json','Prefer':'resolution=merge-duplicates,return=representation'});
+      if(!headersNovo){
+        console.error('[SB-CRM] Push de ob-clients (criação) BLOQUEADO: sem sessão autenticada válida. Nada foi enviado.');
+        return;
+      }
       var rNovo=await fetch(_ORC_SB_URL+'/rest/v1/ob_crm_dados?on_conflict=chave',{
         method:'POST',
-        headers:{'Content-Type':'application/json','apikey':_ORC_SB_KEY,'Authorization':'Bearer '+_ORC_SB_KEY,'Prefer':'resolution=merge-duplicates,return=representation'},
+        headers: headersNovo,
         body:JSON.stringify({chave:'ob-clients',dados:dados,updated_at:new Date().toISOString()})
       });
       if(rNovo.ok){
@@ -33330,9 +33363,14 @@ async function obSbPushClientesInterno(dados){
     return;
   }
   try{
+    var headersPatch = await _obCrmDadosAuthHeaders({'Content-Type':'application/json','Prefer':'return=representation'});
+    if(!headersPatch){
+      console.error('[SB-CRM] Push de ob-clients (atualização) BLOQUEADO: sem sessão autenticada válida. Nada foi enviado.');
+      return;
+    }
     var rPatch=await fetch(_ORC_SB_URL+'/rest/v1/ob_crm_dados?chave=eq.ob-clients&updated_at=eq.'+encodeURIComponent(versao.updated_at),{
       method:'PATCH',
-      headers:{'Content-Type':'application/json','apikey':_ORC_SB_KEY,'Authorization':'Bearer '+_ORC_SB_KEY,'Prefer':'return=representation'},
+      headers: headersPatch,
       body:JSON.stringify({dados:dados,updated_at:new Date().toISOString()})
     });
     if(!rPatch.ok){
@@ -33621,9 +33659,11 @@ function obSbPush(chave){
         return;
       }
       var dados=JSON.parse(localStorage.getItem(chave)||'[]');
+      var headersPush = await _obCrmDadosAuthHeaders({'Content-Type':'application/json','Prefer':'resolution=merge-duplicates'});
+      if(!headersPush) return; // sem sessão autenticada válida — nunca cai para a anon key
       fetch(_ORC_SB_URL+'/rest/v1/ob_crm_dados?on_conflict=chave',{
         method:'POST',
-        headers:{'Content-Type':'application/json','apikey':_ORC_SB_KEY,'Authorization':'Bearer '+_ORC_SB_KEY,'Prefer':'resolution=merge-duplicates'},
+        headers: headersPush,
         body:JSON.stringify({chave:chave,dados:dados,updated_at:new Date().toISOString()})
       }).catch(function(){});
     }catch(e){}
@@ -33646,17 +33686,23 @@ function obSbPushClientesForcar(){
   var confirmado = confirm('Isto vai SUBSTITUIR TODA a base de Clientes no Supabase pelos '+dados.length+' clientes deste browser, ignorando a proteção contra redução suspeita e qualquer alteração feita por outro utilizador entretanto. Tem a certeza?');
   if(!confirmado){ console.warn('[SB-CRM] obSbPushClientesForcar cancelado pelo utilizador.'); return; }
   console.warn('[SB-CRM] obSbPushClientesForcar: a enviar '+dados.length+' clientes ao Supabase, IGNORANDO a proteção contra redução suspeita e concorrência.');
-  fetch(_ORC_SB_URL+'/rest/v1/ob_crm_dados?on_conflict=chave',{
-    method:'POST',
-    headers:{'Content-Type':'application/json','apikey':_ORC_SB_KEY,'Authorization':'Bearer '+_ORC_SB_KEY,'Prefer':'resolution=merge-duplicates,return=representation'},
-    body:JSON.stringify({chave:'ob-clients',dados:dados,updated_at:new Date().toISOString()})
-  }).then(async function(r){
-    if(!r.ok) return;
-    var linhas=await r.json();
-    if(linhas[0]){
-      window._obClientsRemoteCount=Array.isArray(linhas[0].dados)?linhas[0].dados.length:dados.length;
-      window._obClientsRemoteUpdatedAt=linhas[0].updated_at||null;
+  _obCrmDadosAuthHeaders({'Content-Type':'application/json','Prefer':'resolution=merge-duplicates,return=representation'}).then(function(headers){
+    if(!headers){
+      console.error('[SB-CRM] obSbPushClientesForcar BLOQUEADO: sem sessão autenticada válida. Nada foi enviado.');
+      return;
     }
+    return fetch(_ORC_SB_URL+'/rest/v1/ob_crm_dados?on_conflict=chave',{
+      method:'POST',
+      headers: headers,
+      body:JSON.stringify({chave:'ob-clients',dados:dados,updated_at:new Date().toISOString()})
+    }).then(async function(r){
+      if(!r.ok) return;
+      var linhas=await r.json();
+      if(linhas[0]){
+        window._obClientsRemoteCount=Array.isArray(linhas[0].dados)?linhas[0].dados.length:dados.length;
+        window._obClientsRemoteUpdatedAt=linhas[0].updated_at||null;
+      }
+    });
   }).catch(function(){});
 }
 window.obSbPushClientesForcar=obSbPushClientesForcar;
@@ -33664,8 +33710,19 @@ window.obSbPushClientesForcar=obSbPushClientesForcar;
 async function obSbBoot(){
   if(typeof _ORC_SB_URL==='undefined'||typeof _ORC_SB_KEY==='undefined') return;
   try{
+    var headers = await _obCrmDadosAuthHeaders();
+    if(!headers){
+      // Sem sessão autenticada ainda (ex.: obSbBoot() correu antes do login
+      // terminar, ou a sessão persistida ainda não foi restaurada) — trata
+      // exatamente como uma leitura falhada (HTTP não-ok já tratava assim),
+      // NUNCA como fallback anónimo. O resto da função (renderClientes(),
+      // merge e pushes) continua a correr depois deste try/catch, tal como
+      // já acontecia antes numa falha de leitura.
+      window._obClientsEstado='erro';
+      console.warn('[SB-CRM] boot sync: sem sessão autenticada válida ainda — leitura remota adiada. Clientes fica em estado de erro até haver sessão (nunca anónima).');
+    } else {
     var r=await fetch(_ORC_SB_URL+'/rest/v1/ob_crm_dados?select=chave,dados,updated_at',{
-      headers:{'apikey':_ORC_SB_KEY,'Authorization':'Bearer '+_ORC_SB_KEY}
+      headers: headers
     });
     if(r.ok){
       var rows=await r.json();
@@ -33749,6 +33806,7 @@ async function obSbBoot(){
       window._obClientsEstado='erro';
       console.error('[SB-CRM] Leitura remota falhou (HTTP '+r.status+'). Clientes fica em estado de erro — nada é fabricado nem enviado.');
     }
+    }
   }catch(e){
     window._obClientsEstado='erro';
     console.warn('[SB-CRM] boot sync falhou:',e);
@@ -33777,8 +33835,10 @@ async function obSbBoot(){
 async function obSbLerRemoto(chave){
   if(typeof _ORC_SB_URL==='undefined'||typeof _ORC_SB_KEY==='undefined') return null;
   try{
+    var headers = await _obCrmDadosAuthHeaders();
+    if(!headers) return null; // sem sessão autenticada válida — nunca cai para a anon key
     var r=await fetch(_ORC_SB_URL+'/rest/v1/ob_crm_dados?chave=eq.'+chave+'&select=dados',{
-      headers:{'apikey':_ORC_SB_KEY,'Authorization':'Bearer '+_ORC_SB_KEY}
+      headers: headers
     });
     if(!r.ok) return null;
     var rows=await r.json();
