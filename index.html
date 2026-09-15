@@ -24065,63 +24065,45 @@ function tesRender() {
 // ══════════════════════════════════════════════════════════════════════
 // TESOURARIA — A Pagar/Pagas via TOConline REAL (17/09/2026, fase final)
 // ══════════════════════════════════════════════════════════════════════
-// Fonte oficial confirmada com dados reais (edge function crm-toconline
-// v26): purchase_documents (15.939 docs), purchase_payments (12.597),
-// purchase_payment_lines (liga payment_id/payable_id/paid_value). Este
-// bloco NUNCA lê/escreve TES_CONTAS nem interfere com "+ Conta a Pagar" —
-// essa continua a ser a secção "Contas Manuais", inteiramente separada.
+// Fonte oficial: purchase_documents/purchase_payments/purchase_payment_lines
+// via a edge function crm-toconline. Este bloco NUNCA lê/escreve TES_CONTAS
+// nem interfere com "+ Conta a Pagar" — essa continua a ser a secção
+// "Contas Manuais", inteiramente separada.
 //
-// Snapshot: TES_COMPRAS_TOCO, persistido em localStorage
-// ('ob-tes-compras-toconline') e em ob_crm_dados (mesma chave). A abertura
-// da Tesouraria só LÊ este snapshot (tesHidratarComprasToco(), rápido) —
-// nunca percorre os 15.939+/12.597+ registos do TOConline a cada abertura;
-// só o botão "🔄 Sincronizar TOConline" o refaz
-// (tocoSincronizarComprasPagamentosReal()).
-//
-// CORREÇÃO (bug urgente, 17/09/2026 tardio): este snapshot é grande
-// (milhares de linhas de pagamento) — localStorage.setItem() sem
-// try/catch podia lançar QuotaExceededError, e por reentrar dentro do
-// wrap() genérico (ver "Cada gravação local..." mais abaixo, usado por
-// tesSave()/tesSaveReceber()), essa excepção travava a função ANTES de
-// alcançar o push para o Supabase: o snapshot nunca saía deste browser,
-// e confirmámos por SQL directo que a linha nunca chegou a existir em
-// ob_crm_dados. Por isso esta função deixou de usar wrap()/obSbPush()
-// (que releem de localStorage, nunca do objecto em memória — se a cópia
-// local falhasse, empurravam um array vazio por cima da base remota) e
-// passou a: 1) tentar localStorage, mas nunca deixar essa tentativa
-// bloquear o resto; 2) enviar SEMPRE o TES_COMPRAS_TOCO actual (em
-// memória) directamente para o Supabase, com a mesma autenticação já
-// usada no resto do ficheiro (_obCrmDadosAuthHeaders(), nunca a anon key).
+// ARQUITECTURA (corrigida 17/09/2026, bug "sincronização para no meio,
+// nenhuma linha gravada"): a acumulação/classificação dos 15.939+ docs +
+// 12.597+ pagamentos + linhas de pagamento e a gravação do snapshot NÃO
+// acontecem mais aqui no browser — passaram inteiramente para a edge
+// function (resource=sync_purchases_snapshot), por lotes com checkpoint
+// próprio no Supabase (service_role, toc-purchases-sync-checkpoint), o
+// mesmo padrão já usado por finance_audit/finance_reconcile. Duas
+// tentativas anteriores falharam exactamente por o browser tentar
+// acumular tudo e gravar tudo de uma vez (perda total se algo corresse
+// mal a meio, ou localStorage.setItem() a exceder a quota e bloquear o
+// push ao Supabase). Agora o browser só:
+//  1. dispara chamadas sucessivas a sync_purchases_snapshot, mostrando o
+//     progresso que cada uma devolve;
+//  2. quando uma chamada devolve concluido:true (a edge function já
+//     gravou o snapshot final em ob_crm_dados, via service_role — nunca
+//     depende do browser para persistir nada), volta a LER esse snapshot
+//     (tesHidratarComprasToco()) para actualizar o ecrã.
+// Nunca acumula os documentos/pagamentos/linhas brutos em memória nem em
+// localStorage — só o snapshot final, já compacto, que a edge function
+// devolveu.
 var TES_COMPRAS_TOCO;
 try{ TES_COMPRAS_TOCO = JSON.parse(localStorage.getItem('ob-tes-compras-toconline')||'null'); }catch(e){ TES_COMPRAS_TOCO = null; }
-async function tesComprasTocoSave(){
-  try{ localStorage.setItem('ob-tes-compras-toconline', JSON.stringify(TES_COMPRAS_TOCO)); }
-  catch(e){ console.warn('[Tesouraria] Não foi possível guardar o snapshot TOConline em localStorage (provavelmente por tamanho) — a gravação no Supabase continua em baixo, é a fonte de verdade.', e); }
-  try{
-    var headers = await _obCrmDadosAuthHeaders({'Content-Type':'application/json','Prefer':'resolution=merge-duplicates'});
-    if(!headers){ console.warn('[Tesouraria] Sem sessão autenticada válida — snapshot TOConline não gravado no Supabase.'); return; }
-    var resp = await fetch(_ORC_SB_URL+'/rest/v1/ob_crm_dados?on_conflict=chave',{
-      method:'POST', headers: headers,
-      body: JSON.stringify({chave:'ob-tes-compras-toconline', dados: TES_COMPRAS_TOCO, updated_at: new Date().toISOString()})
-    });
-    if(!resp.ok) console.warn('[Tesouraria] Supabase devolveu HTTP '+resp.status+' ao gravar o snapshot TOConline.');
-  }catch(e){ console.warn('[Tesouraria] Falha a gravar o snapshot TOConline no Supabase.', e); }
-}
-window.tesComprasTocoSave = tesComprasTocoSave;
 
 function tesTocoComprasDisponivel(){
   return !!(TES_COMPRAS_TOCO && TES_COMPRAS_TOCO.ultimaSync);
 }
 window.tesTocoComprasDisponivel = tesTocoComprasDisponivel;
 
-// Classificação de document_type (auditoria real confirmou pelo menos
-// 'NCF' = nota de crédito de fornecedor, que NUNCA pode somar como dívida).
-// 'FC' (Fatura de Compra) é o tipo de débito citado como exemplo no pedido
-// original deste item — tratado como conhecido; qualquer outro tipo fica
-// 'por_validar', NUNCA somado silenciosamente em A Pagar. A auditoria
-// completa (tipo/quantidade/soma) fica sempre visível no snapshot
-// (TES_COMPRAS_TOCO.auditoriaTipos), para se poder corrigir esta lista
-// depdepois de ver os tipos reais devolvidos por esta conta.
+// Classificação de document_type — mantida aqui só como documentação da
+// regra (a classificação real de cada sincronização acontece agora dentro
+// da edge function, em classificarTipoDocumentoCompra(); as duas listas
+// têm de ficar sincronizadas manualmente). NCF = nota de crédito de
+// fornecedor, nunca somada como dívida; FC = fatura de compra (débito);
+// qualquer outro tipo fica 'por_validar', nunca somado silenciosamente.
 var TOCO_COMPRA_TIPOS_DEBITO = ['FC'];
 var TOCO_COMPRA_TIPOS_CREDITO = ['NCF'];
 function tocoClassificarTipoDocumentoCompra(tipo){
@@ -24131,122 +24113,47 @@ function tocoClassificarTipoDocumentoCompra(tipo){
 }
 window.tocoClassificarTipoDocumentoCompra = tocoClassificarTipoDocumentoCompra;
 
-// Sincronização real — SÓ Admin, SÓ leitura (nunca escreve no TOConline).
-// Pagina tudo (nunca só os primeiros 5.000) via tocoPaginarCompras() já
-// existente (diagnóstico), classifica cada documento, liga pagamentos a
-// documentos por payable_id (nunca fornecedor+valor+data), calcula os
-// KPIs, e grava o snapshot. Pode demorar — é uma acção manual explícita,
-// nunca corre sozinha ao abrir a página.
+// Sincronização real — SÓ Admin, SÓ leitura do lado do TOConline (a edge
+// function nunca cria/altera/anula/paga nada). Dispara sync_purchases_snapshot
+// repetidamente até concluido:true; MAX_CHAMADAS é só rede de segurança
+// contra ciclo infinito (nunca deveria ser atingido — cada chamada
+// processa até 15 páginas de 100 registos de UMA das 3 fases).
 async function tocoSincronizarComprasPagamentosReal(){
   if(typeof homeIsAdmin==='function' && !homeIsAdmin()) return;
-  var btn = document.getElementById('toco-testar-compras-btn');
   var progresso = function(txt){ var el=document.getElementById('tes-toco-pagar-status'); if(el) el.innerHTML='<div style="font-size:12px;color:var(--y)">⏳ '+txt+'</div>'; };
+  var MAX_CHAMADAS = 60;
   try{
-    progresso('A sincronizar documentos de compra…');
-    var docsResp = await tocoPaginarCompras('documents', function(n){ progresso('Documentos de compra: '+n+'…'); });
-    progresso('A sincronizar pagamentos…');
-    var pagsResp = await tocoPaginarCompras('payments', function(n){ progresso('Pagamentos: '+n+'…'); });
-    progresso('A sincronizar linhas de pagamento…');
-    var linhasResp = await tocoPaginarCompras('payment_lines', function(n){ progresso('Linhas de pagamento: '+n+'…'); });
-
-    var docs = docsResp.data, pags = pagsResp.data, linhas = linhasResp.data;
-
-    // Auditoria de document_type — obrigatória antes de qualquer soma.
-    var auditoriaMap = {};
-    docs.forEach(function(d){
-      var key = d.document_type || '(vazio)';
-      if(!auditoriaMap[key]) auditoriaMap[key] = { tipo:key, quantidade:0, quantidade_pendente:0, soma_pendente:0, classificacao: tocoClassificarTipoDocumentoCompra(d.document_type) };
-      var a = auditoriaMap[key];
-      a.quantidade++;
-      if(d.pending_total>0.005){ a.quantidade_pendente++; a.soma_pendente += d.pending_total; }
-    });
-    var auditoriaTipos = Object.keys(auditoriaMap).map(function(k){ var a=auditoriaMap[k]; a.soma_pendente=Math.round(a.soma_pendente*100)/100; return a; });
-
-    var hoje = new Date(); hoje.setHours(0,0,0,0);
-    var em30 = new Date(hoje); em30.setDate(em30.getDate()+30);
-    var aPagar=[], creditos=[], porValidar=[], nAnulados=0;
-    var totalAPagar=0, vencido=0, vence30=0, creditosFornecedores=0;
-
-    docs.forEach(function(d){
-      if(d.voided_reason){ nAnulados++; return; } // anulado — fora de tudo, nunca somado
-      var classe = tocoClassificarTipoDocumentoCompra(d.document_type);
-      var pendente = d.pending_total;
-      if(classe==='credito'){
-        if(pendente>0.005){
-          creditos.push({ tocoId:d.id, documento:d.document_no, fornecedor:d.supplier_business_name, dataEmissao:d.date, valor:pendente, referencia:d.external_reference, estado:d.status });
-          creditosFornecedores += pendente;
-        }
-        return;
+    progresso('A sincronizar compras/pagamentos com o TOConline…');
+    var chamadas = 0, concluido = false, ultimaResposta = null;
+    while(!concluido && chamadas < MAX_CHAMADAS){
+      chamadas++;
+      ultimaResposta = await tocoEF('sync_purchases_snapshot', 'paginas=15');
+      concluido = !!ultimaResposta.concluido;
+      if(!concluido){
+        progresso('TOConline — fase: '+(ultimaResposta.fase||'?')+' ('+
+          (ultimaResposta.total_documentos_processados||0)+' documentos, '+
+          (ultimaResposta.total_pagamentos_processados||0)+' pagamentos, '+
+          (ultimaResposta.total_linhas_processadas||0)+' linhas processadas)…');
       }
-      if(pendente<=0.005) return; // liquidado — sai de A Pagar (pode continuar visível em Pagas via os pagamentos)
-      var item = { tocoId:d.id, documento:d.document_no, tipo:d.document_type, fornecedor:d.supplier_business_name,
-        referencia:d.external_reference, dataEmissao:d.date, vencimento:d.due_date, total:d.gross_total, pendente:pendente, estado:d.status };
-      if(classe==='por_validar'){ porValidar.push(item); return; }
-      aPagar.push(item);
-      totalAPagar += pendente;
-      if(d.due_date){
-        var venc = new Date(d.due_date);
-        if(!isNaN(venc.getTime())){
-          if(venc < hoje) vencido += pendente;
-          else if(venc <= em30) vence30 += pendente;
-        }
-      }
-    });
-
-    // Ordenação de A Pagar fica a cargo de tesRenderAPagarToco() (due_date
-    // DESC, empate: date DESC) — nunca filtrada por ano (correção 17/09,
-    // parte 2: uma dívida antiga de 2018 ainda pendente tem de continuar
-    // visível). Aqui guarda-se só na ordem em que veio da paginação.
-
-    // Pagas: cada LINHA de pagamento (não o cabeçalho) é a unidade real —
-    // suporta 1 pagamento -> vários documentos e vários pagamentos -> 1 documento.
-    var pagamentoPorId = {}; pags.forEach(function(p){ pagamentoPorId[p.id]=p; });
-    var docPorId = {}; docs.forEach(function(d){ docPorId[d.id]=d; });
-    var mesAtual = new Date().toISOString().slice(0,7);
-    var pagoEsteMes = 0, pagamentosMesSet = {};
-    var pagas = [];
-    linhas.forEach(function(l){
-      var pag = pagamentoPorId[l.payment_id];
-      if(!pag || pag.deleted) return; // pagamento apagado — nunca conta como pago
-      var doc = docPorId[l.payable_id];
-      pagas.push({
-        pagamentoId: pag.id, numeroPagamento: pag.document_no, documentoAssociadoId: l.payable_id,
-        documentoNumero: doc ? doc.document_no : null, fornecedor: doc ? doc.supplier_business_name : null,
-        dataPagamento: pag.date, valorPago: l.paid_value,
-        valorOriginal: doc ? doc.gross_total : null, saldoRestante: doc ? doc.pending_total : null,
-        formaPagamento: pag.payment_mechanism
-      });
-      if(pag.date && pag.date.slice(0,7)===mesAtual){ pagoEsteMes += l.paid_value; pagamentosMesSet[pag.id]=true; }
-    });
-    pagas.sort(function(a,b){ return (b.dataPagamento||'') < (a.dataPagamento||'') ? -1 : 1; });
-
-    TES_COMPRAS_TOCO = {
-      ultimaSync: new Date().toISOString(),
-      auditoriaTipos: auditoriaTipos,
-      aPagar: aPagar, creditos: creditos, porValidar: porValidar, pagas: pagas,
-      kpis: {
-        totalAPagar: Math.round(totalAPagar*100)/100, vencido: Math.round(vencido*100)/100,
-        vence30: Math.round(vence30*100)/100, pagoEsteMes: Math.round(pagoEsteMes*100)/100,
-        nDocumentosPendentes: aPagar.length, nPagamentosMes: Object.keys(pagamentosMesSet).length,
-        creditosFornecedores: Math.round(creditosFornecedores*100)/100
-      },
-      totais: {
-        totalDocumentosAnalisados: docs.length, totalPagamentosAnalisados: pags.length, totalLinhasAnalisadas: linhas.length,
-        anulados: nAnulados, paginacaoCompletaDocumentos: docsResp.paginacao_completa,
-        paginacaoCompletaPagamentos: pagsResp.paginacao_completa, paginacaoCompletaLinhas: linhasResp.paginacao_completa
-      }
-    };
-    await tesComprasTocoSave();
+    }
+    if(!concluido){
+      throw new Error('A sincronização não terminou depois de '+MAX_CHAMADAS+' chamadas. Tente novamente — retoma automaticamente do checkpoint, nunca do zero.');
+    }
+    // A edge function já gravou o snapshot final no Supabase (service_role)
+    // — só falta o browser voltar a lê-lo. Reinicia a promise memoizada
+    // para forçar uma leitura nova (nunca fica presa numa tentativa
+    // anterior, com ou sem sucesso).
+    _tesComprasTocoHidratacaoPromise = null;
+    await tesHidratarComprasToco();
+    if(typeof showToast==='function'){
+      var r = ultimaResposta.resumo || {};
+      showToast('✓ TOConline sincronizado — '+(r.n_documentos_pendentes||0)+' documentos pendentes.');
+    }
   }catch(e){
     console.warn('[Tesouraria/TOConline] Falha a sincronizar compras/pagamentos:', e);
     var el = document.getElementById('tes-toco-pagar-status');
     if(el) el.innerHTML = '<div style="font-size:12px;color:var(--r)">⚠️ Falha a sincronizar compras/pagamentos TOConline: '+(e&&e.message||'erro desconhecido')+'</div>';
   }
-  if(typeof tesRenderTocoComprasStatus==='function') tesRenderTocoComprasStatus();
-  if(typeof tesRenderAPagarToco==='function') tesRenderAPagarToco();
-  if(typeof tesRenderCreditosToco==='function') tesRenderCreditosToco();
-  if(typeof tesRenderPagasToco==='function') tesRenderPagasToco();
-  if(typeof tesUpdateKPIs==='function') tesUpdateKPIs('pagar');
 }
 window.tocoSincronizarComprasPagamentosReal = tocoSincronizarComprasPagamentosReal;
 
@@ -34628,12 +34535,11 @@ async function obSbMesclarRemotoAntesDoBackup(){
   // Financeiro: tesouraria, despesas e faturas com backup automático
   wrap('tesSave','ob-tes-contas');
   wrap('tesSaveReceber','ob-tes-receber');
-  // 'ob-tes-compras-toconline' NÃO passa por aqui de propósito (correção do
-  // bug urgente, 17/09/2026 tardio): wrap()/obSbPush() releem sempre de
-  // localStorage, nunca do objecto em memória — se a cópia local falhasse
-  // (snapshot grande, risco real de QuotaExceededError), isto empurraria um
-  // array vazio por cima da linha correcta 2.5s depois. tesComprasTocoSave()
-  // já envia directamente o TES_COMPRAS_TOCO actual para o Supabase, sempre.
+  // 'ob-tes-compras-toconline' NÃO passa por aqui (nem por nenhum outro
+  // save no browser): desde 17/09/2026 é a própria edge function
+  // crm-toconline (resource=sync_purchases_snapshot, service_role) que
+  // grava esta chave, por lotes com checkpoint — o browser nunca acumula
+  // nem tenta gravar este snapshot. Ver tocoSincronizarComprasPagamentosReal().
   wrap('tesLogSave','ob-tes-log');
   wrap('tesCartoesSave','ob-tes-cartoes');
   wrap('finDespSave','ob-fin-despesas');
