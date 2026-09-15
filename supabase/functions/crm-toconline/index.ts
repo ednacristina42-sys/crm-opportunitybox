@@ -63,6 +63,14 @@ const RECURSOS: Record<string, { paths: string[]; query?: string }> = {
   invoices:     { paths: ["/api/v1/commercial_sales_documents", "/commercial_sales_documents"], query: "filter[document_type]=FT" },
   credit_notes: { paths: ["/api/v1/commercial_sales_documents", "/commercial_sales_documents"], query: "filter[document_type]=NC" },
   receipts:     { paths: ["/api/v1/commercial_sales_receipts", "/commercial_sales_receipts"] },
+  // Item 5 — Tesouraria A Pagar/Pagas (17/09/2026). Lado das COMPRAS, nunca
+  // tocado até agora (todos os recursos acima são do lado das vendas). Ordem
+  // dos caminhos exactamente como confirmado na documentação oficial:
+  // documentos tentam primeiro /api/v1, pagamentos tentam primeiro sem
+  // /api/v1 — resolverPath() testa cada um pela ordem e fica só com o que
+  // realmente responder nesta conta (nunca assume, mesmo com a ordem certa).
+  purchase_documents: { paths: ["/api/v1/commercial_purchases_documents", "/commercial_purchases_documents"] },
+  purchase_payments:  { paths: ["/commercial_purchases_payments", "/api/v1/commercial_purchases_payments"] },
 };
 const ALIAS: Record<string, string> = { clients: "customers" };
 
@@ -1806,6 +1814,22 @@ Deno.serve(async (req: Request) => {
         expira_em_s: Math.round(((tokenCache?.expiresAt ?? 0) - Date.now()) / 1000) }, 200);
     }
 
+    // Detalhe por ID de um documento de compra — mesmo padrão do já existente
+    // nc_raw_probe (só leitura, corpo bruto sem achatar), para hidratar campos
+    // que a listagem porventura não traga completos (ex.: linhas, IVA
+    // detalhado). Só usado quando necessário — a normalização no frontend
+    // parte sempre da listagem primeiro.
+    if (pedido === "purchase_document_detail") {
+      const id = url.searchParams.get("id") ?? "";
+      if (!id) return json({ error: "Falta ?id=<id real de um documento de compra, obtido em resource=purchase_documents>" }, 400);
+      const token = await getAccessToken();
+      const path = await resolverPath("purchase_documents", token);
+      const r = await tocGet(`${path}/${encodeURIComponent(id)}`, token);
+      const texto = await r.text();
+      let corpo: unknown; try { corpo = JSON.parse(texto); } catch { corpo = texto; }
+      return json({ endpoint: `${apiBase()}${path}/${id}`, http_status: r.status, corpo_bruto: corpo }, 200);
+    }
+
     const recurso = ALIAS[pedido] ?? pedido;
     if (RECURSOS[recurso]) {
       const token = await getAccessToken();
@@ -1813,7 +1837,7 @@ Deno.serve(async (req: Request) => {
       return json({ resource: pedido, resolved: recurso, path: pathCache[recurso], count: data.length, data }, 200);
     }
 
-    return json({ error: "resource invalido. Use: sync | estado | customers | clients | invoices | credit_notes | receipts | token | diag | auth | finance_audit | finance_audit_estado | finance_reconcile | finance_reconcile_estado | sync_docs | nc_raw_probe" }, 400);
+    return json({ error: "resource invalido. Use: sync | estado | customers | clients | invoices | credit_notes | receipts | purchase_documents | purchase_payments | purchase_document_detail | token | diag | auth | finance_audit | finance_audit_estado | finance_reconcile | finance_reconcile_estado | sync_docs | nc_raw_probe" }, 400);
   } catch (e) {
     if (e instanceof HttpError) {
       // So o callback devolve HTML (e uma pagina para pessoa ler). O auth
