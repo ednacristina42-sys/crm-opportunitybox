@@ -5723,13 +5723,27 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--txt);min-he
 .sh a,.sh button.lnk{font-size:13px;color:var(--y);cursor:pointer;font-weight:600;background:none;border:none;font-family:'Inter',sans-serif}
 
 /* Follow-up — Kanban por comercial */
-.fu-swimlane{margin-bottom:22px}
+/* Follow-up ativo — quadros lado a lado por responsável (15/09/2026).
+   .fu-responsaveis-grid é o grid que agrupa um .fu-swimlane (agora um
+   painel/card próprio, não só um separador vertical) por responsável;
+   cada .fu-swimlane continua a conter, sem alterações, o mesmo
+   .fu-kanban-colunas de 4 colunas de sempre. Só layout/CSS — nenhuma
+   classe usada fora do Follow-up foi tocada (.fu-card/.fu-card-cliente
+   são reaproveitadas no Meu Painel — ver linha ~5688 — por isso ficam
+   exactamente como estavam). */
+.fu-responsaveis-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:20px;align-items:start}
+@media(min-width:1600px){.fu-responsaveis-grid{grid-template-columns:repeat(3,1fr)}}
+@media(max-width:1100px){.fu-responsaveis-grid{grid-template-columns:1fr}}
+.fu-swimlane{background:var(--bg);border:1px solid var(--border);border-radius:12px;padding:16px;display:flex;flex-direction:column;min-height:0}
 .fu-swimlane-titulo{font-size:13px;font-weight:700;color:var(--txt2);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--border)}
 .fu-kanban-colunas{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
-.fu-coluna{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:10px;min-width:0}
+.fu-coluna{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:10px;min-width:0;display:flex;flex-direction:column;min-height:0}
 .fu-coluna-titulo{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between}
 .fu-coluna-count{background:var(--bg3);border-radius:10px;padding:1px 7px;font-size:10px;color:var(--txt2)}
-.fu-coluna-cards{display:flex;flex-direction:column;gap:8px}
+/* Scroll interno por coluna — um responsável com muitos orçamentos numa
+   coluna não empurra mais a página inteira para baixo (o quadro/painel
+   fica com altura organizada). */
+.fu-coluna-cards{display:flex;flex-direction:column;gap:8px;max-height:480px;overflow-y:auto;padding-right:2px}
 .fu-coluna-vazia{font-size:12px;color:var(--muted);text-align:center;padding:10px 0}
 .fu-card{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px;font-size:13px}
 .fu-card-cliente{font-weight:700;color:var(--txt2);margin-bottom:4px}
@@ -33148,7 +33162,13 @@ function fuRenderKanbanAtivo(){
     wrap.innerHTML='<div style="text-align:center;color:var(--muted);padding:22px">Sem orçamentos activos a acompanhar.</div>';
     return;
   }
-  wrap.innerHTML=comerciais.map(function(com){
+  // Layout (15/09/2026): cada responsável passa a ter o seu próprio
+  // quadro/painel (.fu-swimlane), organizados lado a lado num grid
+  // responsivo (.fu-responsaveis-grid — 2 por linha no desktop, até 3 em
+  // ecrãs muito largos, 1 por linha em tablet/mobile). O agrupamento por
+  // comercial, as 4 colunas e os cards dentro de cada uma são exactamente
+  // os mesmos de sempre — só a estrutura em torno deles mudou.
+  wrap.innerHTML='<div class="fu-responsaveis-grid">'+comerciais.map(function(com){
     var colunas=grupos[com];
     return '<div class="fu-swimlane">'
       +'<div class="fu-swimlane-titulo">'+com+'</div>'
@@ -33161,7 +33181,7 @@ function fuRenderKanbanAtivo(){
           +'</div>';
       }).join('')
       +'</div></div>';
-  }).join('');
+  }).join('')+'</div>';
 }
 window.fuRenderKanbanAtivo=fuRenderKanbanAtivo;
 
