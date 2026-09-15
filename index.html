@@ -2893,7 +2893,7 @@ window.crmRealLogout = crmRealLogout;
   if(!CRM_AUTH_GATE_ENABLED) return;
   var sb = crmSBClient();
   if(!sb || !sb.auth || typeof sb.auth.onAuthStateChange !== 'function') return;
-  sb.auth.onAuthStateChange(function(event){
+  sb.auth.onAuthStateChange(function(event, session){
     // Callback curto de propósito — sem lógica assíncrona aqui. Ativa o
     // modo recuperação e delega o resto (DOM, limpeza da URL) a
     // crmRecoveryShow(), fora deste callback.
@@ -2907,6 +2907,22 @@ window.crmRealLogout = crmRealLogout;
       _crmAuthGen++; // invalida qualquer arranque ainda pendente
       CU = null; selectedUser = null; _adminUser = null;
       crmShowLoginWithMessage('A tua sessão expirou. Inicia sessão novamente.');
+      return;
+    }
+    // 2ª parte do bug de autenticação (15/09/2026): obSbBoot() corre
+    // incondicionalmente no arranque (ver "ARRANQUE" mais abaixo), que
+    // pode acontecer antes de a sessão persistida estar restaurada —
+    // nesse caso fica em _obClientsEstado='erro' (ver
+    // _obCrmDadosAuthHeaders(), commit 548aa13), nunca com fallback
+    // anónimo. Assim que chega uma sessão autenticada real — login
+    // novo (SIGNED_IN) ou sessão restaurada no arranque
+    // (INITIAL_SESSION) — repete-se a leitura, agora com token válido.
+    // Chamada disparada sem await de propósito (mantém este callback
+    // síncrono, como já documentado acima) — obSbBoot() já é
+    // idempotente/deduplicado (_obSbBootPromise), nunca inicia um 2º
+    // boot se já houver um em curso.
+    if((event === 'SIGNED_IN' || event === 'INITIAL_SESSION') && session && session.access_token){
+      if(typeof obSbBoot === 'function') obSbBoot();
     }
   });
 })();
@@ -33707,7 +33723,22 @@ function obSbPushClientesForcar(){
 }
 window.obSbPushClientesForcar=obSbPushClientesForcar;
 
+// Guard de idempotência/anti-concorrência (15/09/2026, 2ª parte do bug de
+// autenticação): obSbBoot() pode agora ser chamado mais do que uma vez —
+// no arranque incondicional (linha "ARRANQUE" mais abaixo) e de novo pelo
+// listener de auth (crmWireAuthStateListener) sempre que chega uma sessão
+// autenticada real (SIGNED_IN/INITIAL_SESSION). Se já houver um boot em
+// curso, todas as chamadas partilham a MESMA promise em vez de disparar
+// fetches concorrentes — mesmo padrão já usado em
+// crmHidratarLeadsCanonico()/tesHidratarCanonico() neste ficheiro.
+var _obSbBootPromise = null;
 async function obSbBoot(){
+  if(_obSbBootPromise) return _obSbBootPromise;
+  _obSbBootPromise = obSbBootReal();
+  try{ return await _obSbBootPromise; }
+  finally{ _obSbBootPromise = null; }
+}
+async function obSbBootReal(){
   if(typeof _ORC_SB_URL==='undefined'||typeof _ORC_SB_KEY==='undefined') return;
   try{
     var headers = await _obCrmDadosAuthHeaders();
