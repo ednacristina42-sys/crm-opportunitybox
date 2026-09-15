@@ -24072,15 +24072,42 @@ function tesRender() {
 // essa continua a ser a secção "Contas Manuais", inteiramente separada.
 //
 // Snapshot: TES_COMPRAS_TOCO, persistido em localStorage
-// ('ob-tes-compras-toconline') e em ob_crm_dados (mesma chave, via
-// tesComprasTocoSave()+wrap() — mesmo mecanismo genérico já usado por
-// tesSave()/tesSaveReceber()). A abertura da Tesouraria só LÊ este
-// snapshot (tesHidratarComprasToco(), rápido) — nunca percorre os 15.939+
-// 12.597+ registos do TOConline a cada abertura; só o botão "🔄
-// Sincronizar TOConline" o refaz (tocoSincronizarComprasPagamentosReal()).
+// ('ob-tes-compras-toconline') e em ob_crm_dados (mesma chave). A abertura
+// da Tesouraria só LÊ este snapshot (tesHidratarComprasToco(), rápido) —
+// nunca percorre os 15.939+/12.597+ registos do TOConline a cada abertura;
+// só o botão "🔄 Sincronizar TOConline" o refaz
+// (tocoSincronizarComprasPagamentosReal()).
+//
+// CORREÇÃO (bug urgente, 17/09/2026 tardio): este snapshot é grande
+// (milhares de linhas de pagamento) — localStorage.setItem() sem
+// try/catch podia lançar QuotaExceededError, e por reentrar dentro do
+// wrap() genérico (ver "Cada gravação local..." mais abaixo, usado por
+// tesSave()/tesSaveReceber()), essa excepção travava a função ANTES de
+// alcançar o push para o Supabase: o snapshot nunca saía deste browser,
+// e confirmámos por SQL directo que a linha nunca chegou a existir em
+// ob_crm_dados. Por isso esta função deixou de usar wrap()/obSbPush()
+// (que releem de localStorage, nunca do objecto em memória — se a cópia
+// local falhasse, empurravam um array vazio por cima da base remota) e
+// passou a: 1) tentar localStorage, mas nunca deixar essa tentativa
+// bloquear o resto; 2) enviar SEMPRE o TES_COMPRAS_TOCO actual (em
+// memória) directamente para o Supabase, com a mesma autenticação já
+// usada no resto do ficheiro (_obCrmDadosAuthHeaders(), nunca a anon key).
 var TES_COMPRAS_TOCO;
 try{ TES_COMPRAS_TOCO = JSON.parse(localStorage.getItem('ob-tes-compras-toconline')||'null'); }catch(e){ TES_COMPRAS_TOCO = null; }
-function tesComprasTocoSave(){ localStorage.setItem('ob-tes-compras-toconline', JSON.stringify(TES_COMPRAS_TOCO)); }
+async function tesComprasTocoSave(){
+  try{ localStorage.setItem('ob-tes-compras-toconline', JSON.stringify(TES_COMPRAS_TOCO)); }
+  catch(e){ console.warn('[Tesouraria] Não foi possível guardar o snapshot TOConline em localStorage (provavelmente por tamanho) — a gravação no Supabase continua em baixo, é a fonte de verdade.', e); }
+  try{
+    var headers = await _obCrmDadosAuthHeaders({'Content-Type':'application/json','Prefer':'resolution=merge-duplicates'});
+    if(!headers){ console.warn('[Tesouraria] Sem sessão autenticada válida — snapshot TOConline não gravado no Supabase.'); return; }
+    var resp = await fetch(_ORC_SB_URL+'/rest/v1/ob_crm_dados?on_conflict=chave',{
+      method:'POST', headers: headers,
+      body: JSON.stringify({chave:'ob-tes-compras-toconline', dados: TES_COMPRAS_TOCO, updated_at: new Date().toISOString()})
+    });
+    if(!resp.ok) console.warn('[Tesouraria] Supabase devolveu HTTP '+resp.status+' ao gravar o snapshot TOConline.');
+  }catch(e){ console.warn('[Tesouraria] Falha a gravar o snapshot TOConline no Supabase.', e); }
+}
+window.tesComprasTocoSave = tesComprasTocoSave;
 
 function tesTocoComprasDisponivel(){
   return !!(TES_COMPRAS_TOCO && TES_COMPRAS_TOCO.ultimaSync);
@@ -24209,7 +24236,7 @@ async function tocoSincronizarComprasPagamentosReal(){
         paginacaoCompletaPagamentos: pagsResp.paginacao_completa, paginacaoCompletaLinhas: linhasResp.paginacao_completa
       }
     };
-    tesComprasTocoSave();
+    await tesComprasTocoSave();
   }catch(e){
     console.warn('[Tesouraria/TOConline] Falha a sincronizar compras/pagamentos:', e);
     var el = document.getElementById('tes-toco-pagar-status');
@@ -34601,7 +34628,12 @@ async function obSbMesclarRemotoAntesDoBackup(){
   // Financeiro: tesouraria, despesas e faturas com backup automático
   wrap('tesSave','ob-tes-contas');
   wrap('tesSaveReceber','ob-tes-receber');
-  wrap('tesComprasTocoSave','ob-tes-compras-toconline');
+  // 'ob-tes-compras-toconline' NÃO passa por aqui de propósito (correção do
+  // bug urgente, 17/09/2026 tardio): wrap()/obSbPush() releem sempre de
+  // localStorage, nunca do objecto em memória — se a cópia local falhasse
+  // (snapshot grande, risco real de QuotaExceededError), isto empurraria um
+  // array vazio por cima da linha correcta 2.5s depois. tesComprasTocoSave()
+  // já envia directamente o TES_COMPRAS_TOCO actual para o Supabase, sempre.
   wrap('tesLogSave','ob-tes-log');
   wrap('tesCartoesSave','ob-tes-cartoes');
   wrap('finDespSave','ob-fin-despesas');
