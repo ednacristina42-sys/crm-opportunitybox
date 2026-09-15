@@ -8742,6 +8742,10 @@ tbody td{font-size:15px}
 
     <!-- Tabela A Pagar -->
     <div id="tes-panel-pagar">
+      <!-- Estado da futura fonte oficial TOConline (Faturas de Compra) —
+           preparação de arquitetura, 17/09/2026: não substitui nem mistura
+           com a tabela actual (TES_CONTAS, abaixo); só informa. -->
+      <div id="tes-toco-pagar-status" style="display:none"></div>
       <div class="cc" style="margin-bottom:14px;max-width:420px"><div class="sh"><h2>Por Categoria</h2></div><canvas id="tesPagarChart" style="max-height:200px"></canvas><div id="tesPagarChart-empty" style="display:none;text-align:center;color:var(--muted);padding:20px 0;font-size:13px">Sem dados para exibir</div></div>
       <div class="tw">
         <table>
@@ -8767,6 +8771,9 @@ tbody td{font-size:15px}
 
     <!-- Tabela Pagas -->
     <div id="tes-panel-pagas" style="display:none">
+      <!-- Estado da futura fonte oficial TOConline (Pagamentos) — mesma
+           preparação de arquitetura do painel A Pagar, acima. -->
+      <div id="tes-toco-pagas-status" style="display:none"></div>
       <div class="cc" style="margin-bottom:14px;max-width:420px"><div class="sh"><h2>Por Categoria</h2></div><canvas id="tesPagasChart" style="max-height:200px"></canvas><div id="tesPagasChart-empty" style="display:none;text-align:center;color:var(--muted);padding:20px 0;font-size:13px">Sem dados para exibir</div></div>
       <div class="tw">
         <table>
@@ -23961,7 +23968,120 @@ function tesRender() {
     var p = document.getElementById('tes-panel-'+t); return p && p.style.display!=='none';
   }) || 'pagar';
   setTimeout(function(){ tesRenderCharts(tabAtiva); },50);
+
+  // Preparação Item 5 (17/09/2026, aguarda autorização de backend) — só
+  // informa o estado, nunca toca em TES_CONTAS/tabelas acima.
+  try{ if(typeof tesRenderTocoComprasStatus==='function') tesRenderTocoComprasStatus(); }catch(e){}
 }
+
+// ══════════════════════════════════════════════════════════════════════
+// TESOURARIA — A Pagar/Pagas via TOConline: PREPARAÇÃO DE ARQUITECTURA
+// (17/09/2026, item 5 da continuação — SÓ FRONTEND, sem dados)
+// ══════════════════════════════════════════════════════════════════════
+// Contexto (analisado antes de qualquer código): a edge function
+// crm-toconline (única integração TOConline existente, ver tocoEF() acima)
+// só expõe hoje recursos do lado A Receber — resource=sync | estado |
+// customers | clients | invoices | credit_notes | receipts | token | diag |
+// auth | finance_audit* | finance_reconcile* | sync_docs | nc_raw_probe.
+// NÃO EXISTE nenhum recurso de Faturas de Compra nem de Pagamentos — por
+// isso A Pagar/Pagas não podem, hoje, ser alimentadas por dados reais do
+// TOConline sem primeiro estender essa edge function e fazer deploy dela
+// no Supabase de produção (explicitamente NÃO autorizado nesta fase).
+//
+// Este bloco não é chamado com dados nenhuns — só define: (a) o sinal único
+// de disponibilidade (tesTocoComprasDisponivel(), hoje sempre false), (b) os
+// normalizadores para quando os recursos reais existirem, e (c) o aviso
+// explícito no ecrã. TES_CONTAS, tesNovaContaPagar()/tesGuardarModal() e o
+// resto da Tesouraria continuam exactamente como estavam — nada aqui lê,
+// escreve ou mistura dados com essas estruturas.
+
+// Único sinal de disponibilidade real. Tem de continuar 'false' até a edge
+// function crm-toconline expor mesmo um recurso de Faturas de
+// Compra/Pagamentos E esse recurso devolver dados — nunca hardcoded para
+// true "para testar", nunca activado por uma flag local.
+function tesTocoComprasDisponivel(){
+  return false;
+}
+window.tesTocoComprasDisponivel = tesTocoComprasDisponivel;
+
+// Normaliza 1 fatura de compra REAL do TOConline (quando o recurso existir)
+// para a forma interna de A Pagar. Aceita tanto PascalCase quanto
+// snake_case (a API TOConline e a edge function já usam ambos os estilos
+// consoante o endpoint — ver achatarDocumento() em crm-toconline/index.ts).
+// Nunca inventa valores: campo ausente fica null (a UI mostra '—'), nunca
+// 0/"" fictício. Regra principal: pendente>0 = A Pagar (nunca inferida pela
+// data de vencimento).
+function tesNormalizarFaturaCompraToco(docToco){
+  if(!docToco) return null;
+  var pendente = parseFloat(docToco.PendingAmount ?? docToco.pending_amount ?? docToco.pendente) ;
+  var total = parseFloat(docToco.TotalAmount ?? docToco.total_amount ?? docToco.total);
+  return {
+    tocoId: docToco.Id ?? docToco.id ?? null,               // identidade forte real — nunca gerado localmente
+    documento: docToco.Number ?? docToco.number ?? docToco.documento ?? null,
+    fornecedor: docToco.SupplierName ?? docToco.supplier_name ?? docToco.fornecedor ?? null,
+    nif: docToco.SupplierTaxId ?? docToco.supplier_tax_id ?? docToco.nif ?? null,
+    vossaReferencia: docToco.YourReference ?? docToco.your_reference ?? null,
+    dataEmissao: docToco.Date ?? docToco.date ?? docToco.dataEmissao ?? null,
+    vencimento: docToco.DueDate ?? docToco.due_date ?? docToco.vencimento ?? null,
+    total: isNaN(total) ? null : total,
+    pendente: isNaN(pendente) ? null : pendente,
+    estado: docToco.Status ?? docToco.status ?? docToco.estado ?? null
+  };
+}
+window.tesNormalizarFaturaCompraToco = tesNormalizarFaturaCompraToco;
+
+// Normaliza 1 pagamento REAL do TOConline para a forma interna de Pagas.
+// documentoAssociadoId liga-se ao tocoId de tesNormalizarFaturaCompraToco()
+// — é essa ligação (Fatura de Compra -> Pagamento(s) -> saldo actual) que
+// garante identidade forte e não-duplicação, nunca fornecedor+valor+data.
+function tesNormalizarPagamentoToco(pagToco){
+  if(!pagToco) return null;
+  var valorPago = parseFloat(pagToco.Amount ?? pagToco.amount ?? pagToco.valorPago);
+  var valorDoc = parseFloat(pagToco.DocumentTotal ?? pagToco.document_total ?? pagToco.valorDocumentoOriginal);
+  var saldo = parseFloat(pagToco.RemainingBalance ?? pagToco.remaining_balance ?? pagToco.saldoRestante);
+  return {
+    tocoId: pagToco.Id ?? pagToco.id ?? null,
+    numeroPagamento: pagToco.Number ?? pagToco.number ?? null,
+    documentoAssociadoId: pagToco.DocumentId ?? pagToco.document_id ?? null,
+    fornecedor: pagToco.SupplierName ?? pagToco.supplier_name ?? null,
+    dataPagamento: pagToco.Date ?? pagToco.date ?? null,
+    valorPago: isNaN(valorPago) ? null : valorPago,
+    valorDocumentoOriginal: isNaN(valorDoc) ? null : valorDoc,
+    saldoRestante: isNaN(saldo) ? null : saldo,
+    formaPagamento: pagToco.PaymentMethod ?? pagToco.payment_method ?? null,
+    referencia: pagToco.Reference ?? pagToco.reference ?? null,
+    estado: pagToco.Status ?? pagToco.status ?? null
+  };
+}
+window.tesNormalizarPagamentoToco = tesNormalizarPagamentoToco;
+
+// Regra futura de classificação (nunca chamada com dados hoje):
+// pendente>0 -> 'a_pagar'; pendente<=0 -> 'liquidada' (sai de A Pagar,
+// aparece só em Pagas via o(s) pagamento(s) já ligados por
+// documentoAssociadoId).
+function tesClassificarFaturaCompraToco(faturaNormalizada){
+  if(!faturaNormalizada || faturaNormalizada.pendente==null) return null;
+  return faturaNormalizada.pendente > 0 ? 'a_pagar' : 'liquidada';
+}
+window.tesClassificarFaturaCompraToco = tesClassificarFaturaCompraToco;
+
+// Aviso explícito nos painéis A Pagar/Pagas — nunca esconde nem substitui a
+// tabela de TES_CONTAS já existente por baixo, só informa. Sem dados
+// fictícios: quando tesTocoComprasDisponivel() um dia devolver true, este
+// aviso já sabe desaparecer sozinho (não precisa de outra alteração aqui).
+function tesRenderTocoComprasStatus(){
+  var elPagar = document.getElementById('tes-toco-pagar-status');
+  var elPagas = document.getElementById('tes-toco-pagas-status');
+  var disponivel = tesTocoComprasDisponivel();
+  var html = disponivel ? '' :
+    '<div style="font-size:12.5px;color:var(--muted);background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:8px 12px;margin-bottom:10px">'
+    + 'ℹ️ TOConline: Faturas de Compra/Pagamentos ainda não disponíveis para sincronização. '
+    + 'A tabela abaixo continua a mostrar as contas registadas manualmente (TES_CONTAS), como sempre.'
+    + '</div>';
+  if(elPagar){ elPagar.innerHTML = html; elPagar.style.display = disponivel ? 'none' : 'block'; }
+  if(elPagas){ elPagas.innerHTML = html; elPagas.style.display = disponivel ? 'none' : 'block'; }
+}
+window.tesRenderTocoComprasStatus = tesRenderTocoComprasStatus;
 
 // ADD: IVA & Resumo Anual — sincronizado via webhook Make (TOConline)
 var TES_MESES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
