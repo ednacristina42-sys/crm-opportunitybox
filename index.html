@@ -5731,9 +5731,13 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--txt);min-he
    classe usada fora do Follow-up foi tocada (.fu-card/.fu-card-cliente
    são reaproveitadas no Meu Painel — ver linha ~5688 — por isso ficam
    exactamente como estavam). */
-.fu-responsaveis-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:20px;align-items:start}
-@media(min-width:1600px){.fu-responsaveis-grid{grid-template-columns:repeat(3,1fr)}}
-@media(max-width:1100px){.fu-responsaveis-grid{grid-template-columns:1fr}}
+/* Correção 17/09/2026: nunca 3 quadros por linha (o breakpoint >=1600px
+   antigo caía para 3 colunas, ficando estreito demais). repeat(2,...) em
+   vez de auto-fit porque em écrans muito largos auto-fit ainda deixaria
+   caber um 3º painel — repeat(2,...) garante literalmente no máximo 2,
+   sempre, independentemente da largura do écran. */
+.fu-responsaveis-grid{display:grid;grid-template-columns:repeat(2,minmax(650px,1fr));gap:20px;align-items:start}
+@media(max-width:1380px){.fu-responsaveis-grid{grid-template-columns:1fr}}
 .fu-swimlane{background:var(--bg);border:1px solid var(--border);border-radius:12px;padding:16px;display:flex;flex-direction:column;min-height:0}
 .fu-swimlane-titulo{font-size:13px;font-weight:700;color:var(--txt2);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--border)}
 .fu-kanban-colunas{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
