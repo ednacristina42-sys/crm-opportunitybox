@@ -24911,6 +24911,12 @@ var SINC_FIN_ULT_KEY = 'ob-sinc-financeiro-ultima';
 var SINC_FIN_ESCRITA_ULT_KEY = 'ob-sinc-financeiro-escrita-ultima';
 var SINC_FIN_EM_CURSO = false;
 var SINC_FIN_ESCRITA_EM_CURSO = false;
+// Última vez que sincFinAutoSincronizar() correu nesta sessão do browser —
+// só usado para não repetir a leitura completa do TOConline (faturas + NC +
+// recibos) sempre que o utilizador navega para Tesouraria/Financeiro em
+// segundos seguidos; um clique manual em "Correr dry-run" nunca é afetado
+// por isto.
+var SINC_FIN_AUTO_ULTIMA_EXECUCAO = 0;
 
 // Backup local antes de qualquer reconciliação que altere ob-tes-receber —
 // não existe hoje nenhum mecanismo de versão/backup para esta chave no
@@ -25402,6 +25408,47 @@ async function sincFinExecutarEscritaReal(resumoDryRun, linhasSheet, linhasFt, l
 }
 window.sincFinExecutarEscritaReal = sincFinExecutarEscritaReal;
 
+// Versão automática, sem clique nenhum — pedido explícito da Edna
+// (21/09/2026): deixar de ter de abrir "Sincronizar Financeiro" e
+// confirmar a escrita manualmente sempre que quer ver "Recebidos"
+// actualizado. Corre o dry-run e, se for aprovado (sem erros, com pelo
+// menos 1 linha nova real e as coleções completas guardadas), avança
+// SOZINHA para a escrita real — mesmo caminho de código de
+// sincFinPrepararConfirmacaoEscrita()/sincFinExecutarEscritaReal(), só sem
+// o alert()/confirm() manual. A escrita em si continua exactamente tão
+// protegida como antes (backup, deteção de deriva, verificação de
+// duplicados, PATCH condicional, releitura de confirmação, nunca
+// UPDATE/DELETE em linhas existentes) — nada dessas garantias foi
+// removido, só o passo de revisão humana.
+// Silenciosa (nunca abre o modal) e só corre para Admin/Financeiro, tal
+// como o caminho manual já exigia. Um throttle de 60s evita repetir a
+// leitura completa do TOConline se o utilizador navegar entre
+// Tesouraria/Financeiro várias vezes em segundos.
+async function sincFinAutoSincronizar(){
+  if(!(typeof CU !== 'undefined' && CU && (CU.admin === true || CU.role === 'financeiro'))) return;
+  if(SINC_FIN_EM_CURSO || SINC_FIN_ESCRITA_EM_CURSO) return;
+  if(Date.now() - SINC_FIN_AUTO_ULTIMA_EXECUCAO < 60000) return;
+  SINC_FIN_AUTO_ULTIMA_EXECUCAO = Date.now();
+  var resumo;
+  try{ resumo = await sincronizarFinanceiroCentral(true); }
+  catch(e){ console.warn('[SincFin] Auto-sincronização: dry-run falhou.', e); return; }
+  if(!resumo || !resumo.ok || (resumo.erros||[]).length) return;
+  var estadoExec = sincFinEstadoExecucaoReal(resumo);
+  if(estadoExec.totalReais === 0 || !estadoExec.docsDisponiveis) return;
+  var linhasSheet = (resumo.sheet_novas_docs || []).slice();
+  var linhasFt = resumo.ft.novos_docs.map(function(d){ return sincFinDocParaLinhaTes(d, 'FT'); });
+  var linhasNc = resumo.nc.novos_docs.map(function(d){ return sincFinDocParaLinhaTes(d, 'NC'); });
+  try{
+    var resultado = await sincFinExecutarEscritaReal(resumo, linhasSheet, linhasFt, linhasNc);
+    if(resultado && resultado.ok){
+      console.log('[SincFin] Auto-sincronização: ' + resultado.esperado_inserir_total + ' linha(s) nova(s) inserida(s) em ob-tes-receber.');
+      _tesHidratacaoPromise = null;
+      if(typeof tesHidratarCanonico==='function') tesHidratarCanonico();
+    }
+  }catch(e){ console.warn('[SincFin] Auto-sincronização: escrita real falhou.', e); }
+}
+window.sincFinAutoSincronizar = sincFinAutoSincronizar;
+
 // Busca um recurso TOConline por completo via resource=sync_docs (crm-toconline
 // v20) — paginação real por lotes, sem o teto de 5.000 documentos do antigo
 // resource=invoices/credit_notes/receipts (buscarTudo()/MAX_PAGES=50, que
@@ -25711,10 +25758,14 @@ function sincFinRenderPainel(state){
 // identidade segura (sincFinReconciliar) e mostra o relatório. Parar aqui é
 // deliberado — a gravação real só volta a existir depois de o relatório ser
 // revisto e aprovado explicitamente, numa próxima alteração autorizada.
-async function sincronizarFinanceiroCentral(){
+async function sincronizarFinanceiroCentral(silencioso){
   if(SINC_FIN_EM_CURSO) return;
   var modal = document.getElementById('sinc-fin-modal');
-  if(modal) modal.style.display = 'flex';
+  // silencioso=true (usado por sincFinAutoSincronizar()) nunca abre o modal
+  // por cima do que o utilizador está a ver — continua a renderizar em
+  // #sinc-fin-corpo normalmente, só fica invisível até serem abertos
+  // manualmente ("🔄 Sincronizar Financeiro (dry-run)").
+  if(modal && !silencioso) modal.style.display = 'flex';
   if(!(typeof CU !== 'undefined' && CU && (CU.admin === true || CU.role === 'financeiro'))){
     sincFinRenderPainel({ a_correr:false, resumo:{ ok:false, ts:new Date().toISOString(), erros:['Só contas Admin ou Financeiro podem sincronizar o Financeiro.'] } });
     return;
@@ -27429,8 +27480,8 @@ var _origGoPage = window.goPage;
 window.goPage = function(id) {
   if (_origGoPage) _origGoPage(id);
   if (id === 'stock') { setTimeout(stockRender, 50); }
-  if (id === 'financeiro') { setTimeout(finRenderDespesas, 50); }
-  if (id === 'tesouraria') { setTimeout(function(){ tesRender(); if(typeof tesHidratarCanonico==='function') tesHidratarCanonico(); if(typeof tesHidratarComprasToco==='function') tesHidratarComprasToco(); }, 50); }
+  if (id === 'financeiro') { setTimeout(finRenderDespesas, 50); setTimeout(function(){ if(typeof sincFinAutoSincronizar==='function') sincFinAutoSincronizar(); }, 50); }
+  if (id === 'tesouraria') { setTimeout(function(){ tesRender(); if(typeof tesHidratarCanonico==='function') tesHidratarCanonico(); if(typeof tesHidratarComprasToco==='function') tesHidratarComprasToco(); if(typeof sincFinAutoSincronizar==='function') sincFinAutoSincronizar(); }, 50); }
   if (id === 'admin-analise-vendas') {
     setTimeout(function(){
       if (typeof avVendedoresFiltrar === 'function') {
