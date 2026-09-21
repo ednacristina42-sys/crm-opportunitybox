@@ -7164,6 +7164,15 @@ tbody td{font-size:15px}
       <button class="sl-item" id="ni-tesouraria" data-action="goPage" data-page="tesouraria"><span class="mk-ic">🏦</span>Tesouraria</button>
       <button class="sl-item" id="ni-historico-faturacao" data-action="goPage" data-page="historico-faturacao"><span class="mk-ic">📜</span>Histórico de Faturação</button>
       <button class="sl-item" data-action="goPage" data-page="admin-analise-vendas"><span class="mk-ic">📊</span>Análise de Vendas</button>
+      <!-- Atalho pedido pela Edna (21/09/2026): a mesma página "Mapa de
+           Vendas" já existente no espaço Comercial (data-page="mapa-vendas",
+           #page-mapa-vendas), só um 2º acesso a partir do Financeiro — não
+           duplica dados nem lógica, é a mesma página. Sem id repetido
+           (sl-mapa-vendas-label já existe no atalho do Comercial — usado
+           por obAplicarVisaoComercialSidebar() para o trocar por "Meu Mapa
+           de Vendas" na visão comercial; este atalho fica sempre com o
+           rótulo genérico). -->
+      <button class="sl-item" data-action="goPage" data-page="mapa-vendas"><span class="mk-ic">📊</span>Mapa de Vendas</button>
       <button class="sl-item" id="ni-relatorios" data-action="goPage" data-page="relatorios"><span class="mk-ic">📑</span>Relatórios</button>
       <button class="sl-item" onclick="goFaturasAdmin()"><span class="mk-ic">🧾</span>Faturas</button>
     </div>
