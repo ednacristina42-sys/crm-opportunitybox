@@ -24306,11 +24306,19 @@ function tesRenderPagasToco(){
   var el = document.getElementById('tes-tbody-pagas-toco');
   if(!el) return;
   if(!tesTocoComprasDisponivel()){ el.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:20px">Ainda sem sincronização TOConline — clique em "🔄 Sincronizar TOConline".</td></tr>'; return; }
-  // Respeita o Período seleccionado e fica em date DESC (correção 17/09,
-  // parte 3) — já vem ordenada de tocoSincronizarComprasPagamentosReal(),
-  // só falta filtrar por ano (o filtro nunca reordena, só remove).
+  // Respeita o Período seleccionado e fica em date DESC (mais recente
+  // primeiro). Correção 21/09/2026: a suposição de que a lista já vinha
+  // ordenada da edge function era falsa — pagas[] segue a ordem de
+  // paginação de payment_lines no TOConline (por id de pagamento, não por
+  // data), confirmado por screenshot em produção (datas fora de ordem).
+  // Ordena aqui sempre, tal como A Pagar (due_date) e Créditos (date).
   var lista = (TES_COMPRAS_TOCO.pagas || []).filter(function(p){
     return (typeof tesPassaFiltroAno==='function') ? tesPassaFiltroAno(p.dataPagamento) : true;
+  }).sort(function(a,b){
+    var da = new Date(a.dataPagamento), db = new Date(b.dataPagamento);
+    var va = isNaN(da) ? -Infinity : da.getTime();
+    var vb = isNaN(db) ? -Infinity : db.getTime();
+    return vb - va;
   });
   el.innerHTML = lista.map(function(p){
     return '<tr>'
