@@ -1531,6 +1531,12 @@ var AV_VEND_SHEET_PUB_ID = '2PACX-1vQerK5QKGIG7JKHC8FmrF7z7WQRnBLXXD9f8OG9FQYYsD
 var AV_VEND_SHEET_GID = '1231149814';
 var AV_VEND_SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/' + AV_VEND_SHEET_PUB_ID + '/pub?output=csv&gid=' + AV_VEND_SHEET_GID;
 
+// Mapa de Vendas — aba "Orçamentos 2026" da MESMA planilha publicada (mesmo
+// pub id de AV_VEND_SHEET_PUB_ID, confirmado pela Edna 21/09/2026 — só o
+// gid muda, para apontar à aba de Orçamentos em vez de Vendas).
+var MV_ORC_SHEET_GID = '529213940';
+var MV_ORC_SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/' + AV_VEND_SHEET_PUB_ID + '/pub?output=csv&gid=' + MV_ORC_SHEET_GID;
+
 function avParseCSV(text){
   var rows=[],row=[],field='',inQuotes=false;
   for(var i=0;i<text.length;i++){
@@ -1659,6 +1665,64 @@ function avFindCol(header, variants){
     if(idx!==-1) return idx;
   }
   return -1;
+}
+
+// Mapa de Vendas — validação + leitura da aba "Orçamentos 2026", réplica de
+// avValidarCSVVendas()/avFetchVendSheetCSV() acima, só a apontar para
+// MV_ORC_SHEET_URL e a validar por uma coluna distintiva desta aba
+// ("cliente") em vez de "vendedor".
+function mvValidarCSVOrcamentos(text){
+  var t = String(text||'').trim();
+  if(!t || t.length < 30) return { valido:false, motivo:'resposta vazia ou demasiado curta (' + t.length + ' bytes)' };
+  if(t.charAt(0) === '<') return { valido:false, motivo:'HTML em vez de CSV (provável página de erro/login do Google)' };
+  if(t.charAt(0) === '{' || t.charAt(0) === '[') return { valido:false, motivo:'JSON em vez de CSV (provável erro de um proxy)' };
+  var rows;
+  try{ rows = avParseCSV(t); }catch(e){ return { valido:false, motivo:'falha a parsear como CSV: ' + e.message }; }
+  if(!rows || !rows.length) return { valido:false, motivo:'CSV vazio após parsing' };
+  var headerRow = 0;
+  for(var ri=0; ri<Math.min(5,rows.length); ri++){
+    if(avFindCol(rows[ri],['cliente'])!==-1){ headerRow = ri; break; }
+  }
+  var header = rows[headerRow];
+  var idxCliente = avFindCol(header, ['cliente']);
+  if(idxCliente === -1) return { valido:false, motivo:'coluna "cliente" não encontrada — não parece ser a aba Orçamentos 2026', colunas: header };
+  return { valido:true, colunas: header, headerRow: headerRow };
+}
+
+async function mvFetchOrcSheetCSV(){
+  var candidatos = [
+    { nome:'directo', url: MV_ORC_SHEET_URL },
+    { nome:'directo (single=true)', url: MV_ORC_SHEET_URL + '&single=true' },
+    { nome:'proxy allorigins (fallback)', url: 'https://api.allorigins.win/raw?url=' + encodeURIComponent(MV_ORC_SHEET_URL) },
+    { nome:'proxy corsproxy.io (fallback)', url: 'https://corsproxy.io/?' + encodeURIComponent(MV_ORC_SHEET_URL) },
+    { nome:'proxy codetabs (fallback)', url: 'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(MV_ORC_SHEET_URL) },
+  ];
+  var tentativas = [];
+  for(var i=0; i<candidatos.length; i++){
+    var diag = { n: i+1, nome: candidatos[i].nome };
+    try{
+      var resp = await fetch(candidatos[i].url, {cache:'no-store'});
+      diag.status = resp.status;
+      if(!resp.ok){
+        diag.erro = 'HTTP ' + resp.status + (resp.status===410 ? ' Gone — publicação expirada/revogada, é preciso republicar a aba' : '');
+        tentativas.push(diag);
+        console.warn('[MV-Sheet] tentativa '+diag.n+'/'+candidatos.length+' ('+diag.nome+') falhou:', diag);
+        continue;
+      }
+      var text = await resp.text();
+      diag.tamanho = text.length;
+      var val = mvValidarCSVOrcamentos(text);
+      if(val.valido){
+        console.log('[MV-Sheet] CSV válido obtido (tentativa '+diag.n+'/'+candidatos.length+', '+diag.nome+') · tamanho:', text.length, '· colunas:', val.colunas);
+        return text;
+      }
+      diag.erro = val.motivo;
+    }catch(e){ diag.erro = (e.name || 'Erro') + ': ' + e.message; }
+    tentativas.push(diag);
+    console.warn('[MV-Sheet] tentativa '+diag.n+'/'+candidatos.length+' ('+diag.nome+') falhou:', diag);
+  }
+  var resumoTentativas = tentativas.map(function(t){ return t.n + '. ' + t.nome + ' -> ' + t.erro; }).join(' | ');
+  throw new Error('Não foi possível obter CSV válido da aba Orçamentos 2026 após ' + candidatos.length + ' tentativas — ' + resumoTentativas);
 }
 
 async function avSyncVendedoresSheet(){
@@ -7473,7 +7537,7 @@ tbody td{font-size:15px}
       <div class="pg-space-icon" style="background:#facc15;color:#422006">M</div>
       <div class="pg-title">Mapa de Vendas</div>
       <div class="mv-actions">
-        <button class="mv-btn" id="mv-sync-btn" disabled title="Em preparação — próxima fase">🔄 Sincronizar Google Sheet</button>
+        <button class="mv-btn" id="mv-sync-btn" onclick="mvSincronizarGoogleSheet()" title="Vai buscar os orçamentos novos à folha 'Orçamentos 2026' do Google Sheets — nunca altera nem apaga orçamentos já existentes">🔄 Sincronizar Google Sheet</button>
         <button class="mv-btn" disabled title="Em preparação — próxima fase">⬇ Exportar</button>
       </div>
     </div>
@@ -12031,6 +12095,7 @@ window.goPage=function goPage(id){
   if(id==='comercial-pipeline'&&typeof crmHidratarLeadsCanonico==='function')crmHidratarLeadsCanonico();
   if(id==='meu-painel'&&typeof renderMeuPainel==='function')renderMeuPainel();
   if(id==='mapa-vendas'&&typeof renderMapaVendas==='function')renderMapaVendas();
+  if(id==='mapa-vendas'&&typeof mvSincronizarGoogleSheet==='function')mvSincronizarGoogleSheet();
   if(id==='historico-faturacao'&&typeof renderHistoricoFaturacao==='function')renderHistoricoFaturacao();
   if(id==='comercial-followup'&&typeof fuInitPage==='function')fuInitPage();
   if(id==='crm'){ try{ renderCRMKanban('crm-kanban-admin'); }catch(e){} }
@@ -17879,6 +17944,142 @@ function importarOrcamentos2026() {
 }
 window.importarOrcamentos2026 = importarOrcamentos2026;
 
+// Extrai o número inicial de "Nº de Orçamento" independentemente do
+// formato usado na folha — confirmado ao vivo que a mesma aba mistura
+// "1OB-2026"/"5OB-2026" com "9/2026OB"/"10/2026OB" — e gera o mesmo
+// esquema já usado por importarOrcamentos2026() ('ORC-2026OB-N'), para
+// que as duas vias de importação nunca criem números concorrentes para o
+// mesmo orçamento.
+function mvNormalizarNumOrcamento(bruto){
+  var m = /(\d+)/.exec(String(bruto||''));
+  return m ? ('ORC-2026OB-' + m[1]) : null;
+}
+
+// A folha já usa o mesmo vocabulário de estados do CRM (Pendente/Aprovado/
+// Faturado/Cancelado) — ao contrário do import estático antigo (que vinha
+// de "Adjudicada/Faturada/Perdida/Proposta", daí obMapearEstadoImport()
+// acima traduzir esses termos). Aqui só validamos que o valor é um dos 4
+// reconhecidos; nunca reclassifica um "Aprovado" como "Pendente" por
+// engano (obMapearEstadoImport() faria isso, por não o reconhecer).
+var MV_ESTADOS_VALIDOS = ['Pendente','Aprovado','Faturado','Cancelado'];
+function mvMapEstadoSheet(estado){
+  var e = String(estado||'').trim();
+  return MV_ESTADOS_VALIDOS.indexOf(e) !== -1 ? e : 'Pendente';
+}
+
+var MV_SYNC_EM_CURSO = false;
+var MV_SYNC_ULTIMA_EXECUCAO = 0;
+
+// Sincronização automática do Mapa de Vendas com a folha "Orçamentos 2026"
+// (pedido pela Edna, 21/09/2026 — a folha é editada todos os dias pelos
+// comerciais e não quer ter de colar dados manualmente). Só CRIA
+// orçamentos novos (por Nº de Orçamento normalizado) — nunca actualiza nem
+// apaga um orçamento já existente no CRM, para não sobrescrever edições
+// feitas directamente na aplicação (preço final negociado, fase de
+// produção/liquidação, etc.). Grava directo em ob_orcamentos via
+// _sbOrcUpsert() (a mesma função usada por todo o resto do CRM) — nunca
+// fica só em localStorage como acontecia com importarOrcamentos2026().
+async function mvSincronizarGoogleSheet(){
+  if(MV_SYNC_EM_CURSO) return;
+  if(!(typeof CU!=='undefined' && CU && CU.admin===true)) return;
+  if(Date.now() - MV_SYNC_ULTIMA_EXECUCAO < 60000) return;
+  MV_SYNC_EM_CURSO = true;
+  MV_SYNC_ULTIMA_EXECUCAO = Date.now();
+  var btn = document.getElementById('mv-sync-btn');
+  var txtOriginal = btn ? btn.textContent : null;
+  if(btn){ btn.disabled = true; btn.textContent = '⏳ A sincronizar…'; }
+  var resumo = { novos:0, jaExistiam:0, ignoradas:0, erros:[] };
+  try{
+    var text = await mvFetchOrcSheetCSV();
+    var rows = avParseCSV(text);
+    var headerRow = 0;
+    for(var ri=0; ri<Math.min(5,rows.length); ri++){
+      if(avFindCol(rows[ri],['cliente'])!==-1){ headerRow = ri; break; }
+    }
+    var header = rows[headerRow];
+    var idx = {
+      num: avFindCol(header, ['nº de orçamento','no de orçamento','numero de orcamento','nº orçamento']),
+      data: avFindCol(header, ['data']),
+      comercial: avFindCol(header, ['comercial']),
+      origem: avFindCol(header, ['origem']),
+      nif: avFindCol(header, ['nif']),
+      cliente: avFindCol(header, ['cliente']),
+      projeto: avFindCol(header, ['nome do projeto']),
+      tipoProd: avFindCol(header, ['tipo produção','tipo producao']),
+      localidade: avFindCol(header, ['localidade']),
+      mesAno: avFindCol(header, ['mês/ano','mes/ano']),
+      valor: avFindCol(header, ['valor orçamentado','valor orcamentado']),
+      estado: avFindCol(header, ['estado']),
+      obs: avFindCol(header, ['obs gerais','obs']),
+    };
+    if(idx.num===-1 || idx.cliente===-1 || idx.valor===-1){
+      throw new Error('Colunas essenciais não encontradas (Nº de Orçamento/Cliente/Valor Orçamentado) — colunas lidas: ' + header.join(', '));
+    }
+
+    for(var i=headerRow+1; i<rows.length; i++){
+      var r = rows[i];
+      if(!r || !r.length) continue;
+      var clienteBruto = (r[idx.cliente]||'').trim();
+      if(!clienteBruto || clienteBruto==='#N/A'){ resumo.ignoradas++; continue; }
+      var numGerado = mvNormalizarNumOrcamento(r[idx.num]);
+      if(!numGerado){ resumo.ignoradas++; continue; }
+      if(orcData.some(function(o){ return o.num === numGerado; })){ resumo.jaExistiam++; continue; }
+
+      var clienteExistente = (typeof obEncontrarClienteSimilar==='function') ? obEncontrarClienteSimilar(clienteBruto) : null;
+      var nomeClienteFinal = clienteExistente ? clienteExistente.n : clienteBruto;
+      var dataConvertida = (idx.data!==-1 && typeof obConverterDataImport==='function') ? obConverterDataImport(r[idx.data]) : '';
+      var valor = avParseNumPT(r[idx.valor]);
+      var comercial = idx.comercial!==-1 ? (r[idx.comercial]||'').trim() : '';
+
+      var orc = {
+        num: numGerado, cli: nomeClienteFinal, val: valor,
+        vendedor: comercial, email: ORC_USER_EMAILS[comercial] || 'geral@opportunitybox.pt',
+        st: idx.estado!==-1 ? mvMapEstadoSheet(r[idx.estado]) : 'Pendente', stc: 'ba',
+        dt: dataConvertida, data: dataConvertida,
+        prazo: '', morada: '', nif: idx.nif!==-1 ? (r[idx.nif]||'').replace('#N/A','') : '',
+        val_orig: valor, linhas: [],
+        totais: { sub: valor, descPct: 0, descVal: 0, ivaPct: 23, ivaVal: 0, total: valor },
+        cliEmail: '', cliWA: '', pagamento50: false, sinal: null, saldo: null,
+        _numOriginal: idx.num!==-1 ? r[idx.num] : null, _importadoPlanilha: true,
+        origem: idx.origem!==-1 ? (r[idx.origem]||'').trim() : null,
+        projeto: idx.projeto!==-1 ? (r[idx.projeto]||'').trim() : null,
+        tipoProd: idx.tipoProd!==-1 ? (r[idx.tipoProd]||'').trim() : null,
+        localidade: idx.localidade!==-1 ? (r[idx.localidade]||'').trim() : null,
+        mesAno: idx.mesAno!==-1 ? (r[idx.mesAno]||'').trim() : null,
+        obs: idx.obs!==-1 ? (r[idx.obs]||'').trim() : ''
+      };
+
+      var res = await _sbOrcUpsert(orc, { isCreate: true });
+      if(res && res.ok){
+        orcData.push(orc);
+        resumo.novos++;
+      } else {
+        resumo.erros.push(numGerado + ': ' + (res && res.message ? res.message : 'falha desconhecida'));
+      }
+    }
+
+    if(resumo.novos){
+      localStorage.setItem('ob-orcamentos', JSON.stringify(orcData.slice(0,5000)));
+      if(typeof orcRenderList==='function') orcRenderList();
+      _mvData = null; // força releitura do Supabase para o Mapa de Vendas mostrar os novos já
+      if(typeof renderMapaVendas==='function') renderMapaVendas();
+    }
+    if(typeof showToast==='function'){
+      showToast('✓ Google Sheet sincronizado — ' + resumo.novos + ' orçamento' + (resumo.novos===1?'':'s') + ' novo' + (resumo.novos===1?'':'s') +
+        (resumo.erros.length ? ' · ' + resumo.erros.length + ' com erro' : ''));
+    }
+    if(resumo.erros.length) console.warn('[MV-Sheet] erros na sincronização:', resumo.erros);
+  }catch(e){
+    console.warn('[MV-Sheet] sincronização falhou:', e);
+    if(typeof showToast==='function') showToast('⚠ Falha a sincronizar Google Sheet: ' + e.message);
+  }finally{
+    MV_SYNC_EM_CURSO = false;
+    if(btn){ btn.disabled = false; btn.textContent = txtOriginal || '🔄 Sincronizar Google Sheet'; }
+  }
+  return resumo;
+}
+window.mvSincronizarGoogleSheet = mvSincronizarGoogleSheet;
+
 // ADD: Importar orçamentos a partir de um ficheiro Excel (.xlsx/.xls) usando SheetJS
 function importarOrcamentosExcel(file) {
   if (!file) return;
@@ -18044,7 +18245,19 @@ async function _sbOrcUpsert(orc, opts) {
         faturaFinalImediato: orc.faturaFinalImediato === true,
         recebimentoTesourariaId: (orc.recebimentoTesourariaId === undefined || orc.recebimentoTesourariaId === null) ? null : orc.recebimentoTesourariaId,
         historicoLiquidacao: Array.isArray(orc.historicoLiquidacao) ? orc.historicoLiquidacao : [],
-        projectId: (orc.projectId === undefined || orc.projectId === null) ? null : orc.projectId
+        projectId: (orc.projectId === undefined || orc.projectId === null) ? null : orc.projectId,
+        // Colunas do Mapa de Vendas (_mvOrigem/_mvProjeto/_mvTipoProdRaw/
+        // _mvDescricao, linha ~31624) já liam extra.origem/projeto/tipoProd/
+        // descricaoTrabalho, mas nada os escrevia — ficavam sempre "—".
+        // Preenchidos agora pela sincronização da folha "Orçamentos 2026"
+        // (mvSincronizarGoogleSheet(), 21/09/2026); localidade/mesAno são
+        // novos, sem consumidor na UI ainda, guardados para uso futuro.
+        origem: (orc.origem === undefined || orc.origem === null) ? null : orc.origem,
+        projeto: (orc.projeto === undefined || orc.projeto === null) ? null : orc.projeto,
+        tipoProd: (orc.tipoProd === undefined || orc.tipoProd === null) ? null : orc.tipoProd,
+        descricaoTrabalho: (orc.descricaoTrabalho === undefined || orc.descricaoTrabalho === null) ? null : orc.descricaoTrabalho,
+        localidade: (orc.localidade === undefined || orc.localidade === null) ? null : orc.localidade,
+        mesAno: (orc.mesAno === undefined || orc.mesAno === null) ? null : orc.mesAno
       },
       owner_id: (cu.admin === true && opts.reassignOwnerId) ? opts.reassignOwnerId : cu.id,
       updated_by: cu.id
@@ -18173,6 +18386,12 @@ async function _sbOrcLoadAll() {
         recebimentoTesourariaId: (extra.recebimentoTesourariaId === undefined || extra.recebimentoTesourariaId === null) ? null : extra.recebimentoTesourariaId,
         historicoLiquidacao: Array.isArray(extra.historicoLiquidacao) ? extra.historicoLiquidacao : [],
         projectId: (extra.projectId === undefined || extra.projectId === null) ? null : extra.projectId,
+        origem: (extra.origem === undefined || extra.origem === null) ? null : extra.origem,
+        projeto: (extra.projeto === undefined || extra.projeto === null) ? null : extra.projeto,
+        tipoProd: (extra.tipoProd === undefined || extra.tipoProd === null) ? null : extra.tipoProd,
+        descricaoTrabalho: (extra.descricaoTrabalho === undefined || extra.descricaoTrabalho === null) ? null : extra.descricaoTrabalho,
+        localidade: (extra.localidade === undefined || extra.localidade === null) ? null : extra.localidade,
+        mesAno: (extra.mesAno === undefined || extra.mesAno === null) ? null : extra.mesAno,
         owner_id: row.owner_id || null,
         // Concorrência segura (ajuste 12/09/2026) — baseline local do
         // updated_at real, para a próxima escrita desta sessão sobre este
