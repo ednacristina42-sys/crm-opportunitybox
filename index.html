@@ -23988,10 +23988,20 @@ function tesRender() {
                      .reduce(function(s,c){return s+(c.valor||0);},0);
   var totalLog = TES_LOG_DESPESAS.reduce(function(s,d){return s+(d.valor||0);},0);
 
-  var _tp = document.getElementById('tes-total-pagar'); if(_tp) _tp.textContent = fmtEurT(totalPagar);
-  var _v30 = document.getElementById('tes-vence-30'); if(_v30) _v30.textContent = fmtEurT(vence30);
-  var _pm = document.getElementById('tes-pago-mes'); if(_pm) _pm.textContent = fmtEurT(pagoMes);
-  var _tl = document.getElementById('tes-total-log'); if(_tl) _tl.textContent = fmtEurT(totalLog);
+  // Estes 4 elementos são partilhados com tesUpdateKPIs('pagar'), que os
+  // preenche com os totais reais do TOConline quando já houver sincronização
+  // (tesTocoComprasDisponivel()). tesRender() corre em paralelo com a
+  // sincronização de faturas (Promise.all em "🔄 Sincronizar TOConline") e
+  // pode terminar depois da sincronização de compras — sem esta guarda,
+  // apagava os valores certos do TOConline com os números das Contas
+  // Manuais, mantendo por engano os rótulos/subtítulos "TOConline" (bug
+  // confirmado 21/09/2026: subtítulo dizia TOConline, valor era manual).
+  if(!(typeof tesTocoComprasDisponivel==='function' && tesTocoComprasDisponivel())){
+    var _tp = document.getElementById('tes-total-pagar'); if(_tp) _tp.textContent = fmtEurT(totalPagar);
+    var _v30 = document.getElementById('tes-vence-30'); if(_v30) _v30.textContent = fmtEurT(vence30);
+    var _pm = document.getElementById('tes-pago-mes'); if(_pm) _pm.textContent = fmtEurT(pagoMes);
+    var _tl = document.getElementById('tes-total-log'); if(_tl) _tl.textContent = fmtEurT(totalLog);
+  }
 
   // Tabela Pendentes
   var tbPagar = document.getElementById('tes-tbody-pagar');
