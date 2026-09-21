@@ -9340,7 +9340,7 @@ tbody td{font-size:15px}
   <div class="pg-hdr">
     <div class="pg-hdr-top">
       <div class="pg-space-icon" style="background:var(--y)">★</div>
-      <div class="pg-title">Equipa — 22 colaboradores</div>
+      <div class="pg-title" id="equipa-contagem">Equipa</div>
       <div class="pg-actions"><button class="tbtn y" data-action="openEquipaModal">+ Novo utilizador</button></div>
     </div>
   </div>
@@ -11438,6 +11438,43 @@ window.obVerComoComerciais = obVerComoComerciais;
 // 4 nomes fictícios no modal de Nova Tarefa) por esta única fonte —
 // sempre inclui quem estiver ativo em RH -> Colaboradores (ex: Rui,
 // Humberto, André), sem listas paralelas.
+// Roster único de colaboradores — reconcilia as 3 fontes que a Edna viu
+// desencontradas (21/09/2026): "Equipa" (USERS, 2 entradas fixas, nunca
+// persistidas) mostrava só Direção; "Recursos Humanos" já misturava
+// ob_colaboradores (rhColabs, com CRUD real) + o app externo de pontos
+// (EC_FUNCIONARIOS) sem cruzar os dois. Nenhuma das 3 fontes partilha um
+// id — o único campo comum é o nome — por isso a reconciliação é por nome
+// normalizado (trim+lowercase), mesma técnica já usada em
+// obListaResponsaveisAtivos() acima. Ordem de precedência quando o mesmo
+// nome aparece em mais de uma fonte: Direção > ob_colaboradores > App —
+// ob_colaboradores é o único com CRUD e campos financeiros/HR completos,
+// por isso vence sobre o App; quem só existe no App fica marcado appOnly.
+// Não escreve nada em lado nenhum — é só a lista canónica para páginas que
+// precisem de mostrar "a equipa" sem duplicar ninguém.
+function obRosterColaboradores(){
+  var porNome = {}; var ordem = [];
+  function add(nome, dados){
+    var chave = String(nome||'').trim().toLowerCase();
+    if(!chave || porNome[chave]) return;
+    ordem.push(chave);
+    porNome[chave] = Object.assign({ nome: String(nome).trim() }, dados);
+  }
+  (typeof USERS!=='undefined' ? USERS : []).forEach(function(u){
+    add(u.name, { cargo:u.role, dept:u.dept, color:u.color, admin:true, online:!!u.online, origem:'direcao', id:u.id });
+  });
+  (window.rhColabs||[]).forEach(function(c){
+    if(!c || c.deleted_at || c.ativo===false) return;
+    add(c.nome, { cargo:c.cargo, dept:c.dept, color:c.color, admin:false, tel:c.tel, origem:'rh', id:c.id });
+  });
+  (window.EC_FUNCIONARIOS||[]).forEach(function(c){
+    var chave = String(c.nome||'').trim().toLowerCase();
+    if(chave && porNome[chave]){ porNome[chave].appLigado = true; return; }
+    add(c.nome, { cargo:c.cargo, dept:c.dept, color:(typeof ecRoleColor==='function'?ecRoleColor(c.cargo):'#3B82F6'), admin:false, tel:c.tel, origem:'app', appOnly:true, ecId:c.ec_id });
+  });
+  return ordem.map(function(k){ return porNome[k]; });
+}
+window.obRosterColaboradores = obRosterColaboradores;
+
 function obListaResponsaveisAtivos(){
   var nomes = (typeof USERS!=='undefined' ? USERS : []).map(function(u){ return u.name; });
   (window.rhColabs||[]).forEach(function(c){
@@ -12020,7 +12057,7 @@ window.goPage=function goPage(id){
     if(typeof despLoadCRM==='function'){ despLoadCRM().then(function(){ try{ finAtualizarKpisDespesas(); }catch(e){} }).catch(function(){}); }
   }catch(e){} }
   if(id==='relatorios')          { try{ renderRelatorios(); setTimeout(initCharts,50); }catch(e){} }
-  if(id==='equipa')              { try{ renderEquipa(); }catch(e){} }
+  if(id==='equipa')              { try{ renderEquipa(); if(typeof ecSyncFuncionarios==='function'){ ecSyncFuncionarios().then(function(){ try{ renderEquipa(); }catch(e){} }); } }catch(e){} }
   if(id==='alerts')              { try{ renderAlerts(); }catch(e){} }
   if(id==='chat')                { try{ renderChat(); }catch(e){} }
   if(id==='wa')                  { try{ renderWA(); }catch(e){} }
@@ -16685,9 +16722,20 @@ function rhRenderColabs(){
     const key = (c.nome||'').trim().toLowerCase();
     if(!seen.has(key)){ seen.add(key); unique.push(c); }
   }
+  // Reconciliação App × ob_colaboradores (pedido pela Edna, 21/09/2026): a
+  // mesma pessoa aparecia 2 vezes — um cartão "📱 App" (EC_FUNCIONARIOS) E
+  // um cartão local (rhColabs) sem qualquer ligação entre os dois. As duas
+  // fontes não partilham nenhum id — só o nome é comum — por isso a
+  // reconciliação é por nome normalizado. Quando há match, o cartão local
+  // vence (é o único com CRUD real e campos financeiros/HR completos: NIF,
+  // NISS, IBAN, salário) e o cartão do App para essa pessoa é removido;
+  // nada é escrito em nenhuma base de dados, é só a apresentação que deixa
+  // de duplicar.
+  const nomesLocais = new Set(rhColabs.map(c => (c.nome||'').trim().toLowerCase()));
+  const appSemDuplicado = unique.filter(c => !nomesLocais.has((c.nome||'').trim().toLowerCase()));
 
-  // Colaboradores do App de Pontos
-  const appCards = unique.map(c=>{
+  // Colaboradores do App de Pontos (já sem quem também existe localmente)
+  const appCards = appSemDuplicado.map(c=>{
     const col = ecRoleColor(c.cargo);
     const initials = (c.nome||'?').split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
     const avatarHtml = c.avatar_url
@@ -16707,15 +16755,22 @@ function rhRenderColabs(){
     </div>`;
   });
 
-  // Colaboradores locais (rhColabs)
-  const localCards = rhColabs.map(c=>`
-    <div onclick="rhEditColab('${c.id}')" style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:14px 16px;min-width:190px;max-width:230px;cursor:pointer;transition:border-color .15s" onmouseover="this.style.borderColor='${c.color||'#F5C400'}'" onmouseout="this.style.borderColor='var(--border)'">
+  // Colaboradores locais (rhColabs). Quando o mesmo nome também existe no
+  // App de pontos (nomesApp), fica marcado "📱 App" aqui — é a mesma pessoa
+  // reconciliada num único cartão, nunca dois (ver appSemDuplicado acima).
+  const nomesApp = new Set(unique.map(c => (c.nome||'').trim().toLowerCase()));
+  const localCards = rhColabs.map(c=>{
+    const ligadoApp = nomesApp.has((c.nome||'').trim().toLowerCase());
+    return `
+    <div onclick="rhEditColab('${c.id}')" style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:14px 16px;min-width:190px;max-width:230px;cursor:pointer;transition:border-color .15s;position:relative" onmouseover="this.style.borderColor='${c.color||'#F5C400'}'" onmouseout="this.style.borderColor='var(--border)'">
+      ${ligadoApp?`<span title="Também sincronizado do app de pontos" style="position:absolute;top:8px;right:8px;font-size:10px;background:#3B82F620;color:#3B82F6;border:1px solid #3B82F640;border-radius:4px;padding:1px 5px">📱 App</span>`:''}
       <div style="width:42px;height:42px;border-radius:50%;background:${c.color||'#F5C400'};display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;color:#fff;margin-bottom:8px">${(c.nome||'?').split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase()}</div>
       <div style="font-size:15px;font-weight:600;color:var(--txt2)">${c.nome}</div>
       <div style="font-size:12px;color:var(--muted);margin-top:2px">${c.cargo||'—'}</div>
       <div style="margin-top:5px"><span style="font-size:11px;background:${c.color||'#F5C400'}20;color:${c.color||'#F5C400'};border:1px solid ${c.color||'#F5C400'}40;border-radius:4px;padding:2px 6px">${c.dept||''}</span></div>
       <div style="margin-top:6px;font-size:11px;color:var(--muted)">📅 ${c.admissao||'—'} · ${c.contrato||'—'}</div>
-    </div>`);
+    </div>`;
+  });
 
   const all = [...appCards, ...localCards];
   if(!all.length){ el.innerHTML='<div style="color:var(--muted);font-style:italic;padding:12px">Sem colaboradores. Clique "🔄 App" para sincronizar o app de pontos.</div>'; return; }
@@ -20751,19 +20806,33 @@ function showToast(msg){
 function renderEquipa(){
   const el=document.getElementById('equipa-grid');if(!el)return;
   const isAdmin=CU&&CU.admin;
-  el.innerHTML=USERS.map(u=>`<div class="user-card" style="position:relative">
-    <div class="uava" style="background:${u.color}">${ini(u.name)}</div>
+  // Roster reconciliado (Direção + ob_colaboradores + App de pontos, sem
+  // duplicados — ver obRosterColaboradores()), não os 2 USERS fixos de
+  // antes. Correção 21/09/2026: "Equipa" dizia "22 colaboradores" no
+  // cabeçalho mas só mostrava as 2 entradas hardcoded de USERS — o
+  // cabeçalho nunca esteve ligado a uma contagem real (ver
+  // equipaAtualizarContagem() abaixo).
+  const roster = (typeof obRosterColaboradores==='function') ? obRosterColaboradores() : (typeof USERS!=='undefined'?USERS:[]);
+  el.innerHTML=roster.map(u=>{
+    const editar = u.origem==='direcao' ? `openEdit('${u.id}')`
+      : u.origem==='rh' ? `rhEditColab('${u.id}')`
+      : `rhVerFuncionarioApp('${u.ecId}')`;
+    return `<div class="user-card" style="position:relative">
+    <div class="uava" style="background:${u.color||'#3B82F6'}">${ini(u.nome)}</div>
     <div style="flex:1">
-      <div class="uname2">${u.name}${u.admin?' <span style="color:var(--y);font-size:12px">★ Admin</span>':''}</div>
-      <div class="urole2">${u.role}</div>
+      <div class="uname2">${u.nome}${u.admin?' <span style="color:var(--y);font-size:12px">★ Admin</span>':''}${u.appLigado?' <span title="Também sincronizado do app de pontos" style="font-size:11px">📱</span>':''}</div>
+      <div class="urole2">${u.cargo||'—'}</div>
       <div class="ustatus">
         <div class="${u.online?'odot':'xdot'}"></div>
         <span>${u.online?'Online':'Offline'}</span>
-        <span class="b bm" style="margin-left:4px;font-size:10.5px">${u.dept}</span>
+        <span class="b bm" style="margin-left:4px;font-size:10.5px">${u.dept||'—'}</span>
       </div>
     </div>
-    ${isAdmin?`<button onclick="openEdit('${u.id}')" style="position:absolute;top:8px;right:8px;background:var(--bg4);border:1px solid var(--border);color:var(--muted);border-radius:5px;padding:3px 8px;font-size:12px;cursor:pointer;transition:all .15s" onmouseover="this.style.color='var(--y)';this.style.borderColor='var(--yb)'" onmouseout="this.style.color='var(--muted)';this.style.borderColor='var(--border)'">✏ Editar</button>`:''}
-  </div>`).join('');
+    ${isAdmin?`<button onclick="${editar}" style="position:absolute;top:8px;right:8px;background:var(--bg4);border:1px solid var(--border);color:var(--muted);border-radius:5px;padding:3px 8px;font-size:12px;cursor:pointer;transition:all .15s" onmouseover="this.style.color='var(--y)';this.style.borderColor='var(--yb)'" onmouseout="this.style.color='var(--muted)';this.style.borderColor='var(--border)'">✏ Editar</button>`:''}
+  </div>`;
+  }).join('');
+  var hdr = document.getElementById('equipa-contagem');
+  if(hdr) hdr.textContent = 'Equipa — ' + roster.length + ' colaborador' + (roster.length===1?'':'es');
 }
 
 // ── DASHBOARD CHARTS ──────────────────────────────────────
