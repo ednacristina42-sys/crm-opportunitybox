@@ -4294,6 +4294,9 @@ function orcSwitchTab(tab) {
 window.goFaturasAdmin = function() {
   goPage('comercial-orcamentos');
   orcSwitchTab('faturas');
+  // "Faturas Locais" ficou escondida (21/09/2026, pedido da Edna — nunca
+  // teve dados reais); abre directamente em TocOnline, que tem.
+  if(typeof fatSwitchTab==='function') fatSwitchTab('toco');
 };
 
 // ── Abrir modal de fatura a partir de orçamento ─────────────
@@ -8157,8 +8160,14 @@ tbody td{font-size:15px}
   <!-- ── PAINEL FATURAS ────────────────────── -->
   <div id="orc-panel-faturas" style="display:none;flex:1;min-height:0;overflow-y:auto;padding:16px 24px">
 
-    <!-- KPIs faturas -->
-    <div class="g4" style="margin-bottom:16px">
+    <!-- KPIs faturas — escondidos a pedido da Edna (21/09/2026): fatData/
+         "Faturas Locais" é uma lista própria do CRM, sem ligação a
+         orçamentos nem ao TOConline, e nunca teve dados reais (só as 4
+         faturas de teste FAT-2026-001..004, sempre €0,00). Em vez de tentar
+         alimentá-la (exigiria decidir o que "puxar" e duplicaria o que já
+         existe na aba TocOnline, com dados reais), esconde-se este bloco
+         inteiro — nada foi apagado, só deixou de aparecer. -->
+    <div class="g4" style="margin-bottom:16px;display:none">
       <div class="mn"><div class="mnl">Total Faturas</div><div class="mnv" id="fat-kpi-total">—</div><div class="mns">emitidas</div></div>
       <div class="mn" style="border-color:rgba(63,207,142,.2)"><div class="mnl">Pagas</div><div class="mnv" style="color:var(--g)" id="fat-kpi-pagas">—</div><div class="mns">recebidas</div></div>
       <div class="mn" style="border-color:rgba(217,130,43,.3)"><div class="mnl">A Receber</div><div class="mnv" style="color:var(--a)" id="fat-kpi-receber">—</div><div class="mns">em aberto</div></div>
@@ -8186,13 +8195,13 @@ tbody td{font-size:15px}
 
     <!-- TOCO: tab bar -->
     <div class="toco-tab-bar">
-      <button class="toco-tab active" id="fat-tab-local" onclick="fatSwitchTab('local')">📋 Faturas Locais</button>
-      <button class="toco-tab" id="fat-tab-toco" onclick="fatSwitchTab('toco')">🌐 TocOnline</button>
+      <button class="toco-tab" id="fat-tab-local" onclick="fatSwitchTab('local')" style="display:none">📋 Faturas Locais</button>
+      <button class="toco-tab active" id="fat-tab-toco" onclick="fatSwitchTab('toco')">🌐 TocOnline</button>
       <button class="toco-tab" id="fat-tab-cli-toco" onclick="fatSwitchTab('clientes-toco')">👥 Clientes TocOnline</button>
     </div>
 
     <!-- TOCO: sync bar -->
-    <div class="toco-sync-bar" id="toco-sync-bar" style="display:none">
+    <div class="toco-sync-bar" id="toco-sync-bar" style="display:flex">
       <span class="toco-sync-dot" id="toco-sync-dot"></span>
       <span id="toco-sync-status">Nunca sincronizado</span>
       <span style="flex:1"></span>
@@ -8226,7 +8235,7 @@ tbody td{font-size:15px}
     </div>
 
     <!-- TOCO: KPIs TocOnline -->
-    <div class="toco-kpi-grid" id="toco-kpi-grid" style="display:none">
+    <div class="toco-kpi-grid" id="toco-kpi-grid" style="display:grid">
       <div class="toco-kpi"><div class="toco-kpi-label">Total Faturado</div><div class="toco-kpi-value" id="toco-kpi-total">—</div><div class="toco-kpi-sub">TocOnline</div></div>
       <div class="toco-kpi" style="border-color:rgba(63,207,142,.2)"><div class="toco-kpi-label">Pago</div><div class="toco-kpi-value" style="color:var(--g)" id="toco-kpi-pago">—</div><div class="toco-kpi-sub">recebido</div></div>
       <div class="toco-kpi" style="border-color:rgba(234,179,8,.2)"><div class="toco-kpi-label">Em Aberto</div><div class="toco-kpi-value" style="color:#eab308" id="toco-kpi-aberto">—</div><div class="toco-kpi-sub">a receber</div></div>
@@ -8234,7 +8243,7 @@ tbody td{font-size:15px}
     </div>
 
     <!-- TOCO: tabela TocOnline -->
-    <div id="fat-panel-toco" style="display:none">
+    <div id="fat-panel-toco" style="display:block">
       <div class="tw"><table>
         <thead><tr>
           <th>Nº Doc.</th><th>Tipo</th><th>Cliente</th><th>Data</th>
@@ -8259,7 +8268,7 @@ tbody td{font-size:15px}
     </div>
 
     <!-- Tabela faturas -->
-    <div id="fat-panel-local"><div class="tw"><table>
+    <div id="fat-panel-local" style="display:none"><div class="tw"><table>
       <thead><tr>
         <th>Nº Fatura</th><th>Orçamento</th><th>Cliente</th><th>Data</th>
         <th>Vencimento</th><th>Valor</th><th>Estado</th><th>TocOnline</th><th>Ações</th>
