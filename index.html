@@ -24121,13 +24121,13 @@ window.tocoClassificarTipoDocumentoCompra = tocoClassificarTipoDocumentoCompra;
 async function tocoSincronizarComprasPagamentosReal(){
   if(typeof homeIsAdmin==='function' && !homeIsAdmin()) return;
   var progresso = function(txt){ var el=document.getElementById('tes-toco-pagar-status'); if(el) el.innerHTML='<div style="font-size:12px;color:var(--y)">⏳ '+txt+'</div>'; };
-  var MAX_CHAMADAS = 60;
+  var MAX_CHAMADAS = 200;
   try{
     progresso('A sincronizar compras/pagamentos com o TOConline…');
     var chamadas = 0, concluido = false, ultimaResposta = null;
     while(!concluido && chamadas < MAX_CHAMADAS){
       chamadas++;
-      ultimaResposta = await tocoEF('sync_purchases_snapshot', 'paginas=15');
+      ultimaResposta = await tocoEF('sync_purchases_snapshot', 'paginas=50');
       concluido = !!ultimaResposta.concluido;
       if(!concluido){
         progresso('TOConline — fase: '+(ultimaResposta.fase||'?')+' ('+
