@@ -25655,7 +25655,22 @@ async function sincFinExecutarEscritaReal(resumoDryRun, linhasSheet, linhasFt, l
     var duplicadasSheet = linhasSheet.filter(function(l){ return l._sheetId && idsSheetExistentes[l._sheetId]; });
     var duplicadas = duplicadasToc.concat(duplicadasSheet);
     if(duplicadas.length){
-      throw new Error(duplicadas.length + ' das linhas novas já existem na base atual (por _tocoId/_sheetId) — provável escrita anterior parcial. Escrita abortada sem inserir nada; verificar manualmente antes de repetir.');
+      // Diagnóstico (pedido por Edna, 22/09 — "1 das linhas novas já existem"
+      // repetia-se mesmo depois de um dry-run genuinamente fresco): identificar
+      // exatamente QUAL linha colide e com qual linha já existente em `antes`,
+      // para investigar a causa raiz sem adivinhar. Nunca altera a decisão de
+      // abortar — só torna visível o que já estava a ser detetado.
+      var detalheDuplicadas = duplicadas.map(function(l){
+        var chave = l._tocoId ? (String(l.tipo) + '|' + String(l._tocoId)) : String(l._sheetId);
+        var existente = l._tocoId
+          ? antes.filter(function(r){ return r._tocoId && (String(r.tipo||'') + '|' + String(r._tocoId)) === chave; })[0]
+          : antes.filter(function(r){ return r._sheetId === l._sheetId; })[0];
+        return (l._tocoId ? ('_tocoId=' + l._tocoId + ' tipo=' + l.tipo) : ('_sheetId=' + l._sheetId))
+          + ' · nova: id=' + l.id + ' cliente="' + l.cliente + '" data=' + (l.dataEmissao || l.data) + ' total=' + l.total
+          + ' · já existente: id=' + (existente ? existente.id : '?') + ' cliente="' + (existente ? existente.cliente : '?') + '" data=' + (existente ? (existente.dataEmissao || existente.data) : '?') + ' total=' + (existente ? existente.total : '?');
+      });
+      resultado.duplicadas_detalhe = detalheDuplicadas;
+      throw new Error(duplicadas.length + ' das linhas novas já existem na base atual (por _tocoId/_sheetId) — provável escrita anterior parcial. Escrita abortada sem inserir nada; verificar manualmente antes de repetir. Detalhe: ' + detalheDuplicadas.join(' || '));
     }
 
     // 5) Escrita condicional — só INSERT: novo array = antes.concat(novas),
