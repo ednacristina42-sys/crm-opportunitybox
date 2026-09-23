@@ -8800,6 +8800,13 @@ tbody td{font-size:15px}
           </div>
           <pre id="toco-testar-compras-json" style="white-space:pre-wrap;font-size:11.5px;max-height:340px;overflow:auto;margin:0;color:var(--muted)"></pre>
         </div>
+        <!-- Correção pontual (23/09/2026): faturas TOConline já gravadas com
+             total €0,00 por terem vindo incompletas da listagem — a Edge
+             Function já foi corrigida para nunca mais gravar isto (hidrata
+             o documento antes de gravar), mas as linhas já existentes
+             precisam de correção manual, nunca automática (insert-only). -->
+        <button class="tbtn" id="toco-corrigir-zero-btn" style="font-size:12px;margin-top:8px" onclick="tocoDetetarFaturasZero()" title="Procura faturas TOConline gravadas com total €0,00 e mostra o valor real antes de corrigir (nada é gravado sem confirmação)">🔧 Procurar faturas TOConline com total €0,00</button>
+        <div id="toco-corrigir-zero-out" style="display:none;margin-top:8px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px 12px"></div>
       </div>
     </details>
   </div>
@@ -36362,6 +36369,147 @@ function tocoCopiarDiagnosticoCompras(){
   }
 }
 window.tocoCopiarDiagnosticoCompras = tocoCopiarDiagnosticoCompras;
+
+// ── Correção pontual: faturas TOConline com total €0,00 já gravadas ───────
+// (23/09/2026, pedido pela Edna). Causa: o TOConline por vezes devolve um
+// documento incompleto na página de listagem (gross_total/document_no
+// vazios) — a Edge Function já foi corrigida (hidratarPaginaNc estendida a
+// invoices) para nunca mais gravar isto numa sincronização nova, mas as
+// linhas já existentes em ob-tes-receber (ex.: TOC-FT-12646729,
+// TOC-FT-12646739) nunca são tocadas pela sincronização automática, que é
+// insert-only por desenho. Esta correção é sempre em dois passos — nunca
+// escreve na primeira chamada:
+//  1) tocoDetetarFaturasZero(): só LEITURA. Procura em ob-tes-receber linhas
+//     de origem TOConline (_tocoId presente — nunca Sheet nem manual) com
+//     total exatamente 0, confirma o valor real de cada uma directamente no
+//     TOConline (nc_raw_probe funciona para qualquer documento da mesma
+//     família FT/NC — mesmo endpoint, achatarDocumento() já confirma isso
+//     no comentário original), e mostra antes/depois para revisão.
+//  2) tocoCorrigirFaturasZeroConfirmar(): só corre depois de confirm()
+//     explícito. Backup fresco obrigatório antes de gravar (mesma
+//     sincFinBaixarBackup já usada na Central Financeira). PATCH condicional
+//     por updated_at (concorrência). Nunca toca em nenhum campo além de
+//     total/valorLiq, nunca numa linha que entretanto deixou de estar a
+//     zero.
+var TOCO_ZERO_CANDIDATAS = [];
+
+async function tocoDetetarFaturasZero(){
+  if(typeof homeIsAdmin==='function' && !homeIsAdmin()){ if(typeof showToast==='function') showToast('Só Admin.'); return; }
+  var btn = document.getElementById('toco-corrigir-zero-btn');
+  var out = document.getElementById('toco-corrigir-zero-out');
+  var textoOriginal = btn ? btn.textContent : '';
+  if(btn){ btn.disabled = true; btn.textContent = '⏳ A procurar…'; }
+  try{
+    var sb = crmSBClient();
+    if(!sb) throw new Error('Supabase indisponível no browser.');
+    var res = await sb.from('ob_crm_dados').select('dados').eq('chave','ob-tes-receber').maybeSingle();
+    if(res.error) throw new Error('Falha a ler ob-tes-receber: ' + res.error.message);
+    var linhas = (res.data && res.data.dados) || [];
+    var candidatas = linhas.filter(function(r){
+      return r && r._tocoId && (parseFloat(r.total) || 0) === 0;
+    });
+    TOCO_ZERO_CANDIDATAS = candidatas;
+    if(!candidatas.length){
+      if(out){ out.style.display = 'block'; out.innerHTML = '<div style="color:var(--muted);font-size:12.5px">Nenhuma linha TOConline com total €0,00 encontrada em ob-tes-receber.</div>'; }
+      return;
+    }
+    var esc0 = function(x){ return String(x==null?'':x).replace(/[&<>"]/g, function(c){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]; }); };
+    var linhasHtml = '';
+    for(var i=0;i<candidatas.length;i++){
+      var r = candidatas[i];
+      if(btn) btn.textContent = '⏳ A confirmar ' + (i+1) + '/' + candidatas.length + ' no TOConline…';
+      var real = null, erro = null;
+      try{
+        var probe = await tocoEF('nc_raw_probe', 'id=' + encodeURIComponent(r._tocoId));
+        var bruto = probe && probe.corpo_bruto;
+        var obj = (bruto && bruto.data && typeof bruto.data === 'object') ? bruto.data : bruto;
+        var a = (obj && obj.attributes) ? obj.attributes : obj;
+        real = a ? (parseFloat(a.gross_total) || 0) : null;
+      }catch(e){ erro = e.message; }
+      candidatas[i]._totalReal = real;
+      candidatas[i]._erro = erro;
+      linhasHtml += '<tr>'
+        + '<td style="padding:4px 7px">' + esc0(r.id) + '</td>'
+        + '<td style="padding:4px 7px">' + esc0(r.cliente) + '</td>'
+        + '<td style="padding:4px 7px">' + esc0(r.dataEmissao || r.data) + '</td>'
+        + '<td style="padding:4px 7px;color:var(--r)">€' + (parseFloat(r.total) || 0).toFixed(2) + '</td>'
+        + '<td style="padding:4px 7px;color:' + (erro ? 'var(--muted)' : 'var(--g)') + '">' + (erro ? ('erro: ' + esc0(erro)) : (real != null ? '€' + real.toFixed(2) : '—')) + '</td>'
+        + '</tr>';
+    }
+    var corrigiveis = candidatas.filter(function(r){ return r._erro == null && r._totalReal != null && r._totalReal > 0; });
+    if(out){
+      out.style.display = 'block';
+      out.innerHTML = '<div style="font-size:12.5px;margin-bottom:8px">' + candidatas.length + ' linha(s) TOConline com total €0,00 encontrada(s). Valor real confirmado diretamente no TOConline (só leitura, nada gravado ainda):</div>'
+        + '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:10px"><thead><tr style="text-align:left;color:var(--muted)"><th style="padding:4px 7px">id</th><th style="padding:4px 7px">cliente</th><th style="padding:4px 7px">data</th><th style="padding:4px 7px">total atual</th><th style="padding:4px 7px">total real (TOConline)</th></tr></thead><tbody>' + linhasHtml + '</tbody></table>'
+        + (corrigiveis.length
+            ? '<button class="tbtn" style="font-size:12px;background:var(--r);color:#fff" onclick="tocoCorrigirFaturasZeroConfirmar()">⚠ Corrigir ' + corrigiveis.length + ' linha(s) agora (com backup)</button>'
+            : '<div style="color:var(--muted);font-size:12px">Nenhuma linha com valor real confirmado acima de €0 — nada para corrigir.</div>');
+    }
+  }catch(e){
+    if(out){ out.style.display = 'block'; out.innerHTML = '<div style="color:var(--r);font-size:12.5px">Falhou: ' + (e.message || e) + '</div>'; }
+  }finally{
+    if(btn){ btn.disabled = false; btn.textContent = textoOriginal || '🔧 Procurar faturas TOConline com total €0,00'; }
+  }
+}
+window.tocoDetetarFaturasZero = tocoDetetarFaturasZero;
+
+async function tocoCorrigirFaturasZeroConfirmar(){
+  if(typeof homeIsAdmin==='function' && !homeIsAdmin()){ if(typeof showToast==='function') showToast('Só Admin.'); return; }
+  var corrigiveis = (TOCO_ZERO_CANDIDATAS || []).filter(function(r){ return r._erro == null && r._totalReal != null && r._totalReal > 0; });
+  if(!corrigiveis.length) return;
+  var texto = 'Vai corrigir o total de ' + corrigiveis.length + ' linha(s) em ob-tes-receber (só o campo total/valorLiq, nada mais). Um backup é descarregado automaticamente antes de gravar.\n\n'
+    + corrigiveis.map(function(r){ return r.id + ': €' + (parseFloat(r.total) || 0).toFixed(2) + ' → €' + r._totalReal.toFixed(2); }).join('\n');
+  if(!confirm(texto)) return;
+  var out = document.getElementById('toco-corrigir-zero-out');
+  try{
+    var sb = crmSBClient();
+    if(!sb) throw new Error('Supabase indisponível no browser.');
+    var pre = await sb.from('ob_crm_dados').select('dados,updated_at').eq('chave','ob-tes-receber').maybeSingle();
+    if(pre.error) throw new Error('Falha a ler estado atual: ' + pre.error.message);
+    var antes = (pre.data && pre.data.dados) || [];
+    var antesUpdatedAt = pre.data && pre.data.updated_at;
+    if(!sincFinBaixarBackup(antes)) throw new Error('Backup falhou — correção abortada antes de gravar.');
+    var idsCorrigir = {};
+    corrigiveis.forEach(function(r){ idsCorrigir[r.id] = r._totalReal; });
+    var alterados = 0;
+    var depois = antes.map(function(r){
+      if(!r || !idsCorrigir.hasOwnProperty(r.id)) return r;
+      var totalAtual = parseFloat(r.total) || 0;
+      // Nunca corrige uma linha que entretanto já deixou de estar a €0 —
+      // outra corrida ou correção manual pode já a ter tratado.
+      if(totalAtual !== 0) return r;
+      var totalReal = idsCorrigir[r.id];
+      alterados++;
+      var novo = Object.assign({}, r);
+      novo.total = totalReal;
+      novo.valorLiq = Math.round((totalReal / 1.23) * 100) / 100;
+      return novo;
+    });
+    if(!alterados){
+      if(out) out.innerHTML += '<div style="margin-top:8px;color:var(--y);font-size:12.5px">Nenhuma linha ainda estava a €0,00 na leitura fresca — nada foi alterado.</div>';
+      return;
+    }
+    var patch = await sb.from('ob_crm_dados')
+      .update({ dados: depois, updated_at: new Date().toISOString() })
+      .eq('chave', 'ob-tes-receber')
+      .eq('updated_at', antesUpdatedAt)
+      .select('dados');
+    if(patch.error) throw new Error('Escrita falhou: ' + patch.error.message);
+    if(!patch.data || !patch.data.length) throw new Error('Escrita bloqueada: a base mudou entre a leitura e a escrita (conflito de concorrência). Nada foi gravado — repita o processo desde "Procurar faturas".');
+    if(out) out.innerHTML += '<div style="margin-top:8px;color:var(--g);font-size:12.5px">✓ ' + alterados + ' linha(s) corrigida(s) e confirmada(s).</div>';
+    if(typeof showToast==='function') showToast('✓ ' + alterados + ' fatura(s) corrigida(s).');
+    TOCO_ZERO_CANDIDATAS = [];
+    // Actualiza a UI já aberta sem precisar de F5 — mesmo array que acabou
+    // de ser confirmado como gravado, nunca uma releitura assíncrona à
+    // parte que poderia mostrar um estado a meio.
+    if(typeof TES_RECEBER !== 'undefined') TES_RECEBER = depois;
+    if(typeof tesRenderRecebidos === 'function') tesRenderRecebidos();
+    if(typeof tesUpdateKPIs === 'function') tesUpdateKPIs('recebidos');
+  }catch(e){
+    if(out) out.innerHTML += '<div style="margin-top:8px;color:var(--r);font-size:12.5px">✗ Falhou: ' + (e.message || e) + '</div>';
+  }
+}
+window.tocoCorrigirFaturasZeroConfirmar = tocoCorrigirFaturasZeroConfirmar;
 
 </script>
 
