@@ -8592,6 +8592,9 @@ tbody td{font-size:15px}
       <div id="admu-criar-out" style="margin-top:10px;font-size:12.5px"></div>
     </div>
 
+    <div style="font-size:14px;font-weight:700;margin-bottom:10px;color:var(--txt2)">🔑 Contas &amp; repor password</div>
+    <div id="admu-contas-wrap" style="color:var(--muted);font-size:13px;margin-bottom:20px">A carregar…</div>
+
     <div style="font-size:14px;font-weight:700;margin-bottom:10px;color:var(--txt2)">📋 Pedidos de aprovação pendentes</div>
     <div id="admu-aprovacoes-wrap" style="color:var(--muted);font-size:13px">A carregar…</div>
   </div>
@@ -12204,7 +12207,7 @@ window.goPage=function goPage(id){
   if(id==='admin-despesas')      { try{ despTab('crm'); despLoadCRM(); if(!EC_DESPESAS_APP.length) despSyncApp(); }catch(e){} }
   if(id==='admin-rh')            { try{ rhRender(); }catch(e){} }
   if(id==='admin-docs')          { crmDocsRender(); docsTab('crm'); }
-  if(id==='admin-utilizadores')  { try{ admUsersCarregarAprovacoes(); }catch(e){} }
+  if(id==='admin-utilizadores')  { try{ admUsersCarregarAprovacoes(); admUsersCarregarContas(); }catch(e){} }
   if(id==='pedir-aprovacao')     { try{ aprovCarregarMinhas(); }catch(e){} }
   if(id==='dashboard')           { try{ renderDashLeads(); setTimeout(initCharts,50); if(typeof renderDashboardCFO==='function') renderDashboardCFO(); }catch(e){} }
   if(id==='financeiro')          { try{ renderFinanceiro(); setTimeout(initCharts,50);
@@ -22356,6 +22359,55 @@ async function admUsersCriar(){
   }
 }
 window.admUsersCriar = admUsersCriar;
+
+async function admUsersCarregarContas(){
+  if(typeof homeIsAdmin==='function' && !homeIsAdmin()){ return; }
+  var wrap = document.getElementById('admu-contas-wrap');
+  if(!wrap) return;
+  wrap.textContent = 'A carregar…';
+  try{
+    var sb = crmSBClient();
+    if(!sb) throw new Error('Supabase indisponível no browser.');
+    var res = await sb.from('ob_profiles').select('id,full_name,email,role,department,active').order('full_name', { ascending: true });
+    if(res.error) throw new Error(res.error.message);
+    var linhas = res.data || [];
+    if(!linhas.length){ wrap.innerHTML = '<div style="color:var(--muted);font-size:13px">Nenhuma conta encontrada.</div>'; return; }
+    var esc0 = function(x){ return String(x==null?'':x).replace(/[&<>"]/g, function(c){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]; }); };
+    wrap.innerHTML = '<div style="max-width:640px">' + linhas.map(function(p){
+      return '<div style="background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">'
+        + '<div><strong style="color:var(--txt2)">' + esc0(p.full_name) + '</strong>' + (p.active ? '' : ' <span style="color:var(--r);font-size:11.5px">(inactiva)</span>')
+        + '<div style="font-size:12px;color:var(--muted)">' + esc0(p.email) + ' · ' + esc0(p.role) + (p.department ? (' · ' + esc0(p.department)) : '') + '</div></div>'
+        + '<button class="tbtn" style="font-size:12px" onclick="admUsersResetPassword(\'' + p.id + '\',\'' + esc0(p.full_name).replace(/'/g,"\\'") + '\')">🔑 Repor password</button>'
+        + '</div>';
+    }).join('') + '</div>';
+  }catch(e){
+    wrap.innerHTML = '<div style="color:var(--r);font-size:13px">Falhou: ' + (e.message||e) + '</div>';
+  }
+}
+window.admUsersCarregarContas = admUsersCarregarContas;
+
+async function admUsersResetPassword(userId, nome){
+  if(typeof homeIsAdmin==='function' && !homeIsAdmin()){ if(typeof showToast==='function') showToast('Só Admin.'); return; }
+  var novaPassword = prompt('Nova password para ' + nome + ' (mínimo 8 caracteres):');
+  if(novaPassword === null) return;
+  novaPassword = novaPassword.trim();
+  if(novaPassword.length < 8){ if(typeof showToast==='function') showToast('A password tem de ter pelo menos 8 caracteres.'); return; }
+  try{
+    var token = await tocoEFToken();
+    if(!token) throw new Error('Sessão terminada. Volte a entrar no CRM.');
+    var resp = await fetch(ADMU_EF_URL, {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'reset_password', user_id: userId, new_password: novaPassword })
+    });
+    var payload = await resp.json().catch(function(){ return null; });
+    if(!resp.ok) throw new Error((payload && payload.error) || ('HTTP ' + resp.status));
+    if(typeof showToast==='function') showToast('✓ Password reposta para ' + nome + '.');
+  }catch(e){
+    if(typeof showToast==='function') showToast('✗ ' + (e.message||e)); else alert('Falhou: ' + (e.message||e));
+  }
+}
+window.admUsersResetPassword = admUsersResetPassword;
 
 async function admUsersCarregarAprovacoes(){
   if(typeof homeIsAdmin==='function' && !homeIsAdmin()){ return; }
