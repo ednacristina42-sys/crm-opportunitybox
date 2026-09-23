@@ -11997,8 +11997,16 @@ function setupApp(){
   // aparecia para CU.admin — o que também escondia "Pedir Aprovação" da
   // conta administrativo, mesmo já lá estando no HTML. Agora cada espaço
   // aparece consoante o papel de quem entrou, não só para o admin.
-  var _verFinanceiro = CU.admin || CU.role==='financeiro' || CU.role==='administrativo';
-  var _verAdminDept = CU.admin || CU.role==='administrativo';
+  //
+  // A conta 'administrativo' (ex: Carolina, secretária) vê TUDO no menu —
+  // pedido explícito da Edna, 23/09/2026: "ela precisa ver tudo, só
+  // precisa de autorização para editar". A restrição fica só do lado da
+  // ESCRITA (CU.admin continua false para esta conta, por isso as funções
+  // que gravam alterações sensíveis continuam a recusá-la e a obrigá-la a
+  // usar "Pedir Aprovação" — isto aqui só controla o que ela consegue VER).
+  var _verTudo = CU.admin || CU.role==='administrativo';
+  var _verFinanceiro = _verTudo || CU.role==='financeiro';
+  var _verAdminDept = _verTudo;
   document.getElementById('admin-nav').style.display=(_verFinanceiro||_verAdminDept)?'block':'none';
   document.getElementById('import-btn').style.display=CU.admin?'flex':'none';
   document.getElementById('add-space-btn').style.display=CU.admin?'flex':'none';
@@ -12007,7 +12015,7 @@ function setupApp(){
   var _siAdmDept=document.getElementById('si-admin'); if(_siAdmDept)_siAdmDept.style.display=_verAdminDept?'flex':'none';
 
   // Show/hide spaces in sidebar based on dept
-  const access=CU.admin?['todas','comercial','design','fabrica','admin-dept']:DEPT_ACCESS[CU.dept]||[];
+  const access=_verTudo?['todas','comercial','design','fabrica','admin-dept']:DEPT_ACCESS[CU.dept]||[];
   ['todas','comercial','design','fabrica','admin-dept'].forEach(s=>{
     const el=document.getElementById('si-'+s);
     if(el)el.style.display=access.includes(s)?'flex':'none';
@@ -12015,7 +12023,7 @@ function setupApp(){
     if(sl)sl.style.display='none';
   });
   // Reorg: Meu Painel (topo) e grupo Equipa visíveis para acesso comercial ou admin
-  var _verCom = CU.admin || (DEPT_ACCESS[CU.dept]||[]).includes('comercial');
+  var _verCom = _verTudo || (DEPT_ACCESS[CU.dept]||[]).includes('comercial');
   var _mp=document.getElementById('ni-meu-painel'); if(_mp)_mp.style.display=_verCom?'flex':'none';
   var _siEq=document.getElementById('si-equipa'); if(_siEq)_siEq.style.display=_verCom?'flex':'none';
   var _slEq=document.getElementById('sl-equipa'); if(_slEq)_slEq.style.display='none';
@@ -12163,7 +12171,11 @@ window.goPage=function goPage(id){
     goPage('meu-painel');
     return;
   }
-  if(!CU.admin){
+  // 'administrativo' vê todas as páginas (pedido da Edna, 23/09/2026: "ela
+  // precisa ver tudo, só precisa de autorização para editar") — a restrição
+  // fica só do lado da escrita, nas próprias funções que gravam, e no fluxo
+  // de "Pedir Aprovação". Isto aqui é só o portão de NAVEGAÇÃO/leitura.
+  if(!CU.admin && CU.role!=='administrativo'){
     const allowed=DEPT_PAGES[CU.dept]||[];
     if(!allowed.includes(id)){
       alert('⚠️ Acesso restrito. Esta área é apenas para administradores.');
