@@ -28278,8 +28278,19 @@ async function tocoSincronizarFaturas(silent, ano) {
     todos.forEach(function(d){ mapa[chave(d)] = d; });
     todos = Object.keys(mapa).map(function(k){ return mapa[k]; });
     _tocoFatCache = todos;
-    // Guardar cache com timestamp
-    localStorage.setItem(TOCO_FAT_KEY, JSON.stringify({ ts: Date.now(), data: todos }));
+    // Guardar cache com timestamp — em try/catch (correção 23/09/2026,
+    // confirmada pela Edna: "Falha ao sincronizar: ... exceeded the
+    // quota"). Esta cache acumula TODOS os documentos já vistos, de todos
+    // os anos, sem nunca podar nada — com milhares de faturas reais
+    // (6000+), acaba por exceder o limite de localStorage do browser
+    // (~5-10MB por origem). Antes, o setItem lançava e saltava direto para
+    // o catch geral desta função, escondendo a sincronização que tinha
+    // corrido bem (todos já estava calculado certo, só a gravação local é
+    // que falhou) atrás de um erro vermelho e a tabela vazia. Agora: se a
+    // cache local falhar, a sincronização desta sessão continua a mostrar
+    // os dados reais na tabela — só deixa de sobreviver a um F5.
+    try{ localStorage.setItem(TOCO_FAT_KEY, JSON.stringify({ ts: Date.now(), data: todos })); }
+    catch(eCache){ console.warn('[TocOnline] cache local falhou (' + eCache.message + ') — dados desta sincronização mostrados na mesma, só não sobrevivem a um refresh.'); }
     tocoRenderFaturas(todos);
     var agora = new Date().toLocaleTimeString('pt-PT', {hour:'2-digit',minute:'2-digit'});
     if(!todos.length){
