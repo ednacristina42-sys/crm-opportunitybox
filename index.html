@@ -18701,6 +18701,42 @@ _uniInitFromSB();
   }catch(e){ console.error('[OB] Erro na limpeza de leads fictícios:', e); }
 })();
 
+// Correção 23/09/2026 (confirmado pela Edna: dezenas de cards "Follow-up: X"
+// duplicados na lista de Tarefas, sempre com os mesmos nomes). Causa raiz:
+// o Agente 2 (Follow-up de Leads, linha ~29386) cria um card em
+// homeTasksData para cada lead parado >7 dias, mas a guarda contra
+// duplicados dependia só de followUps/ob-followups — que nunca teve as
+// policies de RLS necessárias (corrigido nesta mesma sessão) e por isso só
+// persistia no localStorage de cada browser. Sessões/dispositivos
+// diferentes, cada um a começar com followUps vazio, geraram um card novo
+// de cada vez que reavaliaram os MESMOS 8 leads fictícios (ver
+// SEED_LEADS_FICTICIOS, cleanup acima) antes de estes terem sido
+// definitivamente removidos do Pipeline — ficaram órfãos em homeTasksData,
+// sem nenhuma limpeza equivalente à dos próprios leads. Remove aqui,
+// pela mesma impressão digital exata (nome do lead fictício), qualquer
+// card "Follow-up: <nome>" órfão que sobrou. Nunca toca em tarefas reais
+// (título tem de bater exatamente com um dos 8 nomes fictícios).
+(function obLimparFollowupsFicticiosUmaVez(){
+  try{
+    if(localStorage.getItem('ob-limpeza-followups-ficticios-v1')) return;
+    var NOMES_LEADS_FICTICIOS = [
+      'Letras 3D Fachada','Reclamo LED Ginásio','Totem Entrada Hotel','Sinalética Clínica',
+      'Painel LED CC Mira','Neon Lounge','Caixa Luz Farmácia','Letras Hotel Boa Vista'
+    ];
+    var titulosFicticios = NOMES_LEADS_FICTICIOS.map(function(n){ return 'Follow-up: ' + n; });
+    if(typeof homeTasksData!=='undefined' && homeTasksData){
+      var antesTarefas = homeTasksData.length;
+      homeTasksData = homeTasksData.filter(function(t){ return titulosFicticios.indexOf(t.title) === -1; });
+      if(homeTasksData.length !== antesTarefas){
+        if(typeof saveHomeTasksData==='function') saveHomeTasksData();
+        else localStorage.setItem('ob-home-tasks', JSON.stringify(homeTasksData));
+        console.log('[OB] Limpeza de cards Follow-up fictícios concluída:', antesTarefas, '→', homeTasksData.length);
+      }
+    }
+    localStorage.setItem('ob-limpeza-followups-ficticios-v1', '1');
+  }catch(e){ console.error('[OB] Erro na limpeza de cards Follow-up fictícios:', e); }
+})();
+
 // ADD (auditoria global 08/09): mesma limpeza para uniItems (Design/Produção/
 // Instalações/Agenda) — antes desta correção, uniGetItems() podia semear
 // UNI_DEFAULTS num browser novo e _uniInitFromSB() (linha ~16813) fazia
@@ -29392,9 +29428,21 @@ function importarConfiguracao() {
     }
     if (jaExistiaAberto) return; // já havia follow-up aberto para este lead — não duplica o card
     if (typeof homeTasksData === 'undefined' || !homeTasksData) return;
+    // Segunda guarda, independente de followUps (correção 23/09/2026 —
+    // confirmado pela Edna: dezenas de cards "Follow-up: X" duplicados na
+    // lista de Tarefas). A guarda acima (jaExistiaAberto) só verifica o
+    // Motor de Follow-up canónico (followUps/ob-followups) — mas esse
+    // array só persistia em localStorage (faltavam as policies de RLS,
+    // corrigido nesta mesma sessão), por isso qualquer sessão/dispositivo
+    // novo o via vazio e voltava a criar outro card para o MESMO lead
+    // ainda parado. Esta guarda verifica diretamente homeTasksData (onde
+    // o card realmente vive) por leadId — nunca cria um segundo card para
+    // o mesmo lead, mesmo que followUps esteja inconsistente.
+    if (homeTasksData.some(function(t){ return t.leadId === lead.id; })) return;
     var iniciais = String(lead.ass||'').trim().split(/\s+/).map(function(p){ return p[0]||''; }).join('').slice(0,2).toUpperCase() || 'CO';
     var task = {
       id: Date.now() + Math.floor(Math.random()*1000),
+      leadId: lead.id,
       title: 'Follow-up: ' + (lead.n || lead.emp || 'lead parado'),
       group: 'Dep. Comercial', dept: 'Dep. Comercial',
       status: 'A fazer', statusC: '#6b6b72',
