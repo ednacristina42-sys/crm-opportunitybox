@@ -1607,7 +1607,9 @@ async function sincDocsLote(
   let terminou = false; // fim real da paginação (página curta ou vazia) — nunca escreve nada, só leitura
   let parcial = false;  // parou por orçamento de tempo desta chamada, sem chegar ao fim
 
-  // Diagnóstico — só populado para credit_notes.
+  // Diagnóstico — só populado para credit_notes/invoices (recurso === "receipts"
+  // fica de fora: endpoint e forma dos dados diferentes, nunca alimenta
+  // ob-tes-receber diretamente).
   let ncListadas = 0, ncHidratadasTentativas = 0, ncHidratadasOk = 0, ncHidratadasFalha = 0;
   const ncAmostraHidratadas: Record<string, unknown>[] = [];
 
@@ -1624,10 +1626,22 @@ async function sincDocsLote(
     try { payload = await res.json(); } catch { terminou = true; break; }
     const lote = extrairLista(payload);
     if (!lote.length) { terminou = true; break; }
-    if (recurso === "credit_notes") {
+    if (recurso === "credit_notes" || recurso === "invoices") {
       // Achata a página inteira primeiro (nunca perde nenhum documento),
       // depois hidrata só os incompletos, em lotes concorrentes — nunca
       // sequencial, nunca substitui a coleção da página.
+      //
+      // Correção (confirmada 23/09/2026, pedido pela Edna — duas faturas reais
+      // com total €0,00 em "Recebidos": TOC-FT-12646729/TOC-FT-12646739):
+      // esta hidratação só corria para credit_notes ("if (recurso ===
+      // "credit_notes")"); faturas (invoices) ficavam sem a mesma proteção,
+      // apesar de sofrerem exatamente o mesmo problema (TOConline devolve o
+      // documento incompleto — gross_total/document_no vazios — na página da
+      // listagem). O endpoint e a forma dos dados são os mesmos para FT/NC
+      // (commercial_sales_documents, só filter[document_type] muda — ver
+      // RECURSOS acima), por isso hidratarPaginaNc() aplica-se sem alteração
+      // nenhuma. Nunca alterado: receipts (endpoint/forma diferentes, nunca
+      // gera linhas diretas em ob-tes-receber).
       const flats = (lote as Record<string, unknown>[]).map(achatarDocumento);
       ncListadas += flats.length;
       const r = await hidratarPaginaNc(flats, path, token, ncAmostraHidratadas);
@@ -1650,7 +1664,7 @@ async function sincDocsLote(
     include_escolhido: escolhido, tentativas_include: tentativas,
     data,
   };
-  if (recurso === "credit_notes") {
+  if (recurso === "credit_notes" || recurso === "invoices") {
     resultado.diagnostico_nc_hidratacao = {
       listadas: ncListadas, tentativas: ncHidratadasTentativas,
       sucesso: ncHidratadasOk, falha: ncHidratadasFalha,
