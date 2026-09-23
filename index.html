@@ -22040,15 +22040,23 @@ window.adminDocsHandleFiles = function(inputEl) {
 };
 
 // ── Documentos CRM — dados e render ───────────────────────────
-var CRM_DOCS = [
-  {id:1, nome:'Contrato Hotel Serra da Lua 2025', tipo:'Contrato', entidade:'Hotel Serra da Lua', validade:'2025-12-31', estado:'Assinado', notas:'', file_url:null},
-  {id:2, nome:'Proposta CC Mira Sintra', tipo:'Proposta', entidade:'CC Mira Sintra', validade:'2025-06-15', estado:'Pendente', notas:'', file_url:null},
-  {id:3, nome:'Licença Câmara Sintra', tipo:'Licença', entidade:'C.M. Sintra', validade:'2025-10-30', estado:'Válido', notas:'', file_url:null},
-  {id:4, nome:'Seguro Responsabilidade Civil', tipo:'Seguro', entidade:'Fidelidade', validade:'2026-03-15', estado:'Válido', notas:'', file_url:null},
-  {id:5, nome:'Manual Identidade OB', tipo:'Design', entidade:'Interno', validade:'', estado:'Actualizado', notas:'', file_url:null}
-];
-var CRM_DOCS_IDX = 6;
+// Corrigido 23/09/2026 (pedido da Edna: "já tinha limpado e veio tudo
+// novamente") — esta lista nunca teve persistência nenhuma, nem sequer
+// localStorage: era um array fixo no código, sempre com os mesmos 5
+// documentos de demonstração, que voltava sempre depois de qualquer
+// eliminação ou de um simples reload. Passa agora a seguir o mesmo padrão
+// genérico já usado por ob-followups/ob-tes-log (blob simples em
+// ob_crm_dados via OB_SB_SYNC_KEYS/obSbPush, ver obSbBootReal()) — nunca
+// mais um array de demonstração: base vazia é um estado válido e fica
+// vazia até haver documentos reais.
+var CRM_DOCS; try{ CRM_DOCS=JSON.parse(localStorage.getItem('ob-crm-docs')||'null'); }catch(e){ CRM_DOCS=null; } CRM_DOCS = CRM_DOCS || [];
+var CRM_DOCS_IDX = CRM_DOCS.reduce(function(m,d){ return Math.max(m, d.id||0); }, 0) + 1;
 var CRM_DOC_EDIT_ID = null;
+
+function crmDocsPersistir(){
+  localStorage.setItem('ob-crm-docs', JSON.stringify(CRM_DOCS));
+  if(typeof obSbPush==='function') obSbPush('ob-crm-docs');
+}
 
 const DOC_TIPO_COLOR = {Contrato:'#3b82f6',Proposta:'#f97316',Licença:'#3b82f6',Seguro:'#a855f7',Design:'#f97316',Outro:'#6b7280'};
 const DOC_ESTADO_COLOR = {Válido:'bg',Assinado:'bg',Pendente:'ba',Actualizado:'bg',Expirado:'br'};
@@ -22182,6 +22190,7 @@ function crmDocSave(){
   } else {
     CRM_DOCS.push({id: CRM_DOCS_IDX++, ...data});
   }
+  crmDocsPersistir();
   crmDocClose();
   crmDocsRender();
 }
@@ -22189,6 +22198,7 @@ function crmDocSave(){
 function crmDocDeleteId(id){
   if(!confirm('Eliminar este documento?')) return;
   CRM_DOCS = CRM_DOCS.filter(x=>x.id!==id);
+  crmDocsPersistir();
   crmDocsRender();
 }
 
@@ -22196,6 +22206,7 @@ function crmDocDelete(){
   if(!CRM_DOC_EDIT_ID) return;
   if(!confirm('Eliminar este documento?')) return;
   CRM_DOCS = CRM_DOCS.filter(x=>x.id!==CRM_DOC_EDIT_ID);
+  crmDocsPersistir();
   crmDocClose();
   crmDocsRender();
 }
@@ -34277,7 +34288,9 @@ var OB_SB_SYNC_KEYS=['ob-leads','ob-clients','ob-crm-atividades','ob-crm-histori
   // Dados financeiros — tesouraria, despesas, IVA e faturas
   'ob-tes-contas','ob-tes-receber','ob-tes-log','ob-tes-cartoes','ob-fin-despesas','ob-iva-dados','ob-faturas',
   // Bloco E — Follow-up canónico (mesmo padrão genérico de chave/blob já usado acima)
-  'ob-followups'];
+  'ob-followups',
+  // Documentos e Contratos (correção 23/09/2026 — mesmo padrão genérico)
+  'ob-crm-docs'];
 var _obSbTimers={};
 
 // Correção de segurança (F2/F3 hardening, 15/09/2026): ob_crm_dados já não
@@ -34831,6 +34844,7 @@ async function obSbBootReal(){
             if(row.chave==='ob-iva-dados'&&typeof TES_IVA_DATA!=='undefined'){ TES_IVA_DATA=row.dados; }
             if(row.chave==='ob-faturas'&&typeof fatData!=='undefined'){ fatData=row.dados; }
             if(row.chave==='ob-followups'&&typeof followUps!=='undefined'){ followUps=row.dados; }
+            if(row.chave==='ob-crm-docs'&&typeof CRM_DOCS!=='undefined'){ CRM_DOCS=row.dados; }
           }catch(e){}
           adoptou=true;
         }
@@ -34845,6 +34859,7 @@ async function obSbBootReal(){
         try{ if(typeof crmRenderAll==='function') crmRenderAll(); }catch(e){}
         try{ if(typeof renderClientes==='function') renderClientes(); }catch(e){}
         try{ if(typeof uniInitAll==='function') uniInitAll(); }catch(e){}
+        try{ if(typeof crmDocsRender==='function') crmDocsRender(); }catch(e){}
       }
     } else {
       window._obClientsEstado='erro';
