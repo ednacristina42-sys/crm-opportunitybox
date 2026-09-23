@@ -26155,10 +26155,18 @@ async function sincronizarFinanceiroCentral(silencioso){
       : JSON.parse(JSON.stringify(existentes));
     resumo.tamanho_snapshot_supabase = existentesSupabase.length;
 
-    // 2) Backup — sempre descarregado antes de qualquer reconciliação,
-    // mesmo em dry-run (nada é gravado, mas a regra é incondicional). Se
-    // falhar, aborta.
-    if(!sincFinBaixarBackup(existentesSupabase)){
+    // 2) Backup — só na chamada MANUAL (silencioso=false / botão "Sincronizar
+    // Financeiro"): dá à pessoa um snapshot para rever antes de decidir.
+    // Corrigido 23/09/2026 (confirmado pela Edna: 3 ficheiros descarregados
+    // em 11min só de abrir Tesouraria/Financeiro, sem clicar em nada) — a
+    // versão anterior descarregava isto incondicionalmente, mesmo na
+    // chamada SILENCIOSA disparada sozinha por sincFinAutoSincronizar() de
+    // cada vez que essas páginas abrem. Nunca é preciso aqui: o dry-run
+    // nunca escreve nada, e sincFinExecutarEscritaReal() já faz o SEU
+    // PRÓPRIO backup fresco e obrigatório imediatamente antes de qualquer
+    // escrita real (ver mais abaixo) — este backup seria só uma segunda
+    // cópia do mesmo estado, sem nenhuma escrita no meio a justificá-la.
+    if(!silencioso && !sincFinBaixarBackup(existentesSupabase)){
       throw new Error('Backup de ob-tes-receber falhou — dry-run abortado antes de qualquer reconciliação.');
     }
 
@@ -26435,16 +26443,18 @@ function tesRenderReceber(){
   // Fonte única: tesGetReceber() — NC excluídas, filtro de ano aplicado,
   // nunca a cache bruta do TOConline (tocoMergeFaturasCacheReceber está
   // desativada). Mesma lista usada pelos KPIs (tesUpdateKPIs).
-  // Ordenação por dataEmissao DESC, fallback vencimento (ajuste 12/09/2026
-  // — só visual, fonte/filtros/cálculos/estados/matching intactos, mesmo
-  // padrão de tesRenderRecebidos() abaixo). O destaque de vencidas
-  // (vcol/⚠️, mais abaixo no map) não depende desta ordenação — continua
-  // exatamente como estava.
+  // Ordenação por vencimento ASC — mais vencida (data mais antiga) primeiro
+  // (pedido pela Edna, 23/09/2026: quer as faturas por ordem de vencimento,
+  // não de emissão — só visual, fonte/filtros/cálculos/estados/matching
+  // intactos). Linhas sem vencimento válido ficam sempre no fim (nunca
+  // aparecem misturadas como se fossem as mais vencidas). O destaque de
+  // vencidas (vcol/⚠️, mais abaixo no map) não depende desta ordenação —
+  // continua exatamente como estava.
   var list=tesGetReceber().filter(function(r){return r.estado!=='Recebido';}).slice().sort(function(a,b){
-    var da=parseVencTes(a.dataEmissao||a.vencimento), db=parseVencTes(b.dataEmissao||b.vencimento);
-    var ta = isNaN(da) ? -Infinity : da.getTime();
-    var tb = isNaN(db) ? -Infinity : db.getTime();
-    return tb-ta; // desc — dataEmissao mais recente primeiro
+    var da=parseVencTes(a.vencimento), db=parseVencTes(b.vencimento);
+    var ta = isNaN(da) ? Infinity : da.getTime();
+    var tb = isNaN(db) ? Infinity : db.getTime();
+    return ta-tb; // asc — vencimento mais antigo (mais vencido) primeiro
   });
   if(!list.length){
     var temDados = (typeof tocoFaturasCache==='function') && tocoFaturasCache().length>0;
