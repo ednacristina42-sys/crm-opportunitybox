@@ -11991,10 +11991,20 @@ function setupApp(){
   document.getElementById('sb-urole').textContent=CU.role;
 
   // Show admin nav
-  document.getElementById('admin-nav').style.display=CU.admin?'block':'none';
+  // 'admin-nav' agrupa dois espaços com regras de acesso diferentes: 💰
+  // Financeiro (Dashboard CFO, Financeiro, Tesouraria, ...) e 🗂️ Administração
+  // (Utilizadores, Docs, Despesas, RH, ...). Antes disto o bloco todo só
+  // aparecia para CU.admin — o que também escondia "Pedir Aprovação" da
+  // conta administrativo, mesmo já lá estando no HTML. Agora cada espaço
+  // aparece consoante o papel de quem entrou, não só para o admin.
+  var _verFinanceiro = CU.admin || CU.role==='financeiro' || CU.role==='administrativo';
+  var _verAdminDept = CU.admin || CU.role==='administrativo';
+  document.getElementById('admin-nav').style.display=(_verFinanceiro||_verAdminDept)?'block':'none';
   document.getElementById('import-btn').style.display=CU.admin?'flex':'none';
   document.getElementById('add-space-btn').style.display=CU.admin?'flex':'none';
   document.getElementById('notif-dot').style.display=CU.admin?'block':'none';
+  var _siFin=document.getElementById('si-financeiro'); if(_siFin)_siFin.style.display=_verFinanceiro?'flex':'none';
+  var _siAdmDept=document.getElementById('si-admin'); if(_siAdmDept)_siAdmDept.style.display=_verAdminDept?'flex':'none';
 
   // Show/hide spaces in sidebar based on dept
   const access=CU.admin?['todas','comercial','design','fabrica','admin-dept']:DEPT_ACCESS[CU.dept]||[];
@@ -12012,7 +12022,7 @@ function setupApp(){
   var _slFin=document.getElementById('sl-financeiro'); if(_slFin)_slFin.style.display='none';
   var _slAdm=document.getElementById('sl-admin'); if(_slAdm)_slAdm.style.display='none';
   // Reorg: abrir por padrão apenas o grupo principal do perfil
-  var _grpIni = CU.admin ? 'comercial' : ({'Comercial':'comercial','Dep. Design':'design','Chão da Fábrica':'fabrica','Gestão Administrativa':'admin'}[CU.dept]||'comercial');
+  var _grpIni = CU.admin ? 'comercial' : ({'Comercial':'comercial','Dep. Design':'design','Chão da Fábrica':'fabrica','Gestão Administrativa':'admin','Administrativo':'financeiro','Financeiro':'financeiro'}[CU.dept]||'comercial');
   var _bIni=document.getElementById('si-'+_grpIni), _lIni=document.getElementById('sl-'+_grpIni);
   if(_bIni&&_lIni){ _bIni.classList.add('open'); _lIni.style.display='block'; }
 
