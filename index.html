@@ -2667,7 +2667,7 @@ function crmShowLoginWithMessage(msg){
 // aqui de propósito, como segunda barreira: um valor fora desta lista
 // bloqueia o acesso mesmo que, por algum motivo, tenha chegado até
 // aqui (ex.: enum alargado na BD sem o CRM ter sido atualizado).
-var CRM_VALID_ROLES = ['admin', 'manager', 'comercial', 'financeiro'];
+var CRM_VALID_ROLES = ['admin', 'manager', 'comercial', 'financeiro', 'administrativo'];
 
 // Constrói o CU só a partir da linha (já validada) de ob_profiles —
 // nunca a partir de localStorage, USERS, ou qualquer resto do login
@@ -7259,6 +7259,8 @@ tbody td{font-size:15px}
       <button class="sl-item" id="ni-stock" data-action="goPage" data-page="stock"><span class="mk-ic">📦</span>Stock</button>
       <button class="sl-item" id="ni-equipa" data-action="goPage" data-page="equipa"><span class="mk-ic">🧑‍🤝‍🧑</span>Equipa</button>
       <button class="sl-item" id="ni-integracoes" data-action="goPage" data-page="integracoes"><span class="mk-ic">⚙️</span>Integrações</button>
+      <button class="sl-item admin-only" id="ni-admin-utilizadores" data-action="goPage" data-page="admin-utilizadores"><span class="mk-ic">👤</span>Utilizadores &amp; Aprovações</button>
+      <button class="sl-item" id="ni-pedir-aprovacao" data-action="goPage" data-page="pedir-aprovacao" style="display:none"><span class="mk-ic">✅</span>Pedir Aprovação</button>
       <!-- Colaboradores de Gestão Administrativa (dinâmico, ob_colaboradores · ativos) -->
       <div id="sl-admin-colabs"></div>
     </div>
@@ -8562,6 +8564,66 @@ tbody td{font-size:15px}
       <button class="tbtn" onclick="crmDocClose()">Cancelar</button>
       <button class="tbtn y" onclick="crmDocSave()">💾 Guardar</button>
     </div>
+  </div>
+</div>
+
+<!-- ─── UTILIZADORES & APROVAÇÕES (Admin) — pedido pela Edna 23/09/2026 -->
+<div id="page-admin-utilizadores" class="app-page">
+  <div class="pg-hdr">
+    <div class="pg-hdr-top">
+      <div class="pg-title">👤 Utilizadores &amp; Aprovações</div>
+    </div>
+  </div>
+  <div class="admin-page">
+    <div style="background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:16px;margin-bottom:20px;max-width:560px">
+      <div style="font-size:14px;font-weight:700;margin-bottom:10px;color:var(--txt2)">➕ Criar nova conta</div>
+      <div class="form-group"><label class="form-label">Nome completo</label><input class="form-input" id="admu-nome" placeholder="Ex: Carolina Martins"></div>
+      <div class="form-group"><label class="form-label">Email</label><input class="form-input" id="admu-email" placeholder="nome@opportunitybox.pt"></div>
+      <div class="form-group"><label class="form-label">Password (mínimo 8 caracteres)</label><input class="form-input" id="admu-senha" type="text" placeholder="Password inicial"></div>
+      <div class="form-group"><label class="form-label">Papel</label>
+        <select class="form-input" id="admu-papel">
+          <option value="administrativo">Administrativo (edições sensíveis exigem aprovação)</option>
+          <option value="comercial">Comercial</option>
+          <option value="financeiro">Financeiro</option>
+          <option value="manager">Manager</option>
+        </select>
+      </div>
+      <button class="tbtn y" onclick="admUsersCriar()" id="admu-criar-btn">💾 Criar conta</button>
+      <div id="admu-criar-out" style="margin-top:10px;font-size:12.5px"></div>
+    </div>
+
+    <div style="font-size:14px;font-weight:700;margin-bottom:10px;color:var(--txt2)">📋 Pedidos de aprovação pendentes</div>
+    <div id="admu-aprovacoes-wrap" style="color:var(--muted);font-size:13px">A carregar…</div>
+  </div>
+</div>
+
+<!-- ─── PEDIR APROVAÇÃO (conta administrativo) — pedido pela Edna 23/09/2026 -->
+<div id="page-pedir-aprovacao" class="app-page">
+  <div class="pg-hdr">
+    <div class="pg-hdr-top">
+      <div class="pg-title">✅ Pedir Aprovação</div>
+    </div>
+  </div>
+  <div class="admin-page">
+    <div style="background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:16px;margin-bottom:20px;max-width:560px">
+      <div style="font-size:12.5px;color:var(--muted);margin-bottom:14px">Esta conta não grava directamente alterações sensíveis (eliminar, dados financeiros, clientes, orçamentos). Descreva aqui o que precisa de alterar — a Edna ou o Paulo recebem o pedido e tratam da alteração.</div>
+      <div class="form-group"><label class="form-label">Tipo de pedido</label>
+        <select class="form-input" id="aprov-tipo">
+          <option value="eliminar">Eliminar algo</option>
+          <option value="editar_financeiro">Alteração financeira</option>
+          <option value="editar_cliente">Alteração a cliente</option>
+          <option value="editar_orcamento">Alteração a orçamento</option>
+          <option value="outro">Outro</option>
+        </select>
+      </div>
+      <div class="form-group"><label class="form-label">Título curto</label><input class="form-input" id="aprov-titulo" placeholder="Ex: Eliminar orçamento ORC-2026-014 duplicado"></div>
+      <div class="form-group"><label class="form-label">Descrição</label><textarea class="form-input" id="aprov-descricao" rows="4" placeholder="Explique o que precisa de ser feito e porquê"></textarea></div>
+      <button class="tbtn y" onclick="aprovPedirNova()" id="aprov-pedir-btn">📤 Enviar pedido</button>
+      <div id="aprov-pedir-out" style="margin-top:10px;font-size:12.5px"></div>
+    </div>
+
+    <div style="font-size:14px;font-weight:700;margin-bottom:10px;color:var(--txt2)">Os meus pedidos</div>
+    <div id="aprov-meus-wrap" style="color:var(--muted);font-size:13px">A carregar…</div>
   </div>
 </div>
 
@@ -12035,6 +12097,9 @@ function toggleAdminSensitiveFields(){
     el.classList.toggle('admin-hidden', !isAdmin);
   });
   obAplicarVisaoComercialSidebar();
+  // "Pedir Aprovação" (conta administrativo) — pedido pela Edna 23/09/2026.
+  var niPedirAprov = document.getElementById('ni-pedir-aprovacao');
+  if(niPedirAprov) niPedirAprov.style.display = (CU && CU.role === 'administrativo') ? '' : 'none';
 }
 window.toggleAdminSensitiveFields = toggleAdminSensitiveFields;
 
@@ -12139,6 +12204,8 @@ window.goPage=function goPage(id){
   if(id==='admin-despesas')      { try{ despTab('crm'); despLoadCRM(); if(!EC_DESPESAS_APP.length) despSyncApp(); }catch(e){} }
   if(id==='admin-rh')            { try{ rhRender(); }catch(e){} }
   if(id==='admin-docs')          { crmDocsRender(); docsTab('crm'); }
+  if(id==='admin-utilizadores')  { try{ admUsersCarregarAprovacoes(); }catch(e){} }
+  if(id==='pedir-aprovacao')     { try{ aprovCarregarMinhas(); }catch(e){} }
   if(id==='dashboard')           { try{ renderDashLeads(); setTimeout(initCharts,50); if(typeof renderDashboardCFO==='function') renderDashboardCFO(); }catch(e){} }
   if(id==='financeiro')          { try{ renderFinanceiro(); setTimeout(initCharts,50);
     // Bug 7 (auditoria 12/09): garantir CRM_DESPESAS carregado (mesmo loader
@@ -22246,6 +22313,152 @@ function crmDocDelete(){
   crmDocClose();
   crmDocsRender();
 }
+
+// ══ UTILIZADORES & APROVAÇÕES (pedido pela Edna, 23/09/2026) ══════════════
+// Conta "administrativo": nunca grava directo em dados sensíveis (bloqueado
+// pela própria base de dados — ver migração administrativo_read_access,
+// as chaves financeiro/clientes/leads/RH não têm nenhuma policy de
+// INSERT/UPDATE para este papel). Em vez disso, submete um pedido em
+// ob_aprovacoes; só Admin (Edna/Paulo) o vê e decide — a aplicação da
+// alteração em si continua a ser feita por um Admin com a sua própria
+// sessão, nunca automaticamente.
+const ADMU_EF_URL = 'https://ddzlbmnmsdyodouqxbjx.supabase.co/functions/v1/crm-admin-users';
+
+async function admUsersCriar(){
+  if(typeof homeIsAdmin==='function' && !homeIsAdmin()){ if(typeof showToast==='function') showToast('Só Admin.'); return; }
+  var btn = document.getElementById('admu-criar-btn');
+  var out = document.getElementById('admu-criar-out');
+  var nome = document.getElementById('admu-nome').value.trim();
+  var email = document.getElementById('admu-email').value.trim();
+  var senha = document.getElementById('admu-senha').value;
+  var papel = document.getElementById('admu-papel').value;
+  if(!nome || !email || !senha){ if(out){ out.style.color='var(--r)'; out.textContent = 'Preencha nome, email e password.'; } return; }
+  if(btn){ btn.disabled = true; btn.textContent = '⏳ A criar…'; }
+  if(out){ out.style.color='var(--muted)'; out.textContent = ''; }
+  try{
+    var token = await tocoEFToken();
+    if(!token) throw new Error('Sessão terminada. Volte a entrar no CRM.');
+    var resp = await fetch(ADMU_EF_URL, {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ full_name: nome, email: email, password: senha, role: papel })
+    });
+    var payload = await resp.json().catch(function(){ return null; });
+    if(!resp.ok) throw new Error((payload && payload.error) || ('HTTP ' + resp.status));
+    if(out){ out.style.color='var(--g)'; out.textContent = '✓ Conta criada: ' + payload.email + ' (' + payload.role + '). Já pode entrar no CRM com o email e a password que definiu.'; }
+    document.getElementById('admu-nome').value = '';
+    document.getElementById('admu-email').value = '';
+    document.getElementById('admu-senha').value = '';
+  }catch(e){
+    if(out){ out.style.color='var(--r)'; out.textContent = '✗ ' + (e.message||e); }
+  }finally{
+    if(btn){ btn.disabled = false; btn.textContent = '💾 Criar conta'; }
+  }
+}
+window.admUsersCriar = admUsersCriar;
+
+async function admUsersCarregarAprovacoes(){
+  if(typeof homeIsAdmin==='function' && !homeIsAdmin()){ return; }
+  var wrap = document.getElementById('admu-aprovacoes-wrap');
+  if(!wrap) return;
+  wrap.textContent = 'A carregar…';
+  try{
+    var sb = crmSBClient();
+    if(!sb) throw new Error('Supabase indisponível no browser.');
+    var res = await sb.from('ob_aprovacoes').select('*').eq('estado','pendente').order('criado_em', { ascending: true });
+    if(res.error) throw new Error(res.error.message);
+    var linhas = res.data || [];
+    if(!linhas.length){ wrap.innerHTML = '<div style="color:var(--muted);font-size:13px">Nenhum pedido pendente.</div>'; return; }
+    var esc0 = function(x){ return String(x==null?'':x).replace(/[&<>"]/g, function(c){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]; }); };
+    var tipoLabel = { eliminar:'Eliminar', editar_financeiro:'Financeiro', editar_cliente:'Cliente', editar_orcamento:'Orçamento', outro:'Outro' };
+    wrap.innerHTML = linhas.map(function(p){
+      return '<div style="background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:10px;max-width:640px">'
+        + '<div style="display:flex;justify-content:space-between;gap:10px"><strong style="color:var(--txt2)">' + esc0(p.titulo) + '</strong>'
+        + '<span class="tag" style="background:var(--bg4);color:var(--txt2);white-space:nowrap">' + esc0(tipoLabel[p.tipo]||p.tipo) + '</span></div>'
+        + '<div style="font-size:12.5px;color:var(--muted);margin:6px 0">' + esc0(p.descricao) + '</div>'
+        + '<div style="font-size:11.5px;color:var(--muted);margin-bottom:10px">' + new Date(p.criado_em).toLocaleString('pt-PT') + '</div>'
+        + '<div style="display:flex;gap:8px">'
+        + '<button class="tbtn" style="font-size:12px;background:var(--g);color:#fff" onclick="admUsersResolverAprovacao(\'' + p.id + '\',\'aprovado\')">✓ Aprovar</button>'
+        + '<button class="tbtn" style="font-size:12px;color:var(--r)" onclick="admUsersResolverAprovacao(\'' + p.id + '\',\'rejeitado\')">✗ Rejeitar</button>'
+        + '</div></div>';
+    }).join('');
+  }catch(e){
+    wrap.innerHTML = '<div style="color:var(--r);font-size:13px">Falhou: ' + (e.message||e) + '</div>';
+  }
+}
+window.admUsersCarregarAprovacoes = admUsersCarregarAprovacoes;
+
+async function admUsersResolverAprovacao(id, estado){
+  if(typeof homeIsAdmin==='function' && !homeIsAdmin()){ if(typeof showToast==='function') showToast('Só Admin.'); return; }
+  var nota = prompt(estado==='aprovado' ? 'Nota (opcional) — ex: já tratado, aplicado em X:' : 'Motivo da rejeição (opcional):') || '';
+  try{
+    var sb = crmSBClient();
+    if(!sb) throw new Error('Supabase indisponível no browser.');
+    var res = await sb.from('ob_aprovacoes').update({
+      estado: estado, resolvido_por: CU.id, resolvido_em: new Date().toISOString(), nota_resolucao: nota
+    }).eq('id', id);
+    if(res.error) throw new Error(res.error.message);
+    if(typeof showToast==='function') showToast(estado==='aprovado' ? '✓ Pedido aprovado.' : '✗ Pedido rejeitado.');
+    admUsersCarregarAprovacoes();
+  }catch(e){
+    alert('Falhou: ' + (e.message||e));
+  }
+}
+window.admUsersResolverAprovacao = admUsersResolverAprovacao;
+
+async function aprovPedirNova(){
+  var btn = document.getElementById('aprov-pedir-btn');
+  var out = document.getElementById('aprov-pedir-out');
+  var tipo = document.getElementById('aprov-tipo').value;
+  var titulo = document.getElementById('aprov-titulo').value.trim();
+  var descricao = document.getElementById('aprov-descricao').value.trim();
+  if(!titulo || !descricao){ if(out){ out.style.color='var(--r)'; out.textContent = 'Preencha o título e a descrição.'; } return; }
+  if(btn){ btn.disabled = true; btn.textContent = '⏳ A enviar…'; }
+  try{
+    var sb = crmSBClient();
+    if(!sb) throw new Error('Supabase indisponível no browser.');
+    var res = await sb.from('ob_aprovacoes').insert({ criado_por: CU.id, tipo: tipo, titulo: titulo, descricao: descricao });
+    if(res.error) throw new Error(res.error.message);
+    if(out){ out.style.color='var(--g)'; out.textContent = '✓ Pedido enviado — a Edna ou o Paulo vão rever.'; }
+    document.getElementById('aprov-titulo').value = '';
+    document.getElementById('aprov-descricao').value = '';
+    aprovCarregarMinhas();
+  }catch(e){
+    if(out){ out.style.color='var(--r)'; out.textContent = '✗ ' + (e.message||e); }
+  }finally{
+    if(btn){ btn.disabled = false; btn.textContent = '📤 Enviar pedido'; }
+  }
+}
+window.aprovPedirNova = aprovPedirNova;
+
+async function aprovCarregarMinhas(){
+  var wrap = document.getElementById('aprov-meus-wrap');
+  if(!wrap) return;
+  wrap.textContent = 'A carregar…';
+  try{
+    var sb = crmSBClient();
+    if(!sb) throw new Error('Supabase indisponível no browser.');
+    var res = await sb.from('ob_aprovacoes').select('*').eq('criado_por', CU.id).order('criado_em', { ascending: false }).limit(50);
+    if(res.error) throw new Error(res.error.message);
+    var linhas = res.data || [];
+    if(!linhas.length){ wrap.innerHTML = '<div style="color:var(--muted);font-size:13px">Ainda não enviou nenhum pedido.</div>'; return; }
+    var esc0 = function(x){ return String(x==null?'':x).replace(/[&<>"]/g, function(c){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]; }); };
+    var estadoCor = { pendente: 'var(--y)', aprovado: 'var(--g)', rejeitado: 'var(--r)' };
+    var estadoLabel = { pendente: 'Pendente', aprovado: 'Aprovado', rejeitado: 'Rejeitado' };
+    wrap.innerHTML = linhas.map(function(p){
+      return '<div style="background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:10px;max-width:640px">'
+        + '<div style="display:flex;justify-content:space-between;gap:10px"><strong style="color:var(--txt2)">' + esc0(p.titulo) + '</strong>'
+        + '<span style="color:' + (estadoCor[p.estado]||'var(--muted)') + ';font-size:12px;font-weight:700">' + (estadoLabel[p.estado]||p.estado) + '</span></div>'
+        + '<div style="font-size:12.5px;color:var(--muted);margin:6px 0">' + esc0(p.descricao) + '</div>'
+        + (p.nota_resolucao ? '<div style="font-size:12px;color:var(--txt2);margin-top:6px">💬 ' + esc0(p.nota_resolucao) + '</div>' : '')
+        + '<div style="font-size:11.5px;color:var(--muted);margin-top:6px">' + new Date(p.criado_em).toLocaleString('pt-PT') + '</div>'
+        + '</div>';
+    }).join('');
+  }catch(e){
+    wrap.innerHTML = '<div style="color:var(--r);font-size:13px">Falhou: ' + (e.message||e) + '</div>';
+  }
+}
+window.aprovCarregarMinhas = aprovCarregarMinhas;
 
 // ── Documentos — tabs ─────────────────────────────────────────
 function docsTab(tab){
