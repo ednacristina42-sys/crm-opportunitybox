@@ -24803,7 +24803,12 @@ window.tocoClassificarTipoDocumentoCompra = tocoClassificarTipoDocumentoCompra;
 // "HTTP 5xx", e falhas de rede do próprio fetch() vêm sem esse prefixo mas
 // também não batem no texto de autenticação — tratadas como transitórias.
 function _tocoErroEhAutenticacao(msg){
-  return /sess[aã]o inv[aá]lida|perfil activo|n[aã]o foi autorizado/i.test(String(msg||''));
+  // "TOConline recusou o pedido de token" (getAccessToken/pedirToken na Edge
+  // Function) — refresh_token expirado/revogado do lado do TOConline, exige
+  // reautorização humana via ?resource=auth. Confirmado em produção
+  // 24/09/2026: sem isto, era tratado como falha transitória e repetido 4x
+  // em vão antes de mostrar o erro — sempre ia falhar da mesma forma.
+  return /sess[aã]o inv[aá]lida|perfil activo|n[aã]o foi autorizado|recusou o pedido de token|autoriza[çc][aã]o inicial por fazer/i.test(String(msg||''));
 }
 
 // Uma página/lote de sync_purchases_snapshot pode falhar por timeout do

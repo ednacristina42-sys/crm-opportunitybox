@@ -139,6 +139,12 @@ console.log('\n[2b] Loop do browser — retenta falhas transitórias, nunca falh
   teste('"A sua conta não tem perfil activo..." é erro de autenticação (não retenta)', () => {
     assert.strictEqual(ehAuth('A sua conta não tem perfil activo no CRM.'), true);
   });
+  teste('"TOConline recusou o pedido de token (HTTP 401...)" é erro de autenticação (não retenta) — confirmado em produção 24/09/2026', () => {
+    assert.strictEqual(ehAuth('TOConline recusou o pedido de token (HTTP 401, grant_type=refresh_token).'), true);
+  });
+  teste('"Autorização inicial por fazer..." é erro de autenticação (não retenta)', () => {
+    assert.strictEqual(ehAuth('Autorizacao inicial por fazer: TOC_REFRESH_TOKEN nao esta definido.'), true);
+  });
   teste('"HTTP 504" NÃO é erro de autenticação (retenta)', () => {
     assert.strictEqual(ehAuth('HTTP 504'), false);
   });
