@@ -1794,9 +1794,13 @@ const CHAVE_COMPRAS_CKPT = "toc-purchases-sync-checkpoint";
 const CHAVE_COMPRAS_SNAPSHOT = "ob-tes-compras-toconline";
 
 interface AuditoriaTipoAc { tipo: string; quantidade: number; quantidade_pendente: number; soma_pendente: number; classificacao: string; }
-interface DocIndexEntry { document_no: string; supplier_business_name: string; gross_total: number; pending_total: number; }
+interface DocIndexEntry { document_no: string; supplier_business_name: string; gross_total: number; pending_total: number; tax_payable: number; }
 interface PaymentIndexEntry { document_no: string; date: string; payment_mechanism: string; deleted: boolean; }
-interface PagaAc { pagamentoId: string; numeroPagamento: string; documentoAssociadoId: string; documentoNumero: string | null; fornecedor: string | null; dataPagamento: string; valorPago: number; valorOriginal: number | null; saldoRestante: number | null; formaPagamento: string; }
+// ivaDocumento: tax_payable do documento associado (valor real do TOConline,
+// nunca uma taxa fixa estimada) — permite ao frontend calcular o IVA suportado
+// proporcional ao que foi realmente pago (correção 24/09/2026, Ponto 13 da
+// auditoria: "não calcular simplesmente 23% de todas as compras").
+interface PagaAc { pagamentoId: string; numeroPagamento: string; documentoAssociadoId: string; documentoNumero: string | null; fornecedor: string | null; dataPagamento: string; valorPago: number; valorOriginal: number | null; saldoRestante: number | null; formaPagamento: string; ivaDocumento: number | null; }
 
 interface CheckpointCompras {
   fase: "documents" | "payments" | "payment_lines";
@@ -1861,7 +1865,7 @@ async function sincComprasSnapshotLote(paginasPorChamada: number, reiniciar: boo
       for (const docBruto of lote as Record<string, unknown>[]) {
         const d = achatarDocumentoCompra(docBruto);
         ckpt.totalDocumentosProcessados++;
-        ckpt.docIndex[d.id] = { document_no: d.document_no, supplier_business_name: d.supplier_business_name, gross_total: d.gross_total ?? 0, pending_total: d.pending_total ?? 0 };
+        ckpt.docIndex[d.id] = { document_no: d.document_no, supplier_business_name: d.supplier_business_name, gross_total: d.gross_total ?? 0, pending_total: d.pending_total ?? 0, tax_payable: d.tax_payable ?? 0 };
         const key = d.document_type || "(vazio)";
         if (!ckpt.auditoriaTipos[key]) ckpt.auditoriaTipos[key] = { tipo: key, quantidade: 0, quantidade_pendente: 0, soma_pendente: 0, classificacao: classificarTipoDocumentoCompra(d.document_type) };
         const a = ckpt.auditoriaTipos[key];
@@ -1941,6 +1945,10 @@ async function sincComprasSnapshotLote(paginasPorChamada: number, reiniciar: boo
           dataPagamento: pag.date, valorPago: l.paid_value,
           valorOriginal: doc ? doc.gross_total : null, saldoRestante: doc ? doc.pending_total : null,
           formaPagamento: pag.payment_mechanism,
+          // IVA proporcional ao que esta linha pagou do documento (nunca uma
+          // taxa fixa): tax_payable é o valor real do TOConline para o
+          // documento inteiro; escala-se pela fração paga nesta linha.
+          ivaDocumento: (doc && doc.gross_total > 0.005) ? round2(doc.tax_payable * (l.paid_value / doc.gross_total)) : null,
         });
         if (pag.date && pag.date.slice(0, 7) === mesAtual) {
           ckpt.pagoEsteMesAc = round2(ckpt.pagoEsteMesAc + l.paid_value);

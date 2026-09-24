@@ -2669,6 +2669,18 @@ function crmShowLoginWithMessage(msg){
 // aqui (ex.: enum alargado na BD sem o CRM ter sido atualizado).
 var CRM_VALID_ROLES = ['admin', 'manager', 'comercial', 'financeiro', 'administrativo', 'design', 'producao'];
 
+// Vê tudo (comerciais, Mapa de Vendas, obras/tarefas/relatórios), nunca
+// escreve nada — mesma regra que já vale para navegação (goPage) e sidebar
+// (setupApp), aplicada aos filtros "meus X vs todos X" espalhados pelo
+// ficheiro. Pedido explícito da Edna, 24/09/2026: "a Carolina pode
+// visualizar todos os dados do CRM" — baseado no papel, nunca no nome ou
+// email da conta, e sem contornar RLS (a RLS já autoriza a leitura; isto só
+// alinha os filtros de exibição no cliente com o que a base já permite ler).
+function crmVeTudo(){
+  return !!(typeof CU!=='undefined' && CU && (CU.admin===true || CU.role==='administrativo'));
+}
+window.crmVeTudo = crmVeTudo;
+
 // Constrói o CU só a partir da linha (já validada) de ob_profiles —
 // nunca a partir de localStorage, USERS, ou qualquer resto do login
 // antigo. Único sítio onde id/role/dept/manager_id entram no CU depois
@@ -17820,7 +17832,7 @@ var clientes=[
 // campos preenchidos não são atribuídos a ninguém automaticamente: o
 // admin continua a vê-los, um comercial normal não.
 function cliMeusClientes(rows){
-  var isAdmin = !!(typeof CU!=='undefined' && CU && CU.admin);
+  var isAdmin = crmVeTudo();
   var nome = (typeof CU!=='undefined' && CU) ? CU.name : null;
   if(isAdmin || !nome) return rows;
   return rows.filter(function(c){
@@ -17861,7 +17873,7 @@ window.cliBuscarInput = cliBuscarInput;
 function renderClientes(){
   const el=document.getElementById('clientes-tbody');if(!el)return;
   const data=(typeof cliData!=='undefined'&&cliData)?cliData:clientes;
-  const isAdmin = !!(CU && CU.admin === true);
+  const isAdmin = crmVeTudo();
   const minhaCarteira=cliMeusClientes(data);
   const carteiraInfoEl=document.getElementById('cli-carteira-info');
   if(carteiraInfoEl){
@@ -21359,7 +21371,7 @@ function renderFinanceiro(){
 
 // ── RELATÓRIOS ────────────────────────────────────────────
 function renderRelatorios(){
-  var isAdmin = !!(CU && CU.admin === true);
+  var isAdmin = crmVeTudo();
   var el=document.getElementById('top-clientes');
   var orcParaMargem = (typeof orcData!=='undefined'?orcData:[]);
   var topClis = (typeof cliData!=='undefined'?cliData:[]).slice().sort(function(a,b){return (b.rev||0)-(a.rev||0);}).slice(0,10);
@@ -24784,6 +24796,38 @@ window.tocoClassificarTipoDocumentoCompra = tocoClassificarTipoDocumentoCompra;
 // repetidamente até concluido:true; MAX_CHAMADAS é só rede de segurança
 // contra ciclo infinito (nunca deveria ser atingido — cada chamada
 // processa até 15 páginas de 100 registos de UMA das 3 fases).
+// Falha transitória (timeout/rede/TOConline instável) vs. falha de
+// autenticação/autorização — só a primeira compensa repetir. Distingue pela
+// mensagem que tocoEF() já produz: 401/403/428 vêm sempre com texto humano
+// fixo (nunca "HTTP NNN"); qualquer outro erro HTTP mantém o formato
+// "HTTP 5xx", e falhas de rede do próprio fetch() vêm sem esse prefixo mas
+// também não batem no texto de autenticação — tratadas como transitórias.
+function _tocoErroEhAutenticacao(msg){
+  return /sess[aã]o inv[aá]lida|perfil activo|n[aã]o foi autorizado/i.test(String(msg||''));
+}
+
+// Uma página/lote de sync_purchases_snapshot pode falhar por timeout do
+// TOConline (504) sem que isso signifique nada de errado com o checkpoint —
+// antes disto, um único 504 a meio de centenas de páginas abortava a
+// sincronização inteira e ninguém voltava a clicar (foi exactamente a causa
+// do checkpoint ficar preso em 22/09 — auditoria 24/09/2026). Repete até 4
+// vezes com espera crescente antes de desistir; nunca repete erro de
+// autenticação (esse precisa de ação humana, não insistência).
+async function _tocoChamarComRetentativa(recurso, qs, progresso){
+  var TENTATIVAS = 4, esperaMs = 1500;
+  for(var t=1; t<=TENTATIVAS; t++){
+    try{
+      return await tocoEF(recurso, qs);
+    }catch(e){
+      var msg = (e && e.message) || String(e);
+      if(_tocoErroEhAutenticacao(msg) || t === TENTATIVAS) throw e;
+      if(progresso) progresso('Falha transitória (' + msg + ') — nova tentativa ' + (t+1) + '/' + TENTATIVAS + ' em ' + Math.round(esperaMs/1000) + 's…');
+      await new Promise(function(r){ setTimeout(r, esperaMs); });
+      esperaMs *= 2;
+    }
+  }
+}
+
 async function tocoSincronizarComprasPagamentosReal(){
   if(typeof homeIsAdmin==='function' && !homeIsAdmin()) return;
   var progresso = function(txt){ var el=document.getElementById('tes-toco-pagar-status'); if(el) el.innerHTML='<div style="font-size:12px;color:var(--y)">⏳ '+txt+'</div>'; };
@@ -24793,7 +24837,7 @@ async function tocoSincronizarComprasPagamentosReal(){
     var chamadas = 0, concluido = false, ultimaResposta = null;
     while(!concluido && chamadas < MAX_CHAMADAS){
       chamadas++;
-      ultimaResposta = await tocoEF('sync_purchases_snapshot', 'paginas=50');
+      ultimaResposta = await _tocoChamarComRetentativa('sync_purchases_snapshot', 'paginas=50', progresso);
       concluido = !!ultimaResposta.concluido;
       if(!concluido){
         progresso('TOConline — fase: '+(ultimaResposta.fase||'?')+' ('+
@@ -25040,7 +25084,23 @@ function tesIvaCalcularReal(){
     var comprasMes = comprasComIva.reduce(function(s,c){return s+(parseFloat(c.valor)||0);},0);
     var ivaCompras = comprasComIva.reduce(function(s,c){return s+ivaDe(parseFloat(c.valor)||0, c.ivaPct);},0);
 
-    if(!vendasDoMes.length && !comprasDoMes.length) continue;
+    // Compras pagas via TOConline (ob-tes-compras-toconline.pagas) — antes
+    // desta correção nunca entravam aqui, só as contas pagas manualmente em
+    // TES_CONTAS (quase sempre vazia). ivaDocumento vem do tax_payable real
+    // do TOConline (proporcional ao valor pago), nunca uma taxa fixa
+    // estimada — correção 24/09/2026, Ponto 13 da auditoria. Pagamentos
+    // TOConline sem ivaDocumento (snapshot antigo, anterior a esta versão)
+    // marcam comprasIncompleto, tal como já acontecia para TES_CONTAS sem
+    // ivaPct — nunca inventam nem omitem silenciosamente esse IVA.
+    var pagasToco = (typeof TES_COMPRAS_TOCO!=='undefined' && TES_COMPRAS_TOCO && Array.isArray(TES_COMPRAS_TOCO.pagas)) ? TES_COMPRAS_TOCO.pagas : [];
+    var comprasTocoDoMes = pagasToco.filter(function(p){ return String(p.dataPagamento||'').slice(0,7)===prefixo; });
+    var comprasTocoComIva = comprasTocoDoMes.filter(function(p){ return p.ivaDocumento!=null; });
+    var comprasTocoSemIva = comprasTocoDoMes.filter(function(p){ return p.ivaDocumento==null; });
+    comprasMes += comprasTocoComIva.reduce(function(s,p){return s+(parseFloat(p.valorPago)||0);},0);
+    ivaCompras += comprasTocoComIva.reduce(function(s,p){return s+(parseFloat(p.ivaDocumento)||0);},0);
+    if(comprasTocoSemIva.length>0) comprasSemIva = comprasSemIva.concat(comprasTocoSemIva);
+
+    if(!vendasDoMes.length && !comprasDoMes.length && !comprasTocoDoMes.length) continue;
     var estimativa = ivaVendas - ivaCompras;
     ivaArr.push({mes:TES_MESES[m], vendas:vendasMes, compras:comprasMes, estimativa:estimativa, valorPago:null, comprasIncompleto: comprasSemIva.length>0});
     resumoArr.push({mes:TES_MESES[m], vendas:vendasMes, despesas:comprasMes, impostos:estimativa, iva:estimativa, salarios:0, saldo:vendasMes-comprasMes-estimativa, comprasIncompleto: comprasSemIva.length>0});
@@ -25525,8 +25585,68 @@ function tocoMergeFaturasCacheReceber(){
   return false;
 }
 
+// ── Baixa automática de recebidos, por _tocoId (24/09/2026) ────────────────
+// NÃO é uma reativação do mecanismo antigo acima (tocoMergeFaturasCacheReceber,
+// desativado desde 08/09) nem do incidente de 03/09 (ver comentário grande
+// abaixo, "CENTRAL ÚNICA... INCIDENTE 03/09"). Este mecanismo é
+// deliberadamente mais estreito que os dois:
+//   · Nunca insere linhas novas em TES_RECEBER — só atualiza `estado` em
+//     linhas que já existem.
+//   · Só decide para linhas que já têm `_tocoId` gravado (hoje 84 das 571
+//     linhas — as que vieram de uma sincronização TOConline anterior); as
+//     restantes (vindas da Google Sheet, sem _tocoId) ficam de fora, porque
+//     não há aqui identificador estável para as ligar com segurança.
+//   · A identidade é sempre `_tocoId` == id real do documento no TOConline
+//     — nunca nome+data+valor (a causa confirmada do incidente de 03/09).
+//   · Idempotente por construção: corrida duas vezes seguidas com os mesmos
+//     dados não muda nada da segunda vez (uma linha já 'Recebido' que
+//     continua paga não é reescrita).
+//   · Nunca reverte 'Recebido' para outro estado sozinho — se o TOConline
+//     mostrar um documento como voltou a ficar pendente (ex.: recibo
+//     anulado), fica listado em `revisar` para decisão humana, nunca
+//     sobrescrito automaticamente.
+function tocoBaixarRecebidosPorTocoId(){
+  var vazio = { candidatos: 0, atualizados: 0, semDadoFiavel: 0, revisar: [], alterados: [] };
+  if(typeof TES_RECEBER==='undefined' || !Array.isArray(TES_RECEBER)) return vazio;
+  var cache = (typeof _tocoFatCache!=='undefined' && Array.isArray(_tocoFatCache)) ? _tocoFatCache : [];
+  if(!cache.length) return vazio;
+  var porId = {};
+  cache.forEach(function(d){ if(d && d.Id!=null) porId[String(d.Id)] = d; });
+
+  var atualizados = 0, candidatos = 0, semDadoFiavel = 0;
+  var revisar = [], alterados = [];
+  TES_RECEBER.forEach(function(r){
+    if(!r || !r._tocoId) return;
+    var doc = porId[String(r._tocoId)];
+    if(!doc) return;
+    candidatos++;
+    if(doc.PendingTotal==null){ semDadoFiavel++; return; } // sem dado fiável — nunca decide por suposição
+    var pendente = parseFloat(doc.PendingTotal) || 0;
+    var estaPago = pendente <= 0.005;
+    if(estaPago && r.estado!=='Recebido'){
+      r.estado = 'Recebido';
+      if(!r.dataRec) r.dataRec = new Date().toLocaleDateString('pt-PT');
+      atualizados++;
+      alterados.push({ id:r.id, tocoId:r._tocoId, cliente:r.cliente, valor:r.total });
+    } else if(!estaPago && r.estado==='Recebido'){
+      revisar.push({ id:r.id, tocoId:r._tocoId, cliente:r.cliente, valor:r.total, motivo:'TOConline mostra saldo pendente (€'+pendente.toFixed(2)+') mas o CRM tem como Recebido' });
+    }
+  });
+
+  if(atualizados>0){
+    if(typeof tesSaveReceber==='function') tesSaveReceber();
+    if(typeof obSbPush==='function') obSbPush('ob-tes-receber');
+  }
+  if(revisar.length){
+    console.warn('[Contas a Receber] '+revisar.length+' documento(s) marcados Recebido no CRM mas com saldo pendente no TOConline — não alterados automaticamente:', revisar);
+  }
+  return { candidatos: candidatos, atualizados: atualizados, semDadoFiavel: semDadoFiavel, revisar: revisar, alterados: alterados };
+}
+window.tocoBaixarRecebidosPorTocoId = tocoBaixarRecebidosPorTocoId;
+
 function tocoAtualizarTesourariaComFaturas(){
   tocoMergeFaturasCacheReceber();
+  try{ tocoBaixarRecebidosPorTocoId(); }catch(e){ console.error('[Contas a Receber] Falha na baixa automática por _tocoId:', e); }
   if(typeof tesRenderReceber==='function') tesRenderReceber();
   if(typeof tesRenderRecebidos==='function') tesRenderRecebidos();
   if(typeof tesRender==='function') tesRender();
@@ -28574,7 +28694,11 @@ async function tocoSincronizarFaturas(silent, ano) {
         Date: a.date,
         DueDate: a.due_date,
         TotalAmount: (a.gross_total != null ? a.gross_total : a.net_total) != null ? (a.gross_total != null ? a.gross_total : a.net_total) : a.amount,
-        Status: a.status
+        Status: a.status,
+        // Usado pela baixa automática por _tocoId (tocoBaixarRecebidosPorTocoId) —
+        // <=0.005 = documento totalmente liquidado no TOConline. Correção
+        // 24/09/2026; campo novo, não existia antes nesta cache.
+        PendingTotal: a.pending_total != null ? a.pending_total : null
       });
     }
     for(var i=0; i<recursos.length; i++) {
@@ -30016,6 +30140,7 @@ function importarConfiguracao() {
   var _finAgenteAtivo = true;
   var _finIntervalo = null;
   var _finUltimaSync = null;
+  var _finFalhasAuthSeguidas = 0;
 
   // ── Carregar config do agente ──────────────────────────────────
   function _finCarregarConfig() {
@@ -30027,9 +30152,24 @@ function importarConfiguracao() {
   }
   _finCarregarConfig();
 
+  // ── Papel autorizado a sincronizar com o TOConline ──────────────
+  // Espelha FUNCOES_VALIDAS em supabase/functions/crm-toconline/index.ts
+  // (perfilActivo()). Sem isto, qualquer sessão aberta (ex.: 'administrativo',
+  // 'design', 'producao') martela o endpoint a cada 5 min e recebe sempre
+  // 403 — foi a causa confirmada do erro 403 em loop (auditoria 24/09/2026).
+  // Corrigido aqui, não no backend: o backend já recusa corretamente estes
+  // papéis, e alargar FUNCOES_VALIDAS deixaria contas "só vê" (administrativo)
+  // disparar escritas financeiras reais via sincronização.
+  function _finPapelAutorizado() {
+    if (typeof CU === 'undefined' || !CU) return false;
+    if (CU.admin === true) return true;
+    return ['manager', 'comercial', 'financeiro'].indexOf(CU.role) !== -1;
+  }
+
   // ── Função principal de sincronização ──────────────────────────
   async function _finSincronizar() {
     if (!_finAgenteAtivo) return;
+    if (!_finPapelAutorizado()) return; // sessão sem sessão/papel autorizado — não chama o TOConline
     var status = document.getElementById('fin-agente-status');
     if (status) status.textContent = '⏳ A sincronizar...';
 
@@ -30079,10 +30219,27 @@ function importarConfiguracao() {
 
       _finUltimaSync = new Date().toLocaleTimeString('pt-PT');
       if (status) status.textContent = '✅ Sincronizado às ' + _finUltimaSync;
+      _finFalhasAuthSeguidas = 0;
 
     } catch(e) {
       console.error('[Agente Financeiro] Erro na sincronização:', e);
       if (status) status.textContent = '❌ Erro: ' + (e.message || e);
+      // Disjuntor: falhas de autenticação/autorização não se resolvem sozinhas
+      // repetindo o pedido a cada 5 min (foi assim que o erro 403 ficou em
+      // loop durante dias — auditoria 24/09/2026). 3 falhas seguidas do tipo
+      // sessão/perfil param o agente em vez de martelar o endpoint.
+      var msg = String((e && e.message) || e || '');
+      if (/\b(401|403)\b|sess[aã]o|perfil activo/i.test(msg)) {
+        _finFalhasAuthSeguidas = (_finFalhasAuthSeguidas || 0) + 1;
+        if (_finFalhasAuthSeguidas >= 3 && _finIntervalo) {
+          clearInterval(_finIntervalo);
+          _finIntervalo = null;
+          console.error('[Agente Financeiro] Desligado após 3 falhas de autenticação seguidas.');
+          if (status) status.textContent = '⏸️ Desligado automaticamente (sessão sem permissão para sincronizar).';
+        }
+      } else {
+        _finFalhasAuthSeguidas = 0;
+      }
     }
   }
 
@@ -32351,7 +32508,7 @@ async function _mvEnsureTesData(){
 }
 
 function _mvMinhasLinhas(rows){
-  var isAdmin = !!(typeof CU!=='undefined' && CU && CU.admin);
+  var isAdmin = crmVeTudo();
   var nome = (typeof CU!=='undefined' && CU) ? CU.name : null;
   if(isAdmin || !nome) return rows.slice();
   return rows.filter(function(o){ return o.vendedor === nome; });
@@ -32383,7 +32540,7 @@ function _mvApplyFilters(rows){
 }
 
 function _mvGetView(){
-  var isAdmin = !!(typeof CU!=='undefined' && CU && CU.admin);
+  var isAdmin = crmVeTudo();
   var base = _mvMinhasLinhas(_mvData||[]);
   return { isAdmin: isAdmin, rows: _mvApplyFilters(base) };
 }
@@ -32413,7 +32570,7 @@ function renderMapaVendas(){
 window.renderMapaVendas = renderMapaVendas;
 
 function _mvRenderBanner(){
-  var isAdmin = !!(typeof CU!=='undefined' && CU && CU.admin);
+  var isAdmin = crmVeTudo();
   var banner = document.getElementById('mv-comercial-banner');
   if(!banner) return;
   if(!isAdmin && CU && CU.name){
@@ -32428,7 +32585,7 @@ function _mvRenderFilters(){
   var wrap = document.getElementById('mv-filters');
   if(!wrap || wrap.dataset.built) { return; }
   var view0 = _mvMinhasLinhas(_mvData||[]);
-  var isAdmin = !!(typeof CU!=='undefined' && CU && CU.admin);
+  var isAdmin = crmVeTudo();
   var uniq = function(arr){ return Array.from(new Set(arr.filter(Boolean))).sort(); };
   var comerciais = uniq(view0.map(function(o){return o.vendedor;}));
   var origens = uniq(view0.map(_mvOrigem)).filter(function(v){return v!=='—';});
@@ -32889,7 +33046,7 @@ function _mvCloseDetail(){
 function mpRenderLembretesHoje(){
   var tb=document.getElementById('mp-lembretes-hoje');
   if(!tb) return;
-  var isAdmin=!!(typeof CU!=='undefined'&&CU&&CU.admin);
+  var isAdmin=crmVeTudo();
   var nome=(typeof CU!=='undefined'&&CU)?CU.name:null;
   var minhas=function(autor){ return isAdmin||!nome||autor===nome; };
   var todas=(typeof crmAtividades!=='undefined'&&crmAtividades)?crmAtividades:[];
@@ -33050,7 +33207,7 @@ window.agAvaliarCliente = agAvaliarCliente;
 // prioridade e depois por dias (mais antigo primeiro).
 function agListaPrioridades(opts){
   opts=opts||{};
-  var isAdmin=!!(typeof CU!=='undefined'&&CU&&CU.admin);
+  var isAdmin=crmVeTudo();
   var nome=(typeof CU!=='undefined'&&CU)?CU.name:null;
   var minhas=function(v){ return opts.todos||isAdmin||!nome||v===nome; };
   var cli=(typeof cliData!=='undefined'&&cliData)?cliData:[];
@@ -33132,7 +33289,7 @@ function agRenderPrioridades(){
   // com isAdmin=true, i.e. a carteira completa).
   var resumoEl=document.getElementById('ag-admin-resumo');
   if(!resumoEl) return;
-  var isAdmin=!!(typeof CU!=='undefined'&&CU&&CU.admin);
+  var isAdmin=crmVeTudo();
   if(!isAdmin){ resumoEl.style.display='none'; resumoEl.innerHTML=''; return; }
 
   var porComercial={};
@@ -33323,7 +33480,7 @@ window.agListaCanonica = agListaCanonica;
 // próprio card "Lembretes de Hoje" — mostrá-la aqui também seria duplicar
 // no ecrã, não na identidade).
 function agListaUnificada(){
-  var isAdmin=!!(typeof CU!=='undefined'&&CU&&CU.admin);
+  var isAdmin=crmVeTudo();
   var nomeCU=(typeof CU!=='undefined'&&CU)?CU.name:null;
   var meuId=(typeof CU!=='undefined'&&CU)?CU.id:null;
   // Bug B1 (corrigido): itens de orçamento (it.ownerId, ver
@@ -33460,10 +33617,10 @@ function agRenderCentroUnificado(){
 
   var resumoEl=document.getElementById('ag-admin-resumo');
   if(!resumoEl) return;
-  var isAdmin=!!(typeof CU!=='undefined'&&CU&&CU.admin);
+  var isAdmin=crmVeTudo();
   if(!isAdmin){ resumoEl.style.display='none'; resumoEl.innerHTML=''; return; }
 
-  var todosAdmin=agListaUnificada(); // já é "todos" quando CU é admin (minhas() sempre true)
+  var todosAdmin=agListaUnificada(); // já é "todos" quando CU é admin/administrativo (minhas() sempre true)
   var porComercial={}, porTipo={lead:0,orc:0,cliente:0};
   todosAdmin.lista.forEach(function(item){
     var com=item.comercial||'Sem comercial';
@@ -33962,7 +34119,7 @@ function mp2RenderProximosSete(){
   var tbody=document.getElementById('mp2-sete-tbody');
   var vertodosWrap=document.getElementById('mp2-sete-vertodos-wrap');
   if(!secao||!tbody) return;
-  var isAdmin=!!(typeof CU!=='undefined'&&CU&&CU.admin);
+  var isAdmin=crmVeTudo();
   var nome=(typeof CU!=='undefined'&&CU)?CU.name:null;
   var minhas=function(v){ return isAdmin||!nome||v===nome; };
   var hoje=new Date(); hoje.setHours(0,0,0,0);
@@ -34347,7 +34504,7 @@ function fuOrcamentosAtivos(){
 // isso o corte por comercial tem de ser feito aqui, no cliente, e não
 // pode assumir que a RLS já tratou disto por "Ver como".
 function fuMinhasOrc(rows){
-  var isAdmin = !!(typeof CU!=='undefined' && CU && CU.admin);
+  var isAdmin = crmVeTudo();
   var meuId = (typeof CU!=='undefined' && CU) ? CU.id : null;
   // Bug B1 (corrigido): dono real é o.owner_id (uuid), não o.vendedor
   // (texto livre, pode divergir do perfil atual — mesma causa raiz do
@@ -35764,6 +35921,17 @@ function finCalcularFluxoCaixaSemanal(){
     if(c.estado!=='Pendente') return;
     var d=finParseVenc(c.vencimento); if(!d) return;
     var b=bucket(d); if(b>=0) sai[b]+=parseFloat(c.valor||0)||0;
+  });
+  // Saídas reais de Compras TOConline (ob-tes-compras-toconline.aPagar) —
+  // antes disto as barras de saída só liam TES_CONTAS (lançamentos manuais,
+  // praticamente vazia), nunca o snapshot real sincronizado do TOConline.
+  // TES_CONTAS e este snapshot são hoje fontes sem sobreposição (nenhum
+  // documento aqui tem correspondência em TES_CONTAS — auditoria 24/09/2026),
+  // por isso somam-se sem risco de contar o mesmo valor duas vezes.
+  var compras = (typeof TES_COMPRAS_TOCO!=='undefined' && TES_COMPRAS_TOCO && Array.isArray(TES_COMPRAS_TOCO.aPagar)) ? TES_COMPRAS_TOCO.aPagar : [];
+  compras.forEach(function(item){
+    var d=finParseVenc(item.vencimento); if(!d) return;
+    var b=bucket(d); if(b>=0) sai[b]+=parseFloat(item.pendente||0)||0;
   });
   return { labels: labels, entradas: ent, saidas: sai, N: N };
 }
