@@ -16537,7 +16537,14 @@ async function ecSyncFuncionarios(){
     });
     if(!res.ok){ const err=await res.text(); console.error('crm-employees error:', err); if(btn) btn.textContent = '❌ Erro'; return; }
     const data = await res.json();
-    EC_FUNCIONARIOS = (data||[]).map(p=>({
+    // Filtra contas de teste (pedido da Edna, 24/09/2026: "pode tirar o
+    // operador administrativo teste") — esta app de pontos vive num
+    // projecto Supabase à parte (xtiguuyvotnpwqzmggnc), sem acesso directo
+    // daqui para apagar a conta na origem; isto só a esconde do CRM. Marca
+    // "(TESTE)" no nome, mesmo padrão já usado noutras limpezas de dados
+    // fictícios neste ficheiro.
+    const dataSemTeste = (data||[]).filter(p => !/\(teste\)/i.test(p.full_name||''));
+    EC_FUNCIONARIOS = dataSemTeste.map(p=>({
       ec_id:           p.id,
       nome:            p.full_name || '—',
       cargo:           p.role || p.team_label || '—',
