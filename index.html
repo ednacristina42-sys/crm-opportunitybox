@@ -7310,7 +7310,10 @@ tbody td{font-size:15px}
       <button class="sl-item" data-action="goPage" data-page="admin-despesas"><span class="mk-ic">💳</span>Despesas</button>
       <button class="sl-item" data-action="goPage" data-page="admin-rh"><span class="mk-ic">👥</span>Recursos Humanos</button>
       <button class="sl-item" id="ni-stock" data-action="goPage" data-page="stock"><span class="mk-ic">📦</span>Stock</button>
-      <button class="sl-item" id="ni-equipa" data-action="goPage" data-page="equipa"><span class="mk-ic">🧑‍🤝‍🧑</span>Equipa</button>
+      <!-- Ocultado a pedido da Edna (24/09/2026): "não devemos ter essa
+           parte já que tem em recursos humanos" — Recursos Humanos →
+           Colaboradores já mostra a mesma informação. Reversível. -->
+      <button class="sl-item" id="ni-equipa" data-action="goPage" data-page="equipa" style="display:none"><span class="mk-ic">🧑‍🤝‍🧑</span>Equipa</button>
       <button class="sl-item" id="ni-integracoes" data-action="goPage" data-page="integracoes"><span class="mk-ic">⚙️</span>Integrações</button>
       <button class="sl-item admin-only" id="ni-admin-utilizadores" data-action="goPage" data-page="admin-utilizadores"><span class="mk-ic">👤</span>Utilizadores &amp; Aprovações</button>
       <button class="sl-item" id="ni-pedir-aprovacao" data-action="goPage" data-page="pedir-aprovacao" style="display:none"><span class="mk-ic">✅</span>Pedir Aprovação</button>
@@ -16950,6 +16953,29 @@ function ecRoleColor(role){
 }
 
 // ── COLABORADORES ──
+// Correspondência de nomes por palavras (24/09/2026, pedido da Edna: "nomes
+// repetidos") — a reconciliação anterior só apanhava nomes EXATAMENTE
+// iguais depois de normalizar; a mesma pessoa continuava duplicada quando
+// uma fonte tem o nome curto (ex. "André Nolasco", "Rui Mota" — os mesmos
+// usados no Mapa de Vendas) e a outra o nome completo vindo do registo
+// civil na app de pontos (ex. "André Nolasco Lamas de Sousa e Silva",
+// "Rui Jorge Fausto Alves Mota"). Duas pessoas só contam como a mesma
+// quando TODAS as palavras do nome mais curto aparecem no nome mais
+// comprido — nunca só o primeiro nome sozinho (evita juntar pessoas
+// diferentes que por acaso partilham o primeiro nome, ex. dois "Rui").
+function rhNormalizarNome(nome){
+  return String(nome||'').trim().toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g,'')
+    .split(/\s+/).filter(Boolean);
+}
+function rhMesmaPessoa(nomeA, nomeB){
+  const a = rhNormalizarNome(nomeA), b = rhNormalizarNome(nomeB);
+  if(a.length < 2 || b.length < 2) return false;
+  const curta = a.length <= b.length ? a : b;
+  const longa = a.length <= b.length ? b : a;
+  const longaSet = new Set(longa);
+  return curta.every(w => longaSet.has(w));
+}
 function rhRenderColabs(){
   const el=document.getElementById('rh-colab-cards'); if(!el) return;
 
@@ -16964,13 +16990,12 @@ function rhRenderColabs(){
   // mesma pessoa aparecia 2 vezes — um cartão "📱 App" (EC_FUNCIONARIOS) E
   // um cartão local (rhColabs) sem qualquer ligação entre os dois. As duas
   // fontes não partilham nenhum id — só o nome é comum — por isso a
-  // reconciliação é por nome normalizado. Quando há match, o cartão local
-  // vence (é o único com CRUD real e campos financeiros/HR completos: NIF,
-  // NISS, IBAN, salário) e o cartão do App para essa pessoa é removido;
-  // nada é escrito em nenhuma base de dados, é só a apresentação que deixa
-  // de duplicar.
-  const nomesLocais = new Set(rhColabs.map(c => (c.nome||'').trim().toLowerCase()));
-  const appSemDuplicado = unique.filter(c => !nomesLocais.has((c.nome||'').trim().toLowerCase()));
+  // reconciliação é por nome normalizado (rhMesmaPessoa acima, não só
+  // igualdade exacta). Quando há match, o cartão local vence (é o único
+  // com CRUD real e campos financeiros/HR completos: NIF, NISS, IBAN,
+  // salário) e o cartão do App para essa pessoa é removido; nada é escrito
+  // em nenhuma base de dados, é só a apresentação que deixa de duplicar.
+  const appSemDuplicado = unique.filter(c => !rhColabs.some(lc => rhMesmaPessoa(c.nome, lc.nome)));
 
   // Colaboradores do App de Pontos (já sem quem também existe localmente)
   const appCards = appSemDuplicado.map(c=>{
@@ -16994,11 +17019,10 @@ function rhRenderColabs(){
   });
 
   // Colaboradores locais (rhColabs). Quando o mesmo nome também existe no
-  // App de pontos (nomesApp), fica marcado "📱 App" aqui — é a mesma pessoa
-  // reconciliada num único cartão, nunca dois (ver appSemDuplicado acima).
-  const nomesApp = new Set(unique.map(c => (c.nome||'').trim().toLowerCase()));
+  // App de pontos, fica marcado "📱 App" aqui — é a mesma pessoa reconciliada
+  // num único cartão, nunca dois (ver appSemDuplicado acima).
   const localCards = rhColabs.map(c=>{
-    const ligadoApp = nomesApp.has((c.nome||'').trim().toLowerCase());
+    const ligadoApp = unique.some(ac => rhMesmaPessoa(c.nome, ac.nome));
     return `
     <div onclick="rhEditColab('${c.id}')" style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:14px 16px;min-width:190px;max-width:230px;cursor:pointer;transition:border-color .15s;position:relative" onmouseover="this.style.borderColor='${c.color||'#F5C400'}'" onmouseout="this.style.borderColor='var(--border)'">
       ${ligadoApp?`<span title="Também sincronizado do app de pontos" style="position:absolute;top:8px;right:8px;font-size:10px;background:#3B82F620;color:#3B82F6;border:1px solid #3B82F640;border-radius:4px;padding:1px 5px">📱 App</span>`:''}
