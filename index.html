@@ -8930,6 +8930,16 @@ tbody td{font-size:15px}
   </div>
   <div class="admin-page">
 
+    <!-- Resumo Geral — pedido da Edna, 24/09/2026: totais de Vencidas/A
+         Pagar/A Receber/Pagas/Recebidos sempre visíveis, sem depender da
+         aba activa. Ver tesRenderResumoGeral(). -->
+    <div class="krow" style="margin-bottom:14px">
+      <div class="kpi kR"><div class="klbl">Vencidas</div><div class="kval" id="tes-resumo-vencidas">—</div><div class="ksub">a pagar + a receber</div></div>
+      <div class="kpi" style="--c:var(--r)"><div class="klbl">A Pagar</div><div class="kval" id="tes-resumo-apagar">—</div><div class="ksub">total pendente</div></div>
+      <div class="kpi kB"><div class="klbl">A Receber</div><div class="kval" id="tes-resumo-areceber">—</div><div class="ksub">total pendente</div></div>
+      <div class="kpi kG"><div class="klbl">Pagas</div><div class="kval" id="tes-resumo-pagas">—</div><div class="ksub">total liquidado</div></div>
+      <div class="kpi" style="--c:var(--g)"><div class="klbl">Recebidos</div><div class="kval" id="tes-resumo-recebidos">—</div><div class="ksub">total cobrado</div></div>
+    </div>
 
     <!-- KPIs dinâmicos (mudam com a tab activa) -->
     <div class="g4" style="margin-bottom:18px" id="tes-kpis">
@@ -24851,8 +24861,58 @@ function tesRender() {
     if(typeof tesRenderPagasToco==='function') tesRenderPagasToco();
     var diagWrap=document.getElementById('toco-diagnostico-wrap');
     if(diagWrap) diagWrap.style.display=(typeof homeIsAdmin==='function'&&homeIsAdmin())?'block':'none';
+    if(typeof tesRenderResumoGeral==='function') tesRenderResumoGeral();
   }catch(e){}
 }
+
+// Resumo Geral (Vencidas/A Pagar/A Receber/Pagas/Recebidos) — pedido da
+// Edna, 24/09/2026: visão consolidada no topo de Tesouraria, sem precisar
+// de mudar de aba para ver cada total. Nunca reinventa a soma — reutiliza
+// exactamente as mesmas fontes/regras já usadas pelos KPIs de cada aba
+// (tesGetReceber/tesGetRecebidos/tesEstaVencido para A Receber/Recebidos;
+// a mesma exclusividade TOConline vs. Contas Manuais de tesUpdateKPIs
+// para A Pagar/Pagas — nunca mistura as duas fontes).
+function tesRenderResumoGeral(){
+  var elV  = document.getElementById('tes-resumo-vencidas');
+  var elP  = document.getElementById('tes-resumo-apagar');
+  var elR  = document.getElementById('tes-resumo-areceber');
+  var elPg = document.getElementById('tes-resumo-pagas');
+  var elRc = document.getElementById('tes-resumo-recebidos');
+  if(!elV && !elP && !elR && !elPg && !elRc) return;
+
+  var recList = (typeof tesGetReceber==='function') ? tesGetReceber() : [];
+  var pendReceber = recList.filter(function(r){ return r.estado!=='Recebido'; });
+  var totalAReceber = pendReceber.reduce(function(s,r){ return s+(parseFloat(r.total)||0); },0);
+  var recebidosList = (typeof tesGetRecebidos==='function') ? tesGetRecebidos() : [];
+  var totalRecebidos = recebidosList.reduce(function(s,r){ return s+(parseFloat(r.total)||0); },0);
+  var vencidoReceber = pendReceber.filter(function(r){
+    return typeof tesEstaVencido==='function' && tesEstaVencido(r);
+  }).reduce(function(s,r){ return s+(parseFloat(r.total)||0); },0);
+
+  var totalAPagar = 0, totalPagas = 0, vencidoPagar = 0;
+  if(typeof tesTocoComprasDisponivel==='function' && tesTocoComprasDisponivel()){
+    var k = TES_COMPRAS_TOCO.kpis || {};
+    totalAPagar = k.totalAPagar || 0;
+    vencidoPagar = k.vencido || 0;
+    totalPagas = (TES_COMPRAS_TOCO.pagas||[]).reduce(function(s,p){ return s+(parseFloat(p.valorPago)||0); },0);
+  } else {
+    var pendentesPg = TES_CONTAS.filter(function(c){ return c.estado!=='Paga'; });
+    totalAPagar = pendentesPg.reduce(function(s,c){ return s+(parseFloat(c.valor)||0); },0);
+    totalPagas = TES_CONTAS.filter(function(c){ return c.estado==='Paga'; }).reduce(function(s,c){ return s+(parseFloat(c.valor)||0); },0);
+    var hojePg = new Date();
+    vencidoPagar = pendentesPg.filter(function(c){
+      var d = parseVencTes(c.vencimento); return !isNaN(d) && d<hojePg;
+    }).reduce(function(s,c){ return s+(parseFloat(c.valor)||0); },0);
+  }
+
+  var totalVencidas = vencidoReceber + vencidoPagar;
+  if(elV)  elV.textContent  = fmtEurT(totalVencidas);
+  if(elP)  elP.textContent  = fmtEurT(totalAPagar);
+  if(elR)  elR.textContent  = fmtEurT(totalAReceber);
+  if(elPg) elPg.textContent = fmtEurT(totalPagas);
+  if(elRc) elRc.textContent = fmtEurT(totalRecebidos);
+}
+window.tesRenderResumoGeral = tesRenderResumoGeral;
 
 // ══════════════════════════════════════════════════════════════════════
 // TESOURARIA — A Pagar/Pagas via TOConline REAL (17/09/2026, fase final)
