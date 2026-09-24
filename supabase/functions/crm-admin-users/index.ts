@@ -35,7 +35,7 @@ function sbCfg(): { url: string; key: string } {
 // Papéis que esta função pode atribuir. 'admin' fica de fora de propósito —
 // uma segunda conta admin não se cria por um atalho automático, só
 // diretamente no painel do Supabase, com decisão humana explícita ali.
-const PAPEIS_PERMITIDOS = ["administrativo", "comercial", "financeiro", "manager"];
+const PAPEIS_PERMITIDOS = ["administrativo", "comercial", "financeiro", "manager", "design", "producao"];
 
 async function utilizadorAdminDoToken(token: string, cfg: { url: string; key: string }): Promise<{ id: string } | null> {
   const r = await fetch(`${cfg.url}/auth/v1/user`, {
@@ -135,6 +135,8 @@ Deno.serve(async (req: Request) => {
       comercial: "Comercial",
       financeiro: "Financeiro",
       manager: "Direção",
+      design: "Dep. Design",
+      producao: "Chão da Fábrica",
     };
     const departamento = String(corpo.department ?? "").trim() || DEPARTAMENTO_POR_PAPEL[role] || "Geral";
     const rPerfil = await fetch(`${cfg.url}/rest/v1/ob_profiles`, {

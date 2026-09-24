@@ -2667,7 +2667,7 @@ function crmShowLoginWithMessage(msg){
 // aqui de propósito, como segunda barreira: um valor fora desta lista
 // bloqueia o acesso mesmo que, por algum motivo, tenha chegado até
 // aqui (ex.: enum alargado na BD sem o CRM ter sido atualizado).
-var CRM_VALID_ROLES = ['admin', 'manager', 'comercial', 'financeiro', 'administrativo'];
+var CRM_VALID_ROLES = ['admin', 'manager', 'comercial', 'financeiro', 'administrativo', 'design', 'producao'];
 
 // Constrói o CU só a partir da linha (já validada) de ob_profiles —
 // nunca a partir de localStorage, USERS, ou qualquer resto do login
@@ -8586,6 +8586,8 @@ tbody td{font-size:15px}
           <option value="comercial">Comercial</option>
           <option value="financeiro">Financeiro</option>
           <option value="manager">Manager</option>
+          <option value="design">Designer</option>
+          <option value="producao">Produção</option>
         </select>
       </div>
       <button class="tbtn y" onclick="admUsersCriar()" id="admu-criar-btn">💾 Criar conta</button>
