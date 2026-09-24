@@ -30357,6 +30357,26 @@ function importarConfiguracao() {
         await tocoSincronizarFaturas(true); // silent = true
       }
 
+      // 1b. Reler o snapshot de Compras/Pagamentos TOConline já guardado no
+      // Supabase (pedido da Edna, 24/09/2026: "quero que faça sim" — que a
+      // Central de Compras/Pagamentos deixe de precisar de refresh manual).
+      // IMPORTANTE: isto só RELÊ o snapshot mais recente (leitura barata,
+      // 1 linha) — nunca corre tocoSincronizarComprasPagamentosReal(), que
+      // percorre TODO o histórico de compras do TOConline outra vez desde a
+      // página 1 (checkpoint fica vazio assim que uma sincronização termina,
+      // sem lógica incremental). Correr essa sincronização pesada a cada 5
+      // minutos violaria a regra já estabelecida nesta sessão: nunca repetir
+      // a sincronização de compras sem necessidade. Continua a exigir um
+      // clique manual em "🔄 Sincronizar TOConline" para trazer dados novos
+      // do TOConline — este passo só garante que, assim que alguém o fizer,
+      // todas as sessões abertas vêem o resultado sem precisar de refresh.
+      if (typeof tesHidratarComprasToco === 'function') {
+        try {
+          _tesComprasTocoHidratacaoPromise = null;
+          await tesHidratarComprasToco();
+        } catch(eCompras) { console.warn('[Agente Financeiro] Falha a reler snapshot de Compras/Pagamentos:', eCompras); }
+      }
+
       // 2. Sincronizar despesas de funcionários (Supabase)
       if (typeof finFetchDespesasRemoto === 'function') {
         await finFetchDespesasRemoto();
