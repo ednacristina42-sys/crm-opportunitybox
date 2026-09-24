@@ -1306,8 +1306,24 @@ function afFmt(v){ return '€' + (v||0).toLocaleString('pt-PT',{minimumFraction
 function afSet(id, v){ var el=document.getElementById(id); if(el) el.textContent=v; }
 
 async function afLoad(){
+  // Corrigido (24/09/2026): se qualquer coisa dentro desta função (mesmo
+  // fora dos try/catch de cada secção) atirasse uma excepção antes do
+  // "_afLoading = false;" no fim, essa flag ficava presa a true para
+  // sempre — todas as chamadas seguintes (incluindo a nova, disparada
+  // depois da sincronização TOConline terminar) saíam logo aqui sem fazer
+  // nada, deixando o widget preso no texto original do HTML. O try/finally
+  // garante que a flag é sempre libertada, aconteça o que acontecer lá
+  // dentro.
   if(_afLoading) return;
   _afLoading = true;
+  try{
+    await _afLoadInterno();
+  } finally {
+    _afLoading = false;
+  }
+}
+
+async function _afLoadInterno(){
   // Mês corrente
   var agr = new Date();
   var nomeMes = agr.toLocaleDateString('pt-PT',{month:'short',year:'numeric'}).replace('.','/');
@@ -1445,7 +1461,6 @@ async function afLoad(){
   afSet('af-sync-ts', 'Atualizado às ' + ts);
   localStorage.setItem('ob-af-last-sync', new Date().toISOString());
   var fb = document.getElementById('af-fallback'); if(fb) fb.style.display='none';
-  _afLoading = false;
 }
 
 async function afSincTudo(){
