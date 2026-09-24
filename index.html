@@ -2112,9 +2112,9 @@ function moCalcTotal() {
     var lineCost = tarefa.precoh * (l.horas || 0);
     l.custo = lineCost;
     total += lineCost;
-    detalhe.push(tarefa.nome + ': ' + l.horas + 'h x EUR' + tarefa.precoh.toFixed(2) + ' = EUR' + lineCost.toFixed(2));
+    detalhe.push(tarefa.nome + ': ' + l.horas + 'h x €' + tarefa.precoh.toFixed(2) + ' = €' + lineCost.toFixed(2));
     var elC = document.getElementById('mo-custo-' + i);
-    if (elC) elC.textContent = 'EUR' + lineCost.toFixed(2);
+    if (elC) elC.textContent = '€' + lineCost.toFixed(2);
   });
   if (typeof ORC_MAO_OBRA !== 'undefined') {
     ORC_MAO_OBRA.total = total;
@@ -2122,7 +2122,7 @@ function moCalcTotal() {
     ORC_MAO_OBRA.maquinaria = 0;
   }
   var elT = document.getElementById('orc-mo-total');
-  if (elT) elT.textContent = 'EUR' + total.toFixed(2).replace('.',',');
+  if (elT) elT.textContent = '€' + total.toFixed(2).replace('.',',');
   var elD = document.getElementById('orc-mo-detalhe');
   if (elD) elD.innerHTML = detalhe.join('<br>');
   if (typeof orcRecalcMateriais === 'function') orcRecalcMateriais();
@@ -7292,7 +7292,9 @@ tbody td{font-size:15px}
            rótulo genérico). -->
       <button class="sl-item" data-action="goPage" data-page="mapa-vendas"><span class="mk-ic">📊</span>Mapa de Vendas</button>
       <button class="sl-item" id="ni-relatorios" data-action="goPage" data-page="relatorios"><span class="mk-ic">📑</span>Relatórios</button>
-      <button class="sl-item" onclick="goFaturasAdmin()"><span class="mk-ic">🧾</span>Faturas</button>
+      <!-- Ocultado a pedido da Edna (24/09/2026): "já temos na Tesouraria
+           tudo" — reversível, o atalho goFaturasAdmin() continua a existir. -->
+      <button class="sl-item" onclick="goFaturasAdmin()" style="display:none"><span class="mk-ic">🧾</span>Faturas</button>
     </div>
 
     <!-- 🗂️ Administração -->
@@ -24736,7 +24738,7 @@ function tesSave() { localStorage.setItem('ob-tes-contas', JSON.stringify(TES_CO
 function tesLogSave() { localStorage.setItem('ob-tes-log', JSON.stringify(TES_LOG_DESPESAS)); }
 
 function fmtEurT(v) {
-  return 'EUR' + (v||0).toLocaleString('pt-PT', {minimumFractionDigits:2,maximumFractionDigits:2});
+  return '€' + (v||0).toLocaleString('pt-PT', {minimumFractionDigits:2,maximumFractionDigits:2});
 }
 
 // ADD: função que faltava (era chamada mas nunca tinha sido definida) — usada para
@@ -28458,7 +28460,7 @@ window.orcChangeStatus = function(orcNum, novoEstado) {
                    ' | SOBRAS NO STOCK: Restam ' + r.sobra + ' ' + r.un + ' no armazem' +
                    (r.sobra <= 0 ? ' ESGOTADO!' : r.sobra < 2 ? ' STOCK CRITICO' : '');
           }),
-          resumo: 'Custo materiais: EUR' + (orc.custoMateriais||0).toFixed(2)
+          resumo: 'Custo materiais: €' + (orc.custoMateriais||0).toFixed(2)
         };
         if (!orc.fichasTecnicas) orc.fichasTecnicas = [];
         orc.fichasTecnicas.push(fichaTecnica);
@@ -29051,7 +29053,7 @@ function tocoRenderFaturas(docs) {
     else if(est==='Vencido') vencido+=val;
     else aberto+=val;
   });
-  var fmt = function(v){ return v.toLocaleString('pt-PT',{style:'currency',currency:'EUR'}); };
+  var fmt = function(v){ return '€' + (v||0).toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2}); };
   var setKpi = function(id,v){ var el=document.getElementById(id); if(el) el.textContent=fmt(v); };
   setKpi('toco-kpi-total',total); setKpi('toco-kpi-pago',pago); setKpi('toco-kpi-aberto',aberto); setKpi('toco-kpi-vencido',vencido);
 
@@ -29068,7 +29070,7 @@ function tocoRenderFaturas(docs) {
     var cli = d.CustomerName || (d.Customer && d.Customer.Name) || d.EntityName || '—';
     var data = tocoFmtData(d.Date || d.DocumentDate || d.CreatedAt);
     var venc = tocoFmtData(d.DueDate || d.ExpirationDate);
-    var valor = parseFloat(d.TotalAmount || d.Total || d.Amount || 0).toLocaleString('pt-PT',{style:'currency',currency:'EUR'});
+    var valor = '€' + parseFloat(d.TotalAmount || d.Total || d.Amount || 0).toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2});
     var est = tocoGetEstado(d);
     var badgeClass = est==='Pago'?'toco-badge-pago':est==='Vencido'?'toco-badge-vencido':est==='Em Aberto'?'toco-badge-aberto':'toco-badge-rascunho';
     return '<tr>' +
@@ -29120,7 +29122,7 @@ function tocoVerDetalhe(jsonStr) {
     var num = d.Number || d.DocumentNumber || d.Id || '—';
     var cli = d.CustomerName || (d.Customer && d.Customer.Name) || '—';
     var nif = d.CustomerTaxNumber || (d.Customer && d.Customer.TaxNumber) || '—';
-    var valor = parseFloat(d.TotalAmount || d.Total || d.Amount || 0).toLocaleString('pt-PT',{style:'currency',currency:'EUR'});
+    var valor = '€' + parseFloat(d.TotalAmount || d.Total || d.Amount || 0).toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2});
     alert('Documento: ' + num + '\nCliente: ' + cli + '\nNIF: ' + nif + '\nValor: ' + valor + '\nEstado: ' + tocoGetEstado(d));
   } catch(e){}
 }
@@ -32681,7 +32683,7 @@ function _mvFmtEUR(v){
   return '€' + v.toLocaleString('pt-PT');
 }
 function _mvFmtEURFull(v){
-  return (v||0).toLocaleString('pt-PT', {style:'currency', currency:'EUR'});
+  return '€' + (v||0).toLocaleString('pt-PT', {minimumFractionDigits:2,maximumFractionDigits:2});
 }
 function _mvFmtPct(v){
   return (v||0).toLocaleString('pt-PT', {minimumFractionDigits:1, maximumFractionDigits:1}) + '%';
@@ -36628,7 +36630,7 @@ var HF_COLS = [
   { key:'estado',      lbl:'Estado',       sort:true  },
 ];
 
-function _hfFmtEUR(v){ return (v||0).toLocaleString('pt-PT', {style:'currency', currency:'EUR'}); }
+function _hfFmtEUR(v){ return '€' + (v||0).toLocaleString('pt-PT', {minimumFractionDigits:2,maximumFractionDigits:2}); }
 function _hfFmtPct(v){ return (v||0).toLocaleString('pt-PT', {minimumFractionDigits:1, maximumFractionDigits:1})+'%'; }
 function _hfParseData(str){
   if(!str) return null;
