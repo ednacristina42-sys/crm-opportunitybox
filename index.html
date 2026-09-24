@@ -7292,7 +7292,9 @@ tbody td{font-size:15px}
            rótulo genérico). -->
       <button class="sl-item" data-action="goPage" data-page="mapa-vendas"><span class="mk-ic">📊</span>Mapa de Vendas</button>
       <button class="sl-item" id="ni-relatorios" data-action="goPage" data-page="relatorios"><span class="mk-ic">📑</span>Relatórios</button>
-      <button class="sl-item" onclick="goFaturasAdmin()"><span class="mk-ic">🧾</span>Faturas</button>
+      <!-- Ocultado a pedido da Edna (24/09/2026): "já temos na Tesouraria
+           tudo" — reversível, o atalho goFaturasAdmin() continua a existir. -->
+      <button class="sl-item" onclick="goFaturasAdmin()" style="display:none"><span class="mk-ic">🧾</span>Faturas</button>
     </div>
 
     <!-- 🗂️ Administração -->
