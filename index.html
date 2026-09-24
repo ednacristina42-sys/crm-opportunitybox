@@ -25924,6 +25924,28 @@ function sincFinBaixarBackup(dadosAtuais){
   }catch(e){ console.warn('[SincFin] backup falhou:', e); return false; }
 }
 
+// Cooldown do backup do DRY-RUN (só leitura) — pedido da Edna, 24/09/2026:
+// "não quero ficar recebendo isso" — testar "Correr dry-run" várias vezes
+// seguidas descarregava um ficheiro novo de cada vez, mesmo sem nada ter
+// mudado entretanto. Persistido em localStorage (mesmo padrão já usado
+// nesta sessão para outros travões) para sobreviver a F5/navegação.
+// APLICA-SE SÓ ao dry-run: sincFinExecutarEscritaReal() e a correcção de
+// faturas com total €0,00 continuam a chamar sincFinBaixarBackup()
+// diretamente, sem cooldown nenhum — são as únicas duas operações que
+// realmente escrevem em ob-tes-receber, e essas exigem sempre um backup
+// fresco imediatamente antes de gravar, nunca um antigo.
+var SINCFIN_DRYRUN_BACKUP_ULT_KEY = 'ob-sincfin-dryrun-backup-ultima';
+var SINCFIN_DRYRUN_BACKUP_COOLDOWN_MS = 15 * 60 * 1000; // 15 minutos
+function sincFinBaixarBackupDryRun(dadosAtuais){
+  var ultima = (function(){
+    try{ return parseInt(localStorage.getItem(SINCFIN_DRYRUN_BACKUP_ULT_KEY)||'0',10) || 0; }catch(e){ return 0; }
+  })();
+  if(Date.now() - ultima < SINCFIN_DRYRUN_BACKUP_COOLDOWN_MS) return true; // já há um backup recente, não repete
+  var ok = sincFinBaixarBackup(dadosAtuais);
+  if(ok){ try{ localStorage.setItem(SINCFIN_DRYRUN_BACKUP_ULT_KEY, String(Date.now())); }catch(e){} }
+  return ok;
+}
+
 // INCIDENTE 03/09: um teste real anexou 6.347 documentos TOConline como
 // linhas NOVAS em ob-tes-receber (480 -> 6.827), porque a idempotência por
 // _tocoId/_sheetId nunca reconcilia as duas fontes (0 linhas tinham ambas
@@ -26826,7 +26848,7 @@ async function sincronizarFinanceiroCentral(silencioso){
     // PRÓPRIO backup fresco e obrigatório imediatamente antes de qualquer
     // escrita real (ver mais abaixo) — este backup seria só uma segunda
     // cópia do mesmo estado, sem nenhuma escrita no meio a justificá-la.
-    if(!silencioso && !sincFinBaixarBackup(existentesSupabase)){
+    if(!silencioso && !sincFinBaixarBackupDryRun(existentesSupabase)){
       throw new Error('Backup de ob-tes-receber falhou — dry-run abortado antes de qualquer reconciliação.');
     }
 
