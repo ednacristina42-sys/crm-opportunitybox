@@ -9286,8 +9286,9 @@ tbody td{font-size:15px}
     </div>
     <div class="pg-actions">
       <button class="tbtn y" style="font-size:13px" onclick="sincFinAbrirPainel()" title="DRY-RUN: reconcilia Google Sheets Vendas 2026 + TOConline (faturas, NC, clientes) contra ob-tes-receber e mostra o relatório — não grava nada">🔄 Sincronizar Financeiro (dry-run)</button>
-      <button class="tbtn" style="font-size:13px" onclick="tocoSincronizarFaturas(false).then(function(){ tocoAtualizarTesourariaComFaturas(); renderFinanceiro(); if(typeof renderRelatorios==='function')renderRelatorios(); initCharts(); })" title="Vai buscar as faturas mais recentes ao TocOnline e atualiza Tesouraria/Financeiro/Relatórios">🔄 Sincronizar Faturas TocOnline</button>
+      <button class="tbtn" id="fin-toco-sync-btn" style="font-size:13px" onclick="finSincronizarFaturasComFeedback()" title="Vai buscar as faturas mais recentes ao TocOnline e atualiza Tesouraria/Financeiro/Relatórios">🔄 Sincronizar Faturas TocOnline</button>
       <button class="tbtn" style="font-size:13px" onclick="if(confirm('Importar orçamentos da planilha (aba Orçamentos 2026)? Isto não substitui dados existentes.')) importarOrcamentos2026()" title="Importar orçamentos da planilha Google Sheets">📥 Importar Orçamentos (Sheets)</button>
+      <span id="fin-toco-sync-status" style="font-size:12.5px;color:var(--muted);align-self:center"></span>
     </div>
   </div>
   <div class="admin-page">
@@ -25659,10 +25660,12 @@ window.tocoBaixarRecebidosPorTocoId = tocoBaixarRecebidosPorTocoId;
 
 function tocoAtualizarTesourariaComFaturas(){
   tocoMergeFaturasCacheReceber();
-  try{ tocoBaixarRecebidosPorTocoId(); }catch(e){ console.error('[Contas a Receber] Falha na baixa automática por _tocoId:', e); }
+  var baixaResultado = null;
+  try{ baixaResultado = tocoBaixarRecebidosPorTocoId(); }catch(e){ console.error('[Contas a Receber] Falha na baixa automática por _tocoId:', e); }
   if(typeof tesRenderReceber==='function') tesRenderReceber();
   if(typeof tesRenderRecebidos==='function') tesRenderRecebidos();
   if(typeof tesRender==='function') tesRender();
+  return baixaResultado;
 }
 
 // ══ CENTRAL ÚNICA DE SINCRONIZAÇÃO FINANCEIRA — MODO DRY-RUN ═══════════════
@@ -28661,6 +28664,38 @@ async function tocoSincronizarFaturasUI() {
     await tocoSincronizarFaturas(false);
   } catch(e) {}
 }
+
+// Botão "🔄 Sincronizar Faturas TocOnline" do Painel Financeiro — antes
+// disto não dava NENHUM feedback visual (nem "a sincronizar", nem
+// sucesso, nem erro), por isso um clique que funcionava perfeitamente
+// (confirmado nos logs) parecia "não fazer nada". Confirmado em produção
+// 24/09/2026 (Edna). Não muda a lógica de sincronização em si — só o que
+// o utilizador vê antes/depois do clique.
+async function finSincronizarFaturasComFeedback(){
+  var btn = document.getElementById('fin-toco-sync-btn');
+  var status = document.getElementById('fin-toco-sync-status');
+  if(btn) btn.disabled = true;
+  if(status){ status.style.color = 'var(--y)'; status.textContent = '⏳ A sincronizar com o TOConline…'; }
+  try{
+    await tocoSincronizarFaturas(false);
+    var baixa = tocoAtualizarTesourariaComFaturas() || {};
+    if(typeof renderFinanceiro==='function') renderFinanceiro();
+    if(typeof renderRelatorios==='function') renderRelatorios();
+    if(typeof initCharts==='function') initCharts();
+    var nCache = (typeof _tocoFatCache!=='undefined' && Array.isArray(_tocoFatCache)) ? _tocoFatCache.length : null;
+    var hora = new Date().toLocaleTimeString('pt-PT', {hour:'2-digit', minute:'2-digit'});
+    var txt = '✓ Sincronizado às ' + hora;
+    if(nCache!=null) txt += ' — ' + nCache + ' documentos em cache';
+    if(baixa.atualizados) txt += ' · ' + baixa.atualizados + ' baixa(s) aplicada(s)';
+    if(status){ status.style.color = 'var(--g)'; status.textContent = txt; }
+  }catch(e){
+    console.error('[Financeiro] Falha ao sincronizar faturas TOConline:', e);
+    if(status){ status.style.color = 'var(--r)'; status.textContent = '✗ ' + ((e&&e.message)||'Falha ao sincronizar.'); }
+  }finally{
+    if(btn) btn.disabled = false;
+  }
+}
+window.finSincronizarFaturasComFeedback = finSincronizarFaturasComFeedback;
 
 // ── Sincronizar faturas do TocOnline ────────────────────────────
 // ADD: parâmetro opcional "ano" — quando indicado e a TocOnline suportar paginação,
