@@ -707,6 +707,12 @@ function renderAnaliseVendas(){
       _avSyncEmCurso = false;
       var ts = document.getElementById('av-sb-ts');
       if(ts) ts.textContent = '✅ Sincronizado · ' + new Date().toLocaleTimeString('pt-PT',{hour:'2-digit',minute:'2-digit'});
+      // Correção (24/09/2026): afLoad() já corria antes desta sincronização
+      // terminar (é chamado de imediato pelo goPage, sem esperar por esta
+      // promise) — por isso o widget "Área Financeira" ficava preso no
+      // "aguarda sincronização" mesmo depois de a sincronização terminar
+      // com sucesso. Repetir afLoad() aqui, com os dados já frescos.
+      if(typeof afLoad==='function') afLoad();
     }).catch(function(){ _avSyncEmCurso = false; });
   }
   if(_avRendered) return;
@@ -1258,8 +1264,17 @@ async function avSyncTocOnlineViaEF(){
     _tocoFatCache = merged;
     try{ localStorage.setItem(TOCO_FAT_KEY, JSON.stringify({ts: Date.now(), data: merged})); }catch(e){}
     if(tsEl) tsEl.textContent = '✅ TocOnline · ' + merged.length + ' docs';
+    window._avUltimoErroSync = null;
   } else {
-    // Payload veio mas sem itens reconhecidos — mostrar estrutura para diagnóstico
+    // Payload veio mas sem itens reconhecidos — mostrar estrutura para diagnóstico.
+    // Guarda a razão num sítio visível (window._avUltimoErroSync), não só na
+    // consola — é o que afLoad() mostra na Área Financeira em vez do genérico
+    // "aguarda sincronização" sempre que este cache fica vazio (24/09/2026,
+    // pedido da Edna: "essa analise de vendas tem que estar atualizada" — a
+    // 1ª causa era mesmo esta, sem forma de ver porquê sem abrir a consola).
+    var contagemReal = (payload && typeof payload.count === 'number') ? payload.count : null;
+    window._avUltimoErroSync = 'TOConline respondeu mas devolveu 0 faturas reconhecidas'
+      + (contagemReal!=null ? ' (count=' + contagemReal + ')' : ' (estrutura inesperada)') + '.';
     console.warn('[AV EF] TocOnline: 0 faturas reconhecidas');
     console.warn('[AV EF] Estrutura inesperada do TOConline:', JSON.stringify(payload).slice(0,500));
   }
@@ -1271,6 +1286,7 @@ async function avSyncTocOnline(){
   try{
     await avSyncTocOnlineViaEF();
   }catch(e){
+    window._avUltimoErroSync = String((e && e.message) || e || 'Falha desconhecida a sincronizar TOConline.');
     console.warn('[AV] Edge Function falhou, tentando Make proxy...', e);
     if(typeof tocoSincronizarFaturas==='function'){
       try{ await tocoSincronizarFaturas(false, '2026'); }catch(e2){}
@@ -1290,8 +1306,24 @@ function afFmt(v){ return '€' + (v||0).toLocaleString('pt-PT',{minimumFraction
 function afSet(id, v){ var el=document.getElementById(id); if(el) el.textContent=v; }
 
 async function afLoad(){
+  // Corrigido (24/09/2026): se qualquer coisa dentro desta função (mesmo
+  // fora dos try/catch de cada secção) atirasse uma excepção antes do
+  // "_afLoading = false;" no fim, essa flag ficava presa a true para
+  // sempre — todas as chamadas seguintes (incluindo a nova, disparada
+  // depois da sincronização TOConline terminar) saíam logo aqui sem fazer
+  // nada, deixando o widget preso no texto original do HTML. O try/finally
+  // garante que a flag é sempre libertada, aconteça o que acontecer lá
+  // dentro.
   if(_afLoading) return;
   _afLoading = true;
+  try{
+    await _afLoadInterno();
+  } finally {
+    _afLoading = false;
+  }
+}
+
+async function _afLoadInterno(){
   // Mês corrente
   var agr = new Date();
   var nomeMes = agr.toLocaleDateString('pt-PT',{month:'short',year:'numeric'}).replace('.','/');
@@ -1327,12 +1359,20 @@ async function afLoad(){
       afSet('af-kpi-vencido', afFmt(vencido));
       afSet('af-kpi-vencido-sub', nVencido + ' fatura'+(nVencido===1?'':'s')+' em atraso');
     } else {
+      // Correção (24/09/2026): antes mostrava sempre "aguarda sincronização",
+      // mesmo quando a sincronização já tinha corrido e falhado com um erro
+      // concreto (ex.: sessão expirada, 403, TOConline sem itens
+      // reconhecidos) — obrigava a abrir a consola do browser para saber
+      // porquê. Agora mostra o erro real, quando existe.
+      var motivoVazio = (typeof window._avUltimoErroSync === 'string' && window._avUltimoErroSync)
+        ? window._avUltimoErroSync.slice(0, 70)
+        : 'use ↻ Sync TocOnline';
       afSet('af-kpi-faturado', '—');
-      afSet('af-kpi-faturado-sub', 'use ↻ Sync TocOnline');
+      afSet('af-kpi-faturado-sub', motivoVazio);
       afSet('af-kpi-receber', '—');
-      afSet('af-kpi-receber-sub', 'aguarda sincronização');
+      afSet('af-kpi-receber-sub', motivoVazio);
       afSet('af-kpi-vencido', '—');
-      afSet('af-kpi-vencido-sub', 'aguarda sincronização');
+      afSet('af-kpi-vencido-sub', motivoVazio);
     }
   } catch(e){ console.warn('[AF] TOConline cache:', e); }
 
@@ -1421,7 +1461,6 @@ async function afLoad(){
   afSet('af-sync-ts', 'Atualizado às ' + ts);
   localStorage.setItem('ob-af-last-sync', new Date().toISOString());
   var fb = document.getElementById('af-fallback'); if(fb) fb.style.display='none';
-  _afLoading = false;
 }
 
 async function afSincTudo(){
@@ -8891,6 +8930,16 @@ tbody td{font-size:15px}
   </div>
   <div class="admin-page">
 
+    <!-- Resumo Geral — pedido da Edna, 24/09/2026: totais de Vencidas/A
+         Pagar/A Receber/Pagas/Recebidos sempre visíveis, sem depender da
+         aba activa. Ver tesRenderResumoGeral(). -->
+    <div class="krow" style="margin-bottom:14px">
+      <div class="kpi kR"><div class="klbl">Vencidas</div><div class="kval" id="tes-resumo-vencidas">—</div><div class="ksub">a pagar + a receber</div></div>
+      <div class="kpi" style="--c:var(--r)"><div class="klbl">A Pagar</div><div class="kval" id="tes-resumo-apagar">—</div><div class="ksub">total pendente</div></div>
+      <div class="kpi kB"><div class="klbl">A Receber</div><div class="kval" id="tes-resumo-areceber">—</div><div class="ksub">total pendente</div></div>
+      <div class="kpi kG"><div class="klbl">Pagas</div><div class="kval" id="tes-resumo-pagas">—</div><div class="ksub">total liquidado</div></div>
+      <div class="kpi" style="--c:var(--g)"><div class="klbl">Recebidos</div><div class="kval" id="tes-resumo-recebidos">—</div><div class="ksub">total cobrado</div></div>
+    </div>
 
     <!-- KPIs dinâmicos (mudam com a tab activa) -->
     <div class="g4" style="margin-bottom:18px" id="tes-kpis">
@@ -8922,7 +8971,7 @@ tbody td{font-size:15px}
       <button class="tbtn" id="tes-tab-pagas" onclick="tesMostrarTab('pagas')" style="font-size:13px">✅ Pagas</button>
       <button class="tbtn" id="tes-tab-receber" onclick="tesMostrarTab('receber')" style="font-size:13px">📥 A Receber</button>
       <button class="tbtn" id="tes-tab-recebidos" onclick="tesMostrarTab('recebidos')" style="font-size:13px">💰 Recebidos</button>
-      <button class="tbtn" id="tes-tab-log" onclick="tesMostrarTab('log')" style="font-size:13px">🚚 Logística</button>
+      <button class="tbtn" id="tes-tab-log" onclick="tesMostrarTab('log')" style="font-size:13px;display:none">🚚 Logística</button>
       <button class="tbtn" id="tes-tab-iva" onclick="tesMostrarTab('iva')" style="font-size:13px">📊 IVA &amp; Resumo</button>
       <span style="margin-left:auto;display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--muted)">
         📅 Período:
@@ -9363,19 +9412,6 @@ tbody td{font-size:15px}
         </table>
       </div>
 
-      <!-- Info webhook -->
-      <div style="margin-top:12px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:12px">
-        <div style="font-size:13px;font-weight:600;color:var(--txt2);margin-bottom:6px">🔗 Integração Make (Webhook)</div>
-        <div style="font-size:13px;color:var(--muted);line-height:1.7">
-          Este painel recebe despesas automaticamente via webhook do Make. Quando um funcionário submete uma despesa no app externo,
-          o Make envia um POST para <code style="background:var(--bg4);padding:1px 5px;border-radius:3px;color:var(--y)" id="fin-webhook-url-display">URL não configurada</code>.
-          A despesa é adicionada à tabela com estado "Pendente".
-        </div>
-        <div style="margin-top:8px;display:flex;gap:8px">
-          <button class="tbtn" style="font-size:12px" data-action="finTestWebhook">🧪 Testar Webhook (simular)</button>
-          <button class="tbtn" style="font-size:12px" data-action="finExportDespesas">⬇ Exportar CSV</button>
-        </div>
-      </div>
     </div>
   </div>
 </div>
@@ -9935,7 +9971,10 @@ tbody td{font-size:15px}
   <div class="av-wrap">
 
     <!-- ── ÁREA FINANCEIRA ── -->
-    <div class="af-painel" id="af-painel">
+    <!-- Ocultado a pedido da Edna (24/09/2026): "já tenho em outra parte" —
+         esta informação já existe noutros locais do CRM (Painel Financeiro,
+         Tesouraria). Oculto via display:none, não removido — reversível. -->
+    <div class="af-painel" id="af-painel" style="display:none">
       <div class="af-titulo">
         <h3>💼 Área Financeira</h3>
         <span class="af-mes" id="af-mes-label">—</span>
@@ -9947,12 +9986,12 @@ tbody td{font-size:15px}
         </div>
       </div>
       <div class="af-kpis">
-        <div class="af-kpi green">
+        <div class="af-kpi green" style="display:none">
           <div class="lbl">💰 Faturado (TOConline)</div>
           <div class="val" id="af-kpi-faturado">—</div>
           <div class="sub" id="af-kpi-faturado-sub">mês atual</div>
         </div>
-        <div class="af-kpi yellow">
+        <div class="af-kpi yellow" style="display:none">
           <div class="lbl">📤 A Receber</div>
           <div class="val" id="af-kpi-receber">—</div>
           <div class="sub" id="af-kpi-receber-sub">em aberto</div>
@@ -9982,7 +10021,7 @@ tbody td{font-size:15px}
           <div class="val" id="af-kpi-desp-aprovar">—</div>
           <div class="sub">aguardam aprovação</div>
         </div>
-        <div class="af-kpi red">
+        <div class="af-kpi red" style="display:none">
           <div class="lbl">🔴 Vencido</div>
           <div class="val" id="af-kpi-vencido">—</div>
           <div class="sub" id="af-kpi-vencido-sub">faturas em atraso</div>
@@ -20538,16 +20577,67 @@ function dashEliminarAlertaConfirmed(idx){
 }
 window.dashEliminarAlertaConfirmed = dashEliminarAlertaConfirmed;
 
+// ── Editar Alertas Activos (Admin, 24/09/2026) — pedido da Edna: "estes
+// alertas tenho que poder editar". Mesmo âmbito da eliminação acima: só
+// os cards de alerts_data, nunca os Agentes Colaborativos. Sem persistência
+// remota própria — alerts_data já não sobrevive a um refresh (mesmo
+// comportamento que a eliminação já tinha), por isso editar aqui não é uma
+// regressão face ao que já existia.
+var ALERTA_NIVEIS = { crit: { ico:'🔴', label:'Crítico' }, warn: { ico:'🟡', label:'Aviso' }, info: { ico:'⚡', label:'Info' } };
+function dashEditarAlerta(idx){
+  if(!homeIsAdmin()) return;
+  var a = alerts_data[idx]; if(!a) return;
+  var modal = document.createElement('div');
+  modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+  var niveisOpts = Object.keys(ALERTA_NIVEIS).map(function(k){
+    return '<option value="'+k+'"'+(a.lv===k?' selected':'')+'>'+ALERTA_NIVEIS[k].ico+' '+ALERTA_NIVEIS[k].label+'</option>';
+  }).join('');
+  modal.innerHTML =
+    '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:24px;max-width:460px;width:100%;position:relative">'
+    +'<button onclick="this.closest(\'div\').parentNode.remove()" style="position:absolute;top:12px;right:14px;background:none;border:none;color:var(--muted);font-size:18px;cursor:pointer">✕</button>'
+    +'<h3 style="margin:0 0 14px;font-size:15px;color:var(--txt2)">✏️ Editar Alerta</h3>'
+    +'<label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px">Título</label>'
+    +'<input id="alerta-edit-ttl" type="text" value="'+String(a.ttl||'').replace(/"/g,'&quot;')+'" style="width:100%;box-sizing:border-box;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:9px 12px;color:var(--txt);font-size:13px;margin-bottom:12px">'
+    +'<label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px">Descrição</label>'
+    +'<textarea id="alerta-edit-dsc" rows="3" style="width:100%;box-sizing:border-box;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:9px 12px;color:var(--txt);font-size:13px;margin-bottom:12px;font-family:inherit;resize:vertical">'+String(a.dsc||'').replace(/</g,'&lt;')+'</textarea>'
+    +'<label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px">Nível</label>'
+    +'<select id="alerta-edit-lv" style="width:100%;box-sizing:border-box;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:9px 12px;color:var(--txt);font-size:13px;margin-bottom:18px">'+niveisOpts+'</select>'
+    +'<div style="display:flex;gap:10px;justify-content:flex-end">'
+    +'<button onclick="this.closest(\'div\').parentNode.remove()" class="tbtn" style="font-size:13px">Cancelar</button>'
+    +'<button onclick="dashGuardarAlertaEditado('+idx+', this)" class="tbtn y" style="font-size:13px">Guardar</button>'
+    +'</div></div>';
+  document.body.appendChild(modal);
+}
+window.dashEditarAlerta = dashEditarAlerta;
+
+function dashGuardarAlertaEditado(idx, btnEl){
+  if(!homeIsAdmin()) return;
+  var a = alerts_data[idx]; if(!a) return;
+  var ttl = (document.getElementById('alerta-edit-ttl')||{value:''}).value.trim();
+  var dsc = (document.getElementById('alerta-edit-dsc')||{value:''}).value.trim();
+  var lv = (document.getElementById('alerta-edit-lv')||{value:a.lv}).value;
+  if(!ttl){ alert('O título não pode ficar vazio.'); return; }
+  a.ttl = ttl;
+  a.dsc = dsc;
+  a.lv = lv;
+  a.ico = (ALERTA_NIVEIS[lv] || ALERTA_NIVEIS.info).ico;
+  var modal = btnEl.closest('div[style*="position:fixed"]');
+  if(modal) modal.remove();
+  renderAlerts();
+  if(typeof showToast==='function') showToast('✓ Alerta atualizado');
+}
+window.dashGuardarAlertaEditado = dashGuardarAlertaEditado;
+
 function renderAlerts(){
   ['dash-alerts','all-alerts'].forEach(id=>{
     const el=document.getElementById(id);if(!el)return;
     const list=id==='dash-alerts'?alerts_data.slice(0,3):alerts_data;
     el.innerHTML=list.map(a=>{
       var idx=alerts_data.indexOf(a);
-      var delBtn=(typeof homeIsAdmin==='function' && homeIsAdmin())
-        ? `<button onclick="event.stopPropagation();dashConfirmEliminarAlerta(${idx})" title="Eliminar alerta" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:15px;padding:2px 4px;line-height:1">×</button>`
+      var ctrlBtns=(typeof homeIsAdmin==='function' && homeIsAdmin())
+        ? `<button onclick="event.stopPropagation();dashEditarAlerta(${idx})" title="Editar alerta" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;padding:2px 4px;line-height:1">✏️</button><button onclick="event.stopPropagation();dashConfirmEliminarAlerta(${idx})" title="Eliminar alerta" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:15px;padding:2px 4px;line-height:1">×</button>`
         : '';
-      return `<div class="al ${a.lv}"><div class="al-ico">${a.ico}</div><div style="flex:1"><div class="al-ttl">${a.ttl}</div><div class="al-dsc">${a.dsc}</div></div><div class="al-tm">${a.tm}</div>${delBtn}</div>`;
+      return `<div class="al ${a.lv}"><div class="al-ico">${a.ico}</div><div style="flex:1"><div class="al-ttl">${a.ttl}</div><div class="al-dsc">${a.dsc}</div></div><div class="al-tm">${a.tm}</div>${ctrlBtns}</div>`;
     }).join('');
   });
 }
@@ -24771,8 +24861,58 @@ function tesRender() {
     if(typeof tesRenderPagasToco==='function') tesRenderPagasToco();
     var diagWrap=document.getElementById('toco-diagnostico-wrap');
     if(diagWrap) diagWrap.style.display=(typeof homeIsAdmin==='function'&&homeIsAdmin())?'block':'none';
+    if(typeof tesRenderResumoGeral==='function') tesRenderResumoGeral();
   }catch(e){}
 }
+
+// Resumo Geral (Vencidas/A Pagar/A Receber/Pagas/Recebidos) — pedido da
+// Edna, 24/09/2026: visão consolidada no topo de Tesouraria, sem precisar
+// de mudar de aba para ver cada total. Nunca reinventa a soma — reutiliza
+// exactamente as mesmas fontes/regras já usadas pelos KPIs de cada aba
+// (tesGetReceber/tesGetRecebidos/tesEstaVencido para A Receber/Recebidos;
+// a mesma exclusividade TOConline vs. Contas Manuais de tesUpdateKPIs
+// para A Pagar/Pagas — nunca mistura as duas fontes).
+function tesRenderResumoGeral(){
+  var elV  = document.getElementById('tes-resumo-vencidas');
+  var elP  = document.getElementById('tes-resumo-apagar');
+  var elR  = document.getElementById('tes-resumo-areceber');
+  var elPg = document.getElementById('tes-resumo-pagas');
+  var elRc = document.getElementById('tes-resumo-recebidos');
+  if(!elV && !elP && !elR && !elPg && !elRc) return;
+
+  var recList = (typeof tesGetReceber==='function') ? tesGetReceber() : [];
+  var pendReceber = recList.filter(function(r){ return r.estado!=='Recebido'; });
+  var totalAReceber = pendReceber.reduce(function(s,r){ return s+(parseFloat(r.total)||0); },0);
+  var recebidosList = (typeof tesGetRecebidos==='function') ? tesGetRecebidos() : [];
+  var totalRecebidos = recebidosList.reduce(function(s,r){ return s+(parseFloat(r.total)||0); },0);
+  var vencidoReceber = pendReceber.filter(function(r){
+    return typeof tesEstaVencido==='function' && tesEstaVencido(r);
+  }).reduce(function(s,r){ return s+(parseFloat(r.total)||0); },0);
+
+  var totalAPagar = 0, totalPagas = 0, vencidoPagar = 0;
+  if(typeof tesTocoComprasDisponivel==='function' && tesTocoComprasDisponivel()){
+    var k = TES_COMPRAS_TOCO.kpis || {};
+    totalAPagar = k.totalAPagar || 0;
+    vencidoPagar = k.vencido || 0;
+    totalPagas = (TES_COMPRAS_TOCO.pagas||[]).reduce(function(s,p){ return s+(parseFloat(p.valorPago)||0); },0);
+  } else {
+    var pendentesPg = TES_CONTAS.filter(function(c){ return c.estado!=='Paga'; });
+    totalAPagar = pendentesPg.reduce(function(s,c){ return s+(parseFloat(c.valor)||0); },0);
+    totalPagas = TES_CONTAS.filter(function(c){ return c.estado==='Paga'; }).reduce(function(s,c){ return s+(parseFloat(c.valor)||0); },0);
+    var hojePg = new Date();
+    vencidoPagar = pendentesPg.filter(function(c){
+      var d = parseVencTes(c.vencimento); return !isNaN(d) && d<hojePg;
+    }).reduce(function(s,c){ return s+(parseFloat(c.valor)||0); },0);
+  }
+
+  var totalVencidas = vencidoReceber + vencidoPagar;
+  if(elV)  elV.textContent  = fmtEurT(totalVencidas);
+  if(elP)  elP.textContent  = fmtEurT(totalAPagar);
+  if(elR)  elR.textContent  = fmtEurT(totalAReceber);
+  if(elPg) elPg.textContent = fmtEurT(totalPagas);
+  if(elRc) elRc.textContent = fmtEurT(totalRecebidos);
+}
+window.tesRenderResumoGeral = tesRenderResumoGeral;
 
 // ══════════════════════════════════════════════════════════════════════
 // TESOURARIA — A Pagar/Pagas via TOConline REAL (17/09/2026, fase final)
@@ -25750,6 +25890,19 @@ var SINC_FIN_ESCRITA_EM_CURSO = false;
 var SINC_FIN_AUTO_ULTIMA_EXECUCAO = (function(){
   try{ return parseInt(localStorage.getItem('ob-sinc-fin-auto-ultima')||'0',10) || 0; }catch(e){ return 0; }
 })();
+
+// Última vez que o Agente Financeiro correu a sincronização PESADA de
+// Compras/Pagamentos TOConline (tocoSincronizarComprasPagamentosReal —
+// percorre todo o histórico desde a página 1, sem lógica incremental).
+// Mesmo padrão do travão acima, persistido em localStorage por exactamente
+// a mesma razão (24/09/2026, pedido da Edna: "sim faça" a uma actualização
+// automática dos dados de Compras, não só da exibição). Cooldown de 1h —
+// muito mais longo que o das faturas de venda de propósito, dado o custo
+// real desta operação.
+var COMPRAS_AUTO_ULTIMA_EXECUCAO = (function(){
+  try{ return parseInt(localStorage.getItem('ob-compras-auto-ultima')||'0',10) || 0; }catch(e){ return 0; }
+})();
+var COMPRAS_AUTO_COOLDOWN_MS = 60 * 60 * 1000; // 1 hora
 
 // Backup local antes de qualquer reconciliação que altere ob-tes-receber —
 // não existe hoje nenhum mecanismo de versão/backup para esta chave no
@@ -30275,6 +30428,34 @@ function importarConfiguracao() {
       // 1. Sincronizar faturas do TocOnline (via proxy Make)
       if (typeof tocoSincronizarFaturas === 'function') {
         await tocoSincronizarFaturas(true); // silent = true
+      }
+
+      // 1b. Compras/Pagamentos TOConline (pedido da Edna, 24/09/2026: "sim
+      // faça" a uma actualização automática dos DADOS, não só da exibição).
+      // tocoSincronizarComprasPagamentosReal() percorre todo o histórico de
+      // compras desde a página 1 (sem lógica incremental — o checkpoint
+      // fica vazio assim que uma sincronização termina) — é uma operação
+      // pesada, por isso corre no máximo 1x/hora, com o cooldown persistido
+      // em localStorage (COMPRAS_AUTO_ULTIMA_EXECUCAO), nunca só em memória
+      // — mesma razão documentada acima para SINC_FIN_AUTO_ULTIMA_EXECUCAO:
+      // sem isto, cada F5/navegação reiniciaria o travão e voltaria a
+      // martelar o TOConline. Fora da janela horária, este passo só relê o
+      // snapshot mais recente já guardado (leitura barata, 1 linha) — para
+      // que, assim que QUALQUER sessão (esta ou outra) o actualizar, todas
+      // vejam o resultado sem precisar de refresh manual.
+      if (typeof homeIsAdmin === 'function' && homeIsAdmin() &&
+          Date.now() - COMPRAS_AUTO_ULTIMA_EXECUCAO >= COMPRAS_AUTO_COOLDOWN_MS &&
+          typeof tocoSincronizarComprasPagamentosReal === 'function') {
+        COMPRAS_AUTO_ULTIMA_EXECUCAO = Date.now();
+        try{ localStorage.setItem('ob-compras-auto-ultima', String(COMPRAS_AUTO_ULTIMA_EXECUCAO)); }catch(eLs){}
+        try {
+          await tocoSincronizarComprasPagamentosReal();
+        } catch(eComprasFull) { console.warn('[Agente Financeiro] Falha na sincronização horária de Compras/Pagamentos:', eComprasFull); }
+      } else if (typeof tesHidratarComprasToco === 'function') {
+        try {
+          _tesComprasTocoHidratacaoPromise = null;
+          await tesHidratarComprasToco();
+        } catch(eCompras) { console.warn('[Agente Financeiro] Falha a reler snapshot de Compras/Pagamentos:', eCompras); }
       }
 
       // 2. Sincronizar despesas de funcionários (Supabase)
