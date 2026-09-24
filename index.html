@@ -28309,7 +28309,24 @@ var _origGoPage = window.goPage;
 window.goPage = function(id) {
   if (_origGoPage) _origGoPage(id);
   if (id === 'stock') { setTimeout(stockRender, 50); }
-  if (id === 'financeiro') { setTimeout(finRenderDespesas, 50); setTimeout(function(){ if(typeof sincFinAutoSincronizar==='function') sincFinAutoSincronizar(); }, 50); }
+  if (id === 'financeiro') {
+    setTimeout(finRenderDespesas, 50);
+    setTimeout(function(){ if(typeof sincFinAutoSincronizar==='function') sincFinAutoSincronizar(); }, 50);
+    // Sem isto, TES_COMPRAS_TOCO ficava só com o que já estivesse em
+    // localStorage (frequentemente nada, se o browser nunca tivesse
+    // aberto Tesouraria nesta sessão) — por isso "Saídas previstas" no
+    // Fluxo de Caixa e na Previsão de Tesouraria (ambas em Financeiro)
+    // apareciam sempre a zero, mesmo com o snapshot de Compras TOConline
+    // já sincronizado no Supabase. Confirmado em produção 24/09/2026.
+    setTimeout(function(){
+      if(typeof tesHidratarComprasToco==='function'){
+        tesHidratarComprasToco().then(function(){
+          try{ if(typeof finPrevRender==='function') finPrevRender(); }catch(e){}
+          try{ if(typeof initCharts==='function') initCharts(); }catch(e){}
+        });
+      }
+    }, 50);
+  }
   if (id === 'tesouraria') { setTimeout(function(){ tesRender(); if(typeof tesHidratarCanonico==='function') tesHidratarCanonico(); if(typeof tesHidratarComprasToco==='function') tesHidratarComprasToco(); if(typeof sincFinAutoSincronizar==='function') sincFinAutoSincronizar(); }, 50); }
   if (id === 'admin-analise-vendas') {
     setTimeout(function(){
