@@ -707,6 +707,12 @@ function renderAnaliseVendas(){
       _avSyncEmCurso = false;
       var ts = document.getElementById('av-sb-ts');
       if(ts) ts.textContent = '✅ Sincronizado · ' + new Date().toLocaleTimeString('pt-PT',{hour:'2-digit',minute:'2-digit'});
+      // Correção (24/09/2026): afLoad() já corria antes desta sincronização
+      // terminar (é chamado de imediato pelo goPage, sem esperar por esta
+      // promise) — por isso o widget "Área Financeira" ficava preso no
+      // "aguarda sincronização" mesmo depois de a sincronização terminar
+      // com sucesso. Repetir afLoad() aqui, com os dados já frescos.
+      if(typeof afLoad==='function') afLoad();
     }).catch(function(){ _avSyncEmCurso = false; });
   }
   if(_avRendered) return;
@@ -9363,19 +9369,6 @@ tbody td{font-size:15px}
         </table>
       </div>
 
-      <!-- Info webhook -->
-      <div style="margin-top:12px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:12px">
-        <div style="font-size:13px;font-weight:600;color:var(--txt2);margin-bottom:6px">🔗 Integração Make (Webhook)</div>
-        <div style="font-size:13px;color:var(--muted);line-height:1.7">
-          Este painel recebe despesas automaticamente via webhook do Make. Quando um funcionário submete uma despesa no app externo,
-          o Make envia um POST para <code style="background:var(--bg4);padding:1px 5px;border-radius:3px;color:var(--y)" id="fin-webhook-url-display">URL não configurada</code>.
-          A despesa é adicionada à tabela com estado "Pendente".
-        </div>
-        <div style="margin-top:8px;display:flex;gap:8px">
-          <button class="tbtn" style="font-size:12px" data-action="finTestWebhook">🧪 Testar Webhook (simular)</button>
-          <button class="tbtn" style="font-size:12px" data-action="finExportDespesas">⬇ Exportar CSV</button>
-        </div>
-      </div>
     </div>
   </div>
 </div>
@@ -20538,16 +20531,67 @@ function dashEliminarAlertaConfirmed(idx){
 }
 window.dashEliminarAlertaConfirmed = dashEliminarAlertaConfirmed;
 
+// ── Editar Alertas Activos (Admin, 24/09/2026) — pedido da Edna: "estes
+// alertas tenho que poder editar". Mesmo âmbito da eliminação acima: só
+// os cards de alerts_data, nunca os Agentes Colaborativos. Sem persistência
+// remota própria — alerts_data já não sobrevive a um refresh (mesmo
+// comportamento que a eliminação já tinha), por isso editar aqui não é uma
+// regressão face ao que já existia.
+var ALERTA_NIVEIS = { crit: { ico:'🔴', label:'Crítico' }, warn: { ico:'🟡', label:'Aviso' }, info: { ico:'⚡', label:'Info' } };
+function dashEditarAlerta(idx){
+  if(!homeIsAdmin()) return;
+  var a = alerts_data[idx]; if(!a) return;
+  var modal = document.createElement('div');
+  modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+  var niveisOpts = Object.keys(ALERTA_NIVEIS).map(function(k){
+    return '<option value="'+k+'"'+(a.lv===k?' selected':'')+'>'+ALERTA_NIVEIS[k].ico+' '+ALERTA_NIVEIS[k].label+'</option>';
+  }).join('');
+  modal.innerHTML =
+    '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:24px;max-width:460px;width:100%;position:relative">'
+    +'<button onclick="this.closest(\'div\').parentNode.remove()" style="position:absolute;top:12px;right:14px;background:none;border:none;color:var(--muted);font-size:18px;cursor:pointer">✕</button>'
+    +'<h3 style="margin:0 0 14px;font-size:15px;color:var(--txt2)">✏️ Editar Alerta</h3>'
+    +'<label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px">Título</label>'
+    +'<input id="alerta-edit-ttl" type="text" value="'+String(a.ttl||'').replace(/"/g,'&quot;')+'" style="width:100%;box-sizing:border-box;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:9px 12px;color:var(--txt);font-size:13px;margin-bottom:12px">'
+    +'<label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px">Descrição</label>'
+    +'<textarea id="alerta-edit-dsc" rows="3" style="width:100%;box-sizing:border-box;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:9px 12px;color:var(--txt);font-size:13px;margin-bottom:12px;font-family:inherit;resize:vertical">'+String(a.dsc||'').replace(/</g,'&lt;')+'</textarea>'
+    +'<label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px">Nível</label>'
+    +'<select id="alerta-edit-lv" style="width:100%;box-sizing:border-box;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:9px 12px;color:var(--txt);font-size:13px;margin-bottom:18px">'+niveisOpts+'</select>'
+    +'<div style="display:flex;gap:10px;justify-content:flex-end">'
+    +'<button onclick="this.closest(\'div\').parentNode.remove()" class="tbtn" style="font-size:13px">Cancelar</button>'
+    +'<button onclick="dashGuardarAlertaEditado('+idx+', this)" class="tbtn y" style="font-size:13px">Guardar</button>'
+    +'</div></div>';
+  document.body.appendChild(modal);
+}
+window.dashEditarAlerta = dashEditarAlerta;
+
+function dashGuardarAlertaEditado(idx, btnEl){
+  if(!homeIsAdmin()) return;
+  var a = alerts_data[idx]; if(!a) return;
+  var ttl = (document.getElementById('alerta-edit-ttl')||{value:''}).value.trim();
+  var dsc = (document.getElementById('alerta-edit-dsc')||{value:''}).value.trim();
+  var lv = (document.getElementById('alerta-edit-lv')||{value:a.lv}).value;
+  if(!ttl){ alert('O título não pode ficar vazio.'); return; }
+  a.ttl = ttl;
+  a.dsc = dsc;
+  a.lv = lv;
+  a.ico = (ALERTA_NIVEIS[lv] || ALERTA_NIVEIS.info).ico;
+  var modal = btnEl.closest('div[style*="position:fixed"]');
+  if(modal) modal.remove();
+  renderAlerts();
+  if(typeof showToast==='function') showToast('✓ Alerta atualizado');
+}
+window.dashGuardarAlertaEditado = dashGuardarAlertaEditado;
+
 function renderAlerts(){
   ['dash-alerts','all-alerts'].forEach(id=>{
     const el=document.getElementById(id);if(!el)return;
     const list=id==='dash-alerts'?alerts_data.slice(0,3):alerts_data;
     el.innerHTML=list.map(a=>{
       var idx=alerts_data.indexOf(a);
-      var delBtn=(typeof homeIsAdmin==='function' && homeIsAdmin())
-        ? `<button onclick="event.stopPropagation();dashConfirmEliminarAlerta(${idx})" title="Eliminar alerta" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:15px;padding:2px 4px;line-height:1">×</button>`
+      var ctrlBtns=(typeof homeIsAdmin==='function' && homeIsAdmin())
+        ? `<button onclick="event.stopPropagation();dashEditarAlerta(${idx})" title="Editar alerta" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;padding:2px 4px;line-height:1">✏️</button><button onclick="event.stopPropagation();dashConfirmEliminarAlerta(${idx})" title="Eliminar alerta" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:15px;padding:2px 4px;line-height:1">×</button>`
         : '';
-      return `<div class="al ${a.lv}"><div class="al-ico">${a.ico}</div><div style="flex:1"><div class="al-ttl">${a.ttl}</div><div class="al-dsc">${a.dsc}</div></div><div class="al-tm">${a.tm}</div>${delBtn}</div>`;
+      return `<div class="al ${a.lv}"><div class="al-ico">${a.ico}</div><div style="flex:1"><div class="al-ttl">${a.ttl}</div><div class="al-dsc">${a.dsc}</div></div><div class="al-tm">${a.tm}</div>${ctrlBtns}</div>`;
     }).join('');
   });
 }
