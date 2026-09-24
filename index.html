@@ -1264,8 +1264,17 @@ async function avSyncTocOnlineViaEF(){
     _tocoFatCache = merged;
     try{ localStorage.setItem(TOCO_FAT_KEY, JSON.stringify({ts: Date.now(), data: merged})); }catch(e){}
     if(tsEl) tsEl.textContent = '✅ TocOnline · ' + merged.length + ' docs';
+    window._avUltimoErroSync = null;
   } else {
-    // Payload veio mas sem itens reconhecidos — mostrar estrutura para diagnóstico
+    // Payload veio mas sem itens reconhecidos — mostrar estrutura para diagnóstico.
+    // Guarda a razão num sítio visível (window._avUltimoErroSync), não só na
+    // consola — é o que afLoad() mostra na Área Financeira em vez do genérico
+    // "aguarda sincronização" sempre que este cache fica vazio (24/09/2026,
+    // pedido da Edna: "essa analise de vendas tem que estar atualizada" — a
+    // 1ª causa era mesmo esta, sem forma de ver porquê sem abrir a consola).
+    var contagemReal = (payload && typeof payload.count === 'number') ? payload.count : null;
+    window._avUltimoErroSync = 'TOConline respondeu mas devolveu 0 faturas reconhecidas'
+      + (contagemReal!=null ? ' (count=' + contagemReal + ')' : ' (estrutura inesperada)') + '.';
     console.warn('[AV EF] TocOnline: 0 faturas reconhecidas');
     console.warn('[AV EF] Estrutura inesperada do TOConline:', JSON.stringify(payload).slice(0,500));
   }
@@ -1277,6 +1286,7 @@ async function avSyncTocOnline(){
   try{
     await avSyncTocOnlineViaEF();
   }catch(e){
+    window._avUltimoErroSync = String((e && e.message) || e || 'Falha desconhecida a sincronizar TOConline.');
     console.warn('[AV] Edge Function falhou, tentando Make proxy...', e);
     if(typeof tocoSincronizarFaturas==='function'){
       try{ await tocoSincronizarFaturas(false, '2026'); }catch(e2){}
@@ -1333,12 +1343,20 @@ async function afLoad(){
       afSet('af-kpi-vencido', afFmt(vencido));
       afSet('af-kpi-vencido-sub', nVencido + ' fatura'+(nVencido===1?'':'s')+' em atraso');
     } else {
+      // Correção (24/09/2026): antes mostrava sempre "aguarda sincronização",
+      // mesmo quando a sincronização já tinha corrido e falhado com um erro
+      // concreto (ex.: sessão expirada, 403, TOConline sem itens
+      // reconhecidos) — obrigava a abrir a consola do browser para saber
+      // porquê. Agora mostra o erro real, quando existe.
+      var motivoVazio = (typeof window._avUltimoErroSync === 'string' && window._avUltimoErroSync)
+        ? window._avUltimoErroSync.slice(0, 70)
+        : 'use ↻ Sync TocOnline';
       afSet('af-kpi-faturado', '—');
-      afSet('af-kpi-faturado-sub', 'use ↻ Sync TocOnline');
+      afSet('af-kpi-faturado-sub', motivoVazio);
       afSet('af-kpi-receber', '—');
-      afSet('af-kpi-receber-sub', 'aguarda sincronização');
+      afSet('af-kpi-receber-sub', motivoVazio);
       afSet('af-kpi-vencido', '—');
-      afSet('af-kpi-vencido-sub', 'aguarda sincronização');
+      afSet('af-kpi-vencido-sub', motivoVazio);
     }
   } catch(e){ console.warn('[AF] TOConline cache:', e); }
 
