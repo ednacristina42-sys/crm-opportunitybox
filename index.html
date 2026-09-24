@@ -23598,8 +23598,9 @@ function finRenderDespesas() {
       '<td><span style="color:' + corEstado + ';font-size:13px;font-weight:600">' + (d.estado||'Pendente') + '</span></td>' +
       '<td>' + syncIcon + '</td>' +
       '<td style="display:flex;gap:4px">' +
-        '<button class="tbtn" style="font-size:12px;padding:2px 6px" onclick="finAprovarDespesa(' + JSON.stringify(d.id) + ')">✓</button>' +
-        '<button class="tbtn" style="font-size:12px;padding:2px 6px;color:var(--r)" onclick="finRejeitarDespesa(' + JSON.stringify(d.id) + ')">✗</button>' +
+        '<button class="tbtn" style="font-size:12px;padding:2px 6px" onclick="finAprovarDespesa(' + JSON.stringify(d.id) + ')" title="Aprovar">✓</button>' +
+        '<button class="tbtn" style="font-size:12px;padding:2px 6px;color:var(--r)" onclick="finRejeitarDespesa(' + JSON.stringify(d.id) + ')" title="Rejeitar">✗</button>' +
+        '<button class="tbtn admin-only" style="font-size:12px;padding:2px 6px;color:var(--r)" onclick="finEliminarDespesa(' + JSON.stringify(d.id) + ')" title="Eliminar definitivamente">🗑️</button>' +
       '</td>' +
     '</tr>';
   }).join('');
@@ -23669,6 +23670,38 @@ async function finRejeitarDespesa(id) {
   var sb = finGetSupabase();
   if (sb) { try { await sb.from(FIN_DESP_TABLE).update({estado:'Rejeitada'}).eq('id', id); } catch(e){ console.warn('[Despesas] Falha ao actualizar no Supabase:', e.message||e); } }
 }
+
+// Eliminar definitivamente — pedido pela Edna, 24/09/2026 (não conseguia
+// remover uma despesa de teste; não existia botão nenhum, e a RLS não
+// tinha sequer uma policy de DELETE em ob_despesas, ver migração
+// ob_despesas_delete_admin_financeiro). Só admin/financeiro — não é um
+// estado como Aprovar/Rejeitar, é irreversível, por isso pede confirmação
+// e nunca corre em silêncio.
+async function finEliminarDespesa(id) {
+  if(typeof homeIsAdmin==='function' && !homeIsAdmin() && !(typeof CU!=='undefined' && CU && CU.role==='financeiro')){
+    if(typeof showToast==='function') showToast('Só Admin ou Financeiro podem eliminar despesas.');
+    return;
+  }
+  var d = FIN_DESPESAS.find(function(x){return x.id===id;});
+  var rotulo = d ? (d.funcionario||'—') + ' — ' + (d.descricao||'') + ' (' + fmtEur(d.valor) + ')' : id;
+  if(!confirm('Eliminar definitivamente esta despesa?\n\n' + rotulo + '\n\nEsta ação não pode ser desfeita.')) return;
+  var sb = finGetSupabase();
+  if (sb) {
+    try {
+      var resp = await sb.from(FIN_DESP_TABLE).delete().eq('id', id);
+      if (resp.error) throw resp.error;
+    } catch(e) {
+      console.error('[Despesas] Falha ao eliminar no Supabase:', e.message||e);
+      if(typeof showToast==='function') showToast('✗ Falha ao eliminar: ' + (e.message||e));
+      return;
+    }
+  }
+  FIN_DESPESAS = FIN_DESPESAS.filter(function(x){return x.id!==id;});
+  finDespSave();
+  finRenderDespesas();
+  if(typeof showToast==='function') showToast('✓ Despesa eliminada.');
+}
+window.finEliminarDespesa = finEliminarDespesa;
 
 function finConfigurarWebhook() {
   var sb = finGetSupabase();
