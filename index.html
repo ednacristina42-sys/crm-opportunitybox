@@ -25086,12 +25086,20 @@ function tesIvaCalcularReal(){
 
     // Compras pagas via TOConline (ob-tes-compras-toconline.pagas) — antes
     // desta correção nunca entravam aqui, só as contas pagas manualmente em
-    // TES_CONTAS (quase sempre vazia). ivaDocumento vem do tax_payable real
-    // do TOConline (proporcional ao valor pago), nunca uma taxa fixa
-    // estimada — correção 24/09/2026, Ponto 13 da auditoria. Pagamentos
-    // TOConline sem ivaDocumento (snapshot antigo, anterior a esta versão)
-    // marcam comprasIncompleto, tal como já acontecia para TES_CONTAS sem
-    // ivaPct — nunca inventam nem omitem silenciosamente esse IVA.
+    // TES_CONTAS (quase sempre vazia). `ivaDocumento`, quando presente,
+    // viria do tax_payable real do TOConline (proporcional ao valor pago),
+    // nunca uma taxa fixa estimada — Ponto 13 da auditoria de 24/09/2026.
+    // ESTADO ATUAL (24/09/2026): o campo `ivaDocumento` ainda não é
+    // gravado por nenhuma sincronização real — a alteração correspondente
+    // na Edge Function crm-toconline foi escrita mas NÃO publicada (o
+    // ficheiro é grande demais para a ferramenta de deploy disponível
+    // nesta sessão; revertida para não haver divergência entre o código
+    // no repositório e o que está realmente em produção). Por isso, por
+    // agora, todo pagamento TOConline cai em comprasTocoSemIva e marca
+    // comprasIncompleto — nunca inventa nem omite silenciosamente esse
+    // IVA. Assim que a Edge Function for atualizada (deploy feito por
+    // outra via) e uma sincronização real correr, isto passa a somar
+    // sozinho, sem precisar de mais nenhuma alteração aqui.
     var pagasToco = (typeof TES_COMPRAS_TOCO!=='undefined' && TES_COMPRAS_TOCO && Array.isArray(TES_COMPRAS_TOCO.pagas)) ? TES_COMPRAS_TOCO.pagas : [];
     var comprasTocoDoMes = pagasToco.filter(function(p){ return String(p.dataPagamento||'').slice(0,7)===prefixo; });
     var comprasTocoComIva = comprasTocoDoMes.filter(function(p){ return p.ivaDocumento!=null; });
