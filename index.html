@@ -21095,8 +21095,15 @@ function renderDespesas(){
     const dtStr = d.data ? new Date(d.data+'T12:00:00').toLocaleDateString('pt-PT',{day:'2-digit',month:'short'}) : '—';
     const estCls = DESP_ESTADO_CLS[d.estado]||'ba';
     const estLbl = DESP_ESTADO_LABEL[d.estado]||d.estado;
+    // Correção (24/09/2026, pedido da secretária): o botão apontava para um
+    // blob: URL local (criado por URL.createObjectURL no browser de quem
+    // anexou o ficheiro) — nunca era enviado para lado nenhum, só existia
+    // na memória dessa sessão. Abrir mais tarde, noutra sessão ou depois de
+    // um refresh, dava sempre erro. Agora chama despVerRecibo(), que gera
+    // um link temporário fresco a partir do Storage no momento do clique —
+    // nunca fica desatualizado.
     const recBtn = d.file_url
-      ? `<a href="${d.file_url}" target="_blank" class="tbtn" style="font-size:12px;padding:3px 8px;text-decoration:none">🧾</a>`
+      ? `<button class="tbtn" style="font-size:12px;padding:3px 8px" onclick="despVerRecibo(${JSON.stringify(d.file_url)})" title="Ver recibo">🧾</button>`
       : `<button class="tbtn" style="font-size:12px;padding:3px 8px;color:var(--muted)" disabled>🧾</button>`;
     return `<tr>
       <td style="color:var(--muted)">${dtStr}</td>
@@ -21163,8 +21170,25 @@ async function despSaveModal(){
   const colab = document.getElementById('dm-colab').value.trim();
   if(!colab){ alert('Insira o nome do colaborador.'); return; }
   const existing = CRM_DESP_EDIT_ID ? (CRM_DESPESAS.find(x=>x.id===CRM_DESP_EDIT_ID)||{}) : {};
-  const file_url = DM_FILE_OBJ ? URL.createObjectURL(DM_FILE_OBJ) : (existing.file_url||null);
-  const file_name = DM_FILE_OBJ ? DM_FILE_OBJ.name : (existing.file_name||null);
+  const sb = crmSBClient();
+  // Correção (24/09/2026, pedido da secretária: "ao solicitar ver o
+  // recibo, abre janela de erro"): antes usava URL.createObjectURL(), que
+  // cria um link só válido na memória desta sessão do browser — nunca
+  // chegava a ser enviado para lado nenhum, por isso nunca abria depois.
+  // Agora envia mesmo o ficheiro para o Storage (bucket privado
+  // 'despesas-recibos') e guarda o CAMINHO (não um link) — despVerRecibo()
+  // gera um link temporário fresco a partir desse caminho sempre que
+  // alguém clicar em "ver recibo", nunca um link pré-calculado que possa
+  // ficar desatualizado.
+  let file_url = existing.file_url || null;
+  let file_name = existing.file_name || null;
+  if(DM_FILE_OBJ){
+    const caminho = 'despesas/' + Date.now() + '-' + DM_FILE_OBJ.name.replace(/[^a-zA-Z0-9.\-_]/g,'_');
+    const up = await sb.storage.from('despesas-recibos').upload(caminho, DM_FILE_OBJ, {upsert:false});
+    if(up.error){ alert('Erro ao enviar o ficheiro do recibo: ' + up.error.message); return; }
+    file_url = caminho;
+    file_name = DM_FILE_OBJ.name;
+  }
   const payload = {
     colab, data: document.getElementById('dm-data').value||null,
     categoria: document.getElementById('dm-cat').value,
@@ -21174,7 +21198,6 @@ async function despSaveModal(){
     notas: document.getElementById('dm-notas').value.trim(),
     file_url, file_name, updated_at: new Date().toISOString()
   };
-  const sb = crmSBClient();
   try {
     if(CRM_DESP_EDIT_ID){
       const {error} = await sb.from('expenses').update(payload).eq('id', CRM_DESP_EDIT_ID);
@@ -21187,6 +21210,28 @@ async function despSaveModal(){
     await despLoadCRM();
   } catch(e){ alert('Erro ao guardar: '+e.message); }
 }
+
+// Abre o recibo — gera sempre um link temporário fresco a partir do
+// caminho guardado no Storage, nunca reutiliza um link antigo que possa
+// ter expirado ou (recibos anteriores a esta correção) nunca ter sido
+// válido fora da sessão que o criou.
+async function despVerRecibo(path){
+  if(!path) return;
+  if(/^blob:/.test(path)){
+    alert('Este recibo foi anexado antes de uma correção (24/09/2026) e já não pode ser aberto — o ficheiro nunca chegou a ser guardado, só existia na sessão de quem o anexou. Peça para o anexar de novo.');
+    return;
+  }
+  const sb = crmSBClient();
+  if(!sb){ alert('Sem ligação ao Supabase.'); return; }
+  try{
+    const res = await sb.storage.from('despesas-recibos').createSignedUrl(path, 300);
+    if(res.error || !res.data){ throw res.error || new Error('resposta vazia'); }
+    window.open(res.data.signedUrl, '_blank');
+  }catch(e){
+    alert('Não foi possível abrir o recibo: ' + (e && e.message || e));
+  }
+}
+window.despVerRecibo = despVerRecibo;
 
 async function despDeleteId(id){
   if(!confirm('Eliminar esta despesa?')) return;
@@ -21259,8 +21304,15 @@ function despAppRenderTabela(){
     const dtStr = d.occurred_at ? new Date(d.occurred_at).toLocaleDateString('pt-PT',{day:'2-digit',month:'2-digit',year:'numeric'}) : '—';
     const cls = estCls[d.status]||'ba';
     const lbl = estLabel[d.status]||d.status||'—';
+    // Correção (24/09/2026, pedido da secretária: "ao solicitar ver o
+    // recibo, abre janela de erro"): receipt_signed_url vem já assinado da
+    // app de pontos (projecto Supabase à parte, sem acesso daqui para
+    // mudar como é gerado) e expira ao fim de algum tempo — se a lista não
+    // tiver sido sincronizada há pouco, o link já está morto quando se
+    // clica. despAppVerRecibo() volta a sincronizar antes de abrir, para
+    // nunca usar um link mais velho do que o momento do clique.
     const recBtn = d.receipt_signed_url
-      ? `<a href="${d.receipt_signed_url}" target="_blank" class="tbtn" style="font-size:12px;padding:3px 8px;text-decoration:none">🧾 Ver</a>`
+      ? `<button class="tbtn" style="font-size:12px;padding:3px 8px" onclick="despAppVerRecibo(${JSON.stringify(d.id)})">🧾 Ver</button>`
       : `<button class="tbtn" style="font-size:12px;padding:3px 8px;color:var(--muted)" disabled>🧾</button>`;
     return `<tr>
       <td style="color:var(--muted);font-size:13px;font-family:'DM Mono',monospace">${dtStr}</td>
@@ -21273,6 +21325,20 @@ function despAppRenderTabela(){
     </tr>`;
   }).join('') || '<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:20px">Sem despesas para este colaborador.</td></tr>';
 }
+
+// Ver recibo (despesas da app de pontos) — revalida antes de abrir, para
+// nunca usar um link assinado que já tenha expirado desde a última
+// sincronização. Ver nota em despAppRenderTabela().
+async function despAppVerRecibo(id){
+  await despSyncApp();
+  const d = EC_DESPESAS_APP.find(function(x){ return x.id===id; });
+  if(!d || !d.receipt_signed_url){
+    alert('Não foi possível obter o recibo — pode ter sido removido ou já não está disponível.');
+    return;
+  }
+  window.open(d.receipt_signed_url, '_blank');
+}
+window.despAppVerRecibo = despAppVerRecibo;
 
 async function despSyncApp(){
   const btn = document.getElementById('desp-app-sync-btn');
