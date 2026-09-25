@@ -32742,6 +32742,12 @@ function renderMeuPainel(){
   // secretária pediu: Guias por emitir, Faturas vencidas, Faturas a
   // cobrar, Faturas por emitir.
   var ehAdministrativo=!!(typeof CU!=='undefined'&&CU&&CU.role==='administrativo');
+  // isAdmin (dono/gestão do CRM, CU.admin===true) precisa de ser calculado
+  // já aqui: um admin global vê SEMPRE a vista comercial completa (já lhe
+  // mostra tudo, por isAdmin em minhasOrcamentos mais abaixo) — nunca deve
+  // ser desviado para a vista por departamento só por, em algum ponto, ter
+  // o seu nome numa subtarefa de Produção (ex.: dados de teste).
+  var isAdmin=!!(typeof CU!=='undefined'&&CU&&CU.admin);
   var secAdmin=document.getElementById('mp-admin-section');
   var secDept=document.getElementById('mp-dept-section');
   var secComercial=document.getElementById('mp-comercial-section');
@@ -32756,10 +32762,10 @@ function renderMeuPainel(){
   // Vista por Departamento (25/09/2026) — colaboradores de Produção (ex.:
   // Eletrificação) também não têm orçamentos próprios, mas têm subtarefas
   // atribuídas (obSubtaskPertenceAoUtilizador). Só entra nesta vista quem
-  // tiver pelo menos uma — nunca esconde a vista comercial de quem também
-  // é comercial.
-  var minhasSubtasksProducao=(typeof mpColetarSubtasksDoUtilizador==='function') ? mpColetarSubtasksDoUtilizador() : [];
-  if(!ehAdministrativo && minhasSubtasksProducao.length){
+  // tiver pelo menos uma e não for admin global — nunca esconde a vista
+  // comercial/admin de quem gere o CRM todo.
+  var minhasSubtasksProducao=(!ehAdministrativo && !isAdmin && typeof mpColetarSubtasksDoUtilizador==='function') ? mpColetarSubtasksDoUtilizador() : [];
+  if(!ehAdministrativo && !isAdmin && minhasSubtasksProducao.length){
     if(secAdmin) secAdmin.style.display='none';
     if(secDept) secDept.style.display='block';
     if(secComercial) secComercial.style.display='none';
@@ -32771,7 +32777,6 @@ function renderMeuPainel(){
   if(secDept) secDept.style.display='none';
   if(secComercial) secComercial.style.display='block';
 
-  var isAdmin=!!(typeof CU!=='undefined'&&CU&&CU.admin);
   var nome=(typeof CU!=='undefined'&&CU)?CU.name:null;
   var meuId=(typeof CU!=='undefined'&&CU)?CU.id:null;
   // Bug B1 (corrigido): dono real de um orçamento é o.owner_id (uuid, já
