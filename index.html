@@ -7557,6 +7557,55 @@ tbody td{font-size:15px}
       </div>
     </div>
 
+    <!-- Vista por Departamento (25/09/2026, pedido da secretária/Carolina):
+         "o responsável, pela eletrificação, poderia ver os próximos projetos
+         em fila ou os mais urgentes, os projetos em andamento... e assim
+         para cada departamento". Subtarefas de Produção são atribuídas a
+         uma PESSOA (responsavelId/responsavelNome — obSubtaskPertenceAoUtilizador),
+         não a um departamento genérico, por isso esta vista generaliza-se
+         sozinha a qualquer colaborador de produção sem tabela departamento→
+         pessoa. Ver renderMeuPainelDept(). -->
+    <div id="mp-dept-section" style="display:none">
+      <div class="mp2-kpi-row">
+        <div class="mp2-kpi" data-action="goPage" data-page="fabrica-producao">
+          <div class="mp2-kpi-lbl">Em fila</div>
+          <div class="mp2-kpi-val" id="mp-dept-fila">—</div>
+        </div>
+        <div class="mp2-kpi mp2-r" data-action="goPage" data-page="fabrica-producao">
+          <div class="mp2-kpi-lbl">Urgentes</div>
+          <div class="mp2-kpi-val mp2-r" id="mp-dept-urgentes">—</div>
+        </div>
+        <div class="mp2-kpi mp2-y" data-action="goPage" data-page="fabrica-producao">
+          <div class="mp2-kpi-lbl">Em andamento</div>
+          <div class="mp2-kpi-val mp2-y" id="mp-dept-andamento">—</div>
+        </div>
+      </div>
+
+      <div class="sh"><h2>🔴 Mais urgentes</h2></div>
+      <div class="tw" style="margin-bottom:22px">
+        <table>
+          <thead><tr><th>Obra</th><th>Cliente</th><th>Prevista</th></tr></thead>
+          <tbody id="mp-dept-urgentes-tbody"></tbody>
+        </table>
+      </div>
+
+      <div class="sh"><h2>🟡 Em andamento</h2></div>
+      <div class="tw" style="margin-bottom:22px">
+        <table>
+          <thead><tr><th>Obra</th><th>Cliente</th><th>Prevista</th></tr></thead>
+          <tbody id="mp-dept-andamento-tbody"></tbody>
+        </table>
+      </div>
+
+      <div class="sh"><h2>⏳ Próximos em fila</h2></div>
+      <div class="tw" style="margin-bottom:22px">
+        <table>
+          <thead><tr><th>Obra</th><th>Cliente</th><th>Prevista</th></tr></thead>
+          <tbody id="mp-dept-fila-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
     <div id="mp-comercial-section">
     <!-- KPIs principais (4 cards compactos) -->
     <div class="mp2-kpi-row" id="mp2-kpi-row">
@@ -32694,14 +32743,32 @@ function renderMeuPainel(){
   // cobrar, Faturas por emitir.
   var ehAdministrativo=!!(typeof CU!=='undefined'&&CU&&CU.role==='administrativo');
   var secAdmin=document.getElementById('mp-admin-section');
+  var secDept=document.getElementById('mp-dept-section');
   var secComercial=document.getElementById('mp-comercial-section');
   if(ehAdministrativo){
     if(secAdmin) secAdmin.style.display='block';
+    if(secDept) secDept.style.display='none';
     if(secComercial) secComercial.style.display='none';
     if(typeof renderMeuPainelAdmin==='function') renderMeuPainelAdmin();
     return;
   }
+
+  // Vista por Departamento (25/09/2026) — colaboradores de Produção (ex.:
+  // Eletrificação) também não têm orçamentos próprios, mas têm subtarefas
+  // atribuídas (obSubtaskPertenceAoUtilizador). Só entra nesta vista quem
+  // tiver pelo menos uma — nunca esconde a vista comercial de quem também
+  // é comercial.
+  var minhasSubtasksProducao=(typeof mpColetarSubtasksDoUtilizador==='function') ? mpColetarSubtasksDoUtilizador() : [];
+  if(!ehAdministrativo && minhasSubtasksProducao.length){
+    if(secAdmin) secAdmin.style.display='none';
+    if(secDept) secDept.style.display='block';
+    if(secComercial) secComercial.style.display='none';
+    if(typeof renderMeuPainelDept==='function') renderMeuPainelDept(minhasSubtasksProducao);
+    return;
+  }
+
   if(secAdmin) secAdmin.style.display='none';
+  if(secDept) secDept.style.display='none';
   if(secComercial) secComercial.style.display='block';
 
   var isAdmin=!!(typeof CU!=='undefined'&&CU&&CU.admin);
@@ -32975,6 +33042,86 @@ function renderMeuPainelAdmin(){
   }
 }
 window.renderMeuPainelAdmin=renderMeuPainelAdmin;
+
+// Vista por Departamento de Meu Painel (25/09/2026, pedido da secretária/
+// Carolina — ver comentário no HTML de mp-dept-section). Reúne, para o
+// utilizador atual, todas as subtarefas de Produção que lhe pertencem
+// (obSubtaskPertenceAoUtilizador — mesma regra já usada em
+// obPodeVerOrdemProducao), com a ordem (uniItem) a que cada uma pertence.
+// Fonte única: uniGetItems('fabrica-producao') — a mesma do Kanban de
+// Produção (fpRender) — nunca uma segunda lista paralela.
+function mpColetarSubtasksDoUtilizador(){
+  var CUatual=(typeof CU!=='undefined')?CU:null;
+  if(!CUatual) return [];
+  var itens=(typeof uniGetItems==='function') ? uniGetItems('fabrica-producao') : [];
+  var out=[];
+  itens.forEach(function(item){
+    if(!item || !Array.isArray(item.subtasks)) return;
+    item.subtasks.forEach(function(sRaw){
+      var s=(typeof obNormalizarSubtaskProducao==='function') ? obNormalizarSubtaskProducao(sRaw) : sRaw;
+      if(typeof obSubtaskPertenceAoUtilizador==='function' && obSubtaskPertenceAoUtilizador(s, CUatual)){
+        out.push({ item:item, subtask:s });
+      }
+    });
+  });
+  return out;
+}
+window.mpColetarSubtasksDoUtilizador=mpColetarSubtasksDoUtilizador;
+
+function renderMeuPainelDept(minhas){
+  minhas = minhas || (typeof mpColetarSubtasksDoUtilizador==='function' ? mpColetarSubtasksDoUtilizador() : []);
+  var set=function(id,v){ var e=document.getElementById(id); if(e) e.textContent=v; };
+
+  var abertas=minhas.filter(function(x){ return x.subtask.estado!=='Concluído'; });
+  var fila=abertas.filter(function(x){ return x.subtask.estado==='Pendente'; });
+  var andamento=abertas.filter(function(x){ return x.subtask.estado==='Em curso'; });
+  var urgentes=abertas.filter(function(x){ return x.item.priority==='urgent'||x.item.priority==='high'; });
+
+  var ordenarPorPrevista=function(a,b){ return new Date(a.subtask.dataPrevista||a.item.date||0)-new Date(b.subtask.dataPrevista||b.item.date||0); };
+  fila.sort(ordenarPorPrevista);
+  andamento.sort(ordenarPorPrevista);
+  urgentes.sort(ordenarPorPrevista);
+
+  set('mp-dept-fila', fila.length);
+  set('mp-dept-andamento', andamento.length);
+  set('mp-dept-urgentes', urgentes.length);
+
+  var renderTabela=function(elId, lista){
+    var el=document.getElementById(elId);
+    if(!el) return;
+    el.innerHTML = lista.length ? lista.slice(0,10).map(function(x){
+      var dStr=x.subtask.dataPrevista ? new Date(x.subtask.dataPrevista).toLocaleDateString('pt-PT') : '—';
+      return '<tr style="cursor:pointer" onclick="uniOpen(\'fabrica-producao\','+x.item.id+')">'
+        +'<td>'+(x.item.n||'—')+'</td><td>'+(x.item.client||'—')+'</td><td>'+dStr+'</td></tr>';
+    }).join('') : '<tr><td colspan="3" style="text-align:center;color:var(--muted);padding:16px">Sem obras nesta lista.</td></tr>';
+  };
+  renderTabela('mp-dept-urgentes-tbody', urgentes);
+  renderTabela('mp-dept-andamento-tbody', andamento);
+  renderTabela('mp-dept-fila-tbody', fila);
+
+  // Cabeçalho — mesma saudação por hora já usada nas outras vistas.
+  var hoje=new Date();
+  var nome=(typeof CU!=='undefined'&&CU)?CU.name:null;
+  var h=hoje.getHours();
+  var saud = h<12 ? 'Bom dia' : (h<20 ? 'Boa tarde' : 'Boa noite');
+  var primeiro = nome ? String(nome).trim().split(/\s+/)[0] : '';
+  var gEl=document.getElementById('mp-greeting');
+  if(gEl) gEl.textContent = primeiro ? (saud+', '+primeiro+' 👋') : (saud+' 👋');
+  var avEl=document.getElementById('mp-avatar');
+  if(avEl && typeof avHtml==='function') avEl.innerHTML = avHtml(nome||'?', null, 40);
+  var dsEl=document.getElementById('mp-daysummary');
+  if(dsEl){
+    if(!abertas.length){
+      dsEl.textContent='Sem pendências para hoje. Bom trabalho!';
+    } else {
+      dsEl.innerHTML=
+        '<b>'+urgentes.length+'</b> urgente'+(urgentes.length===1?'':'s')
+        +'<span class="mp-sep">·</span><b>'+andamento.length+'</b> em andamento'
+        +'<span class="mp-sep">·</span><b>'+fila.length+'</b> em fila';
+    }
+  }
+}
+window.renderMeuPainelDept=renderMeuPainelDept;
 
 // ══════════════════════════════════════════════════════════════════
 // MAPA DE VENDAS — leitura independente de ob_orcamentos (não usa
