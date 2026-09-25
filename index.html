@@ -21385,13 +21385,21 @@ async function despVerRecibo(path){
     alert('Este recibo foi anexado antes de uma correção (24/09/2026) e já não pode ser aberto — o ficheiro nunca chegou a ser guardado, só existia na sessão de quem o anexou. Peça para o anexar de novo.');
     return;
   }
+  // 25/09/2026 (pedido da Edna: "Ver recibo não abre ainda") — window.open()
+  // chamado DEPOIS de um await deixa de contar como resultado direto do
+  // clique para o bloqueador de popups do browser (sobretudo iOS Safari) e
+  // é bloqueado em silêncio, sem erro nenhum. Abre já a aba em branco aqui,
+  // ainda dentro do gesto do clique, e só depois muda o destino dela.
+  var janela = window.open('', '_blank');
   const sb = crmSBClient();
-  if(!sb){ alert('Sem ligação ao Supabase.'); return; }
+  if(!sb){ if(janela) janela.close(); alert('Sem ligação ao Supabase.'); return; }
   try{
     const res = await sb.storage.from('despesas-recibos').createSignedUrl(path, 300);
     if(res.error || !res.data){ throw res.error || new Error('resposta vazia'); }
-    window.open(res.data.signedUrl, '_blank');
+    if(janela) janela.location.href = res.data.signedUrl;
+    else window.open(res.data.signedUrl, '_blank');
   }catch(e){
+    if(janela) janela.close();
     alert('Não foi possível abrir o recibo: ' + (e && e.message || e));
   }
 }
@@ -21494,13 +21502,19 @@ function despAppRenderTabela(){
 // nunca usar um link assinado que já tenha expirado desde a última
 // sincronização. Ver nota em despAppRenderTabela().
 async function despAppVerRecibo(id){
+  // Mesma correção de despVerRecibo() acima — abre a aba já aqui, dentro
+  // do gesto do clique, antes do await, para não ser bloqueada em
+  // silêncio pelo browser (iOS Safari sobretudo).
+  var janela = window.open('', '_blank');
   await despSyncApp();
   const d = EC_DESPESAS_APP.find(function(x){ return x.id===id; });
   if(!d || !d.receipt_signed_url){
+    if(janela) janela.close();
     alert('Não foi possível obter o recibo — pode ter sido removido ou já não está disponível.');
     return;
   }
-  window.open(d.receipt_signed_url, '_blank');
+  if(janela) janela.location.href = d.receipt_signed_url;
+  else window.open(d.receipt_signed_url, '_blank');
 }
 window.despAppVerRecibo = despAppVerRecibo;
 
@@ -32819,17 +32833,26 @@ function renderMeuPainel(){
     return;
   }
 
-  // Vista por Departamento (25/09/2026) — colaboradores de Produção (ex.:
-  // Eletrificação) também não têm orçamentos próprios, mas têm subtarefas
-  // atribuídas (obSubtaskPertenceAoUtilizador). Só entra nesta vista quem
-  // tiver pelo menos uma e não for admin global — nunca esconde a vista
-  // comercial/admin de quem gere o CRM todo.
-  var minhasSubtasksProducao=(!ehAdministrativo && !isAdmin && typeof mpColetarSubtasksDoUtilizador==='function') ? mpColetarSubtasksDoUtilizador() : [];
-  if(!ehAdministrativo && !isAdmin && minhasSubtasksProducao.length){
+  // Vista por Departamento (25/09/2026) — corrigido depois de a Edna testar
+  // com "Ver como → Bruno" (montagem) e ver a vista comercial vazia
+  // ("Minha carteira" incluída): o critério original só entrava nesta
+  // vista se a pessoa JÁ tivesse subtarefas atribuídas — sem nenhuma
+  // (caso comum p/ quem ainda não recebeu trabalho), caía por omissão na
+  // vista comercial, errada para quem não é comercial. Corrigido para o
+  // MESMO critério canónico já usado em crmPaginaInicial() para decidir
+  // quem é comercial (CU.dept==='Comercial' — só bate para Rui Mota,
+  // Humberto Estrelinha, André Nolasco e a entrada sintética "Ver como"
+  // de Paulo Faria, todos com dept:'Comercial'; nunca um 2º critério).
+  // Confirmado pela Edna: "apenas o Paulo Faria, Rui Mota, Humberto
+  // Estrelinha e o André" são comerciais — o resto (Produção/Outros)
+  // deve ver sempre a vista por departamento, mesmo sem nada atribuído
+  // ainda (renderMeuPainelDept() já trata a lista vazia).
+  var souComercial=!!(typeof CU!=='undefined'&&CU&&CU.dept==='Comercial');
+  if(!ehAdministrativo && !isAdmin && !souComercial){
     if(secAdmin) secAdmin.style.display='none';
     if(secDept) secDept.style.display='block';
     if(secComercial) secComercial.style.display='none';
-    if(typeof renderMeuPainelDept==='function') renderMeuPainelDept(minhasSubtasksProducao);
+    if(typeof renderMeuPainelDept==='function') renderMeuPainelDept();
     return;
   }
 
