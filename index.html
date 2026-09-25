@@ -7504,6 +7504,60 @@ tbody td{font-size:15px}
          apagado: os blocos completos continuam acessíveis via "Ver todas as
          prioridades" / "Ver todos" / "Ver clientes em risco". -->
 
+    <!-- Vista Admin/Gestão Administrativa (24/09/2026, pedido da secretária,
+         doc "Sugestões CRM - parte 3": "Meu Painel está em Branco... podia
+         aparecer coisas relacionadas às minhas tarefas" — confirmado por si:
+         "como adm, deveria ver as minhas tarefas em específico... Guias,
+         faturas vencidas, faturas para cobrar, faturas por Emitir". Os
+         blocos comerciais abaixo ficam vazios para quem não tem orçamentos
+         próprios (owner_id nunca bate) — por isso pareciam "em branco".
+         Ver renderMeuPainelAdmin(). -->
+    <div id="mp-admin-section" style="display:none">
+      <div class="mp2-kpi-row">
+        <div class="mp2-kpi" data-action="goPage" data-page="fabrica-instalacoes">
+          <div class="mp2-kpi-lbl">Guias por emitir</div>
+          <div class="mp2-kpi-val" id="mp-admin-guias">—</div>
+        </div>
+        <div class="mp2-kpi mp2-r" data-action="goPage" data-page="tesouraria">
+          <div class="mp2-kpi-lbl">Faturas vencidas</div>
+          <div class="mp2-kpi-val mp2-r" id="mp-admin-vencidas">—</div>
+        </div>
+        <div class="mp2-kpi" data-action="goPage" data-page="tesouraria">
+          <div class="mp2-kpi-lbl">Faturas a cobrar</div>
+          <div class="mp2-kpi-val" id="mp-admin-cobrar">—</div>
+        </div>
+        <div class="mp2-kpi mp2-y" data-action="goPage" data-page="comercial-orcamentos">
+          <div class="mp2-kpi-lbl">Faturas por emitir</div>
+          <div class="mp2-kpi-val mp2-y" id="mp-admin-emitir">—</div>
+        </div>
+      </div>
+
+      <div class="sh"><h2>🚛 Guias de transporte por emitir</h2></div>
+      <div class="tw" style="margin-bottom:22px">
+        <table>
+          <thead><tr><th>Instalação</th><th>Cliente</th><th>Data</th></tr></thead>
+          <tbody id="mp-admin-guias-tbody"></tbody>
+        </table>
+      </div>
+
+      <div class="sh"><h2>🔴 Faturas vencidas</h2></div>
+      <div class="tw" style="margin-bottom:22px">
+        <table>
+          <thead><tr><th>Cliente</th><th>Vencimento</th><th>Valor</th></tr></thead>
+          <tbody id="mp-admin-vencidas-tbody"></tbody>
+        </table>
+      </div>
+
+      <div class="sh"><h2>📄 Orçamentos aprovados por faturar</h2></div>
+      <div class="tw" style="margin-bottom:22px">
+        <table>
+          <thead><tr><th>Nº</th><th>Cliente</th><th>Valor</th></tr></thead>
+          <tbody id="mp-admin-emitir-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div id="mp-comercial-section">
     <!-- KPIs principais (4 cards compactos) -->
     <div class="mp2-kpi-row" id="mp2-kpi-row">
       <div class="mp2-kpi" data-action="goPage" data-page="comercial-followup">
@@ -7553,6 +7607,7 @@ tbody td{font-size:15px}
     <div id="mp2-risco-section" style="display:none">
       <div class="sh"><h2>Carteira que precisa de atenção</h2></div>
       <div class="mp2-risco-resumo" id="mp2-risco-resumo"></div>
+    </div>
     </div>
 
     <!-- Todas as prioridades (Top Hoje completo + Centro de Prioridades) —
@@ -32631,6 +32686,24 @@ function renderMeuPainel(){
   var set=function(id,v){ var e=document.getElementById(id); if(e) e.textContent=v; };
   var fmtEuro=function(v){ return (typeof fmt==='function') ? fmt(Math.round(v||0)) : ('€'+Math.round(v||0)); };
 
+  // Vista Admin/Gestão Administrativa (24/09/2026) — quem não é comercial
+  // nunca tem orçamentos próprios (owner_id nunca bate com o seu id), por
+  // isso os blocos abaixo (Faça agora, Minha carteira, Próximos 7 dias)
+  // ficavam sempre vazios para este papel. Mostra em vez disso o que a
+  // secretária pediu: Guias por emitir, Faturas vencidas, Faturas a
+  // cobrar, Faturas por emitir.
+  var ehAdministrativo=!!(typeof CU!=='undefined'&&CU&&CU.role==='administrativo');
+  var secAdmin=document.getElementById('mp-admin-section');
+  var secComercial=document.getElementById('mp-comercial-section');
+  if(ehAdministrativo){
+    if(secAdmin) secAdmin.style.display='block';
+    if(secComercial) secComercial.style.display='none';
+    if(typeof renderMeuPainelAdmin==='function') renderMeuPainelAdmin();
+    return;
+  }
+  if(secAdmin) secAdmin.style.display='none';
+  if(secComercial) secComercial.style.display='block';
+
   var isAdmin=!!(typeof CU!=='undefined'&&CU&&CU.admin);
   var nome=(typeof CU!=='undefined'&&CU)?CU.name:null;
   var meuId=(typeof CU!=='undefined'&&CU)?CU.id:null;
@@ -32827,6 +32900,81 @@ function renderMeuPainel(){
   try{ mp2RenderProximosSete(); }catch(e){}
 }
 window.renderMeuPainel=renderMeuPainel;
+
+// Vista Admin/Gestão Administrativa de Meu Painel (24/09/2026, pedido da
+// secretária — ver comentário em renderMeuPainel()). Reutiliza fontes já
+// existentes, nunca uma segunda lógica divergente: tesGetReceber()/
+// tesEstaVencido() (mesmas de Tesouraria/Resumo Geral), uniItems (mesma
+// fonte da Instalações), orcData/FU_ESTADOS_ORC_TERMINAIS (mesma do
+// Follow-up/Pipeline).
+function renderMeuPainelAdmin(){
+  var set=function(id,v){ var e=document.getElementById(id); if(e) e.textContent=v; };
+  var fmtEuro=function(v){ return (typeof fmt==='function') ? fmt(Math.round(v||0)) : ('€'+Math.round(v||0)); };
+  var hoje=new Date();
+
+  // ── Guias de transporte por emitir — instalações sem guia gerada ────
+  var instalacoes=(typeof uniGetItems==='function') ? uniGetItems('fabrica-instalacoes') : [];
+  var semGuia=instalacoes.filter(function(i){
+    return !i.guiaTransporte && i.status!=='Cancelada';
+  }).sort(function(a,b){ return new Date(a.date||0)-new Date(b.date||0); });
+  set('mp-admin-guias', semGuia.length);
+  var elGuias=document.getElementById('mp-admin-guias-tbody');
+  if(elGuias){
+    elGuias.innerHTML = semGuia.length ? semGuia.slice(0,10).map(function(i){
+      var dStr=i.date ? new Date(i.date).toLocaleDateString('pt-PT') : '—';
+      return '<tr><td>'+(i.n||'—')+'</td><td>'+(i.client||'—')+'</td><td>'+dStr+'</td></tr>';
+    }).join('') : '<tr><td colspan="3" style="text-align:center;color:var(--muted);padding:16px">Sem guias pendentes.</td></tr>';
+  }
+
+  // ── Faturas vencidas / a cobrar — mesma fonte de Tesouraria ─────────
+  var pendReceber=(typeof tesGetReceber==='function') ? tesGetReceber().filter(function(r){ return r.estado!=='Recebido'; }) : [];
+  var vencidas=pendReceber.filter(function(r){ return typeof tesEstaVencido==='function' && tesEstaVencido(r, hoje); })
+    .sort(function(a,b){ return new Date(a.vencimento||0)-new Date(b.vencimento||0); });
+  set('mp-admin-vencidas', vencidas.length);
+  set('mp-admin-cobrar', pendReceber.length);
+  var elVenc=document.getElementById('mp-admin-vencidas-tbody');
+  if(elVenc){
+    elVenc.innerHTML = vencidas.length ? vencidas.slice(0,10).map(function(r){
+      var dStr=r.vencimento ? new Date(r.vencimento).toLocaleDateString('pt-PT') : '—';
+      return '<tr><td>'+(r.cliente||'—')+'</td><td style="color:var(--r)">'+dStr+'</td><td>'+fmtEuro(parseFloat(r.total)||0)+'</td></tr>';
+    }).join('') : '<tr><td colspan="3" style="text-align:center;color:var(--muted);padding:16px">Sem faturas vencidas.</td></tr>';
+  }
+
+  // ── Orçamentos aprovados por faturar — mesma fonte do Follow-up ─────
+  var orcAll=(typeof orcData!=='undefined'&&orcData)?orcData:[];
+  var valorOrc=function(o){ return (typeof orcGetValorTotal==='function')?orcGetValorTotal(o):(o.val||0); };
+  var porFaturar=orcAll.filter(function(o){ return o.st==='Aprovado'; });
+  set('mp-admin-emitir', porFaturar.length);
+  var elEmitir=document.getElementById('mp-admin-emitir-tbody');
+  if(elEmitir){
+    elEmitir.innerHTML = porFaturar.length ? porFaturar.slice(0,10).map(function(o){
+      return '<tr><td>'+(o.num||'—')+'</td><td>'+(o.cli||'—')+'</td><td>'+fmtEuro(valorOrc(o))+'</td></tr>';
+    }).join('') : '<tr><td colspan="3" style="text-align:center;color:var(--muted);padding:16px">Sem orçamentos aprovados por faturar.</td></tr>';
+  }
+
+  // Cabeçalho — mesma saudação por hora já usada na vista comercial.
+  var nome=(typeof CU!=='undefined'&&CU)?CU.name:null;
+  var h=hoje.getHours();
+  var saud = h<12 ? 'Bom dia' : (h<20 ? 'Boa tarde' : 'Boa noite');
+  var primeiro = nome ? String(nome).trim().split(/\s+/)[0] : '';
+  var gEl=document.getElementById('mp-greeting');
+  if(gEl) gEl.textContent = primeiro ? (saud+', '+primeiro+' 👋') : (saud+' 👋');
+  var avEl=document.getElementById('mp-avatar');
+  if(avEl && typeof avHtml==='function') avEl.innerHTML = avHtml(nome||'?', null, 40);
+  var dsEl=document.getElementById('mp-daysummary');
+  if(dsEl){
+    var total=semGuia.length+vencidas.length+porFaturar.length;
+    if(total===0){
+      dsEl.textContent='Sem pendências para hoje. Bom trabalho!';
+    } else {
+      dsEl.innerHTML=
+        '<b>'+semGuia.length+'</b> guia'+(semGuia.length===1?'':'s')+' por emitir'
+        +'<span class="mp-sep">·</span><b>'+vencidas.length+'</b> fatura'+(vencidas.length===1?'':'s')+' vencida'+(vencidas.length===1?'':'s')
+        +'<span class="mp-sep">·</span><b>'+porFaturar.length+'</b> por faturar';
+    }
+  }
+}
+window.renderMeuPainelAdmin=renderMeuPainelAdmin;
 
 // ══════════════════════════════════════════════════════════════════
 // MAPA DE VENDAS — leitura independente de ob_orcamentos (não usa
