@@ -21267,7 +21267,7 @@ function renderDespesas(){
     // um link temporário fresco a partir do Storage no momento do clique —
     // nunca fica desatualizado.
     const recBtn = d.file_url
-      ? `<button class="tbtn" style="font-size:12px;padding:3px 8px" onclick="despVerRecibo(${JSON.stringify(d.file_url)})" title="Ver recibo">🧾</button>`
+      ? `<button class="tbtn" style="font-size:12px;padding:3px 8px" onclick='despVerRecibo(${JSON.stringify(d.file_url)})' title="Ver recibo">🧾</button>`
       : `<button class="tbtn" style="font-size:12px;padding:3px 8px;color:var(--muted)" disabled>🧾</button>`;
     return `<tr>
       <td style="color:var(--muted)">${dtStr}</td>
@@ -21482,7 +21482,7 @@ function despAppRenderTabela(){
     // clica. despAppVerRecibo() volta a sincronizar antes de abrir, para
     // nunca usar um link mais velho do que o momento do clique.
     const recBtn = d.receipt_signed_url
-      ? `<button class="tbtn" style="font-size:12px;padding:3px 8px" onclick="despAppVerRecibo(${JSON.stringify(d.id)})">🧾 Ver</button>`
+      ? `<button class="tbtn" style="font-size:12px;padding:3px 8px" onclick='despAppVerRecibo(${JSON.stringify(d.id)})'>🧾 Ver</button>`
       : `<button class="tbtn" style="font-size:12px;padding:3px 8px;color:var(--muted)" disabled>🧾</button>`;
     return `<tr>
       <td style="color:var(--muted);font-size:13px;font-family:'DM Mono',monospace">${dtStr}</td>
@@ -24065,11 +24065,11 @@ function finRenderDespesas() {
       : (d.sync==='ok' ? '<span class="fin-sync-ok">●&nbsp;Sync</span>' : d.sync==='err' ? '<span class="fin-sync-err">✗&nbsp;Erro</span>' : '<span class="fin-sync-pend">○&nbsp;Pendente</span>');
     var acoes = ehApp
       ? (d.temRecibo
-          ? '<button class="tbtn" style="font-size:12px;padding:2px 8px" onclick="despAppVerRecibo(' + JSON.stringify(d.appId) + ')" title="Ver recibo">🧾 Ver</button>'
+          ? '<button class="tbtn" style="font-size:12px;padding:2px 8px" onclick=\'despAppVerRecibo(' + JSON.stringify(d.appId) + ')\' title="Ver recibo">🧾 Ver</button>'
           : '<button class="tbtn" style="font-size:12px;padding:2px 8px;color:var(--muted)" disabled>🧾</button>')
-      : ('<button class="tbtn" style="font-size:12px;padding:2px 6px" onclick="finAprovarDespesa(' + JSON.stringify(d.id) + ')" title="Aprovar">✓</button>' +
-         '<button class="tbtn" style="font-size:12px;padding:2px 6px;color:var(--r)" onclick="finRejeitarDespesa(' + JSON.stringify(d.id) + ')" title="Rejeitar">✗</button>' +
-         '<button class="tbtn admin-only" style="font-size:12px;padding:2px 6px;color:var(--r)" onclick="finEliminarDespesa(' + JSON.stringify(d.id) + ')" title="Eliminar definitivamente">🗑️</button>');
+      : ('<button class="tbtn" style="font-size:12px;padding:2px 6px" onclick=\'finAprovarDespesa(' + JSON.stringify(d.id) + ')\' title="Aprovar">✓</button>' +
+         '<button class="tbtn" style="font-size:12px;padding:2px 6px;color:var(--r)" onclick=\'finRejeitarDespesa(' + JSON.stringify(d.id) + ')\' title="Rejeitar">✗</button>' +
+         '<button class="tbtn admin-only" style="font-size:12px;padding:2px 6px;color:var(--r)" onclick=\'finEliminarDespesa(' + JSON.stringify(d.id) + ')\' title="Eliminar definitivamente">🗑️</button>');
     return '<tr class="fin-desp-row">' +
       '<td style="font-family:DM Mono,monospace;font-size:13px">' + (d.data||'—') + '</td>' +
       '<td>' + (d.funcionario||'—') + '</td>' +
