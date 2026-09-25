@@ -12261,6 +12261,14 @@ function setupApp(){
   if(typeof window.rhLoadColabsFromSB==='function' && (!window.rhColabs || !window.rhColabs.length)){
     try{ Promise.resolve(window.rhLoadColabsFromSB()).then(function(){ try{ renderUserSwitcher(); }catch(e){} try{ if(typeof obRenderComerciaisSidebar==='function') obRenderComerciaisSidebar(); }catch(e){} }); }catch(e){}
   }
+  // Idem para EC_FUNCIONARIOS (25/09/2026) — sem isto, "Ver como
+  // (produção/outros)" e o dropdown de responsável em Obras só ficavam
+  // completos depois de alguém visitar RH ou Equipa nessa sessão (onde
+  // ecSyncFuncionarios() já era chamado); agora aquece logo aqui, tal como
+  // rhColabs acima, sem esperar por essa visita.
+  if(typeof ecSyncFuncionarios==='function' && (!window.EC_FUNCIONARIOS || !window.EC_FUNCIONARIOS.length)){
+    try{ Promise.resolve(ecSyncFuncionarios()).then(function(){ try{ renderUserSwitcher(); }catch(e){} }); }catch(e){}
+  }
 }
 
 // ── TROCA TEMPORÁRIA DE UTILIZADOR (modo "ver como") — apenas admins ──
