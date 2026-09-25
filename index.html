@@ -11756,6 +11756,38 @@ function obVerComoComerciais(){
 }
 window.obVerComoComerciais = obVerComoComerciais;
 
+// "Ver como (Produção/Outros)" (25/09/2026) — mesma técnica e garantias de
+// obVerComoComerciais() acima (perfil sintético só para pré-visualização;
+// não é login real, não existe em auth.users/ob_profiles, não altera RLS),
+// generalizada a QUALQUER colaborador ativo que não seja já Comercial
+// (Design, Produção, Administrativo, etc.) — inclui tanto ob_colaboradores
+// (rhColabs) como o app externo de pontos (EC_FUNCIONARIOS), as duas
+// fontes já reconciliadas por nome em obRosterColaboradores(). Existe
+// para o admin poder pré-visualizar a experiência (ex.: a nova vista "por
+// departamento" de Meu Painel) de colaboradores de Produção que ainda não
+// têm login próprio no CRM.
+function obVerComoProducao(){
+  var vistos={}; var lista=[];
+  function add(nome, dept, cor, origemId){
+    var chave=String(nome||'').trim().toLowerCase();
+    if(!chave || vistos[chave]) return;
+    if(/comercial/i.test(String(dept||''))) return;
+    vistos[chave]=true;
+    lista.push({ id:'vp-'+origemId, name:String(nome).trim(), role:(dept||'Produção'),
+                 dept:(dept||'Produção'), color:cor||'#3B82F6', admin:false,
+                 preview:true, colabId:origemId });
+  }
+  (window.rhColabs||[]).forEach(function(c){
+    if(!c || c.deleted_at || c.ativo===false) return;
+    add(c.nome||c.name, c.dept||c.departamento, c.color||c.cor, c.id);
+  });
+  (window.EC_FUNCIONARIOS||[]).forEach(function(c){
+    add(c.nome, c.dept, (typeof ecRoleColor==='function'?ecRoleColor(c.cargo):'#3B82F6'), c.ec_id);
+  });
+  return lista;
+}
+window.obVerComoProducao = obVerComoProducao;
+
 // Roster canónico de "responsável" para subtarefas/tarefas — Direção
 // (USERS: Paulo, Edna) + colaboradores ATIVOS reais (ob_colaboradores,
 // via window.rhColabs — mesma fonte já usada em obVerComoComerciais()/
@@ -11803,14 +11835,18 @@ function obRosterColaboradores(){
 }
 window.obRosterColaboradores = obRosterColaboradores;
 
+// Correção 25/09/2026: faltava aqui a 3ª fonte (EC_FUNCIONARIOS, o app
+// externo de pontos) — colaboradores de Produção que só existem lá (ex.:
+// Fabio, Carlos Moreira, Carlos Lopes, Maksim, Rui Teixeira, Bruno, pedido
+// da secretária no item 3 do doc "Sugestões CRM") nunca apareciam neste
+// dropdown, mesmo depois da 1ª correção (USERS+rhColabs). Passa a
+// reaproveitar obRosterColaboradores(), que já reconcilia as 3 fontes por
+// nome sem duplicar — nunca uma segunda lista/lógica paralela.
 function obListaResponsaveisAtivos(){
-  var nomes = (typeof USERS!=='undefined' ? USERS : []).map(function(u){ return u.name; });
-  (window.rhColabs||[]).forEach(function(c){
-    if(!c || c.deleted_at || c.ativo===false) return;
-    var nome = String(c.nome||c.name||'').trim();
-    if(nome) nomes.push(nome);
-  });
-  return Array.from(new Set(nomes));
+  if(typeof obRosterColaboradores==='function'){
+    return obRosterColaboradores().map(function(c){ return c.nome; });
+  }
+  return (typeof USERS!=='undefined' ? USERS : []).map(function(u){ return u.name; });
 }
 window.obListaResponsaveisAtivos = obListaResponsaveisAtivos;
 
@@ -12064,7 +12100,7 @@ function loginComSenha() {
   try{
     var _imp = JSON.parse(localStorage.getItem('ob-impersonate') || 'null');
     if(_imp && _adminUser && _imp.adminId === _adminUser.id && _imp.userId !== _adminUser.id){
-      var _impUser = USERS.concat(typeof obVerComoComerciais==='function'?obVerComoComerciais():[]).find(function(u){ return u.id === _imp.userId; });
+      var _impUser = (typeof obTodosVerComo==='function'?obTodosVerComo():USERS).find(function(u){ return u.id === _imp.userId; });
       if(_impUser) CU = _impUser;
     }
   }catch(e){}
@@ -12246,10 +12282,15 @@ function renderUserSwitcher(){
   var _optsComercial = _com.map(function(u){
     return '<option value="'+u.id+'" '+(u.id===CU.id?'selected':'')+'>'+u.name+'</option>';
   }).join('');
+  var _prod = (typeof obVerComoProducao==='function'?obVerComoProducao():[]);
+  var _optsProducao = _prod.map(function(u){
+    return '<option value="'+u.id+'" '+(u.id===CU.id?'selected':'')+'>'+u.name+' ('+u.dept+')</option>';
+  }).join('');
   sel.innerHTML = '<optgroup label="Admin">'+_optsAdmin+'</optgroup>'+
     (_optsComercial
       ? '<optgroup label="Ver como (comercial)">'+_optsComercial+'</optgroup>'
-      : '<optgroup label="Ver como (comercial)"><option value="" disabled>— adiciona comerciais em RH → Colaboradores —</option></optgroup>');
+      : '<optgroup label="Ver como (comercial)"><option value="" disabled>— adiciona comerciais em RH → Colaboradores —</option></optgroup>')+
+    (_optsProducao ? '<optgroup label="Ver como (produção/outros)">'+_optsProducao+'</optgroup>' : '');
   if(CU.id !== _adminUser.id){
     badge.style.display='flex';
     badgeLabel.textContent = '🔁 Modo: ' + CU.name;
@@ -12259,9 +12300,20 @@ function renderUserSwitcher(){
 }
 window.renderUserSwitcher = renderUserSwitcher;
 
+// Junta USERS + "Ver como" (comercial e produção/outros) — lista completa
+// de quem pode ser selecionado no seletor de utilizadores. Um só ponto,
+// reaproveitado pelos 3 sítios que antes faziam este concat separadamente
+// (evita esquecer obVerComoProducao() nalgum deles).
+function obTodosVerComo(){
+  return USERS
+    .concat(typeof obVerComoComerciais==='function'?obVerComoComerciais():[])
+    .concat(typeof obVerComoProducao==='function'?obVerComoProducao():[]);
+}
+window.obTodosVerComo = obTodosVerComo;
+
 function switchUser(newUserId){
   if(!_adminUser) return;
-  var novo = USERS.concat(typeof obVerComoComerciais==='function'?obVerComoComerciais():[]).find(function(u){ return u.id === newUserId; });
+  var novo = obTodosVerComo().find(function(u){ return u.id === newUserId; });
   if(!novo) return;
   if(newUserId === _adminUser.id){
     switchUserRestore();
