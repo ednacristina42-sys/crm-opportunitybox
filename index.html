@@ -14804,8 +14804,19 @@ var UNI_CFG = {
   },
   'fabrica-producao': {
     title:'Ordem de Produção', icon:'🔧',
-    statuses:['Entrada de Obra','Aguarda Arte','Encomenda','Em Produção','Pintura','Acabamento','Qualidade','Expedição','Concluído ✓'],
-    colors:{'Entrada de Obra':'#e74c3c','Aguarda Arte':'#e67e22','Encomenda':'#d9822b','Em Produção':'#F5C400','Pintura':'#8b5cf6','Acabamento':'#4d94db','Qualidade':'#3fcf8e','Expedição':'#27ae60','Concluído ✓':'#6b7280'},
+    // Simplificado (24/09/2026, pedido da secretária, doc "Sugestões CRM -
+    // parte 3"): "Opções de Estado: Entrada de obra, Em produção, Aguarda
+    // Encomenda e Concluído! A intenção é o projeto entrar em obra, e ao
+    // distribuir as tarefas, o mesmo entra em estado de produção. Logo ao
+    // fim de todo o processo e entrega, o mesmo fica como concluído."
+    // Antes eram 9 estados (Aguarda Arte/Encomenda/Pintura/Acabamento/
+    // Qualidade/Expedição/"Concluído ✓") — ver obReconciliarStatusProducaoAntigo()
+    // para a migração dos itens já existentes nesses estados removidos.
+    // "Concluído" aqui (sem "✓") é a mesma etapa final de sempre — todo o
+    // código que a testa (obProducaoPodeConcluir, gatilho de faturação,
+    // uniSave) foi actualizado em conjunto para o novo nome exacto.
+    statuses:['Entrada de Obra','Aguarda Encomenda','Em Produção','Concluído'],
+    colors:{'Entrada de Obra':'#e74c3c','Aguarda Encomenda':'#d9822b','Em Produção':'#F5C400','Concluído':'#27ae60'},
     kanban:true, nameLabel:'Trabalho / Produto', dateLabel:'Prazo entrega', extraRow:false
   },
   'fabrica-instalacoes': {
@@ -14860,13 +14871,13 @@ var UNI_DEFAULTS = {
     {n:'neon_barnox_logo.ai',client:'Bar Nox Cascais',status:'Aguarda aprovação',priority:'normal',assignee:'Tomás Figueiredo',date:'2026-05-10',notes:'',extra:'v2'},
   ],
   'fabrica-producao':[
-    {n:'Letras 3D — O Farol',client:'Rest. O Farol',status:'Aguarda Arte',priority:'urgent',assignee:'Pedro Silva',date:'2026-05-22',notes:''},
-    {n:'Reclamo LED — Fit Studio',client:'Fit Studio Lisboa',status:'Encomenda',priority:'normal',assignee:'Pedro Silva',date:'2026-05-25',notes:''},
+    {n:'Letras 3D — O Farol',client:'Rest. O Farol',status:'Entrada de Obra',priority:'urgent',assignee:'Pedro Silva',date:'2026-05-22',notes:''},
+    {n:'Reclamo LED — Fit Studio',client:'Fit Studio Lisboa',status:'Aguarda Encomenda',priority:'normal',assignee:'Pedro Silva',date:'2026-05-25',notes:''},
     {n:'Totem — Hotel Serra da Lua',client:'Hotel Serra da Lua',status:'Em Produção',priority:'high',assignee:'Ricardo Faria',date:'2026-05-20',notes:''},
     {n:'Painel LED — Pingo Bom',client:'Pingo Bom',status:'Em Produção',priority:'normal',assignee:'Sérgio Nunes',date:'2026-05-19',notes:''},
-    {n:'Sinalética — Clínica D&S',client:'Clínica D&S',status:'Pintura',priority:'normal',assignee:'Pedro Silva',date:'2026-05-21',notes:''},
-    {n:'Letras 3D — Auto Premium',client:'Auto Premium',status:'Qualidade',priority:'normal',assignee:'Ricardo Faria',date:'2026-05-16',notes:''},
-    {n:'Totem — Hotel Boa Vista',client:'Hotel Boa Vista',status:'Expedição',priority:'high',assignee:'Ricardo Faria',date:'2026-05-17',notes:''},
+    {n:'Sinalética — Clínica D&S',client:'Clínica D&S',status:'Em Produção',priority:'normal',assignee:'Pedro Silva',date:'2026-05-21',notes:''},
+    {n:'Letras 3D — Auto Premium',client:'Auto Premium',status:'Em Produção',priority:'normal',assignee:'Ricardo Faria',date:'2026-05-16',notes:''},
+    {n:'Totem — Hotel Boa Vista',client:'Hotel Boa Vista',status:'Concluído',priority:'high',assignee:'Ricardo Faria',date:'2026-05-17',notes:''},
   ],
   'fabrica-instalacoes':[
     {n:'Letras 3D Fachada',client:'Auto Premium Sintra',status:'Agendada',priority:'high',assignee:'Ricardo Faria',date:'2026-05-19',notes:'',extra:'08:00'},
@@ -14946,6 +14957,15 @@ function openUniModal(page){
     // de inventar utilizadores.
     team=(typeof designComerciais!=='undefined'?designComerciais:[]).filter(function(c){return c.ativo;}).map(function(c){return c.nome;});
     if(!team.length) team=(typeof obListaResponsaveisAtivos==='function') ? obListaResponsaveisAtivos() : [];
+  } else if(page==='fabrica-producao'){
+    // Correção (24/09/2026, pedido da secretária, doc "Sugestões CRM -
+    // parte 3": "é preciso colocar os colaboradores lá de baixo" —
+    // Paulo, Fábio, Carlos Moreira, Carlos Lopes, Maksim, Rui Teixeira,
+    // Bruno). Este botão ("+ Nova Ordem") nunca teve ramo próprio para
+    // fabrica-producao — caía no else genérico, com comerciais + nomes
+    // fixos sem nada a ver com Chão da Fábrica. obListaResponsaveisAtivos()
+    // é o roster real já usado noutros sítios, nunca uma lista inventada.
+    team=(typeof obListaResponsaveisAtivos==='function') ? obListaResponsaveisAtivos() : [];
   } else {
     var com=(typeof crmComerciais!=='undefined'?crmComerciais:[]).filter(function(c){return c.ativo;}).map(function(c){return c.nome;});
     team=com.concat(['Ricardo Faria','Pedro Silva','Sérgio Nunes','Luís Cardoso']);
@@ -15009,8 +15029,12 @@ function uniOpen(page, itemId){
   let teamList = [];
   if(page==='admin-agenda'){
     teamList = Object.keys(AG_COMERCIAIS_REAIS_IDS);
-  } else if(page==='fabrica-producao' && typeof USERS!=='undefined' && USERS){
-    teamList = USERS.filter(u=>u.dept==='Chão da Fábrica').map(u=>u.name);
+  } else if(page==='fabrica-producao'){
+    // Correção (24/09/2026, pedido da secretária): USERS.filter(dept==='Chão
+    // da Fábrica') era uma lista pequena e estática (nunca actualizada),
+    // por isso faltavam colaboradores reais no dropdown. Mesmo roster
+    // dinâmico já usado no "+ Nova Ordem" (openUniModal acima).
+    teamList = (typeof obListaResponsaveisAtivos==='function') ? obListaResponsaveisAtivos() : [];
   } else if(page && page.startsWith('design')){
     // Parte 2 (correção Preview) — sem nomes fictícios fixos: designComerciais
     // (RH -> Colaboradores de Design) primeiro; sem ninguém ativo, reutiliza
@@ -15310,12 +15334,12 @@ async function uniSave(){
     data.subtasks = canonicas.concat(legado);
   }
   // Produção 2.0 (Fase 3): bloquear a transição para o estado geral final
-  // ('Concluído ✓') enquanto houver departamento canónico obrigatório
-  // pendente. Só entra em ação quando é mesmo essa a transição pedida —
-  // nunca bloqueia gravações normais, nem obras antigas sem departamentos
-  // canónicos (obProducaoPodeConcluir trata isso). Não muda nada sozinho;
-  // só impede a gravação e explica o que falta.
-  if(uniCurrentPage==='fabrica-producao' && data.status==='Concluído ✓' && typeof obProducaoPodeConcluir==='function'){
+  // ('Concluído', sem "✓" desde 24/09/2026) enquanto houver departamento
+  // canónico obrigatório pendente. Só entra em ação quando é mesmo essa a
+  // transição pedida — nunca bloqueia gravações normais, nem obras antigas
+  // sem departamentos canónicos (obProducaoPodeConcluir trata isso). Não
+  // muda nada sozinho; só impede a gravação e explica o que falta.
+  if(uniCurrentPage==='fabrica-producao' && data.status==='Concluído' && typeof obProducaoPodeConcluir==='function'){
     const checagem = obProducaoPodeConcluir(data);
     if(!checagem.podeConcluir){
       alert('Não é possível concluir a Produção.\n\nDepartamentos pendentes:\n'+checagem.pendentes.map(d=>'• '+d).join('\n'));
@@ -15746,7 +15770,38 @@ function fpView(v){
   fpRender();
 }
 
+// Migração dos 9 estados antigos de Produção para os 4 novos (24/09/2026,
+// pedido da secretária — ver comentário em UNI_CFG['fabrica-producao']).
+// Idempotente por natureza: uma ordem já num dos 4 estados novos nunca
+// aparece no mapa abaixo, por isso correr isto repetidamente é sempre
+// seguro (nunca precisa de flag "já correu" tipo obLimparTarefasFicticiasUmaVez).
+var OB_PRODUCAO_STATUS_ANTIGO_PARA_NOVO = {
+  'Aguarda Arte':   'Entrada de Obra',
+  'Encomenda':      'Aguarda Encomenda',
+  'Pintura':        'Em Produção',
+  'Acabamento':     'Em Produção',
+  'Qualidade':      'Em Produção',
+  'Expedição':      'Concluído',
+  'Concluído ✓':    'Concluído'
+};
+function obReconciliarStatusProducaoAntigo(){
+  var mudou = false;
+  uniItems.forEach(function(item){
+    if(item.page!=='fabrica-producao') return;
+    var novo = OB_PRODUCAO_STATUS_ANTIGO_PARA_NOVO[item.status];
+    if(!novo) return;
+    item.status = novo;
+    mudou = true;
+    if(typeof _sbUniItemUpsert==='function'){
+      _sbUniItemUpsert(item, {isCreate:false}).catch(function(){});
+    }
+  });
+  if(mudou && typeof saveUniItems==='function') saveUniItems();
+}
+window.obReconciliarStatusProducaoAntigo = obReconciliarStatusProducaoAntigo;
+
 function fpRender(){
+  try{ obReconciliarStatusProducaoAntigo(); }catch(e){}
   const allItems=uniGetItems('fabrica-producao');
   // Só Ivan/coordenadores/admin veem o board completo; cada colaborador vê só as suas ordens.
   const canSeeAllProducao = !CU || CU.admin===true || CU.coordinator===true;
@@ -15967,7 +16022,7 @@ async function uniDrop(e,st,page){
   if(item&&item.status!==st){
     // Produção 2.0 (Fase 3): mesma validação de conclusão do uniSave(), aqui
     // para a outra via ativa que muda o estado geral (arrastar no kanban).
-    if(page==='fabrica-producao' && st==='Concluído ✓' && typeof obProducaoPodeConcluir==='function'){
+    if(page==='fabrica-producao' && st==='Concluído' && typeof obProducaoPodeConcluir==='function'){
       const checagem = obProducaoPodeConcluir(item);
       if(!checagem.podeConcluir){
         alert('Não é possível concluir a Produção.\n\nDepartamentos pendentes:\n'+checagem.pendentes.map(d=>'• '+d).join('\n'));
@@ -16056,7 +16111,7 @@ function fpDone(id){
   // Move item to Concluído
   const item = uniItems.find(i=>i.id===id);
   if(item){
-    item.status='Concluído ✓';
+    item.status='Concluído';
     if(item.subtasks) item.subtasks.forEach(s=>s.done=true);
     saveUniItems();
     fpRender();
@@ -16114,18 +16169,22 @@ async function fpToggleSubtask(itemId, dept){
   const allDone = item.subtasks.every(s=>s.done);
   if(allDone){
     const n=item.subtasks.length;
-    if(confirm('✓ Todas as '+n+' subtarefas concluídas! Mover para Qualidade?')){
+    // Correção (24/09/2026): com só 4 estados gerais (Entrada de Obra/
+    // Aguarda Encomenda/Em Produção/Concluído), já não há "Qualidade" como
+    // etapa intermédia própria — ao terminar todas as subtarefas por
+    // departamento, o próximo passo natural é Concluído directamente.
+    if(confirm('✓ Todas as '+n+' subtarefas concluídas! Mover para Concluído?')){
       // Mudança de estado adicional — mesma proteção optimistic-lock,
       // snapshot próprio (o toggle da subtask acima já ficou confirmado e
       // não é revertido se só esta parte falhar).
       const prevSnapshotStatus = JSON.parse(JSON.stringify(item));
       const _stAntes = item.status;
-      item.status='Qualidade';
+      item.status='Concluído';
       const resultadoStatus = (typeof _sbUniItemUpsert==='function')
         ? await _sbUniItemUpsert(item, {isCreate:false})
         : {ok:true};
       if(resultadoStatus.ok){
-        if(typeof obRegistarEtapa==='function') obRegistarEtapa(item,_stAntes,'Qualidade');
+        if(typeof obRegistarEtapa==='function') obRegistarEtapa(item,_stAntes,'Concluído');
         saveUniItems();
         fpRender();
       } else {
@@ -31106,7 +31165,7 @@ function obAvaliarTransicaoProducaoUni(item, statusAnterior, statusNovo){
   }
 
   // Produção concluída -> cria a Instalação ligada (se ainda não existir) e avança a fase.
-  if(item.page==='fabrica-producao' && statusNovo==='Concluído ✓'){
+  if(item.page==='fabrica-producao' && statusNovo==='Concluído'){
     crmAvaliarTransicaoAutomatica('producao', 'producao_concluida', { orcNum: item.orcNum, origem: 'producao_concluida' }).then(function(){
       var jaTemInstalacao = uniItems.some(function(i){ return i.page==='fabrica-instalacoes' && i.orcNum===item.orcNum; });
       if(!jaTemInstalacao){
