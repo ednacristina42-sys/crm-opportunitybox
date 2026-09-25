@@ -1136,7 +1136,11 @@ function avTocoIntegrar(){
     var dt = new Date(f.Date||f.DocumentDate||f.CreatedAt||'');
     var m = dt.getMonth();
     if(!porMes2026[m]) porMes2026[m] = {total:0, n:0, clientes:{}};
-    var valor = parseFloat(f.TotalAmount||f.Total||f.Amount||0)||0;
+    // Sem IVA (NetAmount) — pedido da secretária, doc "Sugestões CRM -
+    // parte 3": a Análise de Vendas trazia o valor com IVA. NetAmount só
+    // existe em docs sincronizados depois desta correção (24/09/2026);
+    // TotalAmount como reserva evita "—" em faturas já em cache antigas.
+    var valor = parseFloat(f.NetAmount ?? f.TotalAmount ?? f.Total ?? f.Amount ?? 0)||0;
     porMes2026[m].total += valor;
     porMes2026[m].n++;
     var cli = f.CustomerName || f.CustomerTaxNumber || '—';
@@ -1240,6 +1244,13 @@ async function avSyncTocOnlineViaEF(){
       Date: a.date || a.Date || a.invoice_date || a.created_at,
       DueDate: a.due_date || a.DueDate || a.payment_due_date,
       TotalAmount: parseFloat(a.gross_total ?? a.total_amount ?? a.TotalAmount ?? a.amount ?? a.net_total ?? 0) || 0,
+      // Valor SEM IVA — usado só pela Análise de Vendas (pedido da secretária,
+      // doc "Sugestões CRM - parte 3", 23/09/2026: "Aqui em análise vendas,
+      // ele também está a trazer o valor com IVA, tem que ser sem IVA!").
+      // TotalAmount acima fica intocado de propósito — Contas a Receber e a
+      // tabela de Faturas continuam a precisar do valor COM IVA (é o que o
+      // cliente deve pagar), nunca o sem IVA.
+      NetAmount: parseFloat(a.net_total ?? a.net_amount ?? a.gross_total ?? a.total_amount ?? a.TotalAmount ?? a.amount ?? 0) || 0,
       Status: a.status || a.Status || a.payment_status || 'open',
     };
   };
@@ -29000,6 +29011,10 @@ async function tocoSincronizarFaturas(silent, ano) {
         Date: a.date,
         DueDate: a.due_date,
         TotalAmount: (a.gross_total != null ? a.gross_total : a.net_total) != null ? (a.gross_total != null ? a.gross_total : a.net_total) : a.amount,
+        // Valor SEM IVA — só para a Análise de Vendas (TotalAmount acima
+        // fica COM IVA de propósito, é o que Contas a Receber/Faturas
+        // precisam). Ver nota igual em avSyncTocOnlineViaEF().
+        NetAmount: (a.net_total != null ? a.net_total : a.gross_total) != null ? (a.net_total != null ? a.net_total : a.gross_total) : a.amount,
         Status: a.status,
         // Usado pela baixa automática por _tocoId (tocoBaixarRecebidosPorTocoId) —
         // <=0.005 = documento totalmente liquidado no TOConline. Correção
@@ -36823,15 +36838,21 @@ function _hfRenderKpis(rows){
   var naoRecebido = view.filter(function(r){return r.estado==='Não Recebido';});
   var parcial = view.filter(function(r){return r.estado==='Recebido Parcial';});
   var sum = function(arr){ return arr.reduce(function(s,r){return s+(parseFloat(r.total)||0);},0); };
+  // Sem IVA — pedido da secretária, doc "Sugestões CRM - parte 3": "os
+  // valores não batem! O Paulo pega o valor sem IVA". A tabela desta
+  // página já distingue "Valor Líq." (sem IVA) de "Total c/IVA" por linha
+  // (ver HF_COLS), mas os cartões de resumo só mostravam o total com IVA —
+  // sem um valor sem IVA directamente comparável ao lado.
+  var sumLiq = function(arr){ return arr.reduce(function(s,r){return s+(parseFloat(r.valorLiq)||0);},0); };
   var set = function(id, val){ var e=document.getElementById(id); if(e) e.textContent = val; };
   set('hf-kpi-total', _hfFmtEUR(sum(view)));
-  set('hf-kpi-total-sub', view.length+' faturas');
+  set('hf-kpi-total-sub', view.length+' faturas · '+_hfFmtEUR(sumLiq(view))+' sem IVA');
   set('hf-kpi-recebido', _hfFmtEUR(sum(recebido)));
-  set('hf-kpi-recebido-sub', recebido.length+' faturas');
+  set('hf-kpi-recebido-sub', recebido.length+' faturas · '+_hfFmtEUR(sumLiq(recebido))+' sem IVA');
   set('hf-kpi-naorecebido', _hfFmtEUR(sum(naoRecebido)));
-  set('hf-kpi-naorecebido-sub', naoRecebido.length+' faturas');
+  set('hf-kpi-naorecebido-sub', naoRecebido.length+' faturas · '+_hfFmtEUR(sumLiq(naoRecebido))+' sem IVA');
   set('hf-kpi-parcial', _hfFmtEUR(sum(parcial)));
-  set('hf-kpi-parcial-sub', parcial.length+' faturas');
+  set('hf-kpi-parcial-sub', parcial.length+' faturas · '+_hfFmtEUR(sumLiq(parcial))+' sem IVA');
 }
 
 function _hfRenderIndicadores(rows){
