@@ -21563,6 +21563,10 @@ async function despSyncApp(){
     if(btn){ btn.textContent='🔄 Actualizar App'; btn.disabled=false; }
     _despAppSynced = true;
     renderDespesas(); // atualiza stats no painel CRM com dados do app
+    // 25/09/2026 — atualiza também a tabela "Despesas de Funcionários" do
+    // Painel Financeiro (finRenderDespesas() já junta EC_DESPESAS_APP), para
+    // quem já lá estava não ficar com a tabela desatualizada até navegar.
+    try{ if(typeof finRenderDespesas==='function') finRenderDespesas(); }catch(e){}
   } catch(e){
     if(status) status.textContent='❌ Erro ao carregar app de pontos: '+e.message.slice(0,80);
     if(btn){ btn.textContent='🔄 Actualizar App'; btn.disabled=false; }
@@ -23927,6 +23931,33 @@ function finRowToLocal(r) {
   };
 }
 
+// 25/09/2026 (pedido da Edna: "as despesas vêm do app de pontos, mas
+// devia aparecer aí também") — "Despesas de Funcionários" no Painel
+// Financeiro só mostrava FIN_DESPESAS (tabela ob_despesas, alimentada só
+// por Make/registo manual — hoje vazia); as despesas reais, sincronizadas
+// do app de pontos (EC_DESPESAS_APP, já usadas em "Despesas e
+// Reembolsos" e nos KPIs fin-desp-* via despCalcularTotais()), nunca
+// entravam na tabela detalhada. Normaliza para o mesmo formato de
+// FIN_DESPESAS, marcado com origem:'App de Pontos' para a tabela saber
+// que não tem "Aprovar/Rejeitar/Eliminar" (isso escreve em ob_despesas,
+// que esta linha não tem) — mostra antes "Ver recibo".
+function finDespRegistoDoApp(d) {
+  var estLabel = {pending:'Pendente', submitted:'Pendente', approved:'Aprovada', rejected:'Rejeitada', reimbursed:'Reembolsada'};
+  return {
+    id: 'app-' + d.id,
+    appId: d.id,
+    data: d.occurred_at ? new Date(d.occurred_at).toLocaleDateString('pt-PT') : '—',
+    funcionario: d.user_name || 'Desconhecido',
+    categoria: d.category || 'Outro',
+    descricao: d.reference || d.notes || '',
+    valor: parseFloat(d.amount_eur) || 0,
+    metodoPagamento: '—',
+    estado: estLabel[d.status] || d.status || 'Pendente',
+    temRecibo: !!d.receipt_signed_url,
+    origem: 'App de Pontos'
+  };
+}
+
 // Vai buscar as despesas reais à tabela Supabase "ob_despesas" (gravadas pelo Make ou manualmente)
 async function finFetchDespesasRemoto() {
   var sb = finGetSupabase();
@@ -23976,8 +24007,14 @@ function finRenderDespesas() {
   var tbody = document.getElementById('fin-desp-tbody');
   if (!tbody) return;
 
+  // 25/09/2026 — junta FIN_DESPESAS (ob_despesas) + EC_DESPESAS_APP (app de
+  // pontos, normalizada por finDespRegistoDoApp()) numa só lista, mesma
+  // fonte já usada nos KPIs acima (despCalcularTotais()) — nunca duas
+  // listas divergentes na mesma página.
+  var todasDespesas = FIN_DESPESAS.concat((typeof EC_DESPESAS_APP!=='undefined'?EC_DESPESAS_APP:[]).map(finDespRegistoDoApp));
+
   // Ordenar por data mais recente primeiro
-  var sorted = FIN_DESPESAS.slice().sort(function(a,b){
+  var sorted = todasDespesas.slice().sort(function(a,b){
     var da=finDespParseData(a.data), db=finDespParseData(b.data);
     if(!da && !db) return 0; if(!da) return 1; if(!db) return -1;
     return db-da;
@@ -23989,7 +24026,7 @@ function finRenderDespesas() {
   // Repopular dropdowns (sempre, para reflectir dados actualizados)
   var prevFunc=sfEl?sfEl.value:'', prevMes=smEl?smEl.value:'';
   if(sfEl){ sfEl.innerHTML='<option value="">— Todos os funcionários —</option>';
-    var funcs=[...new Set(FIN_DESPESAS.map(function(d){return d.funcionario||'';}).filter(Boolean))].sort();
+    var funcs=[...new Set(todasDespesas.map(function(d){return d.funcionario||'';}).filter(Boolean))].sort();
     funcs.forEach(function(f){ var o=document.createElement('option'); o.value=f; o.textContent=f; sfEl.appendChild(o); });
     sfEl.value=prevFunc; }
   if(smEl){ smEl.innerHTML='<option value="">— Todos os meses —</option>';
@@ -24018,7 +24055,21 @@ function finRenderDespesas() {
 
   var rows = filtered.slice(0,200).map(function(d) {
     var corEstado = d.estado==='Aprovada'?'var(--g)':d.estado==='Rejeitada'?'var(--r)':'var(--a)';
-    var syncIcon = d.sync==='ok' ? '<span class="fin-sync-ok">●&nbsp;Sync</span>' : d.sync==='err' ? '<span class="fin-sync-err">✗&nbsp;Erro</span>' : '<span class="fin-sync-pend">○&nbsp;Pendente</span>';
+    var ehApp = d.origem==='App de Pontos';
+    // Linhas do app de pontos não têm registo em ob_despesas (não há o que
+    // Aprovar/Rejeitar/Eliminar aqui — o estado vem já decidido de lá);
+    // mostra antes "Ver recibo", reaproveitando despAppVerRecibo() (mesmo
+    // botão já usado em "Despesas e Reembolsos").
+    var syncIcon = ehApp
+      ? '<span class="tag" style="background:var(--bg4);color:var(--txt2)">📱 App</span>'
+      : (d.sync==='ok' ? '<span class="fin-sync-ok">●&nbsp;Sync</span>' : d.sync==='err' ? '<span class="fin-sync-err">✗&nbsp;Erro</span>' : '<span class="fin-sync-pend">○&nbsp;Pendente</span>');
+    var acoes = ehApp
+      ? (d.temRecibo
+          ? '<button class="tbtn" style="font-size:12px;padding:2px 8px" onclick="despAppVerRecibo(' + JSON.stringify(d.appId) + ')" title="Ver recibo">🧾 Ver</button>'
+          : '<button class="tbtn" style="font-size:12px;padding:2px 8px;color:var(--muted)" disabled>🧾</button>')
+      : ('<button class="tbtn" style="font-size:12px;padding:2px 6px" onclick="finAprovarDespesa(' + JSON.stringify(d.id) + ')" title="Aprovar">✓</button>' +
+         '<button class="tbtn" style="font-size:12px;padding:2px 6px;color:var(--r)" onclick="finRejeitarDespesa(' + JSON.stringify(d.id) + ')" title="Rejeitar">✗</button>' +
+         '<button class="tbtn admin-only" style="font-size:12px;padding:2px 6px;color:var(--r)" onclick="finEliminarDespesa(' + JSON.stringify(d.id) + ')" title="Eliminar definitivamente">🗑️</button>');
     return '<tr class="fin-desp-row">' +
       '<td style="font-family:DM Mono,monospace;font-size:13px">' + (d.data||'—') + '</td>' +
       '<td>' + (d.funcionario||'—') + '</td>' +
@@ -24028,11 +24079,7 @@ function finRenderDespesas() {
       '<td><span class="tag" style="background:var(--bg4);color:var(--txt2)">' + (d.metodoPagamento||'—') + '</span></td>' +
       '<td><span style="color:' + corEstado + ';font-size:13px;font-weight:600">' + (d.estado||'Pendente') + '</span></td>' +
       '<td>' + syncIcon + '</td>' +
-      '<td style="display:flex;gap:4px">' +
-        '<button class="tbtn" style="font-size:12px;padding:2px 6px" onclick="finAprovarDespesa(' + JSON.stringify(d.id) + ')" title="Aprovar">✓</button>' +
-        '<button class="tbtn" style="font-size:12px;padding:2px 6px;color:var(--r)" onclick="finRejeitarDespesa(' + JSON.stringify(d.id) + ')" title="Rejeitar">✗</button>' +
-        '<button class="tbtn admin-only" style="font-size:12px;padding:2px 6px;color:var(--r)" onclick="finEliminarDespesa(' + JSON.stringify(d.id) + ')" title="Eliminar definitivamente">🗑️</button>' +
-      '</td>' +
+      '<td style="display:flex;gap:4px">' + acoes + '</td>' +
     '</tr>';
   }).join('');
   tbody.innerHTML = rows || '<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:20px">Sem despesas registadas.</td></tr>';
