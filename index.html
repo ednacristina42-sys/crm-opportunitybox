@@ -1136,7 +1136,11 @@ function avTocoIntegrar(){
     var dt = new Date(f.Date||f.DocumentDate||f.CreatedAt||'');
     var m = dt.getMonth();
     if(!porMes2026[m]) porMes2026[m] = {total:0, n:0, clientes:{}};
-    var valor = parseFloat(f.TotalAmount||f.Total||f.Amount||0)||0;
+    // Sem IVA (NetAmount) — pedido da secretária, doc "Sugestões CRM -
+    // parte 3": a Análise de Vendas trazia o valor com IVA. NetAmount só
+    // existe em docs sincronizados depois desta correção (24/09/2026);
+    // TotalAmount como reserva evita "—" em faturas já em cache antigas.
+    var valor = parseFloat(f.NetAmount ?? f.TotalAmount ?? f.Total ?? f.Amount ?? 0)||0;
     porMes2026[m].total += valor;
     porMes2026[m].n++;
     var cli = f.CustomerName || f.CustomerTaxNumber || '—';
@@ -1240,6 +1244,13 @@ async function avSyncTocOnlineViaEF(){
       Date: a.date || a.Date || a.invoice_date || a.created_at,
       DueDate: a.due_date || a.DueDate || a.payment_due_date,
       TotalAmount: parseFloat(a.gross_total ?? a.total_amount ?? a.TotalAmount ?? a.amount ?? a.net_total ?? 0) || 0,
+      // Valor SEM IVA — usado só pela Análise de Vendas (pedido da secretária,
+      // doc "Sugestões CRM - parte 3", 23/09/2026: "Aqui em análise vendas,
+      // ele também está a trazer o valor com IVA, tem que ser sem IVA!").
+      // TotalAmount acima fica intocado de propósito — Contas a Receber e a
+      // tabela de Faturas continuam a precisar do valor COM IVA (é o que o
+      // cliente deve pagar), nunca o sem IVA.
+      NetAmount: parseFloat(a.net_total ?? a.net_amount ?? a.gross_total ?? a.total_amount ?? a.TotalAmount ?? a.amount ?? 0) || 0,
       Status: a.status || a.Status || a.payment_status || 'open',
     };
   };
@@ -7493,6 +7504,109 @@ tbody td{font-size:15px}
          apagado: os blocos completos continuam acessíveis via "Ver todas as
          prioridades" / "Ver todos" / "Ver clientes em risco". -->
 
+    <!-- Vista Admin/Gestão Administrativa (24/09/2026, pedido da secretária,
+         doc "Sugestões CRM - parte 3": "Meu Painel está em Branco... podia
+         aparecer coisas relacionadas às minhas tarefas" — confirmado por si:
+         "como adm, deveria ver as minhas tarefas em específico... Guias,
+         faturas vencidas, faturas para cobrar, faturas por Emitir". Os
+         blocos comerciais abaixo ficam vazios para quem não tem orçamentos
+         próprios (owner_id nunca bate) — por isso pareciam "em branco".
+         Ver renderMeuPainelAdmin(). -->
+    <div id="mp-admin-section" style="display:none">
+      <div class="mp2-kpi-row">
+        <div class="mp2-kpi" data-action="goPage" data-page="fabrica-instalacoes">
+          <div class="mp2-kpi-lbl">Guias por emitir</div>
+          <div class="mp2-kpi-val" id="mp-admin-guias">—</div>
+        </div>
+        <div class="mp2-kpi mp2-r" data-action="goPage" data-page="tesouraria">
+          <div class="mp2-kpi-lbl">Faturas vencidas</div>
+          <div class="mp2-kpi-val mp2-r" id="mp-admin-vencidas">—</div>
+        </div>
+        <div class="mp2-kpi" data-action="goPage" data-page="tesouraria">
+          <div class="mp2-kpi-lbl">Faturas a cobrar</div>
+          <div class="mp2-kpi-val" id="mp-admin-cobrar">—</div>
+        </div>
+        <div class="mp2-kpi mp2-y" data-action="goPage" data-page="comercial-orcamentos">
+          <div class="mp2-kpi-lbl">Faturas por emitir</div>
+          <div class="mp2-kpi-val mp2-y" id="mp-admin-emitir">—</div>
+        </div>
+      </div>
+
+      <div class="sh"><h2>🚛 Guias de transporte por emitir</h2></div>
+      <div class="tw" style="margin-bottom:22px">
+        <table>
+          <thead><tr><th>Instalação</th><th>Cliente</th><th>Data</th></tr></thead>
+          <tbody id="mp-admin-guias-tbody"></tbody>
+        </table>
+      </div>
+
+      <div class="sh"><h2>🔴 Faturas vencidas</h2></div>
+      <div class="tw" style="margin-bottom:22px">
+        <table>
+          <thead><tr><th>Cliente</th><th>Vencimento</th><th>Valor</th></tr></thead>
+          <tbody id="mp-admin-vencidas-tbody"></tbody>
+        </table>
+      </div>
+
+      <div class="sh"><h2>📄 Orçamentos aprovados por faturar</h2></div>
+      <div class="tw" style="margin-bottom:22px">
+        <table>
+          <thead><tr><th>Nº</th><th>Cliente</th><th>Valor</th></tr></thead>
+          <tbody id="mp-admin-emitir-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Vista por Departamento (25/09/2026, pedido da secretária/Carolina):
+         "o responsável, pela eletrificação, poderia ver os próximos projetos
+         em fila ou os mais urgentes, os projetos em andamento... e assim
+         para cada departamento". Subtarefas de Produção são atribuídas a
+         uma PESSOA (responsavelId/responsavelNome — obSubtaskPertenceAoUtilizador),
+         não a um departamento genérico, por isso esta vista generaliza-se
+         sozinha a qualquer colaborador de produção sem tabela departamento→
+         pessoa. Ver renderMeuPainelDept(). -->
+    <div id="mp-dept-section" style="display:none">
+      <div class="mp2-kpi-row">
+        <div class="mp2-kpi" data-action="goPage" data-page="fabrica-producao">
+          <div class="mp2-kpi-lbl">Em fila</div>
+          <div class="mp2-kpi-val" id="mp-dept-fila">—</div>
+        </div>
+        <div class="mp2-kpi mp2-r" data-action="goPage" data-page="fabrica-producao">
+          <div class="mp2-kpi-lbl">Urgentes</div>
+          <div class="mp2-kpi-val mp2-r" id="mp-dept-urgentes">—</div>
+        </div>
+        <div class="mp2-kpi mp2-y" data-action="goPage" data-page="fabrica-producao">
+          <div class="mp2-kpi-lbl">Em andamento</div>
+          <div class="mp2-kpi-val mp2-y" id="mp-dept-andamento">—</div>
+        </div>
+      </div>
+
+      <div class="sh"><h2>🔴 Mais urgentes</h2></div>
+      <div class="tw" style="margin-bottom:22px">
+        <table>
+          <thead><tr><th>Obra</th><th>Cliente</th><th>Prevista</th></tr></thead>
+          <tbody id="mp-dept-urgentes-tbody"></tbody>
+        </table>
+      </div>
+
+      <div class="sh"><h2>🟡 Em andamento</h2></div>
+      <div class="tw" style="margin-bottom:22px">
+        <table>
+          <thead><tr><th>Obra</th><th>Cliente</th><th>Prevista</th></tr></thead>
+          <tbody id="mp-dept-andamento-tbody"></tbody>
+        </table>
+      </div>
+
+      <div class="sh"><h2>⏳ Próximos em fila</h2></div>
+      <div class="tw" style="margin-bottom:22px">
+        <table>
+          <thead><tr><th>Obra</th><th>Cliente</th><th>Prevista</th></tr></thead>
+          <tbody id="mp-dept-fila-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div id="mp-comercial-section">
     <!-- KPIs principais (4 cards compactos) -->
     <div class="mp2-kpi-row" id="mp2-kpi-row">
       <div class="mp2-kpi" data-action="goPage" data-page="comercial-followup">
@@ -7542,6 +7656,7 @@ tbody td{font-size:15px}
     <div id="mp2-risco-section" style="display:none">
       <div class="sh"><h2>Carteira que precisa de atenção</h2></div>
       <div class="mp2-risco-resumo" id="mp2-risco-resumo"></div>
+    </div>
     </div>
 
     <!-- Todas as prioridades (Top Hoje completo + Centro de Prioridades) —
@@ -11641,6 +11756,38 @@ function obVerComoComerciais(){
 }
 window.obVerComoComerciais = obVerComoComerciais;
 
+// "Ver como (Produção/Outros)" (25/09/2026) — mesma técnica e garantias de
+// obVerComoComerciais() acima (perfil sintético só para pré-visualização;
+// não é login real, não existe em auth.users/ob_profiles, não altera RLS),
+// generalizada a QUALQUER colaborador ativo que não seja já Comercial
+// (Design, Produção, Administrativo, etc.) — inclui tanto ob_colaboradores
+// (rhColabs) como o app externo de pontos (EC_FUNCIONARIOS), as duas
+// fontes já reconciliadas por nome em obRosterColaboradores(). Existe
+// para o admin poder pré-visualizar a experiência (ex.: a nova vista "por
+// departamento" de Meu Painel) de colaboradores de Produção que ainda não
+// têm login próprio no CRM.
+function obVerComoProducao(){
+  var vistos={}; var lista=[];
+  function add(nome, dept, cor, origemId){
+    var chave=String(nome||'').trim().toLowerCase();
+    if(!chave || vistos[chave]) return;
+    if(/comercial/i.test(String(dept||''))) return;
+    vistos[chave]=true;
+    lista.push({ id:'vp-'+origemId, name:String(nome).trim(), role:(dept||'Produção'),
+                 dept:(dept||'Produção'), color:cor||'#3B82F6', admin:false,
+                 preview:true, colabId:origemId });
+  }
+  (window.rhColabs||[]).forEach(function(c){
+    if(!c || c.deleted_at || c.ativo===false) return;
+    add(c.nome||c.name, c.dept||c.departamento, c.color||c.cor, c.id);
+  });
+  (window.EC_FUNCIONARIOS||[]).forEach(function(c){
+    add(c.nome, c.dept, (typeof ecRoleColor==='function'?ecRoleColor(c.cargo):'#3B82F6'), c.ec_id);
+  });
+  return lista;
+}
+window.obVerComoProducao = obVerComoProducao;
+
 // Roster canónico de "responsável" para subtarefas/tarefas — Direção
 // (USERS: Paulo, Edna) + colaboradores ATIVOS reais (ob_colaboradores,
 // via window.rhColabs — mesma fonte já usada em obVerComoComerciais()/
@@ -11688,14 +11835,18 @@ function obRosterColaboradores(){
 }
 window.obRosterColaboradores = obRosterColaboradores;
 
+// Correção 25/09/2026: faltava aqui a 3ª fonte (EC_FUNCIONARIOS, o app
+// externo de pontos) — colaboradores de Produção que só existem lá (ex.:
+// Fabio, Carlos Moreira, Carlos Lopes, Maksim, Rui Teixeira, Bruno, pedido
+// da secretária no item 3 do doc "Sugestões CRM") nunca apareciam neste
+// dropdown, mesmo depois da 1ª correção (USERS+rhColabs). Passa a
+// reaproveitar obRosterColaboradores(), que já reconcilia as 3 fontes por
+// nome sem duplicar — nunca uma segunda lista/lógica paralela.
 function obListaResponsaveisAtivos(){
-  var nomes = (typeof USERS!=='undefined' ? USERS : []).map(function(u){ return u.name; });
-  (window.rhColabs||[]).forEach(function(c){
-    if(!c || c.deleted_at || c.ativo===false) return;
-    var nome = String(c.nome||c.name||'').trim();
-    if(nome) nomes.push(nome);
-  });
-  return Array.from(new Set(nomes));
+  if(typeof obRosterColaboradores==='function'){
+    return obRosterColaboradores().map(function(c){ return c.nome; });
+  }
+  return (typeof USERS!=='undefined' ? USERS : []).map(function(u){ return u.name; });
 }
 window.obListaResponsaveisAtivos = obListaResponsaveisAtivos;
 
@@ -11949,7 +12100,7 @@ function loginComSenha() {
   try{
     var _imp = JSON.parse(localStorage.getItem('ob-impersonate') || 'null');
     if(_imp && _adminUser && _imp.adminId === _adminUser.id && _imp.userId !== _adminUser.id){
-      var _impUser = USERS.concat(typeof obVerComoComerciais==='function'?obVerComoComerciais():[]).find(function(u){ return u.id === _imp.userId; });
+      var _impUser = (typeof obTodosVerComo==='function'?obTodosVerComo():USERS).find(function(u){ return u.id === _imp.userId; });
       if(_impUser) CU = _impUser;
     }
   }catch(e){}
@@ -12110,6 +12261,14 @@ function setupApp(){
   if(typeof window.rhLoadColabsFromSB==='function' && (!window.rhColabs || !window.rhColabs.length)){
     try{ Promise.resolve(window.rhLoadColabsFromSB()).then(function(){ try{ renderUserSwitcher(); }catch(e){} try{ if(typeof obRenderComerciaisSidebar==='function') obRenderComerciaisSidebar(); }catch(e){} }); }catch(e){}
   }
+  // Idem para EC_FUNCIONARIOS (25/09/2026) — sem isto, "Ver como
+  // (produção/outros)" e o dropdown de responsável em Obras só ficavam
+  // completos depois de alguém visitar RH ou Equipa nessa sessão (onde
+  // ecSyncFuncionarios() já era chamado); agora aquece logo aqui, tal como
+  // rhColabs acima, sem esperar por essa visita.
+  if(typeof ecSyncFuncionarios==='function' && (!window.EC_FUNCIONARIOS || !window.EC_FUNCIONARIOS.length)){
+    try{ Promise.resolve(ecSyncFuncionarios()).then(function(){ try{ renderUserSwitcher(); }catch(e){} }); }catch(e){}
+  }
 }
 
 // ── TROCA TEMPORÁRIA DE UTILIZADOR (modo "ver como") — apenas admins ──
@@ -12131,10 +12290,15 @@ function renderUserSwitcher(){
   var _optsComercial = _com.map(function(u){
     return '<option value="'+u.id+'" '+(u.id===CU.id?'selected':'')+'>'+u.name+'</option>';
   }).join('');
+  var _prod = (typeof obVerComoProducao==='function'?obVerComoProducao():[]);
+  var _optsProducao = _prod.map(function(u){
+    return '<option value="'+u.id+'" '+(u.id===CU.id?'selected':'')+'>'+u.name+' ('+u.dept+')</option>';
+  }).join('');
   sel.innerHTML = '<optgroup label="Admin">'+_optsAdmin+'</optgroup>'+
     (_optsComercial
       ? '<optgroup label="Ver como (comercial)">'+_optsComercial+'</optgroup>'
-      : '<optgroup label="Ver como (comercial)"><option value="" disabled>— adiciona comerciais em RH → Colaboradores —</option></optgroup>');
+      : '<optgroup label="Ver como (comercial)"><option value="" disabled>— adiciona comerciais em RH → Colaboradores —</option></optgroup>')+
+    (_optsProducao ? '<optgroup label="Ver como (produção/outros)">'+_optsProducao+'</optgroup>' : '');
   if(CU.id !== _adminUser.id){
     badge.style.display='flex';
     badgeLabel.textContent = '🔁 Modo: ' + CU.name;
@@ -12144,9 +12308,20 @@ function renderUserSwitcher(){
 }
 window.renderUserSwitcher = renderUserSwitcher;
 
+// Junta USERS + "Ver como" (comercial e produção/outros) — lista completa
+// de quem pode ser selecionado no seletor de utilizadores. Um só ponto,
+// reaproveitado pelos 3 sítios que antes faziam este concat separadamente
+// (evita esquecer obVerComoProducao() nalgum deles).
+function obTodosVerComo(){
+  return USERS
+    .concat(typeof obVerComoComerciais==='function'?obVerComoComerciais():[])
+    .concat(typeof obVerComoProducao==='function'?obVerComoProducao():[]);
+}
+window.obTodosVerComo = obTodosVerComo;
+
 function switchUser(newUserId){
   if(!_adminUser) return;
-  var novo = USERS.concat(typeof obVerComoComerciais==='function'?obVerComoComerciais():[]).find(function(u){ return u.id === newUserId; });
+  var novo = obTodosVerComo().find(function(u){ return u.id === newUserId; });
   if(!novo) return;
   if(newUserId === _adminUser.id){
     switchUserRestore();
@@ -14793,8 +14968,19 @@ var UNI_CFG = {
   },
   'fabrica-producao': {
     title:'Ordem de Produção', icon:'🔧',
-    statuses:['Entrada de Obra','Aguarda Arte','Encomenda','Em Produção','Pintura','Acabamento','Qualidade','Expedição','Concluído ✓'],
-    colors:{'Entrada de Obra':'#e74c3c','Aguarda Arte':'#e67e22','Encomenda':'#d9822b','Em Produção':'#F5C400','Pintura':'#8b5cf6','Acabamento':'#4d94db','Qualidade':'#3fcf8e','Expedição':'#27ae60','Concluído ✓':'#6b7280'},
+    // Simplificado (24/09/2026, pedido da secretária, doc "Sugestões CRM -
+    // parte 3"): "Opções de Estado: Entrada de obra, Em produção, Aguarda
+    // Encomenda e Concluído! A intenção é o projeto entrar em obra, e ao
+    // distribuir as tarefas, o mesmo entra em estado de produção. Logo ao
+    // fim de todo o processo e entrega, o mesmo fica como concluído."
+    // Antes eram 9 estados (Aguarda Arte/Encomenda/Pintura/Acabamento/
+    // Qualidade/Expedição/"Concluído ✓") — ver obReconciliarStatusProducaoAntigo()
+    // para a migração dos itens já existentes nesses estados removidos.
+    // "Concluído" aqui (sem "✓") é a mesma etapa final de sempre — todo o
+    // código que a testa (obProducaoPodeConcluir, gatilho de faturação,
+    // uniSave) foi actualizado em conjunto para o novo nome exacto.
+    statuses:['Entrada de Obra','Aguarda Encomenda','Em Produção','Concluído'],
+    colors:{'Entrada de Obra':'#e74c3c','Aguarda Encomenda':'#d9822b','Em Produção':'#F5C400','Concluído':'#27ae60'},
     kanban:true, nameLabel:'Trabalho / Produto', dateLabel:'Prazo entrega', extraRow:false
   },
   'fabrica-instalacoes': {
@@ -14849,13 +15035,13 @@ var UNI_DEFAULTS = {
     {n:'neon_barnox_logo.ai',client:'Bar Nox Cascais',status:'Aguarda aprovação',priority:'normal',assignee:'Tomás Figueiredo',date:'2026-05-10',notes:'',extra:'v2'},
   ],
   'fabrica-producao':[
-    {n:'Letras 3D — O Farol',client:'Rest. O Farol',status:'Aguarda Arte',priority:'urgent',assignee:'Pedro Silva',date:'2026-05-22',notes:''},
-    {n:'Reclamo LED — Fit Studio',client:'Fit Studio Lisboa',status:'Encomenda',priority:'normal',assignee:'Pedro Silva',date:'2026-05-25',notes:''},
+    {n:'Letras 3D — O Farol',client:'Rest. O Farol',status:'Entrada de Obra',priority:'urgent',assignee:'Pedro Silva',date:'2026-05-22',notes:''},
+    {n:'Reclamo LED — Fit Studio',client:'Fit Studio Lisboa',status:'Aguarda Encomenda',priority:'normal',assignee:'Pedro Silva',date:'2026-05-25',notes:''},
     {n:'Totem — Hotel Serra da Lua',client:'Hotel Serra da Lua',status:'Em Produção',priority:'high',assignee:'Ricardo Faria',date:'2026-05-20',notes:''},
     {n:'Painel LED — Pingo Bom',client:'Pingo Bom',status:'Em Produção',priority:'normal',assignee:'Sérgio Nunes',date:'2026-05-19',notes:''},
-    {n:'Sinalética — Clínica D&S',client:'Clínica D&S',status:'Pintura',priority:'normal',assignee:'Pedro Silva',date:'2026-05-21',notes:''},
-    {n:'Letras 3D — Auto Premium',client:'Auto Premium',status:'Qualidade',priority:'normal',assignee:'Ricardo Faria',date:'2026-05-16',notes:''},
-    {n:'Totem — Hotel Boa Vista',client:'Hotel Boa Vista',status:'Expedição',priority:'high',assignee:'Ricardo Faria',date:'2026-05-17',notes:''},
+    {n:'Sinalética — Clínica D&S',client:'Clínica D&S',status:'Em Produção',priority:'normal',assignee:'Pedro Silva',date:'2026-05-21',notes:''},
+    {n:'Letras 3D — Auto Premium',client:'Auto Premium',status:'Em Produção',priority:'normal',assignee:'Ricardo Faria',date:'2026-05-16',notes:''},
+    {n:'Totem — Hotel Boa Vista',client:'Hotel Boa Vista',status:'Concluído',priority:'high',assignee:'Ricardo Faria',date:'2026-05-17',notes:''},
   ],
   'fabrica-instalacoes':[
     {n:'Letras 3D Fachada',client:'Auto Premium Sintra',status:'Agendada',priority:'high',assignee:'Ricardo Faria',date:'2026-05-19',notes:'',extra:'08:00'},
@@ -14935,6 +15121,15 @@ function openUniModal(page){
     // de inventar utilizadores.
     team=(typeof designComerciais!=='undefined'?designComerciais:[]).filter(function(c){return c.ativo;}).map(function(c){return c.nome;});
     if(!team.length) team=(typeof obListaResponsaveisAtivos==='function') ? obListaResponsaveisAtivos() : [];
+  } else if(page==='fabrica-producao'){
+    // Correção (24/09/2026, pedido da secretária, doc "Sugestões CRM -
+    // parte 3": "é preciso colocar os colaboradores lá de baixo" —
+    // Paulo, Fábio, Carlos Moreira, Carlos Lopes, Maksim, Rui Teixeira,
+    // Bruno). Este botão ("+ Nova Ordem") nunca teve ramo próprio para
+    // fabrica-producao — caía no else genérico, com comerciais + nomes
+    // fixos sem nada a ver com Chão da Fábrica. obListaResponsaveisAtivos()
+    // é o roster real já usado noutros sítios, nunca uma lista inventada.
+    team=(typeof obListaResponsaveisAtivos==='function') ? obListaResponsaveisAtivos() : [];
   } else {
     var com=(typeof crmComerciais!=='undefined'?crmComerciais:[]).filter(function(c){return c.ativo;}).map(function(c){return c.nome;});
     team=com.concat(['Ricardo Faria','Pedro Silva','Sérgio Nunes','Luís Cardoso']);
@@ -14998,8 +15193,12 @@ function uniOpen(page, itemId){
   let teamList = [];
   if(page==='admin-agenda'){
     teamList = Object.keys(AG_COMERCIAIS_REAIS_IDS);
-  } else if(page==='fabrica-producao' && typeof USERS!=='undefined' && USERS){
-    teamList = USERS.filter(u=>u.dept==='Chão da Fábrica').map(u=>u.name);
+  } else if(page==='fabrica-producao'){
+    // Correção (24/09/2026, pedido da secretária): USERS.filter(dept==='Chão
+    // da Fábrica') era uma lista pequena e estática (nunca actualizada),
+    // por isso faltavam colaboradores reais no dropdown. Mesmo roster
+    // dinâmico já usado no "+ Nova Ordem" (openUniModal acima).
+    teamList = (typeof obListaResponsaveisAtivos==='function') ? obListaResponsaveisAtivos() : [];
   } else if(page && page.startsWith('design')){
     // Parte 2 (correção Preview) — sem nomes fictícios fixos: designComerciais
     // (RH -> Colaboradores de Design) primeiro; sem ninguém ativo, reutiliza
@@ -15299,12 +15498,12 @@ async function uniSave(){
     data.subtasks = canonicas.concat(legado);
   }
   // Produção 2.0 (Fase 3): bloquear a transição para o estado geral final
-  // ('Concluído ✓') enquanto houver departamento canónico obrigatório
-  // pendente. Só entra em ação quando é mesmo essa a transição pedida —
-  // nunca bloqueia gravações normais, nem obras antigas sem departamentos
-  // canónicos (obProducaoPodeConcluir trata isso). Não muda nada sozinho;
-  // só impede a gravação e explica o que falta.
-  if(uniCurrentPage==='fabrica-producao' && data.status==='Concluído ✓' && typeof obProducaoPodeConcluir==='function'){
+  // ('Concluído', sem "✓" desde 24/09/2026) enquanto houver departamento
+  // canónico obrigatório pendente. Só entra em ação quando é mesmo essa a
+  // transição pedida — nunca bloqueia gravações normais, nem obras antigas
+  // sem departamentos canónicos (obProducaoPodeConcluir trata isso). Não
+  // muda nada sozinho; só impede a gravação e explica o que falta.
+  if(uniCurrentPage==='fabrica-producao' && data.status==='Concluído' && typeof obProducaoPodeConcluir==='function'){
     const checagem = obProducaoPodeConcluir(data);
     if(!checagem.podeConcluir){
       alert('Não é possível concluir a Produção.\n\nDepartamentos pendentes:\n'+checagem.pendentes.map(d=>'• '+d).join('\n'));
@@ -15735,7 +15934,38 @@ function fpView(v){
   fpRender();
 }
 
+// Migração dos 9 estados antigos de Produção para os 4 novos (24/09/2026,
+// pedido da secretária — ver comentário em UNI_CFG['fabrica-producao']).
+// Idempotente por natureza: uma ordem já num dos 4 estados novos nunca
+// aparece no mapa abaixo, por isso correr isto repetidamente é sempre
+// seguro (nunca precisa de flag "já correu" tipo obLimparTarefasFicticiasUmaVez).
+var OB_PRODUCAO_STATUS_ANTIGO_PARA_NOVO = {
+  'Aguarda Arte':   'Entrada de Obra',
+  'Encomenda':      'Aguarda Encomenda',
+  'Pintura':        'Em Produção',
+  'Acabamento':     'Em Produção',
+  'Qualidade':      'Em Produção',
+  'Expedição':      'Concluído',
+  'Concluído ✓':    'Concluído'
+};
+function obReconciliarStatusProducaoAntigo(){
+  var mudou = false;
+  uniItems.forEach(function(item){
+    if(item.page!=='fabrica-producao') return;
+    var novo = OB_PRODUCAO_STATUS_ANTIGO_PARA_NOVO[item.status];
+    if(!novo) return;
+    item.status = novo;
+    mudou = true;
+    if(typeof _sbUniItemUpsert==='function'){
+      _sbUniItemUpsert(item, {isCreate:false}).catch(function(){});
+    }
+  });
+  if(mudou && typeof saveUniItems==='function') saveUniItems();
+}
+window.obReconciliarStatusProducaoAntigo = obReconciliarStatusProducaoAntigo;
+
 function fpRender(){
+  try{ obReconciliarStatusProducaoAntigo(); }catch(e){}
   const allItems=uniGetItems('fabrica-producao');
   // Só Ivan/coordenadores/admin veem o board completo; cada colaborador vê só as suas ordens.
   const canSeeAllProducao = !CU || CU.admin===true || CU.coordinator===true;
@@ -15956,7 +16186,7 @@ async function uniDrop(e,st,page){
   if(item&&item.status!==st){
     // Produção 2.0 (Fase 3): mesma validação de conclusão do uniSave(), aqui
     // para a outra via ativa que muda o estado geral (arrastar no kanban).
-    if(page==='fabrica-producao' && st==='Concluído ✓' && typeof obProducaoPodeConcluir==='function'){
+    if(page==='fabrica-producao' && st==='Concluído' && typeof obProducaoPodeConcluir==='function'){
       const checagem = obProducaoPodeConcluir(item);
       if(!checagem.podeConcluir){
         alert('Não é possível concluir a Produção.\n\nDepartamentos pendentes:\n'+checagem.pendentes.map(d=>'• '+d).join('\n'));
@@ -16045,7 +16275,7 @@ function fpDone(id){
   // Move item to Concluído
   const item = uniItems.find(i=>i.id===id);
   if(item){
-    item.status='Concluído ✓';
+    item.status='Concluído';
     if(item.subtasks) item.subtasks.forEach(s=>s.done=true);
     saveUniItems();
     fpRender();
@@ -16103,18 +16333,22 @@ async function fpToggleSubtask(itemId, dept){
   const allDone = item.subtasks.every(s=>s.done);
   if(allDone){
     const n=item.subtasks.length;
-    if(confirm('✓ Todas as '+n+' subtarefas concluídas! Mover para Qualidade?')){
+    // Correção (24/09/2026): com só 4 estados gerais (Entrada de Obra/
+    // Aguarda Encomenda/Em Produção/Concluído), já não há "Qualidade" como
+    // etapa intermédia própria — ao terminar todas as subtarefas por
+    // departamento, o próximo passo natural é Concluído directamente.
+    if(confirm('✓ Todas as '+n+' subtarefas concluídas! Mover para Concluído?')){
       // Mudança de estado adicional — mesma proteção optimistic-lock,
       // snapshot próprio (o toggle da subtask acima já ficou confirmado e
       // não é revertido se só esta parte falhar).
       const prevSnapshotStatus = JSON.parse(JSON.stringify(item));
       const _stAntes = item.status;
-      item.status='Qualidade';
+      item.status='Concluído';
       const resultadoStatus = (typeof _sbUniItemUpsert==='function')
         ? await _sbUniItemUpsert(item, {isCreate:false})
         : {ok:true};
       if(resultadoStatus.ok){
-        if(typeof obRegistarEtapa==='function') obRegistarEtapa(item,_stAntes,'Qualidade');
+        if(typeof obRegistarEtapa==='function') obRegistarEtapa(item,_stAntes,'Concluído');
         saveUniItems();
         fpRender();
       } else {
@@ -21025,8 +21259,15 @@ function renderDespesas(){
     const dtStr = d.data ? new Date(d.data+'T12:00:00').toLocaleDateString('pt-PT',{day:'2-digit',month:'short'}) : '—';
     const estCls = DESP_ESTADO_CLS[d.estado]||'ba';
     const estLbl = DESP_ESTADO_LABEL[d.estado]||d.estado;
+    // Correção (24/09/2026, pedido da secretária): o botão apontava para um
+    // blob: URL local (criado por URL.createObjectURL no browser de quem
+    // anexou o ficheiro) — nunca era enviado para lado nenhum, só existia
+    // na memória dessa sessão. Abrir mais tarde, noutra sessão ou depois de
+    // um refresh, dava sempre erro. Agora chama despVerRecibo(), que gera
+    // um link temporário fresco a partir do Storage no momento do clique —
+    // nunca fica desatualizado.
     const recBtn = d.file_url
-      ? `<a href="${d.file_url}" target="_blank" class="tbtn" style="font-size:12px;padding:3px 8px;text-decoration:none">🧾</a>`
+      ? `<button class="tbtn" style="font-size:12px;padding:3px 8px" onclick='despVerRecibo(${JSON.stringify(d.file_url)})' title="Ver recibo">🧾</button>`
       : `<button class="tbtn" style="font-size:12px;padding:3px 8px;color:var(--muted)" disabled>🧾</button>`;
     return `<tr>
       <td style="color:var(--muted)">${dtStr}</td>
@@ -21093,8 +21334,25 @@ async function despSaveModal(){
   const colab = document.getElementById('dm-colab').value.trim();
   if(!colab){ alert('Insira o nome do colaborador.'); return; }
   const existing = CRM_DESP_EDIT_ID ? (CRM_DESPESAS.find(x=>x.id===CRM_DESP_EDIT_ID)||{}) : {};
-  const file_url = DM_FILE_OBJ ? URL.createObjectURL(DM_FILE_OBJ) : (existing.file_url||null);
-  const file_name = DM_FILE_OBJ ? DM_FILE_OBJ.name : (existing.file_name||null);
+  const sb = crmSBClient();
+  // Correção (24/09/2026, pedido da secretária: "ao solicitar ver o
+  // recibo, abre janela de erro"): antes usava URL.createObjectURL(), que
+  // cria um link só válido na memória desta sessão do browser — nunca
+  // chegava a ser enviado para lado nenhum, por isso nunca abria depois.
+  // Agora envia mesmo o ficheiro para o Storage (bucket privado
+  // 'despesas-recibos') e guarda o CAMINHO (não um link) — despVerRecibo()
+  // gera um link temporário fresco a partir desse caminho sempre que
+  // alguém clicar em "ver recibo", nunca um link pré-calculado que possa
+  // ficar desatualizado.
+  let file_url = existing.file_url || null;
+  let file_name = existing.file_name || null;
+  if(DM_FILE_OBJ){
+    const caminho = 'despesas/' + Date.now() + '-' + DM_FILE_OBJ.name.replace(/[^a-zA-Z0-9.\-_]/g,'_');
+    const up = await sb.storage.from('despesas-recibos').upload(caminho, DM_FILE_OBJ, {upsert:false});
+    if(up.error){ alert('Erro ao enviar o ficheiro do recibo: ' + up.error.message); return; }
+    file_url = caminho;
+    file_name = DM_FILE_OBJ.name;
+  }
   const payload = {
     colab, data: document.getElementById('dm-data').value||null,
     categoria: document.getElementById('dm-cat').value,
@@ -21104,7 +21362,6 @@ async function despSaveModal(){
     notas: document.getElementById('dm-notas').value.trim(),
     file_url, file_name, updated_at: new Date().toISOString()
   };
-  const sb = crmSBClient();
   try {
     if(CRM_DESP_EDIT_ID){
       const {error} = await sb.from('expenses').update(payload).eq('id', CRM_DESP_EDIT_ID);
@@ -21117,6 +21374,34 @@ async function despSaveModal(){
     await despLoadCRM();
   } catch(e){ alert('Erro ao guardar: '+e.message); }
 }
+
+// Abre o recibo — gera sempre um link temporário fresco a partir do
+// caminho guardado no Storage, nunca reutiliza um link antigo que possa
+// ter expirado ou (recibos anteriores a esta correção) nunca ter sido
+// válido fora da sessão que o criou.
+async function despVerRecibo(path){
+  if(!path) return;
+  if(/^blob:/.test(path)){
+    alert('Este recibo foi anexado antes de uma correção (24/09/2026) e já não pode ser aberto — o ficheiro nunca chegou a ser guardado, só existia na sessão de quem o anexou. Peça para o anexar de novo.');
+    return;
+  }
+  // 25/09/2026 (pedido da Edna: "Ver recibo não abre ainda") — tentei
+  // primeiro abrir uma aba em branco já dentro do clique (antes do await)
+  // para não ser bloqueada pelo bloqueador de popups, mas a Edna confirmou
+  // que continua a não abrir nada — o browser dela bloqueia mesmo essa
+  // técnica. Passa a navegar na MESMA aba (window.location.href), o que
+  // nenhum bloqueador de popups impede, em vez de tentar abrir uma nova.
+  const sb = crmSBClient();
+  if(!sb){ alert('Sem ligação ao Supabase.'); return; }
+  try{
+    const res = await sb.storage.from('despesas-recibos').createSignedUrl(path, 300);
+    if(res.error || !res.data){ throw res.error || new Error('resposta vazia'); }
+    window.location.href = res.data.signedUrl;
+  }catch(e){
+    alert('Não foi possível abrir o recibo: ' + (e && e.message || e));
+  }
+}
+window.despVerRecibo = despVerRecibo;
 
 async function despDeleteId(id){
   if(!confirm('Eliminar esta despesa?')) return;
@@ -21189,8 +21474,15 @@ function despAppRenderTabela(){
     const dtStr = d.occurred_at ? new Date(d.occurred_at).toLocaleDateString('pt-PT',{day:'2-digit',month:'2-digit',year:'numeric'}) : '—';
     const cls = estCls[d.status]||'ba';
     const lbl = estLabel[d.status]||d.status||'—';
+    // Correção (24/09/2026, pedido da secretária: "ao solicitar ver o
+    // recibo, abre janela de erro"): receipt_signed_url vem já assinado da
+    // app de pontos (projecto Supabase à parte, sem acesso daqui para
+    // mudar como é gerado) e expira ao fim de algum tempo — se a lista não
+    // tiver sido sincronizada há pouco, o link já está morto quando se
+    // clica. despAppVerRecibo() volta a sincronizar antes de abrir, para
+    // nunca usar um link mais velho do que o momento do clique.
     const recBtn = d.receipt_signed_url
-      ? `<a href="${d.receipt_signed_url}" target="_blank" class="tbtn" style="font-size:12px;padding:3px 8px;text-decoration:none">🧾 Ver</a>`
+      ? `<button class="tbtn" style="font-size:12px;padding:3px 8px" onclick='despAppVerRecibo(${JSON.stringify(d.id)})'>🧾 Ver</button>`
       : `<button class="tbtn" style="font-size:12px;padding:3px 8px;color:var(--muted)" disabled>🧾</button>`;
     return `<tr>
       <td style="color:var(--muted);font-size:13px;font-family:'DM Mono',monospace">${dtStr}</td>
@@ -21203,6 +21495,22 @@ function despAppRenderTabela(){
     </tr>`;
   }).join('') || '<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:20px">Sem despesas para este colaborador.</td></tr>';
 }
+
+// Ver recibo (despesas da app de pontos) — revalida antes de abrir, para
+// nunca usar um link assinado que já tenha expirado desde a última
+// sincronização. Ver nota em despAppRenderTabela().
+async function despAppVerRecibo(id){
+  // Mesma correção de despVerRecibo() acima (25/09/2026) — a tentativa de
+  // abrir aba nova continuava bloqueada; navega na MESMA aba em vez disso.
+  await despSyncApp();
+  const d = EC_DESPESAS_APP.find(function(x){ return x.id===id; });
+  if(!d || !d.receipt_signed_url){
+    alert('Não foi possível obter o recibo — pode ter sido removido ou já não está disponível.');
+    return;
+  }
+  window.location.href = d.receipt_signed_url;
+}
+window.despAppVerRecibo = despAppVerRecibo;
 
 async function despSyncApp(){
   const btn = document.getElementById('desp-app-sync-btn');
@@ -21255,6 +21563,10 @@ async function despSyncApp(){
     if(btn){ btn.textContent='🔄 Actualizar App'; btn.disabled=false; }
     _despAppSynced = true;
     renderDespesas(); // atualiza stats no painel CRM com dados do app
+    // 25/09/2026 — atualiza também a tabela "Despesas de Funcionários" do
+    // Painel Financeiro (finRenderDespesas() já junta EC_DESPESAS_APP), para
+    // quem já lá estava não ficar com a tabela desatualizada até navegar.
+    try{ if(typeof finRenderDespesas==='function') finRenderDespesas(); }catch(e){}
   } catch(e){
     if(status) status.textContent='❌ Erro ao carregar app de pontos: '+e.message.slice(0,80);
     if(btn){ btn.textContent='🔄 Actualizar App'; btn.disabled=false; }
@@ -23619,6 +23931,33 @@ function finRowToLocal(r) {
   };
 }
 
+// 25/09/2026 (pedido da Edna: "as despesas vêm do app de pontos, mas
+// devia aparecer aí também") — "Despesas de Funcionários" no Painel
+// Financeiro só mostrava FIN_DESPESAS (tabela ob_despesas, alimentada só
+// por Make/registo manual — hoje vazia); as despesas reais, sincronizadas
+// do app de pontos (EC_DESPESAS_APP, já usadas em "Despesas e
+// Reembolsos" e nos KPIs fin-desp-* via despCalcularTotais()), nunca
+// entravam na tabela detalhada. Normaliza para o mesmo formato de
+// FIN_DESPESAS, marcado com origem:'App de Pontos' para a tabela saber
+// que não tem "Aprovar/Rejeitar/Eliminar" (isso escreve em ob_despesas,
+// que esta linha não tem) — mostra antes "Ver recibo".
+function finDespRegistoDoApp(d) {
+  var estLabel = {pending:'Pendente', submitted:'Pendente', approved:'Aprovada', rejected:'Rejeitada', reimbursed:'Reembolsada'};
+  return {
+    id: 'app-' + d.id,
+    appId: d.id,
+    data: d.occurred_at ? new Date(d.occurred_at).toLocaleDateString('pt-PT') : '—',
+    funcionario: d.user_name || 'Desconhecido',
+    categoria: d.category || 'Outro',
+    descricao: d.reference || d.notes || '',
+    valor: parseFloat(d.amount_eur) || 0,
+    metodoPagamento: '—',
+    estado: estLabel[d.status] || d.status || 'Pendente',
+    temRecibo: !!d.receipt_signed_url,
+    origem: 'App de Pontos'
+  };
+}
+
 // Vai buscar as despesas reais à tabela Supabase "ob_despesas" (gravadas pelo Make ou manualmente)
 async function finFetchDespesasRemoto() {
   var sb = finGetSupabase();
@@ -23668,8 +24007,14 @@ function finRenderDespesas() {
   var tbody = document.getElementById('fin-desp-tbody');
   if (!tbody) return;
 
+  // 25/09/2026 — junta FIN_DESPESAS (ob_despesas) + EC_DESPESAS_APP (app de
+  // pontos, normalizada por finDespRegistoDoApp()) numa só lista, mesma
+  // fonte já usada nos KPIs acima (despCalcularTotais()) — nunca duas
+  // listas divergentes na mesma página.
+  var todasDespesas = FIN_DESPESAS.concat((typeof EC_DESPESAS_APP!=='undefined'?EC_DESPESAS_APP:[]).map(finDespRegistoDoApp));
+
   // Ordenar por data mais recente primeiro
-  var sorted = FIN_DESPESAS.slice().sort(function(a,b){
+  var sorted = todasDespesas.slice().sort(function(a,b){
     var da=finDespParseData(a.data), db=finDespParseData(b.data);
     if(!da && !db) return 0; if(!da) return 1; if(!db) return -1;
     return db-da;
@@ -23681,7 +24026,7 @@ function finRenderDespesas() {
   // Repopular dropdowns (sempre, para reflectir dados actualizados)
   var prevFunc=sfEl?sfEl.value:'', prevMes=smEl?smEl.value:'';
   if(sfEl){ sfEl.innerHTML='<option value="">— Todos os funcionários —</option>';
-    var funcs=[...new Set(FIN_DESPESAS.map(function(d){return d.funcionario||'';}).filter(Boolean))].sort();
+    var funcs=[...new Set(todasDespesas.map(function(d){return d.funcionario||'';}).filter(Boolean))].sort();
     funcs.forEach(function(f){ var o=document.createElement('option'); o.value=f; o.textContent=f; sfEl.appendChild(o); });
     sfEl.value=prevFunc; }
   if(smEl){ smEl.innerHTML='<option value="">— Todos os meses —</option>';
@@ -23710,7 +24055,21 @@ function finRenderDespesas() {
 
   var rows = filtered.slice(0,200).map(function(d) {
     var corEstado = d.estado==='Aprovada'?'var(--g)':d.estado==='Rejeitada'?'var(--r)':'var(--a)';
-    var syncIcon = d.sync==='ok' ? '<span class="fin-sync-ok">●&nbsp;Sync</span>' : d.sync==='err' ? '<span class="fin-sync-err">✗&nbsp;Erro</span>' : '<span class="fin-sync-pend">○&nbsp;Pendente</span>';
+    var ehApp = d.origem==='App de Pontos';
+    // Linhas do app de pontos não têm registo em ob_despesas (não há o que
+    // Aprovar/Rejeitar/Eliminar aqui — o estado vem já decidido de lá);
+    // mostra antes "Ver recibo", reaproveitando despAppVerRecibo() (mesmo
+    // botão já usado em "Despesas e Reembolsos").
+    var syncIcon = ehApp
+      ? '<span class="tag" style="background:var(--bg4);color:var(--txt2)">📱 App</span>'
+      : (d.sync==='ok' ? '<span class="fin-sync-ok">●&nbsp;Sync</span>' : d.sync==='err' ? '<span class="fin-sync-err">✗&nbsp;Erro</span>' : '<span class="fin-sync-pend">○&nbsp;Pendente</span>');
+    var acoes = ehApp
+      ? (d.temRecibo
+          ? '<button class="tbtn" style="font-size:12px;padding:2px 8px" onclick=\'despAppVerRecibo(' + JSON.stringify(d.appId) + ')\' title="Ver recibo">🧾 Ver</button>'
+          : '<button class="tbtn" style="font-size:12px;padding:2px 8px;color:var(--muted)" disabled>🧾</button>')
+      : ('<button class="tbtn" style="font-size:12px;padding:2px 6px" onclick=\'finAprovarDespesa(' + JSON.stringify(d.id) + ')\' title="Aprovar">✓</button>' +
+         '<button class="tbtn" style="font-size:12px;padding:2px 6px;color:var(--r)" onclick=\'finRejeitarDespesa(' + JSON.stringify(d.id) + ')\' title="Rejeitar">✗</button>' +
+         '<button class="tbtn admin-only" style="font-size:12px;padding:2px 6px;color:var(--r)" onclick=\'finEliminarDespesa(' + JSON.stringify(d.id) + ')\' title="Eliminar definitivamente">🗑️</button>');
     return '<tr class="fin-desp-row">' +
       '<td style="font-family:DM Mono,monospace;font-size:13px">' + (d.data||'—') + '</td>' +
       '<td>' + (d.funcionario||'—') + '</td>' +
@@ -23720,11 +24079,7 @@ function finRenderDespesas() {
       '<td><span class="tag" style="background:var(--bg4);color:var(--txt2)">' + (d.metodoPagamento||'—') + '</span></td>' +
       '<td><span style="color:' + corEstado + ';font-size:13px;font-weight:600">' + (d.estado||'Pendente') + '</span></td>' +
       '<td>' + syncIcon + '</td>' +
-      '<td style="display:flex;gap:4px">' +
-        '<button class="tbtn" style="font-size:12px;padding:2px 6px" onclick="finAprovarDespesa(' + JSON.stringify(d.id) + ')" title="Aprovar">✓</button>' +
-        '<button class="tbtn" style="font-size:12px;padding:2px 6px;color:var(--r)" onclick="finRejeitarDespesa(' + JSON.stringify(d.id) + ')" title="Rejeitar">✗</button>' +
-        '<button class="tbtn admin-only" style="font-size:12px;padding:2px 6px;color:var(--r)" onclick="finEliminarDespesa(' + JSON.stringify(d.id) + ')" title="Eliminar definitivamente">🗑️</button>' +
-      '</td>' +
+      '<td style="display:flex;gap:4px">' + acoes + '</td>' +
     '</tr>';
   }).join('');
   tbody.innerHTML = rows || '<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:20px">Sem despesas registadas.</td></tr>';
@@ -29000,6 +29355,10 @@ async function tocoSincronizarFaturas(silent, ano) {
         Date: a.date,
         DueDate: a.due_date,
         TotalAmount: (a.gross_total != null ? a.gross_total : a.net_total) != null ? (a.gross_total != null ? a.gross_total : a.net_total) : a.amount,
+        // Valor SEM IVA — só para a Análise de Vendas (TotalAmount acima
+        // fica COM IVA de propósito, é o que Contas a Receber/Faturas
+        // precisam). Ver nota igual em avSyncTocOnlineViaEF().
+        NetAmount: (a.net_total != null ? a.net_total : a.gross_total) != null ? (a.net_total != null ? a.net_total : a.gross_total) : a.amount,
         Status: a.status,
         // Usado pela baixa automática por _tocoId (tocoBaixarRecebidosPorTocoId) —
         // <=0.005 = documento totalmente liquidado no TOConline. Correção
@@ -31091,7 +31450,7 @@ function obAvaliarTransicaoProducaoUni(item, statusAnterior, statusNovo){
   }
 
   // Produção concluída -> cria a Instalação ligada (se ainda não existir) e avança a fase.
-  if(item.page==='fabrica-producao' && statusNovo==='Concluído ✓'){
+  if(item.page==='fabrica-producao' && statusNovo==='Concluído'){
     crmAvaliarTransicaoAutomatica('producao', 'producao_concluida', { orcNum: item.orcNum, origem: 'producao_concluida' }).then(function(){
       var jaTemInstalacao = uniItems.some(function(i){ return i.page==='fabrica-instalacoes' && i.orcNum===item.orcNum; });
       if(!jaTemInstalacao){
@@ -32491,7 +32850,57 @@ function renderMeuPainel(){
   var set=function(id,v){ var e=document.getElementById(id); if(e) e.textContent=v; };
   var fmtEuro=function(v){ return (typeof fmt==='function') ? fmt(Math.round(v||0)) : ('€'+Math.round(v||0)); };
 
+  // Vista Admin/Gestão Administrativa (24/09/2026) — quem não é comercial
+  // nunca tem orçamentos próprios (owner_id nunca bate com o seu id), por
+  // isso os blocos abaixo (Faça agora, Minha carteira, Próximos 7 dias)
+  // ficavam sempre vazios para este papel. Mostra em vez disso o que a
+  // secretária pediu: Guias por emitir, Faturas vencidas, Faturas a
+  // cobrar, Faturas por emitir.
+  var ehAdministrativo=!!(typeof CU!=='undefined'&&CU&&CU.role==='administrativo');
+  // isAdmin (dono/gestão do CRM, CU.admin===true) precisa de ser calculado
+  // já aqui: um admin global vê SEMPRE a vista comercial completa (já lhe
+  // mostra tudo, por isAdmin em minhasOrcamentos mais abaixo) — nunca deve
+  // ser desviado para a vista por departamento só por, em algum ponto, ter
+  // o seu nome numa subtarefa de Produção (ex.: dados de teste).
   var isAdmin=!!(typeof CU!=='undefined'&&CU&&CU.admin);
+  var secAdmin=document.getElementById('mp-admin-section');
+  var secDept=document.getElementById('mp-dept-section');
+  var secComercial=document.getElementById('mp-comercial-section');
+  if(ehAdministrativo){
+    if(secAdmin) secAdmin.style.display='block';
+    if(secDept) secDept.style.display='none';
+    if(secComercial) secComercial.style.display='none';
+    if(typeof renderMeuPainelAdmin==='function') renderMeuPainelAdmin();
+    return;
+  }
+
+  // Vista por Departamento (25/09/2026) — corrigido depois de a Edna testar
+  // com "Ver como → Bruno" (montagem) e ver a vista comercial vazia
+  // ("Minha carteira" incluída): o critério original só entrava nesta
+  // vista se a pessoa JÁ tivesse subtarefas atribuídas — sem nenhuma
+  // (caso comum p/ quem ainda não recebeu trabalho), caía por omissão na
+  // vista comercial, errada para quem não é comercial. Corrigido para o
+  // MESMO critério canónico já usado em crmPaginaInicial() para decidir
+  // quem é comercial (CU.dept==='Comercial' — só bate para Rui Mota,
+  // Humberto Estrelinha, André Nolasco e a entrada sintética "Ver como"
+  // de Paulo Faria, todos com dept:'Comercial'; nunca um 2º critério).
+  // Confirmado pela Edna: "apenas o Paulo Faria, Rui Mota, Humberto
+  // Estrelinha e o André" são comerciais — o resto (Produção/Outros)
+  // deve ver sempre a vista por departamento, mesmo sem nada atribuído
+  // ainda (renderMeuPainelDept() já trata a lista vazia).
+  var souComercial=!!(typeof CU!=='undefined'&&CU&&CU.dept==='Comercial');
+  if(!ehAdministrativo && !isAdmin && !souComercial){
+    if(secAdmin) secAdmin.style.display='none';
+    if(secDept) secDept.style.display='block';
+    if(secComercial) secComercial.style.display='none';
+    if(typeof renderMeuPainelDept==='function') renderMeuPainelDept();
+    return;
+  }
+
+  if(secAdmin) secAdmin.style.display='none';
+  if(secDept) secDept.style.display='none';
+  if(secComercial) secComercial.style.display='block';
+
   var nome=(typeof CU!=='undefined'&&CU)?CU.name:null;
   var meuId=(typeof CU!=='undefined'&&CU)?CU.id:null;
   // Bug B1 (corrigido): dono real de um orçamento é o.owner_id (uuid, já
@@ -32687,6 +33096,161 @@ function renderMeuPainel(){
   try{ mp2RenderProximosSete(); }catch(e){}
 }
 window.renderMeuPainel=renderMeuPainel;
+
+// Vista Admin/Gestão Administrativa de Meu Painel (24/09/2026, pedido da
+// secretária — ver comentário em renderMeuPainel()). Reutiliza fontes já
+// existentes, nunca uma segunda lógica divergente: tesGetReceber()/
+// tesEstaVencido() (mesmas de Tesouraria/Resumo Geral), uniItems (mesma
+// fonte da Instalações), orcData/FU_ESTADOS_ORC_TERMINAIS (mesma do
+// Follow-up/Pipeline).
+function renderMeuPainelAdmin(){
+  var set=function(id,v){ var e=document.getElementById(id); if(e) e.textContent=v; };
+  var fmtEuro=function(v){ return (typeof fmt==='function') ? fmt(Math.round(v||0)) : ('€'+Math.round(v||0)); };
+  var hoje=new Date();
+
+  // ── Guias de transporte por emitir — instalações sem guia gerada ────
+  var instalacoes=(typeof uniGetItems==='function') ? uniGetItems('fabrica-instalacoes') : [];
+  var semGuia=instalacoes.filter(function(i){
+    return !i.guiaTransporte && i.status!=='Cancelada';
+  }).sort(function(a,b){ return new Date(a.date||0)-new Date(b.date||0); });
+  set('mp-admin-guias', semGuia.length);
+  var elGuias=document.getElementById('mp-admin-guias-tbody');
+  if(elGuias){
+    elGuias.innerHTML = semGuia.length ? semGuia.slice(0,10).map(function(i){
+      var dStr=i.date ? new Date(i.date).toLocaleDateString('pt-PT') : '—';
+      return '<tr><td>'+(i.n||'—')+'</td><td>'+(i.client||'—')+'</td><td>'+dStr+'</td></tr>';
+    }).join('') : '<tr><td colspan="3" style="text-align:center;color:var(--muted);padding:16px">Sem guias pendentes.</td></tr>';
+  }
+
+  // ── Faturas vencidas / a cobrar — mesma fonte de Tesouraria ─────────
+  var pendReceber=(typeof tesGetReceber==='function') ? tesGetReceber().filter(function(r){ return r.estado!=='Recebido'; }) : [];
+  var vencidas=pendReceber.filter(function(r){ return typeof tesEstaVencido==='function' && tesEstaVencido(r, hoje); })
+    .sort(function(a,b){ return new Date(a.vencimento||0)-new Date(b.vencimento||0); });
+  set('mp-admin-vencidas', vencidas.length);
+  set('mp-admin-cobrar', pendReceber.length);
+  var elVenc=document.getElementById('mp-admin-vencidas-tbody');
+  if(elVenc){
+    elVenc.innerHTML = vencidas.length ? vencidas.slice(0,10).map(function(r){
+      var dStr=r.vencimento ? new Date(r.vencimento).toLocaleDateString('pt-PT') : '—';
+      return '<tr><td>'+(r.cliente||'—')+'</td><td style="color:var(--r)">'+dStr+'</td><td>'+fmtEuro(parseFloat(r.total)||0)+'</td></tr>';
+    }).join('') : '<tr><td colspan="3" style="text-align:center;color:var(--muted);padding:16px">Sem faturas vencidas.</td></tr>';
+  }
+
+  // ── Orçamentos aprovados por faturar — mesma fonte do Follow-up ─────
+  var orcAll=(typeof orcData!=='undefined'&&orcData)?orcData:[];
+  var valorOrc=function(o){ return (typeof orcGetValorTotal==='function')?orcGetValorTotal(o):(o.val||0); };
+  var porFaturar=orcAll.filter(function(o){ return o.st==='Aprovado'; });
+  set('mp-admin-emitir', porFaturar.length);
+  var elEmitir=document.getElementById('mp-admin-emitir-tbody');
+  if(elEmitir){
+    elEmitir.innerHTML = porFaturar.length ? porFaturar.slice(0,10).map(function(o){
+      return '<tr><td>'+(o.num||'—')+'</td><td>'+(o.cli||'—')+'</td><td>'+fmtEuro(valorOrc(o))+'</td></tr>';
+    }).join('') : '<tr><td colspan="3" style="text-align:center;color:var(--muted);padding:16px">Sem orçamentos aprovados por faturar.</td></tr>';
+  }
+
+  // Cabeçalho — mesma saudação por hora já usada na vista comercial.
+  var nome=(typeof CU!=='undefined'&&CU)?CU.name:null;
+  var h=hoje.getHours();
+  var saud = h<12 ? 'Bom dia' : (h<20 ? 'Boa tarde' : 'Boa noite');
+  var primeiro = nome ? String(nome).trim().split(/\s+/)[0] : '';
+  var gEl=document.getElementById('mp-greeting');
+  if(gEl) gEl.textContent = primeiro ? (saud+', '+primeiro+' 👋') : (saud+' 👋');
+  var avEl=document.getElementById('mp-avatar');
+  if(avEl && typeof avHtml==='function') avEl.innerHTML = avHtml(nome||'?', null, 40);
+  var dsEl=document.getElementById('mp-daysummary');
+  if(dsEl){
+    var total=semGuia.length+vencidas.length+porFaturar.length;
+    if(total===0){
+      dsEl.textContent='Sem pendências para hoje. Bom trabalho!';
+    } else {
+      dsEl.innerHTML=
+        '<b>'+semGuia.length+'</b> guia'+(semGuia.length===1?'':'s')+' por emitir'
+        +'<span class="mp-sep">·</span><b>'+vencidas.length+'</b> fatura'+(vencidas.length===1?'':'s')+' vencida'+(vencidas.length===1?'':'s')
+        +'<span class="mp-sep">·</span><b>'+porFaturar.length+'</b> por faturar';
+    }
+  }
+}
+window.renderMeuPainelAdmin=renderMeuPainelAdmin;
+
+// Vista por Departamento de Meu Painel (25/09/2026, pedido da secretária/
+// Carolina — ver comentário no HTML de mp-dept-section). Reúne, para o
+// utilizador atual, todas as subtarefas de Produção que lhe pertencem
+// (obSubtaskPertenceAoUtilizador — mesma regra já usada em
+// obPodeVerOrdemProducao), com a ordem (uniItem) a que cada uma pertence.
+// Fonte única: uniGetItems('fabrica-producao') — a mesma do Kanban de
+// Produção (fpRender) — nunca uma segunda lista paralela.
+function mpColetarSubtasksDoUtilizador(){
+  var CUatual=(typeof CU!=='undefined')?CU:null;
+  if(!CUatual) return [];
+  var itens=(typeof uniGetItems==='function') ? uniGetItems('fabrica-producao') : [];
+  var out=[];
+  itens.forEach(function(item){
+    if(!item || !Array.isArray(item.subtasks)) return;
+    item.subtasks.forEach(function(sRaw){
+      var s=(typeof obNormalizarSubtaskProducao==='function') ? obNormalizarSubtaskProducao(sRaw) : sRaw;
+      if(typeof obSubtaskPertenceAoUtilizador==='function' && obSubtaskPertenceAoUtilizador(s, CUatual)){
+        out.push({ item:item, subtask:s });
+      }
+    });
+  });
+  return out;
+}
+window.mpColetarSubtasksDoUtilizador=mpColetarSubtasksDoUtilizador;
+
+function renderMeuPainelDept(minhas){
+  minhas = minhas || (typeof mpColetarSubtasksDoUtilizador==='function' ? mpColetarSubtasksDoUtilizador() : []);
+  var set=function(id,v){ var e=document.getElementById(id); if(e) e.textContent=v; };
+
+  var abertas=minhas.filter(function(x){ return x.subtask.estado!=='Concluído'; });
+  var fila=abertas.filter(function(x){ return x.subtask.estado==='Pendente'; });
+  var andamento=abertas.filter(function(x){ return x.subtask.estado==='Em curso'; });
+  var urgentes=abertas.filter(function(x){ return x.item.priority==='urgent'||x.item.priority==='high'; });
+
+  var ordenarPorPrevista=function(a,b){ return new Date(a.subtask.dataPrevista||a.item.date||0)-new Date(b.subtask.dataPrevista||b.item.date||0); };
+  fila.sort(ordenarPorPrevista);
+  andamento.sort(ordenarPorPrevista);
+  urgentes.sort(ordenarPorPrevista);
+
+  set('mp-dept-fila', fila.length);
+  set('mp-dept-andamento', andamento.length);
+  set('mp-dept-urgentes', urgentes.length);
+
+  var renderTabela=function(elId, lista){
+    var el=document.getElementById(elId);
+    if(!el) return;
+    el.innerHTML = lista.length ? lista.slice(0,10).map(function(x){
+      var dStr=x.subtask.dataPrevista ? new Date(x.subtask.dataPrevista).toLocaleDateString('pt-PT') : '—';
+      return '<tr style="cursor:pointer" onclick="uniOpen(\'fabrica-producao\','+x.item.id+')">'
+        +'<td>'+(x.item.n||'—')+'</td><td>'+(x.item.client||'—')+'</td><td>'+dStr+'</td></tr>';
+    }).join('') : '<tr><td colspan="3" style="text-align:center;color:var(--muted);padding:16px">Sem obras nesta lista.</td></tr>';
+  };
+  renderTabela('mp-dept-urgentes-tbody', urgentes);
+  renderTabela('mp-dept-andamento-tbody', andamento);
+  renderTabela('mp-dept-fila-tbody', fila);
+
+  // Cabeçalho — mesma saudação por hora já usada nas outras vistas.
+  var hoje=new Date();
+  var nome=(typeof CU!=='undefined'&&CU)?CU.name:null;
+  var h=hoje.getHours();
+  var saud = h<12 ? 'Bom dia' : (h<20 ? 'Boa tarde' : 'Boa noite');
+  var primeiro = nome ? String(nome).trim().split(/\s+/)[0] : '';
+  var gEl=document.getElementById('mp-greeting');
+  if(gEl) gEl.textContent = primeiro ? (saud+', '+primeiro+' 👋') : (saud+' 👋');
+  var avEl=document.getElementById('mp-avatar');
+  if(avEl && typeof avHtml==='function') avEl.innerHTML = avHtml(nome||'?', null, 40);
+  var dsEl=document.getElementById('mp-daysummary');
+  if(dsEl){
+    if(!abertas.length){
+      dsEl.textContent='Sem pendências para hoje. Bom trabalho!';
+    } else {
+      dsEl.innerHTML=
+        '<b>'+urgentes.length+'</b> urgente'+(urgentes.length===1?'':'s')
+        +'<span class="mp-sep">·</span><b>'+andamento.length+'</b> em andamento'
+        +'<span class="mp-sep">·</span><b>'+fila.length+'</b> em fila';
+    }
+  }
+}
+window.renderMeuPainelDept=renderMeuPainelDept;
 
 // ══════════════════════════════════════════════════════════════════
 // MAPA DE VENDAS — leitura independente de ob_orcamentos (não usa
@@ -36823,15 +37387,21 @@ function _hfRenderKpis(rows){
   var naoRecebido = view.filter(function(r){return r.estado==='Não Recebido';});
   var parcial = view.filter(function(r){return r.estado==='Recebido Parcial';});
   var sum = function(arr){ return arr.reduce(function(s,r){return s+(parseFloat(r.total)||0);},0); };
+  // Sem IVA — pedido da secretária, doc "Sugestões CRM - parte 3": "os
+  // valores não batem! O Paulo pega o valor sem IVA". A tabela desta
+  // página já distingue "Valor Líq." (sem IVA) de "Total c/IVA" por linha
+  // (ver HF_COLS), mas os cartões de resumo só mostravam o total com IVA —
+  // sem um valor sem IVA directamente comparável ao lado.
+  var sumLiq = function(arr){ return arr.reduce(function(s,r){return s+(parseFloat(r.valorLiq)||0);},0); };
   var set = function(id, val){ var e=document.getElementById(id); if(e) e.textContent = val; };
   set('hf-kpi-total', _hfFmtEUR(sum(view)));
-  set('hf-kpi-total-sub', view.length+' faturas');
+  set('hf-kpi-total-sub', view.length+' faturas · '+_hfFmtEUR(sumLiq(view))+' sem IVA');
   set('hf-kpi-recebido', _hfFmtEUR(sum(recebido)));
-  set('hf-kpi-recebido-sub', recebido.length+' faturas');
+  set('hf-kpi-recebido-sub', recebido.length+' faturas · '+_hfFmtEUR(sumLiq(recebido))+' sem IVA');
   set('hf-kpi-naorecebido', _hfFmtEUR(sum(naoRecebido)));
-  set('hf-kpi-naorecebido-sub', naoRecebido.length+' faturas');
+  set('hf-kpi-naorecebido-sub', naoRecebido.length+' faturas · '+_hfFmtEUR(sumLiq(naoRecebido))+' sem IVA');
   set('hf-kpi-parcial', _hfFmtEUR(sum(parcial)));
-  set('hf-kpi-parcial-sub', parcial.length+' faturas');
+  set('hf-kpi-parcial-sub', parcial.length+' faturas · '+_hfFmtEUR(sumLiq(parcial))+' sem IVA');
 }
 
 function _hfRenderIndicadores(rows){
