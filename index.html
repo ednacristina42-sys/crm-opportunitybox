@@ -12290,15 +12290,14 @@ function renderUserSwitcher(){
   var _optsComercial = _com.map(function(u){
     return '<option value="'+u.id+'" '+(u.id===CU.id?'selected':'')+'>'+u.name+'</option>';
   }).join('');
-  var _prod = (typeof obVerComoProducao==='function'?obVerComoProducao():[]);
-  var _optsProducao = _prod.map(function(u){
-    return '<option value="'+u.id+'" '+(u.id===CU.id?'selected':'')+'>'+u.name+' ('+u.dept+')</option>';
-  }).join('');
+  // Grupo "Ver como (produção/outros)" removido a pedido da Edna
+  // (26/09/2026: "tire as pessoas abaixo onde tem ver como produção/
+  // outros, não quero isso aí") — obVerComoProducao() fica definida mas
+  // deixa de ser usada aqui.
   sel.innerHTML = '<optgroup label="Admin">'+_optsAdmin+'</optgroup>'+
     (_optsComercial
       ? '<optgroup label="Ver como (comercial)">'+_optsComercial+'</optgroup>'
-      : '<optgroup label="Ver como (comercial)"><option value="" disabled>— adiciona comerciais em RH → Colaboradores —</option></optgroup>')+
-    (_optsProducao ? '<optgroup label="Ver como (produção/outros)">'+_optsProducao+'</optgroup>' : '');
+      : '<optgroup label="Ver como (comercial)"><option value="" disabled>— adiciona comerciais em RH → Colaboradores —</option></optgroup>');
   if(CU.id !== _adminUser.id){
     badge.style.display='flex';
     badgeLabel.textContent = '🔁 Modo: ' + CU.name;
@@ -12308,14 +12307,13 @@ function renderUserSwitcher(){
 }
 window.renderUserSwitcher = renderUserSwitcher;
 
-// Junta USERS + "Ver como" (comercial e produção/outros) — lista completa
-// de quem pode ser selecionado no seletor de utilizadores. Um só ponto,
-// reaproveitado pelos 3 sítios que antes faziam este concat separadamente
-// (evita esquecer obVerComoProducao() nalgum deles).
+// Junta USERS + "Ver como (comercial)" — lista completa de quem pode ser
+// selecionado no seletor de utilizadores. Um só ponto, reaproveitado
+// pelos sítios que antes faziam este concat separadamente. Produção/
+// outros removido (26/09/2026, pedido da Edna) — não entra aqui.
 function obTodosVerComo(){
   return USERS
-    .concat(typeof obVerComoComerciais==='function'?obVerComoComerciais():[])
-    .concat(typeof obVerComoProducao==='function'?obVerComoProducao():[]);
+    .concat(typeof obVerComoComerciais==='function'?obVerComoComerciais():[]);
 }
 window.obTodosVerComo = obTodosVerComo;
 
