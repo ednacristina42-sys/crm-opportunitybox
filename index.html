@@ -7273,6 +7273,27 @@ tbody td{font-size:15px}
   <div class="space-lists" id="sl-fabrica">
     <button class="sl-item" data-action="goPage" data-page="fabrica-producao"><span class="mk-ic">📈</span>Obras</button>
     <button class="sl-item" data-action="goPage" data-page="fabrica-instalacoes"><span class="mk-ic">🔧</span>Instalações</button>
+    <!-- Chão da Fábrica — listas do ClickUp (pedido da Edna, 29/09/2026:
+         "ok preciso disso no sidebar" / "Uma página nova por secção"). Cada
+         botão abre a sua própria página + Kanban de 4 colunas (ver
+         UNI_CHAO_FABRICA_PAGES/UNI_CFG). Distintas das duas de cima (Obras/
+         Instalações), que continuam exatamente como estavam. -->
+    <button class="sl-item" data-action="goPage" data-page="fabrica-entrada-obras"><span class="mk-ic">📦</span>Entrada de Obras</button>
+    <button class="sl-item" data-action="goPage" data-page="fabrica-cnc"><span class="mk-ic">🔧</span>CNC</button>
+    <button class="sl-item" data-action="goPage" data-page="fabrica-impressao-digital"><span class="mk-ic">🖨️</span>Impressão Digital</button>
+    <button class="sl-item" data-action="goPage" data-page="fabrica-modelagem-3d"><span class="mk-ic">📐</span>Modelagem 3D</button>
+    <button class="sl-item" data-action="goPage" data-page="fabrica-impressao-3d"><span class="mk-ic">🖨️</span>Impressão 3D</button>
+    <button class="sl-item" data-action="goPage" data-page="fabrica-laser"><span class="mk-ic">⚡</span>Laser</button>
+    <button class="sl-item" data-action="goPage" data-page="fabrica-serralharia"><span class="mk-ic">🔩</span>Serralharia</button>
+    <button class="sl-item" data-action="goPage" data-page="fabrica-pintura"><span class="mk-ic">🎨</span>Pintura</button>
+    <button class="sl-item" data-action="goPage" data-page="fabrica-eletrificacao"><span class="mk-ic">💡</span>Eletrificação &amp; Acabamentos</button>
+    <button class="sl-item" data-action="goPage" data-page="fabrica-qualidade-expedicao"><span class="mk-ic">✅</span>Qualidade &amp; Expedição</button>
+    <button class="sl-item" data-action="goPage" data-page="fabrica-equipa-montagem-1"><span class="mk-ic">🔨</span>Equipa Montagem 1</button>
+    <button class="sl-item" data-action="goPage" data-page="fabrica-equipa-montagem-2"><span class="mk-ic">🔨</span>Equipa Montagem 2</button>
+    <button class="sl-item" data-action="goPage" data-page="fabrica-montagem-externa"><span class="mk-ic">🌍</span>Montagem Externa</button>
+    <button class="sl-item" data-action="goPage" data-page="fabrica-ordens-producao"><span class="mk-ic">📦</span>Ordens de Produção</button>
+    <button class="sl-item" data-action="goPage" data-page="fabrica-arquivo-obras"><span class="mk-ic">🗂️</span>Arquivo de Obras</button>
+    <button class="sl-item" data-action="goPage" data-page="fabrica-urgentes-atrasos"><span class="mk-ic">🚨</span>Urgentes &amp; Atrasos</button>
     <!-- Colaboradores de Produção (dinâmico, ob_colaboradores · ativos) -->
     <div id="sl-fabrica-colabs"></div>
   </div>
@@ -8532,6 +8553,222 @@ tbody td{font-size:15px}
     <tbody id="inst-tbody"></tbody></table></div>
   </div>
   <div id="inst-board-view" class="uni-kban" style="display:none"></div>
+</div>
+
+<!-- ─── CHÃO DA FÁBRICA — LISTAS DO CLICKUP (16 páginas, pedido da Edna
+     29/09/2026: "ok preciso disso no sidebar" / "Uma página nova por
+     secção"). Template idêntico em todas: cabeçalho + Kanban de 4 colunas
+     genérico (uniRenderKanban via uniRenderSimplePage, ver UNI_CFG /
+     UNI_CHAO_FABRICA_PAGES). Sem vista de Lista — só Quadro, como pedido. -->
+<div id="page-fabrica-entrada-obras" class="app-page">
+  <div class="pg-hdr">
+    <div class="pg-hdr-top">
+      <div class="pg-space-icon" style="background:var(--cf)">C</div>
+      <div class="pg-title">📦 Entrada de Obras</div>
+      <div class="pg-actions">
+        <button class="tbtn y" data-action="openUniModal" data-page="fabrica-entrada-obras">+ Novo</button>
+      </div>
+    </div>
+  </div>
+  <div id="fabrica-entrada-obras-board" class="uni-kban" style="display:flex"></div>
+</div>
+
+<div id="page-fabrica-cnc" class="app-page">
+  <div class="pg-hdr">
+    <div class="pg-hdr-top">
+      <div class="pg-space-icon" style="background:var(--cf)">C</div>
+      <div class="pg-title">🔧 CNC</div>
+      <div class="pg-actions">
+        <button class="tbtn y" data-action="openUniModal" data-page="fabrica-cnc">+ Novo</button>
+      </div>
+    </div>
+  </div>
+  <div id="fabrica-cnc-board" class="uni-kban" style="display:flex"></div>
+</div>
+
+<div id="page-fabrica-impressao-digital" class="app-page">
+  <div class="pg-hdr">
+    <div class="pg-hdr-top">
+      <div class="pg-space-icon" style="background:var(--cf)">C</div>
+      <div class="pg-title">🖨️ Impressão Digital</div>
+      <div class="pg-actions">
+        <button class="tbtn y" data-action="openUniModal" data-page="fabrica-impressao-digital">+ Novo</button>
+      </div>
+    </div>
+  </div>
+  <div id="fabrica-impressao-digital-board" class="uni-kban" style="display:flex"></div>
+</div>
+
+<div id="page-fabrica-modelagem-3d" class="app-page">
+  <div class="pg-hdr">
+    <div class="pg-hdr-top">
+      <div class="pg-space-icon" style="background:var(--cf)">C</div>
+      <div class="pg-title">📐 Modelagem 3D</div>
+      <div class="pg-actions">
+        <button class="tbtn y" data-action="openUniModal" data-page="fabrica-modelagem-3d">+ Novo</button>
+      </div>
+    </div>
+  </div>
+  <div id="fabrica-modelagem-3d-board" class="uni-kban" style="display:flex"></div>
+</div>
+
+<div id="page-fabrica-impressao-3d" class="app-page">
+  <div class="pg-hdr">
+    <div class="pg-hdr-top">
+      <div class="pg-space-icon" style="background:var(--cf)">C</div>
+      <div class="pg-title">🖨️ Impressão 3D</div>
+      <div class="pg-actions">
+        <button class="tbtn y" data-action="openUniModal" data-page="fabrica-impressao-3d">+ Novo</button>
+      </div>
+    </div>
+  </div>
+  <div id="fabrica-impressao-3d-board" class="uni-kban" style="display:flex"></div>
+</div>
+
+<div id="page-fabrica-laser" class="app-page">
+  <div class="pg-hdr">
+    <div class="pg-hdr-top">
+      <div class="pg-space-icon" style="background:var(--cf)">C</div>
+      <div class="pg-title">⚡ Laser</div>
+      <div class="pg-actions">
+        <button class="tbtn y" data-action="openUniModal" data-page="fabrica-laser">+ Novo</button>
+      </div>
+    </div>
+  </div>
+  <div id="fabrica-laser-board" class="uni-kban" style="display:flex"></div>
+</div>
+
+<div id="page-fabrica-serralharia" class="app-page">
+  <div class="pg-hdr">
+    <div class="pg-hdr-top">
+      <div class="pg-space-icon" style="background:var(--cf)">C</div>
+      <div class="pg-title">🔩 Serralharia</div>
+      <div class="pg-actions">
+        <button class="tbtn y" data-action="openUniModal" data-page="fabrica-serralharia">+ Novo</button>
+      </div>
+    </div>
+  </div>
+  <div id="fabrica-serralharia-board" class="uni-kban" style="display:flex"></div>
+</div>
+
+<div id="page-fabrica-pintura" class="app-page">
+  <div class="pg-hdr">
+    <div class="pg-hdr-top">
+      <div class="pg-space-icon" style="background:var(--cf)">C</div>
+      <div class="pg-title">🎨 Pintura</div>
+      <div class="pg-actions">
+        <button class="tbtn y" data-action="openUniModal" data-page="fabrica-pintura">+ Novo</button>
+      </div>
+    </div>
+  </div>
+  <div id="fabrica-pintura-board" class="uni-kban" style="display:flex"></div>
+</div>
+
+<div id="page-fabrica-eletrificacao" class="app-page">
+  <div class="pg-hdr">
+    <div class="pg-hdr-top">
+      <div class="pg-space-icon" style="background:var(--cf)">C</div>
+      <div class="pg-title">💡 Eletrificação &amp; Acabamentos</div>
+      <div class="pg-actions">
+        <button class="tbtn y" data-action="openUniModal" data-page="fabrica-eletrificacao">+ Novo</button>
+      </div>
+    </div>
+  </div>
+  <div id="fabrica-eletrificacao-board" class="uni-kban" style="display:flex"></div>
+</div>
+
+<div id="page-fabrica-qualidade-expedicao" class="app-page">
+  <div class="pg-hdr">
+    <div class="pg-hdr-top">
+      <div class="pg-space-icon" style="background:var(--cf)">C</div>
+      <div class="pg-title">✅ Qualidade &amp; Expedição</div>
+      <div class="pg-actions">
+        <button class="tbtn y" data-action="openUniModal" data-page="fabrica-qualidade-expedicao">+ Novo</button>
+      </div>
+    </div>
+  </div>
+  <div id="fabrica-qualidade-expedicao-board" class="uni-kban" style="display:flex"></div>
+</div>
+
+<div id="page-fabrica-equipa-montagem-1" class="app-page">
+  <div class="pg-hdr">
+    <div class="pg-hdr-top">
+      <div class="pg-space-icon" style="background:var(--cf)">C</div>
+      <div class="pg-title">🔨 Equipa Montagem 1</div>
+      <div class="pg-actions">
+        <button class="tbtn y" data-action="openUniModal" data-page="fabrica-equipa-montagem-1">+ Novo</button>
+      </div>
+    </div>
+  </div>
+  <div id="fabrica-equipa-montagem-1-board" class="uni-kban" style="display:flex"></div>
+</div>
+
+<div id="page-fabrica-equipa-montagem-2" class="app-page">
+  <div class="pg-hdr">
+    <div class="pg-hdr-top">
+      <div class="pg-space-icon" style="background:var(--cf)">C</div>
+      <div class="pg-title">🔨 Equipa Montagem 2</div>
+      <div class="pg-actions">
+        <button class="tbtn y" data-action="openUniModal" data-page="fabrica-equipa-montagem-2">+ Novo</button>
+      </div>
+    </div>
+  </div>
+  <div id="fabrica-equipa-montagem-2-board" class="uni-kban" style="display:flex"></div>
+</div>
+
+<div id="page-fabrica-montagem-externa" class="app-page">
+  <div class="pg-hdr">
+    <div class="pg-hdr-top">
+      <div class="pg-space-icon" style="background:var(--cf)">C</div>
+      <div class="pg-title">🌍 Montagem Externa</div>
+      <div class="pg-actions">
+        <button class="tbtn y" data-action="openUniModal" data-page="fabrica-montagem-externa">+ Novo</button>
+      </div>
+    </div>
+  </div>
+  <div id="fabrica-montagem-externa-board" class="uni-kban" style="display:flex"></div>
+</div>
+
+<!-- Nome truncado no screenshot do ClickUp ("Ordens de Produção (C...)") —
+     a confirmar com a Edna o resto do nome/etiqueta; por agora usa-se
+     "Ordens de Produção". -->
+<div id="page-fabrica-ordens-producao" class="app-page">
+  <div class="pg-hdr">
+    <div class="pg-hdr-top">
+      <div class="pg-space-icon" style="background:var(--cf)">C</div>
+      <div class="pg-title">📦 Ordens de Produção</div>
+      <div class="pg-actions">
+        <button class="tbtn y" data-action="openUniModal" data-page="fabrica-ordens-producao">+ Novo</button>
+      </div>
+    </div>
+  </div>
+  <div id="fabrica-ordens-producao-board" class="uni-kban" style="display:flex"></div>
+</div>
+
+<div id="page-fabrica-arquivo-obras" class="app-page">
+  <div class="pg-hdr">
+    <div class="pg-hdr-top">
+      <div class="pg-space-icon" style="background:var(--cf)">C</div>
+      <div class="pg-title">🗂️ Arquivo de Obras</div>
+      <div class="pg-actions">
+        <button class="tbtn y" data-action="openUniModal" data-page="fabrica-arquivo-obras">+ Novo</button>
+      </div>
+    </div>
+  </div>
+  <div id="fabrica-arquivo-obras-board" class="uni-kban" style="display:flex"></div>
+</div>
+
+<div id="page-fabrica-urgentes-atrasos" class="app-page">
+  <div class="pg-hdr">
+    <div class="pg-hdr-top">
+      <div class="pg-space-icon" style="background:var(--cf)">C</div>
+      <div class="pg-title">🚨 Urgentes &amp; Atrasos</div>
+      <div class="pg-actions">
+        <button class="tbtn y" data-action="openUniModal" data-page="fabrica-urgentes-atrasos">+ Novo</button>
+      </div>
+    </div>
+  </div>
+  <div id="fabrica-urgentes-atrasos-board" class="uni-kban" style="display:flex"></div>
 </div>
 
 <!-- ─── ADMIN AGENDA -->
@@ -12405,7 +12642,11 @@ function obAplicarVisaoComercialSidebar(){
   // a ver os seus próprios itens normalmente.
   var siDesign = document.getElementById('si-design');
   var siFabrica = document.getElementById('si-fabrica');
-  var itensComerciaisEsconde = ['#sl-design [data-page="design-tarefas"]','#sl-design [data-page="design-ficheiros"]','#sl-fabrica [data-page="fabrica-producao"]','#sl-fabrica [data-page="fabrica-instalacoes"]'];
+  var itensComerciaisEsconde = ['#sl-design [data-page="design-tarefas"]','#sl-design [data-page="design-ficheiros"]','#sl-fabrica [data-page="fabrica-producao"]','#sl-fabrica [data-page="fabrica-instalacoes"]']
+    // As 16 páginas novas "Chão da Fábrica" (ClickUp) seguem a mesma regra
+    // defensiva das duas de cima — nunca um "if" manual por página, usa-se
+    // sempre UNI_KANBAN_SIMPLE_PAGES.
+    .concat((typeof UNI_KANBAN_SIMPLE_PAGES!=='undefined' ? UNI_KANBAN_SIMPLE_PAGES : []).map(function(pg){ return '#sl-fabrica [data-page="'+pg+'"]'; }));
   if(comercial){
     if(siDesign) siDesign.style.display = 'none';
     if(siFabrica) siFabrica.style.display = 'none';
@@ -12489,6 +12730,9 @@ window.goPage=function goPage(id){
   if(id==='fabrica-producao')    { try{ fpView('board'); }catch(e){} }
   if(id==='fabrica-instalacoes') { try{ instRender(); }catch(e){} }
   if(id==='admin-agenda')        { try{ agendaRender(); }catch(e){} }
+  // 16 páginas novas "Chão da Fábrica" (ClickUp) — um único ponto de
+  // entrada genérico, nunca mais um "if(id===...)" manual por página.
+  if(typeof UNI_KANBAN_SIMPLE_PAGES!=='undefined' && UNI_KANBAN_SIMPLE_PAGES.indexOf(id)!==-1) { try{ uniRenderSimplePage(id); }catch(e){} }
   if(id==='admin-despesas')      { try{ despTab('crm'); despLoadCRM(); if(!EC_DESPESAS_APP.length) despSyncApp(); }catch(e){} }
   if(id==='admin-rh')            { try{ rhRender(); }catch(e){} }
   if(id==='admin-docs')          { crmDocsRender(); docsTab('crm'); }
@@ -15078,6 +15322,64 @@ var UNI_CFG = {
   }
 };
 
+// ══ CHÃO DA FÁBRICA — LISTAS DO CLICKUP (pedido da Edna, 29/09/2026) ═══
+// "ok preciso disso no sidebar" — Edna escolheu explicitamente "Uma página
+// nova por secção": cada lista do espaço ClickUp "Chão da Fábrica" ganha a
+// sua própria página + Kanban no CRM, tal como fabrica-producao/
+// fabrica-instalacoes já têm. As 16 páginas abaixo são simples de propósito
+// (sem subtarefas/timers/equipa — isso é só de 'fabrica-producao'/
+// 'fabrica-instalacoes'): texto livre para responsável (sem owner_id, sem
+// contas reais em ob_profiles, mesma razão documentada acima em
+// AG_COMERCIAIS_REAIS_IDS), 4 colunas fixas espelhando as 4 colunas
+// confirmadas nos screenshots do ClickUp (ENTRADA DE PROJETO / EM
+// PROGRESSO / ENCOMENDAS / CONCLUÍDO — mesmo quando uma lista em concreto
+// só mostrava 3 no ClickUp, por consistência no CRM).
+// UNI_KANBAN_SIMPLE_PAGES é a fonte única usada pelos vários pontos de
+// integração genéricos (uniRefreshPage, goPage, uniInitAll,
+// obAplicarVisaoComercialSidebar, DEPT_PAGES) — nunca 16 "if" manuais
+// espalhados pelo ficheiro. NÃO inclui as 5 páginas uni* mais antigas
+// (essas continuam com a sua própria lógica dedicada, propositadamente
+// diferente — timers/checklists de produção, equipa de instalação, versões
+// de ficheiros, owner_id real da agenda).
+var UNI_CHAO_FABRICA_PAGES = [
+  {id:'fabrica-entrada-obras',        title:'Entrada de Obras',              icon:'📦'},
+  {id:'fabrica-cnc',                  title:'CNC',                           icon:'🔧'},
+  {id:'fabrica-impressao-digital',    title:'Impressão Digital',             icon:'🖨️'},
+  {id:'fabrica-modelagem-3d',         title:'Modelagem 3D',                  icon:'📐'},
+  {id:'fabrica-impressao-3d',         title:'Impressão 3D',                  icon:'🖨️'},
+  {id:'fabrica-laser',                title:'Laser',                         icon:'⚡'},
+  {id:'fabrica-serralharia',          title:'Serralharia',                   icon:'🔩'},
+  {id:'fabrica-pintura',              title:'Pintura',                       icon:'🎨'},
+  {id:'fabrica-eletrificacao',        title:'Eletrificação & Acabamentos',   icon:'💡'},
+  {id:'fabrica-qualidade-expedicao',  title:'Qualidade & Expedição',         icon:'✅'},
+  {id:'fabrica-equipa-montagem-1',    title:'Equipa Montagem 1',             icon:'🔨'},
+  {id:'fabrica-equipa-montagem-2',    title:'Equipa Montagem 2',             icon:'🔨'},
+  {id:'fabrica-montagem-externa',     title:'Montagem Externa',              icon:'🌍'},
+  // Nome truncado no screenshot do ClickUp ("Ordens de Produção (C...)") —
+  // usa-se "Ordens de Produção" (por instrução explícita, a confirmar com a
+  // Edna mais tarde qual era o resto do nome/etiqueta).
+  {id:'fabrica-ordens-producao',      title:'Ordens de Produção',            icon:'📦'},
+  {id:'fabrica-arquivo-obras',        title:'Arquivo de Obras',              icon:'🗂️'},
+  {id:'fabrica-urgentes-atrasos',     title:'Urgentes & Atrasos',            icon:'🚨'}
+];
+window.UNI_CHAO_FABRICA_PAGES = UNI_CHAO_FABRICA_PAGES;
+var UNI_KANBAN_SIMPLE_PAGES = UNI_CHAO_FABRICA_PAGES.map(function(p){ return p.id; });
+window.UNI_KANBAN_SIMPLE_PAGES = UNI_KANBAN_SIMPLE_PAGES;
+UNI_CHAO_FABRICA_PAGES.forEach(function(p){
+  UNI_CFG[p.id] = {
+    title: p.title, icon: p.icon,
+    statuses: ['Entrada de Projeto','Em Progresso','Encomendas','Concluído'],
+    colors: {'Entrada de Projeto':'#3fcf8e','Em Progresso':'#4d94db','Encomendas':'#d9822b','Concluído':'#27ae60'},
+    kanban: true, nameLabel: 'Trabalho / Produto', dateLabel: 'Prazo', extraRow: false
+  };
+});
+// Chão da Fábrica (dept) ganha acesso de navegação às 16 páginas novas —
+// mesmo portão de acesso já usado por fabrica-producao/fabrica-instalacoes
+// em goPage() (ver DEPT_PAGES, definido mais acima nesta mesma página).
+if(typeof DEPT_PAGES!=='undefined' && DEPT_PAGES['Chão da Fábrica']){
+  DEPT_PAGES['Chão da Fábrica'] = DEPT_PAGES['Chão da Fábrica'].concat(UNI_KANBAN_SIMPLE_PAGES);
+}
+
 var PRIO_COLOR_U = {urgent:'#e74c3c',high:'#e67e22',normal:'#6b6b72',low:'#94a3b8'};
 var PRIO_LABEL_U = {urgent:'Urgente',high:'Alta',normal:'Normal',low:'Baixa'};
 
@@ -15671,7 +15973,23 @@ function uniRefreshPage(page){
   else if(page==='fabrica-producao') fpRender();
   else if(page==='fabrica-instalacoes') instRender();
   else if(page==='admin-agenda') agendaRender();
+  // 16 páginas novas "Chão da Fábrica" (ClickUp) — um único render genérico
+  // (uniRenderSimplePage), nunca mais um "else if" manual por página. Ver
+  // UNI_KANBAN_SIMPLE_PAGES.
+  else if(typeof UNI_KANBAN_SIMPLE_PAGES!=='undefined' && UNI_KANBAN_SIMPLE_PAGES.indexOf(page)!==-1) uniRenderSimplePage(page);
 }
+
+// Render genérico do Kanban de 4 colunas para qualquer página listada em
+// UNI_KANBAN_SIMPLE_PAGES — reaproveita uniRenderKanban()/UNI_CFG, o mesmo
+// motor já usado por design-tarefas/fabrica-instalacoes. O contentor no
+// HTML segue sempre a convenção de id "<page>-board" (ver template das 16
+// páginas em #page-fabrica-*).
+function uniRenderSimplePage(page){
+  const boardEl = document.getElementById(page+'-board');
+  if(!boardEl) return;
+  uniRenderKanban(boardEl, page, uniGetItems(page));
+}
+window.uniRenderSimplePage = uniRenderSimplePage;
 
 // ══ DESIGN TAREFAS ══════════════════════════════════════════════════
 var dtCurrentView = 'board';
@@ -18162,6 +18480,9 @@ function uniInitAll(){
   try{ fpView('board'); }catch(e){ fpRender(); }
   try{ instRender(); }catch(e){}
   try{ agendaRender(); }catch(e){}
+  if(typeof UNI_KANBAN_SIMPLE_PAGES!=='undefined'){
+    UNI_KANBAN_SIMPLE_PAGES.forEach(function(pg){ try{ uniRenderSimplePage(pg); }catch(e){} });
+  }
 }
 
 
@@ -22607,11 +22928,17 @@ window.openUniModal = function(page){
     'admin-agenda':['Hora','09:00']
   };
   var statuses = CFGS[page];
+  // 16 páginas novas "Chão da Fábrica" (ClickUp) e qualquer página uni*
+  // futura que não esteja nestas listas hardcoded: cai sempre em UNI_CFG,
+  // a mesma fonte canónica já usada pelas 5 páginas acima (nunca inventa
+  // estados nem duplica listas por página).
+  if(!statuses && typeof UNI_CFG!=='undefined' && UNI_CFG[page]) statuses = UNI_CFG[page].statuses;
   if(!statuses){ console.warn('openUniModal: pagina desconhecida:', page); return; }
   var m = document.getElementById('uni-modal');
   if(!m){ console.warn('openUniModal: uni-modal nao encontrado'); return; }
   var t=document.getElementById('uni-modal-title');
-  if(t) t.textContent='+ '+(NAMES[page]||page);
+  var _tituloPaginaUni = NAMES[page] || (typeof UNI_CFG!=='undefined' && UNI_CFG[page] && UNI_CFG[page].title) || page;
+  if(t) t.textContent='+ '+_tituloPaginaUni;
   var nl=document.getElementById('uni-name-label');
   if(nl) nl.textContent='Titulo';
   var dl=document.getElementById('uni-date-label');
