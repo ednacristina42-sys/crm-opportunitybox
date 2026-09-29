@@ -11850,6 +11850,27 @@ function obListaResponsaveisAtivos(){
 }
 window.obListaResponsaveisAtivos = obListaResponsaveisAtivos;
 
+// Lista curada de responsáveis para Obras (Chão da Fábrica) — doc
+// "Sugestões CRM - parte 4" (28/09/2026): "Aqui nas Obras, é preciso
+// colocar os colaboradores lá de baixo, Não é preciso todo mundo!".
+// Ao contrário de obListaResponsaveisAtivos() (roster completo — usado
+// nos outros pickers do CRM, esses sem queixa), esta lista é
+// intencionalmente restrita a estes 7 nomes. Casa cada um, por nome
+// normalizado (rhMesmaPessoa — mesma técnica já usada na deduplicação de
+// RH), contra o roster real (obRosterColaboradores: RH + app de pontos)
+// para mostrar o nome completo verdadeiro; quem ainda não está em
+// nenhuma das duas fontes (ex.: Carlos Moreira, freelancer, confirmado
+// pela Edna) aparece pelo nome tal como pedido, sem inventar dados.
+var OB_PRODUCAO_COLABS_CURADOS = ['Paulo Faria','Fabio','Carlos Moreira','Carlos Lopes','Maksim','Rui Teixeira','Bruno'];
+function obColaboradoresProducaoCurada(){
+  var roster = (typeof obRosterColaboradores==='function') ? obRosterColaboradores() : [];
+  return OB_PRODUCAO_COLABS_CURADOS.map(function(alvo){
+    var m = roster.find(function(c){ return typeof rhMesmaPessoa==='function' && rhMesmaPessoa(c.nome, alvo); });
+    return m ? m.nome : alvo;
+  });
+}
+window.obColaboradoresProducaoCurada = obColaboradoresProducaoCurada;
+
 // Produção 2.0 (Fase 2): id estável para um nome de obListaResponsaveisAtivos().
 // Reaproveita os identificadores já existentes no CRM — USERS[].id (login,
 // ex.: 'paulo') e rhColabs[].id (ob_colaboradores, o mesmo id usado em
@@ -15120,14 +15141,12 @@ function openUniModal(page){
     team=(typeof designComerciais!=='undefined'?designComerciais:[]).filter(function(c){return c.ativo;}).map(function(c){return c.nome;});
     if(!team.length) team=(typeof obListaResponsaveisAtivos==='function') ? obListaResponsaveisAtivos() : [];
   } else if(page==='fabrica-producao'){
-    // Correção (24/09/2026, pedido da secretária, doc "Sugestões CRM -
-    // parte 3": "é preciso colocar os colaboradores lá de baixo" —
-    // Paulo, Fábio, Carlos Moreira, Carlos Lopes, Maksim, Rui Teixeira,
-    // Bruno). Este botão ("+ Nova Ordem") nunca teve ramo próprio para
-    // fabrica-producao — caía no else genérico, com comerciais + nomes
-    // fixos sem nada a ver com Chão da Fábrica. obListaResponsaveisAtivos()
-    // é o roster real já usado noutros sítios, nunca uma lista inventada.
-    team=(typeof obListaResponsaveisAtivos==='function') ? obListaResponsaveisAtivos() : [];
+    // Correção (28/09/2026, doc "Sugestões CRM - parte 4"): "Aqui nas
+    // Obras, é preciso colocar os colaboradores lá de baixo, Não é
+    // preciso todo mundo!" — lista curada aos 7 nomes pedidos, não o
+    // roster completo (que tinha entrado por engano na correção anterior,
+    // parte 3, e juntava toda a gente sincronizada do app de pontos).
+    team=(typeof obColaboradoresProducaoCurada==='function') ? obColaboradoresProducaoCurada() : [];
   } else {
     var com=(typeof crmComerciais!=='undefined'?crmComerciais:[]).filter(function(c){return c.ativo;}).map(function(c){return c.nome;});
     team=com.concat(['Ricardo Faria','Pedro Silva','Sérgio Nunes','Luís Cardoso']);
@@ -15192,11 +15211,10 @@ function uniOpen(page, itemId){
   if(page==='admin-agenda'){
     teamList = Object.keys(AG_COMERCIAIS_REAIS_IDS);
   } else if(page==='fabrica-producao'){
-    // Correção (24/09/2026, pedido da secretária): USERS.filter(dept==='Chão
-    // da Fábrica') era uma lista pequena e estática (nunca actualizada),
-    // por isso faltavam colaboradores reais no dropdown. Mesmo roster
-    // dinâmico já usado no "+ Nova Ordem" (openUniModal acima).
-    teamList = (typeof obListaResponsaveisAtivos==='function') ? obListaResponsaveisAtivos() : [];
+    // Correção (28/09/2026, doc "Sugestões CRM - parte 4") — lista curada,
+    // mesma usada no "+ Nova Ordem" (openUniModal acima). Ver comentário
+    // em obColaboradoresProducaoCurada().
+    teamList = (typeof obColaboradoresProducaoCurada==='function') ? obColaboradoresProducaoCurada() : [];
   } else if(page && page.startsWith('design')){
     // Parte 2 (correção Preview) — sem nomes fictícios fixos: designComerciais
     // (RH -> Colaboradores de Design) primeiro; sem ninguém ativo, reutiliza
