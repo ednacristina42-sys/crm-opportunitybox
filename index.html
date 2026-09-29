@@ -7312,6 +7312,11 @@ tbody td{font-size:15px}
       <button class="sl-item" id="ni-dashboard" data-action="goPage" data-page="dashboard"><span class="mk-ic">◈</span>Dashboard CFO</button>
       <button class="sl-item" id="ni-financeiro" data-action="goPage" data-page="financeiro"><span class="mk-ic">💶</span>Financeiro</button>
       <button class="sl-item" id="ni-tesouraria" data-action="goPage" data-page="tesouraria"><span class="mk-ic">🏦</span>Tesouraria</button>
+      <!-- Fase 3 CFO (29/09/2026, pedido da Edna): visão única e filtrável
+           de TODAS as compras/documentos de fornecedor do TOConline (A
+           Pagar+Pagas+Créditos combinados) — nunca substitui as abas da
+           Tesouraria, é uma vista adicional sobre o mesmo snapshot. -->
+      <button class="sl-item" id="ni-compras-fornecedores" data-action="goPage" data-page="compras-fornecedores"><span class="mk-ic">🧾</span>Compras e Fornecedores</button>
       <button class="sl-item" id="ni-historico-faturacao" data-action="goPage" data-page="historico-faturacao"><span class="mk-ic">📜</span>Histórico de Faturação</button>
       <button class="sl-item" data-action="goPage" data-page="admin-analise-vendas"><span class="mk-ic">📊</span>Análise de Vendas</button>
       <!-- Atalho pedido pela Edna (21/09/2026): a mesma página "Mapa de
@@ -9588,6 +9593,109 @@ tbody td{font-size:15px}
     </div>
     </div>
 
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════
+     ADD: Compras e Fornecedores (Fase 3 CFO, 29/09/2026)
+     ══════════════════════════════════════════════════════════════════
+     Pedido da Edna: um ecrã único e filtrável (mês, ano, fornecedor,
+     categoria, estado) com TODOS os documentos de compra do TOConline —
+     A Pagar + Pagas + Créditos combinados numa só tabela, em vez de
+     espalhados por 3 abas separadas da Tesouraria. Página NOVA e
+     aditiva — lê o mesmo TES_COMPRAS_TOCO já hidratado por
+     tesHidratarComprasToco() (ver goPage('tesouraria')/'financeiro'),
+     nunca faz nova sincronização/chamada de rede própria, nunca altera
+     as abas/renders existentes da Tesouraria. Lógica em cfCombinarCompras/
+     cfFiltrarCompras/cfTotais/cfRender (perto de tesRenderFornecedores). -->
+<div id="page-compras-fornecedores" class="app-page">
+  <div class="pg-hdr">
+    <div class="pg-hdr-top">
+      <div class="pg-space-icon" style="background:var(--y)">🧾</div>
+      <div class="pg-title">Compras e Fornecedores</div>
+      <div class="pg-actions">
+        <button class="tbtn" onclick="goPage('tesouraria');setTimeout(function(){try{tocoSincronizarComprasPagamentosReal()}catch(e){}},200)" style="font-size:13px" title="Abre a Tesouraria e sincroniza com o TOConline (mesma sincronização, sem duplicar lógica)">🔄 Sincronizar TOConline</button>
+      </div>
+    </div>
+    <div id="cf-status" style="margin-top:8px"></div>
+  </div>
+  <div class="admin-page">
+
+    <!-- Filtros — todos combinam em AND (cfFiltrarCompras) -->
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:14px;background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px 14px">
+      <div>
+        <label class="form-label" style="font-size:11.5px">Mês</label><br>
+        <select id="cf-filtro-mes" class="form-select" style="font-size:13px" onchange="cfRender()">
+          <option value="">Todos</option>
+          <option value="1">Janeiro</option><option value="2">Fevereiro</option><option value="3">Março</option>
+          <option value="4">Abril</option><option value="5">Maio</option><option value="6">Junho</option>
+          <option value="7">Julho</option><option value="8">Agosto</option><option value="9">Setembro</option>
+          <option value="10">Outubro</option><option value="11">Novembro</option><option value="12">Dezembro</option>
+        </select>
+      </div>
+      <div>
+        <label class="form-label" style="font-size:11.5px">Ano</label><br>
+        <select id="cf-filtro-ano" class="form-select" style="font-size:13px" onchange="cfRender()">
+          <option value="2026">2026</option>
+          <option value="2025">2025</option>
+          <option value="2024">2024</option>
+          <option value="todos">Todos</option>
+        </select>
+      </div>
+      <div>
+        <label class="form-label" style="font-size:11.5px">Fornecedor</label><br>
+        <input id="cf-filtro-fornecedor" class="form-input" style="font-size:13px" placeholder="Pesquisar fornecedor…" list="cf-fornecedores-list" oninput="cfRender()">
+        <datalist id="cf-fornecedores-list"></datalist>
+      </div>
+      <div>
+        <label class="form-label" style="font-size:11.5px">Categoria</label><br>
+        <select id="cf-filtro-categoria" class="form-select" style="font-size:13px" onchange="cfRender()">
+          <option value="">Todas</option>
+          <option value="Matéria-prima / Fornecedores">Matéria-prima / Fornecedores</option>
+          <option value="Veículos & Combustível">Veículos &amp; Combustível</option>
+          <option value="Energia">Energia</option>
+          <option value="Aluguer / Renda">Aluguer / Renda</option>
+          <option value="Terceirização / Serviços">Terceirização / Serviços</option>
+          <option value="Outros">Outros</option>
+          <option value="Não categorizado">Não categorizado</option>
+        </select>
+      </div>
+      <div>
+        <label class="form-label" style="font-size:11.5px">Estado</label><br>
+        <select id="cf-filtro-estado" class="form-select" style="font-size:13px" onchange="cfRender()">
+          <option value="">Todos</option>
+          <option value="Pendente">Pendente</option>
+          <option value="Vencido">Vencido</option>
+          <option value="Pago">Pago</option>
+          <option value="Crédito">Crédito</option>
+        </select>
+      </div>
+      <button class="tbtn" style="font-size:12.5px" onclick="cfLimparFiltros()">✕ Limpar filtros</button>
+    </div>
+
+    <div class="tw" style="margin-bottom:0">
+      <table>
+        <thead>
+          <tr><th>Fornecedor</th><th>Nº Documento</th><th>Categoria</th><th>Emissão</th><th>Vencimento</th><th>Sem IVA</th><th>IVA</th><th>Total</th><th>Estado</th></tr>
+        </thead>
+        <tbody id="cf-tbody">
+          <tr><td colspan="9" style="text-align:center;color:var(--muted);padding:20px">A carregar…</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Rodapé de totais — sempre do conjunto FILTRADO, recalculado a cada
+         mudança de filtro (cfRenderTotais(), chamado por cfRender()). -->
+    <div style="display:flex;gap:24px;flex-wrap:wrap;margin-top:12px;background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px 16px">
+      <div><div style="font-size:11px;color:var(--muted)">Documentos</div><div style="font-size:16px;font-weight:700" id="cf-tot-count">0</div></div>
+      <div><div style="font-size:11px;color:var(--muted)">Total sem IVA</div><div style="font-size:16px;font-weight:700" id="cf-tot-semiva">€0,00</div></div>
+      <div><div style="font-size:11px;color:var(--muted)">Total IVA</div><div style="font-size:16px;font-weight:700" id="cf-tot-iva">€0,00</div></div>
+      <div><div style="font-size:11px;color:var(--muted)">Total (com IVA)</div><div style="font-size:16px;font-weight:700;color:var(--y)" id="cf-tot-total">€0,00</div></div>
+    </div>
+    <div style="font-size:11.5px;color:var(--muted);margin-top:8px">
+      ℹ️ "Sem IVA"/"IVA" aparecem como "—" para documentos ainda pendentes ou créditos (o TOConline não expõe o valor de imposto desses documentos antes de pagos) — nunca um valor inventado.
+    </div>
+
+  </div>
 </div>
 
 <div id="page-historico-faturacao" class="app-page">
@@ -26261,6 +26369,257 @@ function tesRenderTocoComprasStatus(){
 }
 window.tesRenderTocoComprasStatus = tesRenderTocoComprasStatus;
 
+// ══════════════════════════════════════════════════════════════════
+// ADD: Compras e Fornecedores (Fase 3 CFO, 29/09/2026)
+// ══════════════════════════════════════════════════════════════════
+// Pedido da Edna (spec original, item 7 "Filtros"): um ecrã único,
+// filtrável, com TODOS os documentos de compra do TOConline — hoje estão
+// espalhados por 3 abas separadas da Tesouraria (A Pagar/Pagas/Créditos),
+// cada uma só com filtro de ano, sem cruzar mês+fornecedor+categoria+
+// estado ao mesmo tempo. Página NOVA e aditiva — nunca lê/escreve nada
+// que as abas de Tesouraria já usem, nunca altera tesRenderAPagarToco/
+// tesRenderPagasToco/tesRenderCreditosToco nem TES_COMPRAS_TOCO em si.
+// Filtragem 100% no browser sobre o snapshot já hidratado (sem nova
+// chamada de rede/API) — mesmo espírito de tesGetReceber()/tesPassaFiltroAno.
+//
+// Nota sobre "projeto/obra" e "funcionário" (pedidos por Edna no item 7,
+// mas fora do âmbito desta página): documentos de compra do TOConline são
+// faturas de FORNECEDOR, sem qualquer associação a obra/projeto ou a
+// funcionário no modelo de dados (nem aPagar[]/pagas[]/creditos[] trazem
+// esses campos) — nunca inventados aqui. Essa associação, quando existe,
+// vive noutro módulo (Despesas de Funcionários — ver CRM_DESPESAS/
+// despSaveModal(), tabela Supabase 'expenses'): já tem campo "Colaborador"
+// (dm-colab) e um campo "Referência / Projeto" (dm-ref), mas ambos texto
+// livre — sem dropdown ligado a um projeto/orçamento real nem a um
+// colaborador_id estruturado. Fora do âmbito desta tarefa (Fase 3).
+//
+// Combina os 3 buckets do snapshot TOConline numa única lista plana, cada
+// linha já com o seu estado real calculado (nunca reinventa "vencido" —
+// mesma regra pendente>0 && vencimento<hoje já usada em
+// tesRenderAPagarToco/tesRenderResumoGeral) e a categoria do fornecedor
+// (fornCategoriaDe(), Fase 2). "Valor sem IVA"/"IVA": só quando o próprio
+// dado de origem os traz — aPagar[]/creditos[] NUNCA trazem tax_payable
+// (confirmado em supabase/functions/crm-toconline/index.ts, ~linha 1898:
+// só documento/tipo/fornecedor/referencia/dataEmissao/vencimento/total/
+// pendente/estado) — por isso ficam "—" nessas linhas, nunca um valor
+// inventado. pagas[] traz ivaDocumento (proporcional ao valor pago dessa
+// linha, ~linha 1964 da edge function) só quando o documento associado
+// tinha gross_total>0; quando ivaDocumento é null, "sem IVA"/"IVA" ficam
+// "—" também.
+//
+// _dataRef (campo interno, nunca mostrado numa coluna): data usada para o
+// filtro de Mês/Ano de CADA linha — dataEmissao para aPagar[]/creditos[]
+// (é o que essas trazem), dataPagamento para pagas[] (pagas[] não traz a
+// data de emissão do documento original, só a do pagamento — mesma
+// limitação de dados documentada acima para "sem IVA"/"IVA"; nunca
+// fabrica uma "data de emissão" a partir da data de pagamento na COLUNA
+// visível "Data Emissão", que fica "—" para linhas Pago). Filtrar por
+// Mês/Ano aqui é uma decisão deliberadamente diferente da aba "A Pagar"
+// da Tesouraria (essa nunca filtra por ano, de propósito — dívida antiga
+// continua relevante); este ecrã é para NAVEGAR o histórico completo, por
+// isso filtra por Mês/Ano em todas as linhas, incluindo pendentes.
+function cfRound2(v){ return Math.round((parseFloat(v)||0) * 100) / 100; }
+window.cfRound2 = cfRound2;
+
+function cfCombinarCompras(toco){
+  toco = toco || (typeof TES_COMPRAS_TOCO!=='undefined' ? TES_COMPRAS_TOCO : null) || {};
+  var hoje = new Date(); hoje.setHours(0,0,0,0);
+  var categoriaDe = function(f){ return (typeof fornCategoriaDe==='function') ? fornCategoriaDe(f) : 'Não categorizado'; };
+  var linhas = [];
+
+  (toco.aPagar || []).forEach(function(d){
+    var venc = d.vencimento ? new Date(d.vencimento) : null;
+    var vencidoOk = venc && !isNaN(venc.getTime()) && venc < hoje;
+    linhas.push({
+      fornecedor: d.fornecedor || null,
+      documento: d.documento || null,
+      categoria: categoriaDe(d.fornecedor),
+      dataEmissao: d.dataEmissao || null,
+      vencimento: d.vencimento || null,
+      semIva: null, iva: null,
+      total: parseFloat(d.total) || 0,
+      estado: vencidoOk ? 'Vencido' : 'Pendente',
+      _dataRef: d.dataEmissao || null,
+      _origem: 'aPagar'
+    });
+  });
+
+  (toco.creditos || []).forEach(function(c){
+    linhas.push({
+      fornecedor: c.fornecedor || null,
+      documento: c.documento || null,
+      categoria: categoriaDe(c.fornecedor),
+      dataEmissao: c.dataEmissao || null,
+      vencimento: null,
+      semIva: null, iva: null,
+      total: parseFloat(c.valor) || 0,
+      estado: 'Crédito',
+      _dataRef: c.dataEmissao || null,
+      _origem: 'creditos'
+    });
+  });
+
+  (toco.pagas || []).forEach(function(p){
+    var valorPago = parseFloat(p.valorPago) || 0;
+    var temIva = p.ivaDocumento != null;
+    var iva = temIva ? (parseFloat(p.ivaDocumento) || 0) : null;
+    var semIva = temIva ? cfRound2(valorPago - iva) : null;
+    linhas.push({
+      fornecedor: p.fornecedor || null,
+      documento: p.documentoNumero || null,
+      categoria: categoriaDe(p.fornecedor),
+      dataEmissao: null, // pagas[] não traz a data de emissão do documento — nunca fabricada
+      vencimento: null,  // idem
+      semIva: semIva, iva: iva,
+      total: valorPago,
+      estado: 'Pago',
+      _dataRef: p.dataPagamento || null,
+      _origem: 'pagas'
+    });
+  });
+
+  return linhas;
+}
+window.cfCombinarCompras = cfCombinarCompras;
+
+// Filtros combinam-se todos em AND. mes: '' ou 1-12 (número ou string
+// numérica). ano: '' / 'todos' / número. fornecedor: substring
+// case-insensitive. categoria/estado: comparação exacta (undefined/'' =
+// "Todas"/"Todos", nunca exclui nada).
+function cfFiltrarCompras(lista, filtros){
+  filtros = filtros || {};
+  var mes = filtros.mes ? parseInt(filtros.mes, 10) : null;
+  var ano = (filtros.ano && filtros.ano !== 'todos') ? parseInt(filtros.ano, 10) : null;
+  var fornecedorTxt = filtros.fornecedor ? String(filtros.fornecedor).toLowerCase() : '';
+  return (lista || []).filter(function(l){
+    if(mes || ano){
+      var d = l._dataRef ? new Date(l._dataRef) : null;
+      var dOk = d && !isNaN(d.getTime());
+      if(mes && (!dOk || (d.getMonth()+1) !== mes)) return false;
+      if(ano && (!dOk || d.getFullYear() !== ano)) return false;
+    }
+    if(fornecedorTxt && String(l.fornecedor||'').toLowerCase().indexOf(fornecedorTxt) === -1) return false;
+    if(filtros.categoria && l.categoria !== filtros.categoria) return false;
+    if(filtros.estado && l.estado !== filtros.estado) return false;
+    return true;
+  });
+}
+window.cfFiltrarCompras = cfFiltrarCompras;
+
+// Totais do conjunto FILTRADO — nunca do total geral. semIva/iva só somam
+// as linhas onde esse dado existe (nunca conta "—" como 0 disfarçado; mas
+// também nunca deixa de somar total, que existe sempre em todas as
+// linhas).
+function cfTotais(lista){
+  var semIva = 0, iva = 0, total = 0;
+  (lista || []).forEach(function(l){
+    if(l.semIva != null) semIva += l.semIva;
+    if(l.iva != null) iva += l.iva;
+    total += (parseFloat(l.total) || 0);
+  });
+  return { count: (lista||[]).length, semIva: cfRound2(semIva), iva: cfRound2(iva), total: cfRound2(total) };
+}
+window.cfTotais = cfTotais;
+
+function cfFmtOuTraco(v){ return (v==null) ? '—' : fmtEurT(v); }
+
+function cfLerFiltros(){
+  var val = function(id){ var el = document.getElementById(id); return el ? el.value : ''; };
+  return {
+    mes: val('cf-filtro-mes'),
+    ano: val('cf-filtro-ano'),
+    fornecedor: val('cf-filtro-fornecedor'),
+    categoria: val('cf-filtro-categoria'),
+    estado: val('cf-filtro-estado')
+  };
+}
+
+function cfPreencherFornecedoresDatalist(lista){
+  var dl = document.getElementById('cf-fornecedores-list');
+  if(!dl) return;
+  var nomes = {};
+  (lista||[]).forEach(function(l){ if(l.fornecedor) nomes[l.fornecedor] = true; });
+  dl.innerHTML = Object.keys(nomes).sort().map(function(n){
+    return '<option value="'+String(n).replace(/&/g,'&amp;').replace(/"/g,'&quot;')+'">';
+  }).join('');
+}
+
+function cfRender(){
+  var tbody = document.getElementById('cf-tbody');
+  if(!tbody) return; // página ainda não está no DOM (ou não existe) — nunca rebenta
+  var status = document.getElementById('cf-status');
+  if(!tesTocoComprasDisponivel()){
+    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:20px">Ainda sem sincronização TOConline — vá a Tesouraria e clique em "🔄 Sincronizar TOConline".</td></tr>';
+    if(status) status.innerHTML = '';
+    var totaisVazio = cfTotais([]);
+    cfRenderTotais(totaisVazio);
+    return;
+  }
+  if(status) status.innerHTML = '';
+
+  var todas = cfCombinarCompras();
+  cfPreencherFornecedoresDatalist(todas);
+  var filtros = cfLerFiltros();
+  var filtradas = cfFiltrarCompras(todas, filtros);
+
+  // Mais recente primeiro (por _dataRef); linhas sem data ficam no fim.
+  filtradas = filtradas.slice().sort(function(a,b){
+    var da = a._dataRef ? new Date(a._dataRef) : null;
+    var db = b._dataRef ? new Date(b._dataRef) : null;
+    var vaOk = da && !isNaN(da.getTime()), vbOk = db && !isNaN(db.getTime());
+    if(vaOk && vbOk) return db - da;
+    if(vaOk !== vbOk) return vaOk ? -1 : 1;
+    return 0;
+  });
+
+  var corEstado = { 'Vencido':'var(--r)', 'Pendente':'var(--y)', 'Pago':'var(--g)', 'Crédito':'var(--muted)' };
+  tbody.innerHTML = filtradas.map(function(l){
+    var cat = l.categoria;
+    var catBadge = (cat==='Não categorizado')
+      ? '<span style="color:var(--y)">'+cat+' ⚠️</span>'
+      : cat;
+    return '<tr>'
+      + '<td style="font-size:13px">'+(l.fornecedor||'—')+'</td>'
+      + '<td style="font-size:13px">'+(l.documento||'—')+'</td>'
+      + '<td style="font-size:12.5px">'+catBadge+'</td>'
+      + '<td style="font-size:13px">'+tesFmtDataToco(l.dataEmissao)+'</td>'
+      + '<td style="font-size:13px">'+tesFmtDataToco(l.vencimento)+'</td>'
+      + '<td style="font-size:13px">'+cfFmtOuTraco(l.semIva)+'</td>'
+      + '<td style="font-size:13px">'+cfFmtOuTraco(l.iva)+'</td>'
+      + '<td style="font-size:13px;font-weight:700">'+fmtEurT(l.total)+'</td>'
+      + '<td style="font-size:12px;color:'+(corEstado[l.estado]||'var(--muted)')+'">'+l.estado+'</td>'
+    + '</tr>';
+  }).join('') || '<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:20px">Nenhum documento encontrado para estes filtros.</td></tr>';
+
+  cfRenderTotais(cfTotais(filtradas));
+}
+window.cfRender = cfRender;
+
+function cfRenderTotais(t){
+  // Rodapé soma sempre um número real (nunca "—"): mesmo que algumas
+  // linhas individuais não tragam sem-IVA/IVA (aPagar[]/creditos[] — ver
+  // nota acima), a SOMA do que está disponível é um valor verdadeiro, só
+  // parcial — nunca fabricado. cfTotais() já trata null como 0 na soma.
+  var set = function(id, txt){ var el = document.getElementById(id); if(el) el.textContent = txt; };
+  set('cf-tot-count', String(t.count));
+  set('cf-tot-semiva', fmtEurT(t.semIva));
+  set('cf-tot-iva', fmtEurT(t.iva));
+  set('cf-tot-total', fmtEurT(t.total));
+}
+window.cfRenderTotais = cfRenderTotais;
+
+function cfLimparFiltros(){
+  var setVal = function(id, v){ var el = document.getElementById(id); if(el) el.value = v; };
+  var hoje = new Date();
+  setVal('cf-filtro-mes', String(hoje.getMonth()+1));
+  setVal('cf-filtro-ano', String(hoje.getFullYear()));
+  setVal('cf-filtro-fornecedor', '');
+  setVal('cf-filtro-categoria', '');
+  setVal('cf-filtro-estado', '');
+  cfRender();
+}
+window.cfLimparFiltros = cfLimparFiltros;
+
 // Ordem pedida (correção 17/09, parte 1): due_date DESC, empate: date DESC
 // (mais recente primeiro). Nunca filtrado por ano — ver tesRenderAPagarToco.
 // Documentos sem vencimento ficam depois dos que têm (não há "mais recente"
@@ -29734,6 +30093,27 @@ window.goPage = function(id) {
     }, 50);
   }
   if (id === 'tesouraria') { setTimeout(function(){ tesRender(); if(typeof tesHidratarCanonico==='function') tesHidratarCanonico(); if(typeof tesHidratarComprasToco==='function') tesHidratarComprasToco(); if(typeof fornHidratarCategorias==='function') fornHidratarCategorias(); if(typeof sincFinAutoSincronizar==='function') sincFinAutoSincronizar(); }, 50); }
+  // Fase 3 CFO (29/09/2026): "Compras e Fornecedores" — página NOVA e
+  // aditiva, lê o mesmo TES_COMPRAS_TOCO/FORNECEDOR_CATEGORIAS já
+  // hidratados para a Tesouraria (nunca duplica sync própria); define os
+  // filtros por omissão (mês/ano actuais) só na primeira vez que a
+  // página abre nesta sessão, para não apagar uma escolha da Edna ao
+  // navegar para fora e voltar.
+  if (id === 'compras-fornecedores') {
+    setTimeout(function(){
+      var selMes = document.getElementById('cf-filtro-mes');
+      var selAno = document.getElementById('cf-filtro-ano');
+      if(selMes && !selMes.getAttribute('data-inicializado')){
+        var hoje = new Date();
+        selMes.value = String(hoje.getMonth()+1);
+        if(selAno) selAno.value = String(hoje.getFullYear());
+        selMes.setAttribute('data-inicializado','1');
+      }
+      if(typeof cfRender==='function') cfRender();
+      if(typeof tesHidratarComprasToco==='function') tesHidratarComprasToco().then(function(){ if(typeof cfRender==='function') cfRender(); }).catch(function(){});
+      if(typeof fornHidratarCategorias==='function') fornHidratarCategorias().then(function(){ if(typeof cfRender==='function') cfRender(); }).catch(function(){});
+    }, 50);
+  }
   if (id === 'admin-analise-vendas') {
     setTimeout(function(){
       if (typeof avVendedoresFiltrar === 'function') {
