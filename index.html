@@ -10869,10 +10869,13 @@ tbody td{font-size:15px}
           <div class="form-group">
             <label class="form-label">Estado</label>
             <select class="form-select" id="clm-st">
-              <option>Potenciais Clientes</option><option>Contactados</option>
-              <option>Reunião Agendada</option><option>Proposta em Elaboração</option>
-              <option>Proposta Enviada</option><option>Proposta Adjudicada</option>
-              <option>Ganho</option><option>Perdido</option>
+              <option>Entrada de Projeto</option><option>Aguarda Elementos Clientes</option>
+              <option>Revisão de Maquete</option><option>Maquete Concluída</option>
+              <option>Medição/Orçamentação</option><option>Feita/Medição</option>
+              <option>Dados Pendentes</option><option>Orçamento Enviado</option>
+              <option>Em Análise Cliente</option><option>Sem resposta</option>
+              <option>Orçamento Perdido</option><option>Produção/Adjudicação</option>
+              <option>Arquivo</option>
             </select>
           </div>
           <div class="form-group">
@@ -13592,15 +13595,26 @@ function saveCrmCounter(){ crmLeadIdCounter = Math.max(...crmLeads.map(l=>l.id),
 //   Novo Lead -> Potenciais Clientes | Qualificado -> Contactados
 //   Proposta enviada -> Proposta Enviada | Em negociação -> Proposta Enviada
 //   Fecho -> Proposta Adjudicada | Ganho ✓ -> Ganho | Perdido ✗ -> Perdido
+// Colunas do Pipeline Comercial (29/09/2026, doc "Sugestões CRM - parte
+// 4"): "Na área comercial, o Paulo quer que as colunas sejam as mesmas
+// do Click up" — substituem as 8 colunas antigas. Leads existentes são
+// migrados automaticamente (ver CRM_MAPA_ESTADO_LEGADO/
+// crmMigrarEstadoLegado()); Tarefas de Design continua uma página à
+// parte, sem ligação automática a estas colunas de design/maquete.
 var CRM_COLS = [
-  {key:'Potenciais Clientes',      cor:'#6b6b72'},
-  {key:'Contactados',              cor:'#4d94db'},
-  {key:'Reunião Agendada',         cor:'#8e6ad9'},
-  {key:'Proposta em Elaboração',   cor:'#c98a2b'},
-  {key:'Proposta Enviada',         cor:'#d9822b'},
-  {key:'Proposta Adjudicada',      cor:'#3fcf8e'},
-  {key:'Ganho',                    cor:'#27ae60'},
-  {key:'Perdido',                  cor:'#e74c3c'},
+  {key:'Entrada de Projeto',          cor:'#6b6b72'},
+  {key:'Aguarda Elementos Clientes',  cor:'#4d94db'},
+  {key:'Revisão de Maquete',          cor:'#8e6ad9'},
+  {key:'Maquete Concluída',           cor:'#6f5fc4'},
+  {key:'Medição/Orçamentação',        cor:'#c98a2b'},
+  {key:'Feita/Medição',               cor:'#b97a24'},
+  {key:'Dados Pendentes',             cor:'#d9a02b'},
+  {key:'Orçamento Enviado',           cor:'#d9822b'},
+  {key:'Em Análise Cliente',          cor:'#4dc9db'},
+  {key:'Sem resposta',                cor:'#8a8a92'},
+  {key:'Orçamento Perdido',           cor:'#e74c3c'},
+  {key:'Produção/Adjudicação',        cor:'#27ae60'},
+  {key:'Arquivo',                     cor:'#4a4a52'},
 ];
 
 // ── DRAG & DROP ──────────────────────────────────────────
@@ -13639,7 +13653,7 @@ function crmRegistarTransicaoEstado(lead, faseNova, evento, origem, motivo){
   var faseAnterior = lead.st;
   lead.st = faseNova;
   lead.dt = new Date().toLocaleDateString('pt-PT',{day:'2-digit',month:'2-digit',year:'numeric'});
-  if((faseNova==='Ganho'||faseNova==='Perdido') && !lead.dtFecho){
+  if(FU_ESTADOS_LEAD_TERMINAIS.indexOf(faseNova)!==-1 && !lead.dtFecho){
     lead.dtFecho = new Date().toISOString().split('T')[0];
   }
   var autor = (typeof CU!=='undefined'&&CU&&CU.name) ? CU.name : 'Sistema';
@@ -13648,9 +13662,9 @@ function crmRegistarTransicaoEstado(lead, faseNova, evento, origem, motivo){
     extra: { faseAnterior: faseAnterior, faseNova: faseNova, evento: evento, motivo: motivo || null }
   });
   if(typeof crmRegistarOperacaoLead==='function') crmRegistarOperacaoLead('upsert', lead.id);
-  // Bloco E — negócio fechado (Ganho ou Perdido) nunca deixa um follow-up
-  // "vivo" para trás.
-  if((faseNova==='Ganho'||faseNova==='Perdido') && typeof fuEncerrarFollowUpsDe==='function'){
+  // Bloco E — negócio fechado (qualquer estado terminal) nunca deixa um
+  // follow-up "vivo" para trás.
+  if(FU_ESTADOS_LEAD_TERMINAIS.indexOf(faseNova)!==-1 && typeof fuEncerrarFollowUpsDe==='function'){
     fuEncerrarFollowUpsDe({ leadId: lead.id }, 'Lead chegou a "'+faseNova+'"');
   }
   return true;
@@ -13670,15 +13684,23 @@ function crmRegistarTransicaoEstado(lead, faseNova, evento, origem, motivo){
 // dispara as DUAS transições em sequência (adjudicacao_confirmada, depois
 // fecho_comercial_confirmado) — cada uma fica registada como uma entrada
 // própria no histórico, nunca uma escrita só.
+// Atualizado 29/09/2026 (doc "Sugestões CRM - parte 4", 13 colunas
+// novas do Pipeline) — mesmos eventos/gatilhos de sempre (nenhum sítio
+// que dispara crmAvaliarTransicaoAutomatica('lead',...) precisou de
+// mudar), só os estados-alvo passam a apontar para as colunas novas.
+// 'Revisão de Maquete'/'Maquete Concluída'/'Feita/Medição'/'Em Análise
+// Cliente'/'Sem resposta' não têm gatilho automático próprio — avançam
+// por arrasto manual no Kanban, tal como 'Ganho'/'Perdido' já podiam
+// antes.
 var CRM_TRANSICOES_AUTOMATICAS = {
   lead: {
-    contato_registado:           { de: ['Potenciais Clientes'], para: 'Contactados' },
-    reuniao_agendada:            { de: ['Potenciais Clientes','Contactados'], para: 'Reunião Agendada' },
-    orcamento_criado:            { de: ['Potenciais Clientes','Contactados','Reunião Agendada'], para: 'Proposta em Elaboração' },
-    proposta_enviada:            { de: ['Potenciais Clientes','Contactados','Reunião Agendada','Proposta em Elaboração'], para: 'Proposta Enviada' },
-    adjudicacao_confirmada:      { de: null, para: 'Proposta Adjudicada' },
-    fecho_comercial_confirmado:  { de: ['Proposta Adjudicada'], para: 'Ganho' },
-    marcado_perdido:             { de: null, para: 'Perdido' }
+    contato_registado:           { de: ['Entrada de Projeto'], para: 'Aguarda Elementos Clientes' },
+    reuniao_agendada:            { de: ['Entrada de Projeto','Aguarda Elementos Clientes','Revisão de Maquete','Maquete Concluída'], para: 'Medição/Orçamentação' },
+    orcamento_criado:            { de: ['Entrada de Projeto','Aguarda Elementos Clientes','Revisão de Maquete','Maquete Concluída','Medição/Orçamentação','Feita/Medição'], para: 'Dados Pendentes' },
+    proposta_enviada:            { de: ['Entrada de Projeto','Aguarda Elementos Clientes','Revisão de Maquete','Maquete Concluída','Medição/Orçamentação','Feita/Medição','Dados Pendentes'], para: 'Orçamento Enviado' },
+    adjudicacao_confirmada:      { de: null, para: 'Produção/Adjudicação' },
+    fecho_comercial_confirmado:  { de: ['Produção/Adjudicação'], para: 'Produção/Adjudicação' },
+    marcado_perdido:             { de: null, para: 'Orçamento Perdido' }
   },
   // Bloco B — Fase 2 (Fecho Financeiro), sobre o orçamento adjudicado.
   // 'de': null = qualquer fase (inclui ainda não iniciada/undefined).
@@ -13757,7 +13779,7 @@ async function crmAvaliarTransicaoAutomatica(entidade, evento, contexto){
     var lead = crmLeads.find(function(l){ return l && l.id===contexto.leadId; });
     if(!lead) return null;
     var faseAnteriorLead = lead.st;
-    var terminal = (faseAnteriorLead==='Ganho'||faseAnteriorLead==='Perdido');
+    var terminal = FU_ESTADOS_LEAD_TERMINAIS.indexOf(faseAnteriorLead)!==-1;
     if(terminal) return null; // negócio fechado — só o drag manual reabre, de propósito
     if(defLead.de && defLead.de.indexOf(faseAnteriorLead)===-1) return null; // fora de ordem, não força
     var aplicadoLead = crmRegistarTransicaoEstado(lead, defLead.para, evento, contexto.origem || 'automatico', contexto.motivo);
@@ -13834,20 +13856,42 @@ var CRM_MAPA_ESTADO_LEGADO = {
   'Em negociação': 'Proposta Enviada',
   'Fecho': 'Proposta Adjudicada',
   'Ganho ✓': 'Ganho',
-  'Perdido ✗': 'Perdido'
+  'Perdido ✗': 'Perdido',
+  // 29/09/2026 (doc "Sugestões CRM - parte 4") — as 8 colunas antigas
+  // tornam-se elas próprias "legado" perante as 13 novas. Encadeia com
+  // as entradas acima (ex.: 'Novo Lead' -> 'Potenciais Clientes' ->
+  // 'Entrada de Projeto') — crmMigrarEstadoLegado() resolve a cadeia
+  // completa numa só passagem, nunca fica a meio.
+  'Potenciais Clientes': 'Entrada de Projeto',
+  'Contactados': 'Aguarda Elementos Clientes',
+  'Reunião Agendada': 'Medição/Orçamentação',
+  'Proposta em Elaboração': 'Dados Pendentes',
+  'Proposta Enviada': 'Orçamento Enviado',
+  'Proposta Adjudicada': 'Produção/Adjudicação',
+  'Ganho': 'Produção/Adjudicação',
+  'Perdido': 'Orçamento Perdido'
 };
 function crmMigrarEstadoLegado(){
   var mudou = false;
   (crmLeads||[]).forEach(function(l){
-    if(l && CRM_MAPA_ESTADO_LEGADO.hasOwnProperty(l.st)){
-      var novo = CRM_MAPA_ESTADO_LEGADO[l.st];
-      crmAddAtividade(l.id, 'estado', `Migração Fase 1: "${l.st}" -> "${novo}"`, 'Sistema', {
-        origem: 'migracao_fase1', extra: { faseAnterior: l.st, faseNova: novo, evento: 'migracao_legado' }
-      });
-      l.st = novo;
-      if(typeof crmRegistarOperacaoLead==='function') crmRegistarOperacaoLead('upsert', l.id);
-      mudou = true;
+    if(!l || !CRM_MAPA_ESTADO_LEGADO.hasOwnProperty(l.st)) return;
+    var original = l.st;
+    var novo = l.st;
+    // Resolve a cadeia completa (ex.: 'Novo Lead' -> ... -> 'Entrada de
+    // Projeto') numa só passagem — limite de segurança para nunca entrar
+    // em ciclo, mesmo que o mapa venha a ter um erro de circularidade.
+    var saltos = 0;
+    while(CRM_MAPA_ESTADO_LEGADO.hasOwnProperty(novo) && saltos < 10){
+      novo = CRM_MAPA_ESTADO_LEGADO[novo];
+      saltos++;
     }
+    if(novo === original) return;
+    crmAddAtividade(l.id, 'estado', `Migração Fase 1: "${original}" -> "${novo}"`, 'Sistema', {
+      origem: 'migracao_fase1', extra: { faseAnterior: original, faseNova: novo, evento: 'migracao_legado' }
+    });
+    l.st = novo;
+    if(typeof crmRegistarOperacaoLead==='function') crmRegistarOperacaoLead('upsert', l.id);
+    mudou = true;
   });
   if(mudou && typeof saveCrmLeads==='function') saveCrmLeads();
   return mudou;
@@ -13861,7 +13905,7 @@ function crmDrop(e, colKey){
     let motivo = null;
     // Motivo de perda — pedido ANTES de aplicar a transição, para poder
     // ir junto no mesmo registo de histórico (crmRegistarTransicaoEstado).
-    if(colKey==='Perdido'){
+    if(colKey==='Orçamento Perdido'){
       const motivos = ['Preço alto','Sem resposta do cliente','Concorrência','Projecto cancelado','Prazo incompatível','Outro'];
       const opcoes = motivos.map((m,i)=>`${i+1}. ${m}`).join('\n');
       const esc = prompt('❌ Motivo de perda:\n\n'+opcoes+'\n\nEscreve o número ou motivo:');
@@ -13951,7 +13995,7 @@ function crmCalcScore(l){
 // Funil: índice de cada coluna para calcular progresso
 const CRM_COL_IDX = {};
 CRM_COLS.forEach((c,i)=>CRM_COL_IDX[c.key]=i);
-const CRM_COL_PROGRESS = {'Potenciais Clientes':10,'Contactados':20,'Reunião Agendada':35,'Proposta em Elaboração':50,'Proposta Enviada':65,'Proposta Adjudicada':85,'Ganho':100,'Perdido':0};
+const CRM_COL_PROGRESS = {'Entrada de Projeto':5,'Aguarda Elementos Clientes':12,'Revisão de Maquete':20,'Maquete Concluída':30,'Medição/Orçamentação':40,'Feita/Medição':50,'Dados Pendentes':55,'Orçamento Enviado':65,'Em Análise Cliente':75,'Sem resposta':75,'Orçamento Perdido':0,'Produção/Adjudicação':100,'Arquivo':0};
 
 function renderCRMKanban(elId){
   const el = document.getElementById(elId);
@@ -13989,7 +14033,7 @@ function renderCRMKanban(elId){
           if(l.dtInicio){ diasParse = new Date(l.dtInicio); }
           else if(l.dt){ const p=l.dt.split('/'); if(p.length===3) diasParse = new Date(p[2],p[1]-1,p[0]); }
           const diasDesde = diasParse ? Math.max(0,Math.round((new Date()-diasParse)/86400000)) : null;
-          const isAtivo = !['Ganho','Perdido'].includes(l.st);
+          const isAtivo = FU_ESTADOS_LEAD_TERMINAIS.indexOf(l.st)===-1;
           const isSLA = isAtivo && diasDesde!==null && diasDesde>7;
 
           const tempoBadge = diasDesde!==null ? `<span style="font-size:11px;color:${isSLA?'#e74c3c':'var(--muted)'};background:${isSLA?'rgba(231,76,60,.1)':'var(--bg3)'};border-radius:4px;padding:1px 6px;${isSLA?'border:1px solid rgba(231,76,60,.25)':''}">há ${diasDesde}d</span>` : '';
@@ -14108,10 +14152,10 @@ function crmRenderAll(){
 }
 
 function crmUpdateStats(){
-  const ativos = crmLeads.filter(l=>!['Ganho','Perdido'].includes(l.st));
+  const ativos = crmLeads.filter(l=>FU_ESTADOS_LEAD_TERMINAIS.indexOf(l.st)===-1);
   const pip = ativos.reduce((s,l)=>s+l.val,0);
-  const ganhos = crmLeads.filter(l=>l.st==='Ganho').length;
-  const total = crmLeads.filter(l=>['Ganho','Perdido'].includes(l.st)).length;
+  const ganhos = crmLeads.filter(l=>l.st==='Produção/Adjudicação').length;
+  const total = crmLeads.filter(l=>FU_ESTADOS_LEAD_TERMINAIS.indexOf(l.st)!==-1).length;
   const conv = total ? Math.round(ganhos/total*100) : 0;
   const set = (id,v)=>{ const el=document.getElementById(id); if(el)el.textContent=v; };
   set('crm-total', ativos.length);
@@ -14130,9 +14174,9 @@ function crmUpdateStats(){
   });
   set('crm-parados', parados.length);
 
-  // Top Comercial: quem gerou mais receita em leads Ganhos ✓ (não quem tem mais leads em aberto)
+  // Top Comercial: quem gerou mais receita em leads Adjudicados (não quem tem mais leads em aberto)
   const receitaPorComercial = {};
-  crmLeads.filter(l=>l.st==='Ganho').forEach(l=>{ if(l.ass) receitaPorComercial[l.ass]=(receitaPorComercial[l.ass]||0)+(l.val||0); });
+  crmLeads.filter(l=>l.st==='Produção/Adjudicação').forEach(l=>{ if(l.ass) receitaPorComercial[l.ass]=(receitaPorComercial[l.ass]||0)+(l.val||0); });
   const top = Object.entries(receitaPorComercial).sort((a,b)=>b[1]-a[1])[0];
   set('crm-top-comercial', top ? `${top[0]} (${fmt(top[1])})` : '—');
 }
@@ -14154,7 +14198,7 @@ function crmOpenNew(stInicial){
   document.getElementById('clm-nota').value = '';
   const fp=document.getElementById('clm-files-preview');if(fp)fp.innerHTML='📎 Clica para anexar (imagens, PDF, AI, PSD...)';
   const fi=document.getElementById('clm-file-input');if(fi)fi.value='';
-  document.getElementById('clm-st').value = stInicial||'Potenciais Clientes';
+  document.getElementById('clm-st').value = stInicial||'Entrada de Projeto';
   const prioN=document.getElementById('clm-prioridade'); if(prioN) prioN.value='';
   // data de início automática
   const dtInicio=document.getElementById('clm-dt-inicio');
@@ -14241,7 +14285,7 @@ function crmOpenEdit(id){
   // Motivo de perda (apenas se já estava perdido)
   const motivoWrap = document.getElementById('clm-motivo-wrap');
   const motivoSel  = document.getElementById('clm-motivo');
-  if(motivoWrap){ motivoWrap.style.display = lead.st==='Perdido'?'block':'none'; }
+  if(motivoWrap){ motivoWrap.style.display = lead.st==='Orçamento Perdido'?'block':'none'; }
   if(motivoSel)  motivoSel.value = lead.motivoPerda||'';
 
   m.classList.add('open');
@@ -14254,12 +14298,17 @@ function crmSugerirProximoPasso(lead){
   else if(lead.dt){ const p=lead.dt.split('/'); if(p.length===3) base = new Date(p[2],p[1]-1,p[0]); }
   if(!base) return null;
   const dias = Math.round((new Date()-base)/86400000);
-  if(lead.st==='Potenciais Clientes' && dias>3) return 'Sugestão: Registar o primeiro contacto com este lead.';
-  if(lead.st==='Contactados' && dias>5) return 'Sugestão: Agendar reunião ou avançar para proposta.';
-  if(lead.st==='Reunião Agendada' && dias>7) return 'Sugestão: Confirmar reunião ou avançar para proposta.';
-  if(lead.st==='Proposta em Elaboração' && dias>5) return 'Sugestão: Concluir e enviar a proposta.';
-  if(lead.st==='Proposta Enviada' && dias>7) return 'Sugestão: Fazer follow-up.';
-  if(lead.st==='Proposta Adjudicada' && dias>3) return 'Sugestão: Confirmar adiantamento e fechar.';
+  if(lead.st==='Entrada de Projeto' && dias>3) return 'Sugestão: Registar o primeiro contacto com este lead.';
+  if(lead.st==='Aguarda Elementos Clientes' && dias>5) return 'Sugestão: Pedir novamente os elementos em falta ao cliente.';
+  if(lead.st==='Revisão de Maquete' && dias>5) return 'Sugestão: Concluir a revisão da maquete.';
+  if(lead.st==='Maquete Concluída' && dias>3) return 'Sugestão: Avançar para medição/orçamentação.';
+  if(lead.st==='Medição/Orçamentação' && dias>7) return 'Sugestão: Confirmar medição ou avançar para orçamentação.';
+  if(lead.st==='Feita/Medição' && dias>5) return 'Sugestão: Preparar o orçamento com os dados da medição.';
+  if(lead.st==='Dados Pendentes' && dias>5) return 'Sugestão: Resolver os dados em falta e concluir o orçamento.';
+  if(lead.st==='Orçamento Enviado' && dias>7) return 'Sugestão: Fazer follow-up.';
+  if(lead.st==='Em Análise Cliente' && dias>7) return 'Sugestão: Contactar o cliente para saber a decisão.';
+  if(lead.st==='Sem resposta' && dias>5) return 'Sugestão: Nova tentativa de contacto ou marcar como perdido.';
+  if(lead.st==='Produção/Adjudicação' && dias>3) return 'Sugestão: Confirmar adiantamento e fechar.';
   return null;
 }
 
@@ -14272,7 +14321,7 @@ function crmPopulateAssSelect(selNome){
 function crmRenderMktBar(){
   const leads = crmLeads||[];
   // Ciclo médio: apenas leads com dtInicio e dtFecho
-  const fechados = leads.filter(l=>l.dtInicio&&l.dtFecho&&(l.st==='Ganho'||l.st==='Perdido'));
+  const fechados = leads.filter(l=>l.dtInicio&&l.dtFecho&&FU_ESTADOS_LEAD_TERMINAIS.indexOf(l.st)!==-1);
   const cicloMedio = fechados.length
     ? Math.round(fechados.reduce((s,l)=>{
         const d=Math.max(0,Math.round((new Date(l.dtFecho)-new Date(l.dtInicio))/86400000));
@@ -14284,7 +14333,7 @@ function crmRenderMktBar(){
 
   // Taxa de conversão
   const total=leads.length;
-  const ganhos=leads.filter(l=>l.st==='Ganho').length;
+  const ganhos=leads.filter(l=>l.st==='Produção/Adjudicação').length;
   const taxaEl=document.getElementById('mkt-taxa-conv');
   if(taxaEl) taxaEl.textContent=total?Math.round(ganhos/total*100)+'%':'—';
 
@@ -14300,9 +14349,9 @@ function crmRenderMktBar(){
     ).join(''):'<span style="color:var(--muted);font-style:italic">Sem dados de origem</span>';
   }
 
-  // Por estado
-  const stCols=['Potenciais Clientes','Contactados','Reunião Agendada','Proposta em Elaboração','Proposta Enviada','Proposta Adjudicada','Ganho','Perdido'];
-  const stColors=['var(--muted)','var(--b)','var(--a)','var(--y)','var(--p)','var(--g)','var(--r)'];
+  // Por estado — reaproveita CRM_COLS (fonte única das colunas do Pipeline), nunca uma 2ª lista.
+  const stCols=CRM_COLS.map(c=>c.key);
+  const stColors=CRM_COLS.map(c=>c.cor);
   const stMap={};
   leads.forEach(l=>stMap[l.st]=(stMap[l.st]||0)+1);
   const stEl=document.getElementById('mkt-por-estado');
@@ -14346,7 +14395,7 @@ function crmCalcCiclo(){
     if(e.target.id==='clm-dt-inicio'||e.target.id==='clm-dt-fecho') crmCalcCiclo();
     if(e.target.id==='clm-st'){
       const mw = document.getElementById('clm-motivo-wrap');
-      if(mw) mw.style.display = e.target.value==='Perdido'?'block':'none';
+      if(mw) mw.style.display = e.target.value==='Orçamento Perdido'?'block':'none';
     }
   });
 })();
@@ -14358,8 +14407,8 @@ function crmSaveLead(){
   const stVal = document.getElementById('clm-st').value;
   const dtInicioVal = document.getElementById('clm-dt-inicio')?.value || new Date().toISOString().split('T')[0];
   let dtFechoVal = document.getElementById('clm-dt-fecho')?.value || '';
-  // Auto-preenche data de fecho ao marcar Ganho/Perdido
-  if((stVal==='Ganho'||stVal==='Perdido') && !dtFechoVal){
+  // Auto-preenche data de fecho ao marcar um estado terminal
+  if(FU_ESTADOS_LEAD_TERMINAIS.indexOf(stVal)!==-1 && !dtFechoVal){
     dtFechoVal = new Date().toISOString().split('T')[0];
     const dtFEl=document.getElementById('clm-dt-fecho'); if(dtFEl) dtFEl.value=dtFechoVal;
   }
@@ -14694,7 +14743,7 @@ function crmToggleHistCampos(){
 function crmUpdateFunnel(){
   const el = document.getElementById('crm-funnel-bar');
   if(!el) return;
-  const ativos = CRM_COLS.filter(c=>!['Ganho','Perdido'].includes(c.key));
+  const ativos = CRM_COLS.filter(c=>FU_ESTADOS_LEAD_TERMINAIS.indexOf(c.key)===-1);
   let html = '';
   ativos.forEach((col, i)=>{
     const count = crmLeads.filter(l=>l.st===col.key).length;
@@ -14713,15 +14762,17 @@ function crmUpdateFunnel(){
       </div>`;
     }
   });
-  // Ganhos / Perdidos final
-  const ganhos = crmLeads.filter(l=>l.st==='Ganho').length;
-  const perdidos = crmLeads.filter(l=>l.st==='Perdido').length;
+  // Adjudicado / Perdido / Arquivo final
+  const ganhos = crmLeads.filter(l=>l.st==='Produção/Adjudicação').length;
+  const perdidos = crmLeads.filter(l=>l.st==='Orçamento Perdido').length;
+  const arquivados = crmLeads.filter(l=>l.st==='Arquivo').length;
   const total = ganhos+perdidos;
   const taxaFinal = total ? Math.round(ganhos/total*100) : 0;
   html += `<div class="cfb-arrow"><div class="cfb-arrow-icon">›</div>${total>0?`<div class="cfb-arrow-pct">${taxaFinal}%</div>`:''}</div>
     <div style="display:flex;gap:8px;align-items:center;padding:4px 8px">
-      <div class="cfb-stage"><div class="cfb-count" style="color:#27ae60">${ganhos}</div><div class="cfb-label">Ganho</div></div>
+      <div class="cfb-stage"><div class="cfb-count" style="color:#27ae60">${ganhos}</div><div class="cfb-label">Adjudicação</div></div>
       <div class="cfb-stage"><div class="cfb-count" style="color:#e74c3c">${perdidos}</div><div class="cfb-label">Perdido</div></div>
+      <div class="cfb-stage"><div class="cfb-count" style="color:#4a4a52">${arquivados}</div><div class="cfb-label">Arquivo</div></div>
     </div>`;
   el.innerHTML = html;
 }
@@ -19881,15 +19932,14 @@ async function crmSubmeterAdjudicacao(){
     crmAvaliarTransicaoAutomatica('lead', 'adjudicacao_confirmada', { leadId: leadId, origem: 'adjudicacao' });
     crmAvaliarTransicaoAutomatica('lead', 'fecho_comercial_confirmado', { leadId: leadId, origem: 'adjudicacao' });
   } else if(typeof crmRegistarTransicaoEstado==='function'){
-    crmRegistarTransicaoEstado(lead, 'Proposta Adjudicada', 'adjudicacao_confirmada', 'adjudicacao', null);
-    crmRegistarTransicaoEstado(lead, 'Ganho', 'fecho_comercial_confirmado', 'adjudicacao', null);
+    crmRegistarTransicaoEstado(lead, 'Produção/Adjudicação', 'adjudicacao_confirmada', 'adjudicacao', null);
     if(typeof saveCrmLeads==='function') saveCrmLeads();
     if(typeof crmRenderAll==='function') crmRenderAll();
   }
 
   // Refrescar o modal, se ainda estiver a editar esta lead
   if(typeof crmEditingId!=='undefined' && crmEditingId===leadId){
-    const stEl = document.getElementById('clm-st'); if(stEl) stEl.value = 'Ganho';
+    const stEl = document.getElementById('clm-st'); if(stEl) stEl.value = 'Produção/Adjudicação';
     const dtFEl = document.getElementById('clm-dt-fecho'); if(dtFEl) dtFEl.value = lead.dtFecho;
     if(typeof crmRenderTimeline==='function') crmRenderTimeline(leadId);
     if(typeof crmRenderOrcLink==='function') crmRenderOrcLink(leadId);
@@ -29052,7 +29102,7 @@ document.addEventListener('click', function(e){
       var fi=document.getElementById('clm-file-input'); if(fi) fi.click(); break;
     case 'alertMsg': alert(ms); break;
     case 'openUniModal': safe(openUniModal,[pg]); break;
-    case 'crmOpenNew': safe(crmOpenNew,[col||'Potenciais Clientes']); break;
+    case 'crmOpenNew': safe(crmOpenNew,[col||'Entrada de Projeto']); break;
     case 'pickColor': safe(pickColor,[co]); break;
     case 'crmSelectCor': safe(crmSelectCor,[co,el]); break;
     case 'designSelectCor': safe(designSelectCor,[co,el]); break;
@@ -32707,7 +32757,7 @@ function obCriarClienteDeLead(lead){
     // Antes de gravar: leads ganhos ainda sem cliente criado
     try{
       (crmLeads||[]).forEach(function(l){
-        if(l.st==='Ganho'&&!l._clienteCriado){ l._clienteCriado=true; obCriarClienteDeLead(l); }
+        if(l.st==='Produção/Adjudicação'&&!l._clienteCriado){ l._clienteCriado=true; obCriarClienteDeLead(l); }
       });
     }catch(e){}
     _orig();
@@ -32747,7 +32797,7 @@ function obLeadUltimaAtividade(l){
 function obLeadsParados(diasLimite){
   diasLimite=diasLimite||OB_DIAS_LEAD_PARADO;
   return (crmLeads||[])
-    .filter(function(l){ return ['Ganho','Perdido'].indexOf(l.st)===-1; })
+    .filter(function(l){ return FU_ESTADOS_LEAD_TERMINAIS.indexOf(l.st)===-1; })
     .map(function(l){ var dias=obDiasEntre(obLeadUltimaAtividade(l)); return {lead:l, dias:dias}; })
     .filter(function(x){ return x.dias!==null&&x.dias>diasLimite; })
     .sort(function(a,b){ return b.dias-a.dias; });
@@ -32757,7 +32807,7 @@ function obAcoesAgendadas(){
   var hoje=new Date().toISOString().split('T')[0];
   var out={hoje:[],atraso:[]};
   (crmLeads||[]).forEach(function(l){
-    if(['Ganho','Perdido'].indexOf(l.st)!==-1) return;
+    if(FU_ESTADOS_LEAD_TERMINAIS.indexOf(l.st)!==-1) return;
     var pa=l.proximaAcao;
     if(!pa||!pa.data) return;
     if(pa.data===hoje) out.hoje.push({lead:l,pa:pa});
@@ -35261,7 +35311,12 @@ function fuPrioridade(dias){
 
 // Estados terminais fora do âmbito do follow-up — nenhum estado novo,
 // só reutiliza os já existentes no pipeline (crmLeads.st / orcData.st).
-var FU_ESTADOS_LEAD_TERMINAIS = ['Ganho','Perdido'];
+// Atualizado 29/09/2026 (doc "Sugestões CRM - parte 4", novas 13
+// colunas do Pipeline): 'Produção/Adjudicação' é o equivalente ao
+// antigo "Ganho" (é aqui que a adjudicação confirmada aterra), com
+// 'Orçamento Perdido' e 'Arquivo' como as duas formas de fechar sem
+// ganhar.
+var FU_ESTADOS_LEAD_TERMINAIS = ['Produção/Adjudicação','Orçamento Perdido','Arquivo'];
 var FU_ESTADOS_ORC_TERMINAIS = ['Aprovado','Faturado','Cancelado'];
 
 // ══ Fase 1.6 — leitura de ob_orcamento_triagem (só SELECT; RLS já filtra
