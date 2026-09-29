@@ -1794,7 +1794,7 @@ const CHAVE_COMPRAS_CKPT = "toc-purchases-sync-checkpoint";
 const CHAVE_COMPRAS_SNAPSHOT = "ob-tes-compras-toconline";
 
 interface AuditoriaTipoAc { tipo: string; quantidade: number; quantidade_pendente: number; soma_pendente: number; classificacao: string; }
-interface DocIndexEntry { document_no: string; supplier_business_name: string; gross_total: number; pending_total: number; }
+interface DocIndexEntry { document_no: string; supplier_business_name: string; gross_total: number; pending_total: number; tax_payable: number; }
 interface PaymentIndexEntry { document_no: string; date: string; payment_mechanism: string; deleted: boolean; }
 interface PagaAc { pagamentoId: string; numeroPagamento: string; documentoAssociadoId: string; documentoNumero: string | null; fornecedor: string | null; dataPagamento: string; valorPago: number; valorOriginal: number | null; saldoRestante: number | null; formaPagamento: string; }
 
@@ -1861,7 +1861,7 @@ async function sincComprasSnapshotLote(paginasPorChamada: number, reiniciar: boo
       for (const docBruto of lote as Record<string, unknown>[]) {
         const d = achatarDocumentoCompra(docBruto);
         ckpt.totalDocumentosProcessados++;
-        ckpt.docIndex[d.id] = { document_no: d.document_no, supplier_business_name: d.supplier_business_name, gross_total: d.gross_total ?? 0, pending_total: d.pending_total ?? 0 };
+        ckpt.docIndex[d.id] = { document_no: d.document_no, supplier_business_name: d.supplier_business_name, gross_total: d.gross_total ?? 0, pending_total: d.pending_total ?? 0, tax_payable: d.tax_payable ?? 0 };
         const key = d.document_type || "(vazio)";
         if (!ckpt.auditoriaTipos[key]) ckpt.auditoriaTipos[key] = { tipo: key, quantidade: 0, quantidade_pendente: 0, soma_pendente: 0, classificacao: classificarTipoDocumentoCompra(d.document_type) };
         const a = ckpt.auditoriaTipos[key];
@@ -1935,12 +1935,19 @@ async function sincComprasSnapshotLote(paginasPorChamada: number, reiniciar: boo
         const pag = ckpt.paymentIndex[l.payment_id];
         if (!pag || pag.deleted) continue; // pagamento apagado — nunca conta como pago
         const doc = ckpt.docIndex[l.payable_id];
+        // IVA de Compras (Ponto 13 da auditoria de 24/09/2026, doc "Sugestões
+        // CRM"): proporcional ao valor efetivamente pago desta linha, nunca o
+        // tax_payable inteiro do documento (que pode ter sido pago em várias
+        // parcelas) — mesma regra já documentada no frontend (tesCalcularIvaMensal,
+        // ~linha 25748 do index.html). null quando não há documento associado ou
+        // o documento tem gross_total<=0 (nunca inventa uma proporção).
+        const ivaDocumento = (doc && doc.gross_total > 0) ? round2(doc.tax_payable * (l.paid_value / doc.gross_total)) : null;
         ckpt.pagas.push({
           pagamentoId: l.payment_id, numeroPagamento: pag.document_no, documentoAssociadoId: l.payable_id,
           documentoNumero: doc ? doc.document_no : null, fornecedor: doc ? doc.supplier_business_name : null,
           dataPagamento: pag.date, valorPago: l.paid_value,
           valorOriginal: doc ? doc.gross_total : null, saldoRestante: doc ? doc.pending_total : null,
-          formaPagamento: pag.payment_mechanism,
+          formaPagamento: pag.payment_mechanism, ivaDocumento,
         });
         if (pag.date && pag.date.slice(0, 7) === mesAtual) {
           ckpt.pagoEsteMesAc = round2(ckpt.pagoEsteMesAc + l.paid_value);
