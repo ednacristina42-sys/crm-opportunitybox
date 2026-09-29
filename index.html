@@ -37014,6 +37014,20 @@ function finTotaisMesReal(ano, mes){
     if(!d || mesChave(d) !== alvo) return;
     custoDespesas += parseFloat(dp.valor || 0) || 0;
   });
+  // Pedido da Edna (doc "Sugestões CRM - parte 4"): "as despesas também
+  // não aparecem no mapa" (gráfico Receita vs Custo, Dashboard CFO) —
+  // FIN_DESPESAS (ob_despesas) está sempre vazia, as despesas reais são
+  // as 270 sincronizadas do app de pontos (EC_DESPESAS_APP, já usadas
+  // em "Despesas e Reembolsos" e no Painel Financeiro). Mesmo critério
+  // de "aprovada" (status==='approved', equivalente ao estado
+  // 'Aprovada' usado acima para FIN_DESPESAS).
+  var despApp = (typeof EC_DESPESAS_APP !== 'undefined') ? EC_DESPESAS_APP : [];
+  despApp.forEach(function(dp){
+    if(dp.status !== 'approved') return;
+    var d = finParseVenc(dp.occurred_at);
+    if(!d || mesChave(d) !== alvo) return;
+    custoDespesas += parseFloat(dp.amount_eur || 0) || 0;
+  });
   return {
     receita: receita, custo: custoContas + custoDespesas,
     custoContas: custoContas, custoDespesas: custoDespesas,
