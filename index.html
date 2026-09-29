@@ -9291,7 +9291,12 @@ tbody td{font-size:15px}
          Pagar/A Receber/Pagas/Recebidos sempre visíveis, sem depender da
          aba activa. Ver tesRenderResumoGeral(). -->
     <div class="krow" style="margin-bottom:14px">
-      <div class="kpi kR"><div class="klbl">Vencidas</div><div class="kval" id="tes-resumo-vencidas">—</div><div class="ksub">a pagar + a receber</div></div>
+      <div class="kpi kR"><div class="klbl">Vencido</div>
+        <div style="display:flex;gap:16px">
+          <div><div class="kval" style="font-size:17px;margin-bottom:2px" id="tes-resumo-vencido-receber">—</div><div class="ksub" style="margin-top:0">a receber</div></div>
+          <div><div class="kval" style="font-size:17px;margin-bottom:2px" id="tes-resumo-vencido-pagar">—</div><div class="ksub" style="margin-top:0">a pagar</div></div>
+        </div>
+      </div>
       <div class="kpi" style="--c:var(--r)"><div class="klbl">A Pagar</div><div class="kval" id="tes-resumo-apagar">—</div><div class="ksub">total pendente</div></div>
       <div class="kpi kB"><div class="klbl">A Receber</div><div class="kval" id="tes-resumo-areceber">—</div><div class="ksub">total pendente</div></div>
       <div class="kpi kG"><div class="klbl">Pagas</div><div class="kval" id="tes-resumo-pagas">—</div><div class="ksub">total liquidado</div></div>
@@ -22139,13 +22144,20 @@ function renderDashboardCFO(){
   // A receber vencido: TES_RECEBER (só saldo ainda aberto/vencido) —
   // antes vinha de tocoFaturasCache()/tocoGetEstado(), agora a mesma
   // fonte canónica usada em toda a Central Financeira.
+  // NC excluído (redução de faturação, nunca uma dívida em aberto — mesma
+  // regra de tesGetReceber()) e saldo real via finSaldoReceber() (não o
+  // total inteiro em faturas 'Recebido Parcial') — auditoria 29/09/2026.
+  // Sempre ALL-TIME (sem filtro de ano): "vencido" é o que continua por
+  // receber depois da data de vencimento, independentemente do ano de
+  // emissão — mesmo critério já usado para "A Pagar" em TES_COMPRAS_TOCO.
   var receberArr = (typeof TES_RECEBER!=='undefined'?TES_RECEBER:[]);
   var vencidas = receberArr.filter(function(f){
+    if(f.tipo==='NC') return false;
     if(f.estado==='Recebido') return false;
     var d = (typeof parseVencTes==='function') ? parseVencTes(f.vencimento) : new Date(NaN);
     return !isNaN(d) && d < hoje;
   });
-  var totalVencido = vencidas.reduce(function(s,f){return s+(parseFloat(f.total||f.valorLiq||0)||0);},0);
+  var totalVencido = vencidas.reduce(function(s,f){return s+((typeof finSaldoReceber==='function')?finSaldoReceber(f):(parseFloat(f.total||f.valorLiq||0)||0));},0);
 
   // Margem: só calculada quando há receita real no mês (evita 0/0
   // enganoso); nunca preenchida com demo/Math.random()/valor fixo.
@@ -22166,7 +22178,7 @@ function renderDashboardCFO(){
 
   set('dash-kpi-custo-val', fmt(custoMes));
   set('dash-kpi-custo-dlt', deltaCusto===null ? '—' : ((deltaCusto>=0?'↑ ':'↓ ')+Math.abs(deltaCusto).toFixed(1)+'%'));
-  set('dash-kpi-custo-sub', custoMes ? 'Contas pagas + despesas aprovadas este mês' : 'Sem custos registados este mês');
+  set('dash-kpi-custo-sub', custoMes ? 'Contas pagas + despesas aprovadas + compras TOConline este mês' : 'Sem custos registados este mês');
 
   set('dash-kpi-projetos-val', projetosActivos.length);
   set('dash-kpi-projetos-dlt', projetosActivos.length ? (emRisco+' em risco') : '—');
@@ -25680,21 +25692,29 @@ function tesRender() {
 // a mesma exclusividade TOConline vs. Contas Manuais de tesUpdateKPIs
 // para A Pagar/Pagas — nunca mistura as duas fontes).
 function tesRenderResumoGeral(){
-  var elV  = document.getElementById('tes-resumo-vencidas');
+  // "Vencido" deixou de ser um único número (auditoria 29/09/2026: somar
+  // vencidoReceber + vencidoPagar conflava o que os clientes devem à
+  // empresa com o que a empresa deve a fornecedores) — agora dois
+  // elementos lado a lado, no mesmo card.
+  var elVR = document.getElementById('tes-resumo-vencido-receber');
+  var elVP = document.getElementById('tes-resumo-vencido-pagar');
   var elP  = document.getElementById('tes-resumo-apagar');
   var elR  = document.getElementById('tes-resumo-areceber');
   var elPg = document.getElementById('tes-resumo-pagas');
   var elRc = document.getElementById('tes-resumo-recebidos');
-  if(!elV && !elP && !elR && !elPg && !elRc) return;
+  if(!elVR && !elVP && !elP && !elR && !elPg && !elRc) return;
 
   var recList = (typeof tesGetReceber==='function') ? tesGetReceber() : [];
   var pendReceber = recList.filter(function(r){ return r.estado!=='Recebido'; });
-  var totalAReceber = pendReceber.reduce(function(s,r){ return s+(parseFloat(r.total)||0); },0);
+  // Saldo real (finSaldoReceber) — não o total inteiro da fatura em
+  // faturas 'Recebido Parcial' (auditoria 29/09/2026).
+  var saldoRec = function(r){ return (typeof finSaldoReceber==='function') ? finSaldoReceber(r) : (parseFloat(r.total)||0); };
+  var totalAReceber = pendReceber.reduce(function(s,r){ return s+saldoRec(r); },0);
   var recebidosList = (typeof tesGetRecebidos==='function') ? tesGetRecebidos() : [];
   var totalRecebidos = recebidosList.reduce(function(s,r){ return s+(parseFloat(r.total)||0); },0);
   var vencidoReceber = pendReceber.filter(function(r){
     return typeof tesEstaVencido==='function' && tesEstaVencido(r);
-  }).reduce(function(s,r){ return s+(parseFloat(r.total)||0); },0);
+  }).reduce(function(s,r){ return s+saldoRec(r); },0);
 
   var totalAPagar = 0, totalPagas = 0, vencidoPagar = 0;
   if(typeof tesTocoComprasDisponivel==='function' && tesTocoComprasDisponivel()){
@@ -25712,8 +25732,8 @@ function tesRenderResumoGeral(){
     }).reduce(function(s,c){ return s+(parseFloat(c.valor)||0); },0);
   }
 
-  var totalVencidas = vencidoReceber + vencidoPagar;
-  if(elV)  elV.textContent  = fmtEurT(totalVencidas);
+  if(elVR) elVR.textContent = fmtEurT(vencidoReceber);
+  if(elVP) elVP.textContent = fmtEurT(vencidoPagar);
   if(elP)  elP.textContent  = fmtEurT(totalAPagar);
   if(elR)  elR.textContent  = fmtEurT(totalAReceber);
   if(elPg) elPg.textContent = fmtEurT(totalPagas);
@@ -26257,7 +26277,9 @@ function tesUpdateKPIs(tab){
   if(tab==='receber'){
     // KPIs de "A Receber" — faturas ainda não cobradas
     var recList=tesGetReceber();
-    var totalRec=recList.filter(r=>r.estado!=='Recebido').reduce((s,r)=>s+(parseFloat(r.total)||0),0);
+    // Saldo real (finSaldoReceber) — não o total inteiro da fatura em
+    // faturas 'Recebido Parcial' (auditoria 29/09/2026).
+    var totalRec=recList.filter(r=>r.estado!=='Recebido').reduce((s,r)=>s+((typeof finSaldoReceber==='function')?finSaldoReceber(r):(parseFloat(r.total)||0)),0);
     var vence30=recList.filter(r=>{if(r.estado==='Recebido')return false;var d=new Date(r.vencimento);var diff=Math.round((d-new Date())/86400000);return diff>=0&&diff<=30;}).reduce((s,r)=>s+(parseFloat(r.total)||0),0);
     var emitMes=recList.filter(r=>{var d=new Date(r.dataEmissao||r.data);return d.getMonth()===mesAtual&&d.getFullYear()===anoAtual;}).reduce((s,r)=>s+(parseFloat(r.total)||0),0);
     if(l1)l1.textContent='A Receber (Total)'; if(s1)s1.textContent='faturas por cobrar';
@@ -26363,6 +26385,26 @@ function tesGetRecebidos(){
     return tesPassaFiltroAno(r.dataRec || r.dataEmissao || r.data);
   });
 }
+
+// ── FONTE CANÓNICA: saldo real por cobrar de uma linha de TES_RECEBER ──
+// Auditoria 29/09/2026: "A Receber"/"Vencido" eram somados de 4+ formas
+// diferentes (Tesouraria, Histórico de Faturação, Dashboard CFO, Mapa de
+// Vendas), quase todas somando r.total inteiro mesmo em faturas já
+// parcialmente recebidas — sobrestimando o que falta cobrar. O Mapa de
+// Vendas (_mvRenderRecebimentos) já fazia isto correctamente; esta função
+// extrai essa mesma regra para todos os ecrãs nunca mais divergirem:
+//  - 'Recebido'         → 0 (nada em falta)
+//  - 'Recebido Parcial' → r.saldoAReceber (saldo real ainda em aberto,
+//                          nunca r.total inteiro)
+//  - qualquer outro estado ('Não Recebido', etc.) → r.total inteiro
+function finSaldoReceber(r){
+  if(!r) return 0;
+  if(r.estado === 'Recebido') return 0;
+  if(r.estado === 'Recebido Parcial') return parseFloat(r.saldoAReceber) || 0;
+  return parseFloat(r.total) || 0;
+}
+window.finSaldoReceber = finSaldoReceber;
+
 function tesMudarFiltroAno(valor){
   TES_FILTRO_ANO = (valor==='todos') ? 'todos' : (parseInt(valor,10) || new Date().getFullYear());
   var tabAtiva = ['pagar','pagas','receber','recebidos','log','iva'].find(function(t){
@@ -34083,10 +34125,12 @@ function _mvRenderRecebimentos(view){
   // Fonte real (Vendas 2026 → TES_RECEBER) grava os 3 estados oficiais:
   // 'Recebido', 'Não Recebido', 'Recebido Parcial'. Para 'Recebido Parcial'
   // usa-se valorRecebido/saldoAReceber (não o total da fatura inteira), para
-  // não sobrestimar nem subestimar o que falta receber.
+  // não sobrestimar nem subestimar o que falta receber. "Pendente" agora
+  // reutiliza finSaldoReceber() (fonte canónica, 29/09/2026) em vez de uma
+  // cópia local da mesma regra — nunca as duas voltam a divergir.
   var sumField = function(estado, field){ return scoped.filter(function(r){return r.estado===estado;}).reduce(function(s,r){return s+(parseFloat(r[field])||0);},0); };
   var recebido = sumField('Recebido','total') + sumField('Recebido Parcial','valorRecebido');
-  var pendente = sumField('Não Recebido','total') + sumField('Recebido Parcial','saldoAReceber');
+  var pendente = scoped.reduce(function(s,r){ return s + ((typeof finSaldoReceber==='function') ? finSaldoReceber(r) : 0); },0);
   var src = { recebido: recebido, pendente: pendente };
   var total = src.recebido+src.pendente;
   var pctRec = total>0 ? (src.recebido/total*100) : 0;
@@ -37350,9 +37394,26 @@ function finTotaisMesReal(ano, mes){
     if(!d || mesChave(d) !== alvo) return;
     custoDespesas += parseFloat(dp.amount_eur || 0) || 0;
   });
+  // Compras reais pagas via TOConline (ob-tes-compras-toconline.pagas) —
+  // auditoria 29/09/2026: este era o maior custo real do mês (fornecedores)
+  // e nunca entrava aqui, só TES_CONTAS (Contas Manuais, praticamente
+  // vazia) e despesas de funcionários — "Custo mensal"/"Margem" do
+  // Dashboard CFO ficavam artificialmente baixos/altos. Mesma fonte já
+  // usada por finCalcularFluxoCaixaSemanal() para as saídas previstas
+  // (TES_COMPRAS_TOCO.aPagar) — aqui usa-se .pagas[] (já realizado, não
+  // previsto), por dataPagamento. A edge function crm-toconline já exclui
+  // pagamentos apagados (pag.deleted) ao construir pagas[] — nunca conta
+  // um pagamento anulado como custo.
+  var custoCompras = 0;
+  var comprasToco = (typeof TES_COMPRAS_TOCO !== 'undefined' && TES_COMPRAS_TOCO && Array.isArray(TES_COMPRAS_TOCO.pagas)) ? TES_COMPRAS_TOCO.pagas : [];
+  comprasToco.forEach(function(p){
+    var d = finParseVenc(p.dataPagamento);
+    if(!d || mesChave(d) !== alvo) return;
+    custoCompras += parseFloat(p.valorPago || 0) || 0;
+  });
   return {
-    receita: receita, custo: custoContas + custoDespesas,
-    custoContas: custoContas, custoDespesas: custoDespesas,
+    receita: receita, custo: custoContas + custoDespesas + custoCompras,
+    custoContas: custoContas, custoDespesas: custoDespesas, custoCompras: custoCompras,
     temReceberCarregado: receber.length > 0
   };
 }
@@ -37861,6 +37922,11 @@ function _hfRenderKpis(rows){
   var naoRecebido = view.filter(function(r){return r.estado==='Não Recebido';});
   var parcial = view.filter(function(r){return r.estado==='Recebido Parcial';});
   var sum = function(arr){ return arr.reduce(function(s,r){return s+(parseFloat(r.total)||0);},0); };
+  // Saldo real (finSaldoReceber) — em 'Recebido Parcial' soma o que ainda
+  // falta receber (saldoAReceber), não o total inteiro da fatura original
+  // (auditoria 29/09/2026). Em 'Não Recebido' é igual a sum() (nada foi
+  // recebido ainda), por isso não muda o valor, só a fonte.
+  var sumSaldo = function(arr){ return arr.reduce(function(s,r){return s+((typeof finSaldoReceber==='function')?finSaldoReceber(r):(parseFloat(r.total)||0));},0); };
   // Sem IVA — pedido da secretária, doc "Sugestões CRM - parte 3": "os
   // valores não batem! O Paulo pega o valor sem IVA". A tabela desta
   // página já distingue "Valor Líq." (sem IVA) de "Total c/IVA" por linha
@@ -37872,9 +37938,9 @@ function _hfRenderKpis(rows){
   set('hf-kpi-total-sub', view.length+' faturas · '+_hfFmtEUR(sumLiq(view))+' sem IVA');
   set('hf-kpi-recebido', _hfFmtEUR(sum(recebido)));
   set('hf-kpi-recebido-sub', recebido.length+' faturas · '+_hfFmtEUR(sumLiq(recebido))+' sem IVA');
-  set('hf-kpi-naorecebido', _hfFmtEUR(sum(naoRecebido)));
+  set('hf-kpi-naorecebido', _hfFmtEUR(sumSaldo(naoRecebido)));
   set('hf-kpi-naorecebido-sub', naoRecebido.length+' faturas · '+_hfFmtEUR(sumLiq(naoRecebido))+' sem IVA');
-  set('hf-kpi-parcial', _hfFmtEUR(sum(parcial)));
+  set('hf-kpi-parcial', _hfFmtEUR(sumSaldo(parcial)));
   set('hf-kpi-parcial-sub', parcial.length+' faturas · '+_hfFmtEUR(sumLiq(parcial))+' sem IVA');
 }
 
@@ -37890,10 +37956,12 @@ function _hfRenderIndicadores(rows){
   set('hf-ind-pctrecebido', totalFaturado>0 ? _hfFmtPct(totalRecebido/totalFaturado*100) : '—');
 
   // Valor vencido: só soma o que tem vencimento válido e não recebido, para não inventar dados.
+  // Saldo real (finSaldoReceber) — mesma correção 29/09/2026 dos outros
+  // KPIs desta página: em 'Recebido Parcial' conta só o que falta receber.
   var hoje = new Date();
   var comVencimento = view.filter(function(r){ return r.estado!=='Recebido' && _hfParseData(r.vencimento); });
   var vencidos = comVencimento.filter(function(r){ return _hfParseData(r.vencimento) < hoje; });
-  var totalVencido = sum(vencidos);
+  var totalVencido = vencidos.reduce(function(s,r){return s+((typeof finSaldoReceber==='function')?finSaldoReceber(r):(parseFloat(r.total)||0));},0);
   set('hf-ind-vencido', _hfFmtEUR(totalVencido));
   var sub = document.getElementById('hf-ind-vencido-sub');
   if(sub) sub.textContent = vencidos.length+' faturas vencidas ('+comVencimento.length+'/'+view.filter(function(r){return r.estado!=='Recebido';}).length+' com vencimento conhecido)';
