@@ -20585,6 +20585,20 @@ var ORC_PAGE_SIZE = 20;
 
 function orcGetValorTotal(o){ return o.totais && typeof o.totais.total==='number' ? o.totais.total : (typeof o.val==='number'?o.val:0); }
 
+// Valor do orçamento SEM IVA — pedido da Edna (doc "Sugestões CRM -
+// parte 4", "Parte Administrativa": "O valor de faturação está
+// incorreto... Valor Sem IVA"). total = (sub - descVal) + ivaVal (ver
+// orcPDF()), por isso sem IVA = total - ivaVal, nunca um cálculo
+// paralelo. Sem .totais (orçamento antigo sem esse detalhe), não há
+// como separar o IVA com segurança — devolve o mesmo valor de
+// orcGetValorTotal() como já acontecia antes desta correção.
+function orcGetValorSemIVA(o){
+  if(o.totais && typeof o.totais.total==='number' && typeof o.totais.ivaVal==='number'){
+    return o.totais.total - o.totais.ivaVal;
+  }
+  return orcGetValorTotal(o);
+}
+
 function orcFiltrarLista(){
   var search = (ORC_FILTERS.search||'').trim().toLowerCase();
   return (orcData||[]).filter(function(o){
@@ -21855,7 +21869,12 @@ function renderFinanceiro(){
     var corEstado = {Faturado:'var(--g)',Aprovado:'var(--y)','Em Produção':'var(--b)',Concluído:'var(--g)',Cancelado:'var(--muted)',Pendente:'var(--muted2)'};
     var classEstado = {Faturado:'bg',Aprovado:'bb','Em Produção':'bb',Concluído:'bg',Cancelado:'br',Pendente:'ba','Em análise':'ba'};
     el.innerHTML = realRows.map(function(o){
-      var rev = orcGetValorTotal(o);
+      // Pedido da Edna (doc "Sugestões CRM - parte 4", "Parte
+      // Administrativa"): "O valor de faturação está incorreto... Valor
+      // Sem IVA" — Receita/Orçamento e a Margem (para não misturar
+      // receita com IVA com custos sem IVA) passam a usar o valor sem
+      // IVA (orcGetValorSemIVA()), nunca o valor com IVA.
+      var rev = orcGetValorSemIVA(o);
       var temCusto = o.custoMateriais!=null || o.custoMO!=null || o.custoLog!=null;
       var cost = (o.custoMateriais||0)+(o.custoMO||0)+(o.custoLog||0);
       var mar = rev>0 ? ((rev-cost)/rev*100) : 0;
