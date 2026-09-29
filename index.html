@@ -9184,7 +9184,7 @@ tbody td{font-size:15px}
          .kpi já usada acima, só com mais duas filas. -->
     <div class="krow">
       <div class="kpi kG"><div class="klbl">Receita recebida</div><div class="kval" id="dash-kpi-recrec-val">€0</div><div class="kdlt" id="dash-kpi-recrec-dlt">—</div><div class="ksub" id="dash-kpi-recrec-sub">—</div></div>
-      <div class="kpi kA"><div class="klbl">Compras (TOConline)</div><div class="kval" id="dash-kpi-compras-val">€0</div><div class="kdlt" id="dash-kpi-compras-dlt">—</div><div class="ksub" id="dash-kpi-compras-sub">todas as compras — categorização por tipo numa fase seguinte</div></div>
+      <div class="kpi kA"><div class="klbl">Compras (TOConline)</div><div class="kval" id="dash-kpi-compras-val">€0</div><div class="kdlt" id="dash-kpi-compras-dlt">—</div><div class="ksub" id="dash-kpi-compras-sub">todas as compras — ver quebra por categoria abaixo</div></div>
       <div class="kpi kB"><div class="klbl">Folha salarial</div><div class="kval" id="dash-kpi-folha-val">€0</div><div class="kdlt" id="dash-kpi-folha-dlt">—</div><div class="ksub" id="dash-kpi-folha-sub">—</div></div>
       <div class="kpi kB"><div class="klbl">Despesas de funcionários</div><div class="kval" id="dash-kpi-despfunc-val">€0</div><div class="kdlt" id="dash-kpi-despfunc-dlt">—</div><div class="ksub" id="dash-kpi-despfunc-sub">—</div></div>
       <div class="kpi kA"><div class="klbl">Outros custos</div><div class="kval" id="dash-kpi-outroscusto-val">€0</div><div class="kdlt" id="dash-kpi-outroscusto-dlt">—</div><div class="ksub" id="dash-kpi-outroscusto-sub">Contas pagas (Tesouraria), exceto Salários</div></div>
@@ -9195,6 +9195,16 @@ tbody td{font-size:15px}
       <div class="kpi kR"><div class="klbl">Contas a pagar</div><div class="kval" id="dash-kpi-apagar-val">€0</div><div class="kdlt" id="dash-kpi-apagar-dlt">—</div><div class="ksub" id="dash-kpi-apagar-sub">—</div></div>
       <div class="kpi kG"><div class="klbl">Contas a receber</div><div class="kval" id="dash-kpi-areceber-val">€0</div><div class="kdlt" id="dash-kpi-areceber-dlt">—</div><div class="ksub" id="dash-kpi-areceber-sub">—</div></div>
       <div class="kpi kR"><div class="klbl">A pagar vencido</div><div class="kval" id="dash-kpi-vencidopagar-val">€0</div><div class="kdlt" id="dash-kpi-vencidopagar-dlt">—</div><div class="ksub" id="dash-kpi-vencidopagar-sub">—</div></div>
+    </div>
+    <!-- ADD: Compras TOConline por categoria (Fase 2 CFO, 29/09/2026) —
+         extensão do tile "Compras (TOConline)" acima: mesmo total, agora
+         também agrupado por categoria de fornecedor (ver
+         finComprasPorCategoriaMes()/FORNECEDOR_CATEGORIAS). Com zero
+         fornecedores classificados, tudo aparece em "Não categorizado" —
+         comportamento correto, nunca um bug. -->
+    <div class="cc" style="margin-bottom:16px">
+      <div class="sh"><h2>Compras TOConline — por categoria</h2><a href="#" onclick="goPage('tesouraria'); setTimeout(function(){ if(typeof tesMostrarTab==='function') tesMostrarTab('fornecedores'); }, 80); return false;">Classificar fornecedores →</a></div>
+      <div id="dash-compras-categoria-lista" style="font-size:12.5px">—</div>
     </div>
     <div class="g2">
       <div class="cc"><div class="sh"><h2>Receita vs Custo — 6 meses</h2></div><canvas id="revChart"></canvas></div>
@@ -9356,6 +9366,7 @@ tbody td{font-size:15px}
       <button class="tbtn" id="tes-tab-recebidos" onclick="tesMostrarTab('recebidos')" style="font-size:13px">💰 Recebidos</button>
       <button class="tbtn" id="tes-tab-log" onclick="tesMostrarTab('log')" style="font-size:13px;display:none">🚚 Logística</button>
       <button class="tbtn" id="tes-tab-iva" onclick="tesMostrarTab('iva')" style="font-size:13px">📊 IVA &amp; Resumo</button>
+      <button class="tbtn" id="tes-tab-fornecedores" onclick="tesMostrarTab('fornecedores')" style="font-size:13px">🏷️ Fornecedores</button>
       <span style="margin-left:auto;display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--muted)">
         📅 Período:
         <select id="tes-filtro-ano" onchange="tesMudarFiltroAno(this.value)" style="font-size:13px;padding:4px 8px;border-radius:6px;background:var(--bg3);border:1px solid var(--border);color:var(--txt)">
@@ -9551,6 +9562,26 @@ tbody td{font-size:15px}
           <tr><th>Mês</th><th>Vendas</th><th>Despesas</th><th>Impostos</th><th>IVA</th><th>Salários</th><th>Saldo</th></tr></thead>
           <tbody id="tes-resumo-tbody">
             <tr><td colspan="7" style="text-align:center;color:var(--muted);padding:20px">Sem dados. Configure o webhook e sincronize.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ADD: Fornecedores — categorização (Fase 2 CFO, 29/09/2026). Único
+         local onde se atribui categoria a um FORNECEDOR (nunca a uma
+         transação individual) — aplica-se automaticamente a todo o
+         histórico e a compras futuras desse fornecedor, sem exigir nenhum
+         lançamento manual (TOConline continua a ser a única fonte das
+         compras em si, como pedido pela Edna). -->
+    <div id="tes-panel-fornecedores" style="display:none">
+      <div style="font-size:13px;color:var(--muted);background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:8px 12px;margin-bottom:14px">
+        🏷️ Classifique cada fornecedor UMA vez — a categoria aplica-se automaticamente a todo o histórico e a compras futuras desse fornecedor no TOConline. Fornecedores sem categoria aparecem como "Não categorizado" no Dashboard CFO, para nunca esconder gasto por classificar.
+      </div>
+      <div class="tw">
+        <table>
+          <thead><tr><th>Fornecedor</th><th>Total pago (TOConline)</th><th>Categoria</th></tr></thead>
+          <tbody id="tes-fornecedores-tbody">
+            <tr><td colspan="3" style="text-align:center;color:var(--muted);padding:20px">Ainda sem sincronização TOConline — clique em "🔄 Sincronizar TOConline".</td></tr>
           </tbody>
         </table>
       </div>
@@ -22253,10 +22284,34 @@ function renderDashboardCFO(){
   set('dash-kpi-recrec-val', fmt(totAtual.receitaRecebida||0));
   set('dash-kpi-recrec-sub', 'Recebido em '+mesLbl+' (vs. '+fmt(receitaMes)+' faturado)');
 
-  // 2) Compras/matéria-prima — TOConline (custoCompras). Rótulo deixa
-  // claro que ainda não está categorizado por tipo (Fase 2, fora deste
-  // âmbito) — nunca implica que seja só matéria-prima.
+  // 2) Compras/matéria-prima — TOConline (custoCompras). Total agregado,
+  // sem distinção por tipo (fatura FC crua) — a quebra por categoria de
+  // fornecedor (Fase 2 CFO, 29/09/2026) é renderizada logo a seguir, no
+  // card "Compras TOConline — por categoria".
   set('dash-kpi-compras-val', fmt(totAtual.custoCompras||0));
+
+  // 2b) Quebra por categoria de fornecedor (Fase 2 CFO, 29/09/2026) — soma
+  // sempre igual ao tile acima (mesma fonte, só agrupada por
+  // FORNECEDOR_CATEGORIAS[fornecedor], via finComprasPorCategoriaMes()).
+  // 'Não categorizado' é mostrado explicitamente sempre que > 0, nunca
+  // escondido/fundido em 'Outros' — a Edna precisa de ver quanto gasto
+  // ainda não foi classificado.
+  var comprasCatEl = document.getElementById('dash-compras-categoria-lista');
+  if(comprasCatEl){
+    var porCatCFO = (typeof finComprasPorCategoriaMes==='function') ? finComprasPorCategoriaMes(anoAtual, mesAtualNum) : {};
+    var catsComValorCFO = Object.keys(porCatCFO).filter(function(k){ return porCatCFO[k]>0; })
+      .sort(function(a,b){ return porCatCFO[b]-porCatCFO[a]; });
+    if(!catsComValorCFO.length){
+      comprasCatEl.innerHTML = '<div style="color:var(--muted)">Sem compras TOConline pagas em '+mesLbl+'.</div>';
+    } else {
+      comprasCatEl.innerHTML = catsComValorCFO.map(function(cat){
+        var naoCat = cat==='Não categorizado';
+        var cor = naoCat ? 'var(--y)' : 'var(--txt)';
+        return '<div style="display:flex;justify-content:space-between;padding:3px 0;color:'+cor+'">'
+          + '<span>'+(naoCat ? '⚠️ Não categorizado' : cat)+'</span><span style="font-weight:600">'+fmt(porCatCFO[cat])+'</span></div>';
+      }).join('');
+    }
+  }
 
   // 3) Folha salarial — custo total de empresa (bruto + SS empresa),
   // lido da entrada 'Salários — <Mês>' que foEnviarTesouraria() grava em
@@ -26044,6 +26099,144 @@ async function tesHidratarComprasToco(){
 }
 window.tesHidratarComprasToco = tesHidratarComprasToco;
 
+// ══════════════════════════════════════════════════════════════════
+// ADD: Categorização de Fornecedores (Fase 2 CFO, 29/09/2026)
+// ══════════════════════════════════════════════════════════════════
+// Pedido da Edna: quebrar "Compras TOConline" (um único total lumped) em
+// categoria de despesa (matéria-prima, veículos/combustível, energia,
+// aluguer, terceirização, outros) — SEM lançar manualmente no CRM nada do
+// que já existe no TOConline (constraint explícita dela). O TOConline não
+// expõe categoria de negócio nenhuma (só document_type FC/NCF). A única
+// forma de obter a quebra sem violar essa constraint é classificar o
+// FORNECEDOR uma única vez — a categoria passa a aplicar-se
+// automaticamente a TODO o histórico e a compras futuras desse
+// fornecedor, nunca transação a transação.
+//
+// Persistência: mesmo blob simples em ob_crm_dados já usado para outras
+// configurações administrativas pequenas (ex. 'ob-rh-ferias-cfg') — chave
+// 'ob-fornecedores-categorias', objeto JSON {"<fornecedor>":"<categoria>"}.
+// Escrita via obSbPush() genérico já existente (debounced, on_conflict em
+// 'chave') — nenhum mecanismo de persistência novo foi inventado. Leitura
+// fresca por hidratação canónica dedicada (fornHidratarCategorias(),
+// mesmo padrão de tesHidratarComprasToco() acima), chamada quando a
+// Tesouraria abre — fica FORA de OB_SB_SYNC_KEYS de propósito, mesma razão
+// já documentada para 'ob-tes-compras-toconline'/'ob-tes-receber': nunca
+// duas fontes de hidratação a competir pela mesma chave.
+var FORN_CATEGORIAS_LISTA = ['Matéria-prima / Fornecedores','Veículos & Combustível','Energia','Aluguer / Renda','Terceirização / Serviços','Outros'];
+window.FORN_CATEGORIAS_LISTA = FORN_CATEGORIAS_LISTA;
+
+var FORNECEDOR_CATEGORIAS;
+try{ FORNECEDOR_CATEGORIAS = JSON.parse(localStorage.getItem('ob-fornecedores-categorias')||'{}'); }catch(e){ FORNECEDOR_CATEGORIAS = {}; }
+if(!FORNECEDOR_CATEGORIAS || typeof FORNECEDOR_CATEGORIAS!=='object') FORNECEDOR_CATEGORIAS = {};
+window.FORNECEDOR_CATEGORIAS = FORNECEDOR_CATEGORIAS;
+
+// Categoria de UM fornecedor — 'Não categorizado' explícito sempre que não
+// há entrada válida no mapa (fornecedor ausente, categoria vazia, ou
+// categoria que já não existe na lista fixa). NUNCA cai silenciosamente em
+// 'Outros': a Edna precisa de ver claramente quanto gasto ainda não foi
+// classificado, mesmo espírito de folhaIndisponivel/comprasIncompleto
+// (nunca disfarçar dado em falta como se fosse um valor normal).
+function fornCategoriaDe(nomeFornecedor){
+  var mapa = (typeof FORNECEDOR_CATEGORIAS!=='undefined' && FORNECEDOR_CATEGORIAS) ? FORNECEDOR_CATEGORIAS : {};
+  var cat = nomeFornecedor ? mapa[nomeFornecedor] : null;
+  var lista = (typeof FORN_CATEGORIAS_LISTA!=='undefined') ? FORN_CATEGORIAS_LISTA : [];
+  return (cat && lista.indexOf(cat)!==-1) ? cat : 'Não categorizado';
+}
+window.fornCategoriaDe = fornCategoriaDe;
+
+// Atribui (ou remove, se categoria vazia) a categoria de UM fornecedor e
+// sincroniza de imediato — mesmo obSbPush() genérico já usado por outras
+// chaves simples (ex. 'ob-rh-ferias-cfg'), nunca escreve directamente na
+// tabela Supabase a partir daqui.
+function fornDefinirCategoria(nomeFornecedor, categoria){
+  if(!nomeFornecedor) return;
+  if(categoria){ FORNECEDOR_CATEGORIAS[nomeFornecedor] = categoria; }
+  else { delete FORNECEDOR_CATEGORIAS[nomeFornecedor]; }
+  try{ localStorage.setItem('ob-fornecedores-categorias', JSON.stringify(FORNECEDOR_CATEGORIAS)); }catch(e){}
+  try{ if(typeof obSbPush==='function') obSbPush('ob-fornecedores-categorias'); }catch(e){}
+}
+window.fornDefinirCategoria = fornDefinirCategoria;
+
+// Hidratação canónica dedicada (leitura fresca de ob_crm_dados) — mesmo
+// padrão exato de tesHidratarComprasToco() acima, chamada quando a
+// Tesouraria abre (ver goPage('tesouraria')).
+var _fornCategoriasHidratacaoPromise = null;
+async function fornHidratarCategorias(){
+  if(_fornCategoriasHidratacaoPromise) return _fornCategoriasHidratacaoPromise;
+  _fornCategoriasHidratacaoPromise = (async function(){
+    var sb = (typeof crmSBClient==='function') ? crmSBClient() : null;
+    if(!sb) return;
+    try{
+      var res = await sb.from('ob_crm_dados').select('dados,updated_at').eq('chave','ob-fornecedores-categorias').maybeSingle();
+      if(res && !res.error && res.data && res.data.dados){
+        FORNECEDOR_CATEGORIAS = res.data.dados;
+        window.FORNECEDOR_CATEGORIAS = FORNECEDOR_CATEGORIAS;
+        try{ localStorage.setItem('ob-fornecedores-categorias', JSON.stringify(FORNECEDOR_CATEGORIAS)); }catch(e){}
+      }
+    }catch(e){ console.warn('[Tesouraria] Falha a ler ob-fornecedores-categorias remoto — mantém a cópia local como fallback.', e); }
+    if(typeof tesRenderFornecedores==='function') tesRenderFornecedores();
+    if(typeof renderDashboardCFO==='function'){ try{ renderDashboardCFO(); }catch(e){} }
+  })();
+  return _fornCategoriasHidratacaoPromise;
+}
+window.fornHidratarCategorias = fornHidratarCategorias;
+
+// Lista de fornecedores distintos vistos em pagas[]/aPagar[]/creditos[] do
+// snapshot TOConline, cada um com o total já pago (soma de valorPago em
+// pagas[]) e a categoria atual — ordenada por total pago DESC (pedido da
+// Edna: classificar primeiro os maiores gastos). Um fornecedor que só
+// apareça em aPagar[]/creditos[] (ainda sem nenhum pagamento) entra com
+// total=0, no fim da lista, mas continua visível para ser classificado
+// antes do primeiro pagamento.
+function fornListaFornecedoresComTotais(){
+  var toco = (typeof TES_COMPRAS_TOCO!=='undefined' && TES_COMPRAS_TOCO) ? TES_COMPRAS_TOCO : {};
+  var pagas = Array.isArray(toco.pagas) ? toco.pagas : [];
+  var aPagar = Array.isArray(toco.aPagar) ? toco.aPagar : [];
+  var creditos = Array.isArray(toco.creditos) ? toco.creditos : [];
+  var totais = {}, nomes = {};
+  pagas.forEach(function(p){
+    var f = p && p.fornecedor; if(!f) return;
+    nomes[f] = true;
+    totais[f] = (totais[f]||0) + (parseFloat(p.valorPago)||0);
+  });
+  aPagar.forEach(function(p){ if(p && p.fornecedor) nomes[p.fornecedor]=true; });
+  creditos.forEach(function(p){ if(p && p.fornecedor) nomes[p.fornecedor]=true; });
+  return Object.keys(nomes).map(function(f){
+    return { fornecedor: f, total: totais[f]||0, categoria: fornCategoriaDe(f) };
+  }).sort(function(a,b){ return b.total - a.total; });
+}
+window.fornListaFornecedoresComTotais = fornListaFornecedoresComTotais;
+
+// Render da tab "Fornecedores" da Tesouraria — tabela editável (select por
+// linha), grava de imediato ao mudar (fornDefinirCategoria) e repinta.
+function tesRenderFornecedores(){
+  var el = document.getElementById('tes-fornecedores-tbody');
+  if(!el) return;
+  if(!tesTocoComprasDisponivel()){
+    el.innerHTML = '<tr><td colspan="3" style="text-align:center;color:var(--muted);padding:20px">Ainda sem sincronização TOConline — clique em "🔄 Sincronizar TOConline".</td></tr>';
+    return;
+  }
+  var lista = fornListaFornecedoresComTotais();
+  if(!lista.length){
+    el.innerHTML = '<tr><td colspan="3" style="text-align:center;color:var(--muted);padding:20px">Nenhum fornecedor encontrado nas compras sincronizadas.</td></tr>';
+    return;
+  }
+  el.innerHTML = lista.map(function(f){
+    var nomeAttr = String(f.fornecedor||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;');
+    var nomeTxt = String(f.fornecedor||'—').replace(/&/g,'&amp;').replace(/</g,'&lt;');
+    var opts = '<option value=""'+(f.categoria==='Não categorizado'?' selected':'')+'>— Não categorizado —</option>' +
+      FORN_CATEGORIAS_LISTA.map(function(c){
+        return '<option value="'+c.replace(/"/g,'&quot;')+'"'+(f.categoria===c?' selected':'')+'>'+c+'</option>';
+      }).join('');
+    return '<tr>'
+      + '<td style="font-size:13px">'+nomeTxt+(f.categoria==='Não categorizado'?' <span style="color:var(--y)" title="Ainda sem categoria">⚠️</span>':'')+'</td>'
+      + '<td style="font-weight:700">'+fmtEurT(f.total)+'</td>'
+      + '<td><select class="form-input" style="font-size:13px" data-fornecedor="'+nomeAttr+'" onchange="fornDefinirCategoria(this.getAttribute(\'data-fornecedor\'), this.value); tesRenderFornecedores();">'+opts+'</select></td>'
+    + '</tr>';
+  }).join('');
+}
+window.tesRenderFornecedores = tesRenderFornecedores;
+
 function tesFmtDataToco(iso){
   if(!iso) return '—';
   var d = new Date(iso);
@@ -26353,7 +26546,7 @@ window.tesIvaSincronizar = tesIvaSincronizar;
 window.tesIvaRender = tesIvaRender;
 
 function tesMostrarTab(tab) {
-  ['pagar','pagas','receber','recebidos','log','iva'].forEach(function(t) {
+  ['pagar','pagas','receber','recebidos','log','iva','fornecedores'].forEach(function(t) {
     var p = document.getElementById('tes-panel-'+t);
     var btn = document.getElementById('tes-tab-'+t);
     if (p) p.style.display = t===tab ? 'block' : 'none';
@@ -26364,6 +26557,7 @@ function tesMostrarTab(tab) {
   // Render tab content
   if(tab==='receber') tesRenderReceber();
   if(tab==='recebidos') tesRenderRecebidos();
+  if(tab==='fornecedores' && typeof tesRenderFornecedores==='function') tesRenderFornecedores();
   setTimeout(function(){ tesRenderCharts(tab); },50);
 }
 
@@ -26445,6 +26639,24 @@ function tesUpdateKPIs(tab){
     if(v3)v3.textContent=recebidosList.length;
     if(l4)l4.textContent='Ticket médio'; if(s4)s4.textContent='por fatura recebida';
     if(v4)v4.textContent=fmtEurT?fmtEurT(recebidosList.length?totalRecebido/recebidosList.length:0):'€0,00';
+  } else if(tab==='fornecedores'){
+    // KPIs de "Fornecedores" (Fase 2 CFO, 29/09/2026) — progresso de
+    // classificação, não valores a pagar/pago (esses continuam nas outras
+    // tabs). fornListaFornecedoresComTotais() já une pagas[]/aPagar[]/
+    // creditos[] e devolve a categoria atual de cada fornecedor.
+    var listaForn = (typeof fornListaFornecedoresComTotais==='function') ? fornListaFornecedoresComTotais() : [];
+    var totalForn = listaForn.length;
+    var classificadosForn = listaForn.filter(function(f){ return f.categoria!=='Não categorizado'; }).length;
+    var totalPagoForn = listaForn.reduce(function(s,f){ return s+(f.total||0); },0);
+    var totalPagoNaoCatForn = listaForn.filter(function(f){ return f.categoria==='Não categorizado'; }).reduce(function(s,f){ return s+(f.total||0); },0);
+    if(l1)l1.textContent='Fornecedores'; if(s1)s1.textContent='distintos (TOConline)';
+    if(v1)v1.textContent=String(totalForn); if(v1)v1.style.color='var(--b)';
+    if(l2)l2.textContent='Classificados'; if(s2)s2.textContent='com categoria atribuída';
+    if(v2)v2.textContent=classificadosForn+' / '+totalForn;
+    if(l3)l3.textContent='Total pago (TOConline)'; if(s3)s3.textContent='soma de todos os fornecedores';
+    if(v3)v3.textContent=fmtEurT?fmtEurT(totalPagoForn):'€'+totalPagoForn.toFixed(2);
+    if(l4)l4.textContent='Não categorizado'; if(s4)s4.textContent='ainda por classificar';
+    if(v4)v4.textContent=fmtEurT?fmtEurT(totalPagoNaoCatForn):'€'+totalPagoNaoCatForn.toFixed(2);
   } else if(typeof tesTocoComprasDisponivel==='function' && tesTocoComprasDisponivel()){
     // KPIs de "A Pagar"/"Pagas" — TOConline (fonte oficial, 17/09/2026).
     // Nunca mistura com TES_CONTAS (Contas Manuais); soma só documentos de
@@ -29521,7 +29733,7 @@ window.goPage = function(id) {
       }
     }, 50);
   }
-  if (id === 'tesouraria') { setTimeout(function(){ tesRender(); if(typeof tesHidratarCanonico==='function') tesHidratarCanonico(); if(typeof tesHidratarComprasToco==='function') tesHidratarComprasToco(); if(typeof sincFinAutoSincronizar==='function') sincFinAutoSincronizar(); }, 50); }
+  if (id === 'tesouraria') { setTimeout(function(){ tesRender(); if(typeof tesHidratarCanonico==='function') tesHidratarCanonico(); if(typeof tesHidratarComprasToco==='function') tesHidratarComprasToco(); if(typeof fornHidratarCategorias==='function') fornHidratarCategorias(); if(typeof sincFinAutoSincronizar==='function') sincFinAutoSincronizar(); }, 50); }
   if (id === 'admin-analise-vendas') {
     setTimeout(function(){
       if (typeof avVendedoresFiltrar === 'function') {
@@ -37622,6 +37834,33 @@ function finTotaisMesReal(ano, mes){
   };
 }
 window.finTotaisMesReal = finTotaisMesReal;
+
+// ── Compras TOConline agrupadas por categoria de fornecedor (Fase 2 CFO,
+// 29/09/2026) ────────────────────────────────────────────────────────
+// Mesma fonte e mesmo filtro de mês que custoCompras dentro de
+// finTotaisMesReal() acima (TES_COMPRAS_TOCO.pagas[], por dataPagamento) —
+// aqui só agrupa por categoria em vez de somar tudo num único total.
+// Categoria de cada linha via fornCategoriaDe(p.fornecedor) — sempre
+// 'Não categorizado' explícito para um fornecedor sem entrada em
+// FORNECEDOR_CATEGORIAS (nunca cai silenciosamente em 'Outros', pedido
+// explícito da Edna). INVARIANTE: a soma de todos os valores devolvidos
+// aqui é SEMPRE igual a finTotaisMesReal(ano,mes).custoCompras — mesmos
+// dados-fonte, agrupamento diferente (ver
+// tests/regressao-2026-09-29-categorias-fornecedores.js).
+function finComprasPorCategoriaMes(ano, mes){
+  var alvo = ano + '-' + String(mes).padStart(2,'0');
+  var mesChave = function(d){ return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0'); };
+  var comprasToco = (typeof TES_COMPRAS_TOCO !== 'undefined' && TES_COMPRAS_TOCO && Array.isArray(TES_COMPRAS_TOCO.pagas)) ? TES_COMPRAS_TOCO.pagas : [];
+  var porCategoria = {};
+  comprasToco.forEach(function(p){
+    var d = finParseVenc(p.dataPagamento);
+    if(!d || mesChave(d) !== alvo) return;
+    var cat = (typeof fornCategoriaDe==='function') ? fornCategoriaDe(p.fornecedor) : 'Não categorizado';
+    porCategoria[cat] = (porCategoria[cat] || 0) + (parseFloat(p.valorPago || 0) || 0);
+  });
+  return porCategoria;
+}
+window.finComprasPorCategoriaMes = finComprasPorCategoriaMes;
 
 // ── 1. SALÁRIOS DO MÊS → TESOURARIA ─────────────────────────────────
 window.foEnviarTesouraria=function(){
