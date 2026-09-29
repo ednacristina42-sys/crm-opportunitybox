@@ -85,6 +85,14 @@ class HttpError extends Error {
 }
 
 let tokenCache: { token: string; expiresAt: number } | null = null;
+// Evita que chamadas concorrentes (ex.: sincronizacao automatica + clique
+// manual quase ao mesmo tempo) disputem o mesmo refresh_token — o TOConline
+// roda-o a cada uso, por isso duas renovacoes em paralelo podem invalidar
+// uma a outra e deixar a integracao sem nenhum token valido (foi o que
+// aconteceu em producao a 24/09 e de novo a 29/09/2026). Com isto, so ha
+// uma renovacao em curso por instancia; as restantes esperam o mesmo
+// resultado em vez de disparar um pedido proprio.
+let refreshEmCurso: Promise<string> | null = null;
 const pathCache: Record<string, string> = {};
 
 const json = (body: unknown, status: number) =>
@@ -315,26 +323,38 @@ async function getAccessToken(): Promise<string> {
   const agora = Date.now();
   if (tokenCache && tokenCache.expiresAt > agora) return tokenCache.token;
 
-  // O TOConline pode rodar o refresh_token a cada utilizacao. Se so
-  // dependessemos do secret, a integracao partia-se na primeira renovacao.
-  // Por isso: le primeiro o valor persistido na base, com fallback ao secret,
-  // e regrava sempre que a resposta trouxer um refresh_token novo.
-  const guardado = await lerDaBase(CHAVE_OAUTH) as { refresh_token?: string } | null;
-  const refresh = guardado?.refresh_token || Deno.env.get("TOC_REFRESH_TOKEN");
-  if (!refresh) {
-    throw new HttpError(428, "Autorizacao inicial por fazer: TOC_REFRESH_TOKEN nao esta definido. Abrir ?resource=auth para autorizar no TOConline.");
-  }
-  const t = await pedirToken(
-    new URLSearchParams({ grant_type: "refresh_token", refresh_token: refresh }), "refresh_token");
-  const at = t.access_token as string | undefined;
-  if (!at) throw new HttpError(502, "Resposta do token sem access_token.");
-  const novoRefresh = t.refresh_token as string | undefined;
-  if (novoRefresh && novoRefresh !== refresh) {
-    await guardarNaBase(CHAVE_OAUTH, { refresh_token: novoRefresh, atualizado_em: new Date().toISOString() });
-  }
-  const ttl = typeof t.expires_in === "number" ? t.expires_in : 3600;
-  tokenCache = { token: at, expiresAt: agora + Math.max(ttl - 60, 30) * 1000 };
-  return at;
+  // Já há uma renovação em curso nesta instância — esperar pelo mesmo
+  // resultado em vez de disparar um segundo pedido com o mesmo refresh_token.
+  if (refreshEmCurso) return refreshEmCurso;
+
+  refreshEmCurso = (async () => {
+    try {
+      // O TOConline pode rodar o refresh_token a cada utilizacao. Se so
+      // dependessemos do secret, a integracao partia-se na primeira renovacao.
+      // Por isso: le primeiro o valor persistido na base, com fallback ao secret,
+      // e regrava sempre que a resposta trouxer um refresh_token novo.
+      const guardado = await lerDaBase(CHAVE_OAUTH) as { refresh_token?: string } | null;
+      const refresh = guardado?.refresh_token || Deno.env.get("TOC_REFRESH_TOKEN");
+      if (!refresh) {
+        throw new HttpError(428, "Autorizacao inicial por fazer: TOC_REFRESH_TOKEN nao esta definido. Abrir ?resource=auth para autorizar no TOConline.");
+      }
+      const t = await pedirToken(
+        new URLSearchParams({ grant_type: "refresh_token", refresh_token: refresh }), "refresh_token");
+      const at = t.access_token as string | undefined;
+      if (!at) throw new HttpError(502, "Resposta do token sem access_token.");
+      const novoRefresh = t.refresh_token as string | undefined;
+      if (novoRefresh && novoRefresh !== refresh) {
+        await guardarNaBase(CHAVE_OAUTH, { refresh_token: novoRefresh, atualizado_em: new Date().toISOString() });
+      }
+      const ttl = typeof t.expires_in === "number" ? t.expires_in : 3600;
+      tokenCache = { token: at, expiresAt: agora + Math.max(ttl - 60, 30) * 1000 };
+      return at;
+    } finally {
+      refreshEmCurso = null;
+    }
+  })();
+
+  return refreshEmCurso;
 }
 
 const tocGet = (path: string, token: string) =>
@@ -1796,7 +1816,7 @@ const CHAVE_COMPRAS_SNAPSHOT = "ob-tes-compras-toconline";
 interface AuditoriaTipoAc { tipo: string; quantidade: number; quantidade_pendente: number; soma_pendente: number; classificacao: string; }
 interface DocIndexEntry { document_no: string; supplier_business_name: string; gross_total: number; pending_total: number; tax_payable: number; }
 interface PaymentIndexEntry { document_no: string; date: string; payment_mechanism: string; deleted: boolean; }
-interface PagaAc { pagamentoId: string; numeroPagamento: string; documentoAssociadoId: string; documentoNumero: string | null; fornecedor: string | null; dataPagamento: string; valorPago: number; valorOriginal: number | null; saldoRestante: number | null; formaPagamento: string; }
+interface PagaAc { pagamentoId: string; numeroPagamento: string; documentoAssociadoId: string; documentoNumero: string | null; fornecedor: string | null; dataPagamento: string; valorPago: number; valorOriginal: number | null; saldoRestante: number | null; formaPagamento: string; ivaDocumento: number | null; }
 
 interface CheckpointCompras {
   fase: "documents" | "payments" | "payment_lines";
