@@ -12366,7 +12366,14 @@ window.switchUserRestore = switchUserRestore;
 
 // ── VISIBILIDADE DE DADOS SENSÍVEIS (custos, margens, previsões) ──
 function toggleAdminSensitiveFields(){
-  var isAdmin = !!(CU && CU.admin === true);
+  // Correção (29/09/2026, doc "Sugestões CRM - parte 4" — Carolina: "Eu
+  // não tenho acesso aos clientes"): esta função só olhava para
+  // CU.admin===true, mas 'administrativo' já vê tudo em todo o resto do
+  // CRM (goPage() abaixo já a deixa navegar para estas páginas; _verTudo
+  // idem) — só o BOTÃO do sidebar (Pipeline/Follow-up/Clientes) é que
+  // continuava escondido para ela. Mesmo critério de "vê tudo" já usado
+  // nos outros sítios, nunca um 2º critério.
+  var isAdmin = !!(CU && (CU.admin === true || CU.role === 'administrativo'));
   document.querySelectorAll('.admin-only').forEach(function(el){
     el.classList.toggle('admin-hidden', !isAdmin);
   });
