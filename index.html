@@ -9175,6 +9175,27 @@ tbody td{font-size:15px}
       <div class="kpi kB"><div class="klbl">Projetos activos</div><div class="kval" id="dash-kpi-projetos-val">0</div><div class="kdlt" id="dash-kpi-projetos-dlt">—</div><div class="ksub" id="dash-kpi-projetos-sub">—</div></div>
       <div class="kpi kR"><div class="klbl">A receber vencido</div><div class="kval" id="dash-kpi-vencido-val">€0</div><div class="kdlt" id="dash-kpi-vencido-dlt">—</div><div class="ksub" id="dash-kpi-vencido-sub">0 faturas</div></div>
     </div>
+    <!-- Fase 1 do Dashboard CFO (29/09/2026) — 10 novas métricas pedidas pela
+         Edna (receita recebida, compras, folha, despesas de funcionários,
+         outros custos, margem bruta, resultado operacional, contas a pagar/
+         receber, vencido a pagar), calculadas em renderDashboardCFO() a
+         partir de finTotaisMesReal()/despCalcularTotaisMes()/TES_COMPRAS_TOCO
+         — nunca dados manuais/fictícios. Reaproveita a mesma grelha .krow/
+         .kpi já usada acima, só com mais duas filas. -->
+    <div class="krow">
+      <div class="kpi kG"><div class="klbl">Receita recebida</div><div class="kval" id="dash-kpi-recrec-val">€0</div><div class="kdlt" id="dash-kpi-recrec-dlt">—</div><div class="ksub" id="dash-kpi-recrec-sub">—</div></div>
+      <div class="kpi kA"><div class="klbl">Compras (TOConline)</div><div class="kval" id="dash-kpi-compras-val">€0</div><div class="kdlt" id="dash-kpi-compras-dlt">—</div><div class="ksub" id="dash-kpi-compras-sub">todas as compras — categorização por tipo numa fase seguinte</div></div>
+      <div class="kpi kB"><div class="klbl">Folha salarial</div><div class="kval" id="dash-kpi-folha-val">€0</div><div class="kdlt" id="dash-kpi-folha-dlt">—</div><div class="ksub" id="dash-kpi-folha-sub">—</div></div>
+      <div class="kpi kB"><div class="klbl">Despesas de funcionários</div><div class="kval" id="dash-kpi-despfunc-val">€0</div><div class="kdlt" id="dash-kpi-despfunc-dlt">—</div><div class="ksub" id="dash-kpi-despfunc-sub">—</div></div>
+      <div class="kpi kA"><div class="klbl">Outros custos</div><div class="kval" id="dash-kpi-outroscusto-val">€0</div><div class="kdlt" id="dash-kpi-outroscusto-dlt">—</div><div class="ksub" id="dash-kpi-outroscusto-sub">Contas pagas (Tesouraria), exceto Salários</div></div>
+    </div>
+    <div class="krow">
+      <div class="kpi kG"><div class="klbl">Margem bruta</div><div class="kval" id="dash-kpi-margembruta-val">€0</div><div class="kdlt" id="dash-kpi-margembruta-dlt">—</div><div class="ksub" id="dash-kpi-margembruta-sub">Receita − compras</div></div>
+      <div class="kpi kY"><div class="klbl">Resultado operacional (estimado)</div><div class="kval" id="dash-kpi-resultop-val">€0</div><div class="kdlt" id="dash-kpi-resultop-dlt">—</div><div class="ksub" id="dash-kpi-resultop-sub">Receita − todos os custos</div></div>
+      <div class="kpi kR"><div class="klbl">Contas a pagar</div><div class="kval" id="dash-kpi-apagar-val">€0</div><div class="kdlt" id="dash-kpi-apagar-dlt">—</div><div class="ksub" id="dash-kpi-apagar-sub">—</div></div>
+      <div class="kpi kG"><div class="klbl">Contas a receber</div><div class="kval" id="dash-kpi-areceber-val">€0</div><div class="kdlt" id="dash-kpi-areceber-dlt">—</div><div class="ksub" id="dash-kpi-areceber-sub">—</div></div>
+      <div class="kpi kR"><div class="klbl">A pagar vencido</div><div class="kval" id="dash-kpi-vencidopagar-val">€0</div><div class="kdlt" id="dash-kpi-vencidopagar-dlt">—</div><div class="ksub" id="dash-kpi-vencidopagar-sub">—</div></div>
+    </div>
     <div class="g2">
       <div class="cc"><div class="sh"><h2>Receita vs Custo — 6 meses</h2></div><canvas id="revChart"></canvas></div>
       <div class="cc"><div class="sh"><h2>Pipeline de Leads</h2></div><canvas id="pipeChart"></canvas></div>
@@ -21643,6 +21664,39 @@ function despCalcularTotais(){
 }
 window.despCalcularTotais = despCalcularTotais;
 
+// Irmã parametrizada de despCalcularTotais() — a original fica sempre
+// presa a "agora" (new Date()) e é usada por renderDespesas()/
+// finAtualizarKpisDespesas(), que têm de continuar exatamente como
+// estão. Dashboard CFO (Fase 1, 29/09/2026) precisa do mesmo cálculo
+// para um mês arbitrário do passado, por isso esta função replica a
+// MESMA lógica linha a linha (CRM_DESPESAS + EC_DESPESAS_APP, mesmos
+// campos/estados), só trocando "now" pelos parâmetros ano/mes. O valor
+// que representa o custo real de despesas de funcionários nesse mês é
+// totalAprovMes (só estado 'approved'/'Aprovada', igual a totalAprov na
+// original) — NÃO totalMes (que inclui pendentes/rejeitadas/reembolsadas,
+// ainda por decidir, não custo confirmado).
+function despCalcularTotaisMes(ano, mes){
+  let totalMes=0,cntMes=0,totalAprovMes=0,cntAprovMes=0;
+
+  (typeof CRM_DESPESAS!=='undefined'?CRM_DESPESAS:[]).forEach(d=>{
+    const dt = d.data ? new Date(d.data+'T12:00:00') : null;
+    const noMes = dt && (dt.getMonth()+1)===mes && dt.getFullYear()===ano;
+    if(noMes){ totalMes+=d.valor||0; cntMes++; }
+    if(noMes && d.estado==='approved'){ totalAprovMes+=d.valor||0; cntAprovMes++; }
+  });
+
+  (typeof EC_DESPESAS_APP!=='undefined'?EC_DESPESAS_APP:[]).forEach(d=>{
+    const v = parseFloat(d.amount_eur)||0;
+    const dt = d.occurred_at ? new Date(d.occurred_at) : null;
+    const noMes = dt && (dt.getMonth()+1)===mes && dt.getFullYear()===ano;
+    if(noMes){ totalMes+=v; cntMes++; }
+    if(noMes && d.status==='approved'){ totalAprovMes+=v; cntAprovMes++; }
+  });
+
+  return {totalMes,cntMes,totalAprovMes,cntAprovMes};
+}
+window.despCalcularTotaisMes = despCalcularTotaisMes;
+
 // Aplica os totais calculados aos KPIs do Painel Financeiro (fin-desp-*).
 // Chamado por renderFinanceiro() — não inventa dados novos, só reutiliza
 // despCalcularTotais().
@@ -22117,8 +22171,9 @@ function renderDashboardCFO(){
   // mesma despesa de logística assim que a conta espelho era paga —
   // bug confirmado na auditoria; finTotaisMesReal nunca lê
   // TES_LOG_DESPESAS).
-  var totAtual = (typeof finTotaisMesReal==='function') ? finTotaisMesReal(anoAtual, mesAtualNum) : {receita:0,custo:0,temReceberCarregado:false};
-  var totAnt   = (typeof finTotaisMesReal==='function') ? finTotaisMesReal(anoAnt, mesAntNum) : {receita:0,custo:0,temReceberCarregado:false};
+  var totFallback = {receita:0,custo:0,receitaRecebida:0,custoContas:0,custoOutros:0,custoDespesas:0,custoCompras:0,custoFolha:0,folhaIndisponivel:true,temReceberCarregado:false};
+  var totAtual = (typeof finTotaisMesReal==='function') ? finTotaisMesReal(anoAtual, mesAtualNum) : totFallback;
+  var totAnt   = (typeof finTotaisMesReal==='function') ? finTotaisMesReal(anoAnt, mesAntNum) : totFallback;
   var receitaMes = totAtual.receita, custoMes = totAtual.custo;
   var receitaMesAnt = totAnt.receita, custoMesAnt = totAnt.custo;
 
@@ -22186,6 +22241,93 @@ function renderDashboardCFO(){
 
   set('dash-kpi-vencido-val', fmt(totalVencido));
   set('dash-kpi-vencido-sub', vencidas.length+' fatura'+(vencidas.length===1?'':'s'));
+
+  // ── Fase 1 do Dashboard CFO (29/09/2026) — 10 métricas novas pedidas
+  // pela Edna, todas derivadas de fontes reais já existentes (nunca
+  // inseridas manualmente). Mês de referência: o mês atual (mesAtualNum/
+  // anoAtual, já calculados acima), mesma janela usada pelos KPIs
+  // existentes deste dashboard.
+  var mesLbl = hoje.toLocaleDateString('pt-PT',{month:'short',year:'2-digit'});
+
+  // 1) Receita recebida (caixa real) — finTotaisMesReal().receitaRecebida.
+  set('dash-kpi-recrec-val', fmt(totAtual.receitaRecebida||0));
+  set('dash-kpi-recrec-sub', 'Recebido em '+mesLbl+' (vs. '+fmt(receitaMes)+' faturado)');
+
+  // 2) Compras/matéria-prima — TOConline (custoCompras). Rótulo deixa
+  // claro que ainda não está categorizado por tipo (Fase 2, fora deste
+  // âmbito) — nunca implica que seja só matéria-prima.
+  set('dash-kpi-compras-val', fmt(totAtual.custoCompras||0));
+
+  // 3) Folha salarial — custo total de empresa (bruto + SS empresa),
+  // lido da entrada 'Salários — <Mês>' que foEnviarTesouraria() grava em
+  // TES_CONTAS. Sem Fecho de Ordenados enviado este mês (ou entrada
+  // anterior a esta funcionalidade) → estado explícito, nunca €0 mudo —
+  // mesmo convenção de "sem dados" já usada no RH (Fecho de Ordenados).
+  if(totAtual.folhaIndisponivel){
+    set('dash-kpi-folha-val', 'sem dados');
+    set('dash-kpi-folha-sub', 'sem Fecho de Ordenados enviado à Tesouraria este mês');
+  } else {
+    set('dash-kpi-folha-val', fmt(totAtual.custoFolha||0));
+    set('dash-kpi-folha-sub', 'Bruto + Seg. Social da empresa (23,75%)');
+  }
+
+  // 4) Despesas de funcionários — mês corrente, via despCalcularTotaisMes()
+  // (irmã parametrizada de despCalcularTotais(), nunca a mesma função —
+  // essa fica presa ao ecrã "Despesas e Reembolsos"/Painel Financeiro).
+  // Só o total APROVADO conta como custo confirmado do mês (totalAprovMes);
+  // pendentes/rejeitadas/reembolsadas ainda não são um custo fechado.
+  var despFuncMes = (typeof despCalcularTotaisMes==='function') ? despCalcularTotaisMes(anoAtual, mesAtualNum) : {totalAprovMes:0,cntAprovMes:0};
+  set('dash-kpi-despfunc-val', fmt(despFuncMes.totalAprovMes||0));
+  set('dash-kpi-despfunc-sub', despFuncMes.cntAprovMes+' despesa'+(despFuncMes.cntAprovMes===1?'':'s')+' aprovada'+(despFuncMes.cntAprovMes===1?'':'s'));
+
+  // 5) Outros custos — TES_CONTAS pagas do mês, exceto Salários.
+  set('dash-kpi-outroscusto-val', fmt((totAtual.custoOutros!=null?totAtual.custoOutros:totAtual.custoContas)||0));
+
+  // 6) Margem bruta = receita − compras (custo direto de mercadoria/
+  // fornecedores; não subtrai folha/despesas/outros custos — essa é a
+  // definição pedida pela Edna, distinta da "Margem" já existente acima,
+  // que usa o custo total).
+  var margemBruta = receitaMes - (totAtual.custoCompras||0);
+  set('dash-kpi-margembruta-val', fmt(margemBruta));
+  set('dash-kpi-margembruta-sub', receitaMes>0 ? pct(margemBruta/receitaMes*100)+' da receita' : '—');
+
+  // 7) Resultado operacional estimado = receita − todos os custos.
+  var resultOp = receitaMes - custoMes;
+  set('dash-kpi-resultop-val', fmt(resultOp));
+  set('dash-kpi-resultop-sub', (resultOp>=0?'Positivo':'Negativo')+' em '+mesLbl);
+
+  // 8/9/10) Contas a Pagar / Contas a Receber / A Pagar Vencido — mesmas
+  // fontes e regras já usadas em tesRenderResumoGeral() (Tesouraria →
+  // Resumo Geral), nunca uma terceira lógica divergente do que conta
+  // como "a pagar"/"a receber". TOConline (TES_COMPRAS_TOCO.kpis) é a
+  // fonte preferencial para "a pagar"; TES_CONTAS só como fallback
+  // enquanto a sincronização TOConline não estiver disponível.
+  var recListCFO = (typeof tesGetReceber==='function') ? tesGetReceber() : [];
+  var pendReceberCFO = recListCFO.filter(function(r){ return r.estado!=='Recebido'; });
+  var saldoRecCFO = function(r){ return (typeof finSaldoReceber==='function') ? finSaldoReceber(r) : (parseFloat(r.total)||0); };
+  var totalAReceberCFO = pendReceberCFO.reduce(function(s,r){ return s+saldoRecCFO(r); },0);
+  set('dash-kpi-areceber-val', fmt(totalAReceberCFO));
+  set('dash-kpi-areceber-sub', pendReceberCFO.length+' fatura'+(pendReceberCFO.length===1?'':'s')+' por cobrar');
+
+  var totalAPagarCFO = 0, vencidoPagarCFO = 0, subPagarCFO = '—';
+  if(typeof tesTocoComprasDisponivel==='function' && tesTocoComprasDisponivel()){
+    var kCFO = TES_COMPRAS_TOCO.kpis || {};
+    totalAPagarCFO = kCFO.totalAPagar || 0;
+    vencidoPagarCFO = kCFO.vencido || 0;
+    subPagarCFO = 'TOConline — '+(kCFO.nDocumentosPendentes||0)+' documento'+(kCFO.nDocumentosPendentes===1?'':'s')+' pendente'+(kCFO.nDocumentosPendentes===1?'':'s');
+  } else if(typeof TES_CONTAS!=='undefined'){
+    var pendentesPgCFO = TES_CONTAS.filter(function(c){ return c.estado!=='Paga'; });
+    totalAPagarCFO = pendentesPgCFO.reduce(function(s,c){ return s+(parseFloat(c.valor)||0); },0);
+    var hojePgCFO = new Date();
+    vencidoPagarCFO = pendentesPgCFO.filter(function(c){
+      var d = parseVencTes(c.vencimento); return !isNaN(d) && d<hojePgCFO;
+    }).reduce(function(s,c){ return s+(parseFloat(c.valor)||0); },0);
+    subPagarCFO = 'Contas Manuais (Tesouraria)';
+  }
+  set('dash-kpi-apagar-val', fmt(totalAPagarCFO));
+  set('dash-kpi-apagar-sub', subPagarCFO);
+  set('dash-kpi-vencidopagar-val', fmt(vencidoPagarCFO));
+  set('dash-kpi-vencidopagar-sub', 'a fornecedores');
 
   // Parte 2 (Fase 3) — secção de tarefas financeiras pendentes, acrescentada
   // ao CFO já existente (nunca um dashboard novo).
@@ -37366,13 +37508,50 @@ function finTotaisMesReal(ano, mes){
     if(!d || mesChave(d) !== alvo) return;
     receita += parseFloat(f.valorLiq || 0) || 0;
   });
+  // "Outros custos" (custoContas, mantido com este nome por compatibilidade
+  // — nenhum outro leitor de finTotaisMesReal() lê .custoContas fora desta
+  // função, confirmado por grep 29/09/2026) — TES_CONTAS pagas do mês,
+  // EXCLUINDO a categoria 'Salários' (essa passa a ter o seu próprio
+  // bucket, custoFolha, com valor de acréscimo/custo de empresa completo,
+  // não só o líquido pago). Sem esta exclusão, "Custo mensal" duplicava
+  // o valor de Salários assim que a conta espelho da Tesouraria fosse
+  // marcada Paga E o Fecho de Ordenados também contasse a folha.
   var custoContas = 0;
   contas.forEach(function(c){
     if(c.estado !== 'Paga') return;
+    if(c.categoria === 'Salários') return;
     var d = finParseVenc(c.dataPagamento || c.data);
     if(!d || mesChave(d) !== alvo) return;
     custoContas += parseFloat(c.valor || 0) || 0;
   });
+  var custoOutros = custoContas;
+  // Folha salarial (custo total de empresa: bruto + SS empresa) — lida da
+  // entrada 'Salários — <Mês Ano>' que foEnviarTesouraria() grava em
+  // TES_CONTAS (Fase 1 CFO, 29/09/2026). Usa QUALQUER estado (Pendente ou
+  // Paga): a folha é um custo real da empresa assim que o Fecho de
+  // Ordenados é enviado à Tesouraria, mesmo que o pagamento em si ainda
+  // não tenha sido marcado "Paga" — ao contrário de custoContas/
+  // custoOutros acima, que é uma leitura de caixa (só contas já pagas).
+  // Casa por mês via dataPagamento||data (mesmo critério de custoContas),
+  // com fallback pelo padrão da descrição ('Salários — <MêsNome> <Ano>')
+  // para entradas cuja data de registo não caia no mês de competência.
+  // Se a entrada existir mas for anterior a esta funcionalidade (sem
+  // folhaBruto/folhaSSEmpresa), ou não existir de todo, custoFolha fica 0
+  // e folhaIndisponivel=true, para a UI mostrar um estado explícito
+  // ("sem Fecho de Ordenados enviado este mês") em vez de um €0 enganoso.
+  var custoFolha = 0, folhaIndisponivel = true;
+  var mesNomeAlvo = (typeof FIN_MESES !== 'undefined') ? (FIN_MESES[mes-1] + ' ' + ano) : null;
+  var contaSalarios = contas.find(function(c){
+    if(c.categoria !== 'Salários') return false;
+    var d = finParseVenc(c.dataPagamento || c.data);
+    if(d && mesChave(d) === alvo) return true;
+    if(mesNomeAlvo && c.descricao === ('Salários — ' + mesNomeAlvo)) return true;
+    return false;
+  });
+  if(contaSalarios && contaSalarios.folhaBruto != null && contaSalarios.folhaSSEmpresa != null){
+    custoFolha = (parseFloat(contaSalarios.folhaBruto) || 0) + (parseFloat(contaSalarios.folhaSSEmpresa) || 0);
+    folhaIndisponivel = false;
+  }
   var custoDespesas = 0;
   despFunc.forEach(function(dp){
     if(dp.estado !== 'Aprovada') return;
@@ -37411,9 +37590,34 @@ function finTotaisMesReal(ano, mes){
     if(!d || mesChave(d) !== alvo) return;
     custoCompras += parseFloat(p.valorPago || 0) || 0;
   });
+  // Receita RECEBIDA (caixa real entrado no mês) — distinta de `receita`
+  // (faturação emitida no mês, pode ainda não estar paga). Lê TES_RECEBER
+  // diretamente (nunca tesGetRecebidos(), que depende do filtro de ano da
+  // UI da Tesouraria — finTotaisMesReal tem de funcionar para qualquer mês
+  // arbitrário, independente do que estiver selecionado no ecrã). Faturas
+  // 'Recebido' contam o total inteiro; 'Recebido Parcial' contam só
+  // valorRecebido (o que já entrou), nunca o total da fatura original —
+  // mesmo par de campos usado por _mvRenderRecebimentos() (Mapa de
+  // Vendas). NC nunca conta (é uma redução de faturação, não um
+  // recebimento). Data de referência: dataRec (data do recebimento/último
+  // pagamento) — mesmo campo já usado por tesGetRecebidos().
+  var receitaRecebida = 0;
+  receber.forEach(function(f){
+    if(f.tipo === 'NC') return;
+    if(f.estado === 'Recebido'){
+      var d1 = finParseVenc(f.dataRec || f.dataEmissao || f.data);
+      if(d1 && mesChave(d1) === alvo) receitaRecebida += parseFloat(f.total || 0) || 0;
+    } else if(f.estado === 'Recebido Parcial'){
+      var d2 = finParseVenc(f.dataRec);
+      if(d2 && mesChave(d2) === alvo) receitaRecebida += parseFloat(f.valorRecebido || 0) || 0;
+    }
+  });
   return {
-    receita: receita, custo: custoContas + custoDespesas + custoCompras,
-    custoContas: custoContas, custoDespesas: custoDespesas, custoCompras: custoCompras,
+    receita: receita, receitaRecebida: receitaRecebida,
+    custo: custoCompras + custoFolha + custoDespesas + custoContas,
+    custoContas: custoContas, custoOutros: custoOutros,
+    custoDespesas: custoDespesas, custoCompras: custoCompras,
+    custoFolha: custoFolha, folhaIndisponivel: folhaIndisponivel,
     temReceberCarregado: receber.length > 0
   };
 }
@@ -37432,6 +37636,16 @@ window.foEnviarTesouraria=function(){
   var total=FO_DADOS.reduce(function(s,d){ return s+(d.salLiquido||0); },0);
   total=Math.round(total*100)/100;
   if(total<=0){ alert('O total líquido do mês é €0 — nada para enviar.'); return; }
+  // Custo total de empresa (bruto + SS empresa) — persistido à parte do
+  // valor a pagar (que continua a ser só o líquido, o que sai da conta
+  // bancária). folhaBruto/folhaSSEmpresa são lidos por finTotaisMesReal()
+  // para calcular o custo real de folha salarial no Dashboard CFO (Fase 1,
+  // 29/09/2026) — mesma fórmula de totSSEmp já usada no PDF do Fecho de
+  // Ordenados (foGerarDocumento(), ~linha 17546), nunca redefinida.
+  var folhaBruto=FO_DADOS.reduce(function(s,d){ return s+(d.salBruto||0); },0);
+  var folhaSSEmpresa=FO_DADOS.reduce(function(s,d){ return s+((d.salBase||0)+(d.bonoExtra||0))*FO_SS_EMP; },0);
+  folhaBruto=Math.round(folhaBruto*100)/100;
+  folhaSSEmpresa=Math.round(folhaSSEmpresa*100)/100;
   var desc='Salários — '+mesNome;
   var existente=TES_CONTAS.find(function(c){ return c.descricao===desc; });
   if(existente){
@@ -37439,6 +37653,8 @@ window.foEnviarTesouraria=function(){
     if(!confirm('Já existe "'+desc+'" na Tesouraria (€'+(existente.valor||0).toFixed(2)+', pendente).\nSubstituir pelo novo total de €'+total.toFixed(2)+'?')) return;
     existente.valor=total;
     existente.data=new Date().toLocaleDateString('pt-PT');
+    existente.folhaBruto=folhaBruto;
+    existente.folhaSSEmpresa=folhaSSEmpresa;
   } else {
     var ultimoDia=new Date(ano,mes,0); // último dia do mês
     TES_CONTAS.unshift({
@@ -37450,7 +37666,9 @@ window.foEnviarTesouraria=function(){
       projeto:'—',
       valor:total,
       vencimento:ultimoDia.toLocaleDateString('pt-PT'),
-      estado:'Pendente'
+      estado:'Pendente',
+      folhaBruto:folhaBruto,
+      folhaSSEmpresa:folhaSSEmpresa
     });
   }
   if(typeof tesSave==='function') tesSave();

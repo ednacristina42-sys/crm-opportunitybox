@@ -2056,6 +2056,47 @@ async function ncRawProbe(id: string): Promise<Record<string, unknown>> {
   return { endpoint: `${apiBase()}${path}/${id}`, http_status: r.status, corpo_bruto: corpo };
 }
 
+// ── DIAGNÓSTICO TEMPORÁRIO — resource=hr_probe (29/09/2026) ────────────────
+// Só leitura, exige autenticação normal (JWT/x-api-key), nunca escreve nada.
+// Pedido da Edna: a Folha Salarial mostrada no CRM (Fecho de Ordenados, uma
+// estimativa própria a partir das picagens do app de pontos) deveria antes
+// vir dos dados REAIS já processados no TOConline (Recibos de Vencimento
+// oficiais, com SS/IRS/seguros reais — confirmado por PDFs que a Edna
+// partilhou, emitidos pelo TOConline). Este probe testa, com o MESMO token
+// OAuth (scope=commercial) já usado para compras/vendas, uma lista de
+// caminhos plausíveis do módulo de Recursos Humanos/Processamento Salarial
+// do TOConline, no MESMO host (TOC_API_BASE) — nunca inventa nem assume
+// nada: só reporta o HTTP status real de cada tentativa. Remover depois de
+// diagnosticado. Nunca expõe tokens/segredos.
+const HR_PROBE_PATHS = [
+  "/api/v1/human_resources_employees", "/human_resources_employees",
+  "/api/v1/hr_employees", "/hr_employees",
+  "/api/v1/payroll_documents", "/payroll_documents",
+  "/api/v1/wage_statements", "/wage_statements",
+  "/api/v1/salary_processing", "/salary_processing",
+  "/api/v1/employees", "/api/employees", "/employees",
+  "/api/v1/human_resources", "/human_resources",
+  "/api/v1/payroll", "/payroll",
+  "/api/v1/rh", "/rh",
+];
+async function hrProbe(): Promise<Record<string, unknown>> {
+  const token = await getAccessToken();
+  const resultados: Record<string, unknown>[] = [];
+  for (const p of HR_PROBE_PATHS) {
+    try {
+      const r = await tocGet(p + "?page[size]=1&page[number]=1", token);
+      let amostra: unknown = null;
+      if (r.ok) {
+        try { amostra = await r.json(); } catch { amostra = "(resposta nao e JSON)"; }
+      }
+      resultados.push({ path: p, http_status: r.status, ok: r.ok, amostra: r.ok ? amostra : undefined });
+    } catch (e) {
+      resultados.push({ path: p, erro: e instanceof Error ? e.message : String(e) });
+    }
+  }
+  return { api_base: apiBase(), scope_atual: SCOPE, resultados };
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
   if (req.method !== "GET") return json({ error: "Apenas GET e suportado." }, 405);
@@ -2218,6 +2259,10 @@ Deno.serve(async (req: Request) => {
       const id = url.searchParams.get("id") ?? "";
       if (!id) return json({ error: "Falta ?id=<id real de uma NC, obtido em sync_docs&tipo=credit_notes>" }, 400);
       return json(await ncRawProbe(id), 200);
+    }
+
+    if (pedido === "hr_probe") {
+      return json(await hrProbe(), 200);
     }
 
     // Fase C — auditoria financeira, somente leitura (ver bloco acima).
