@@ -10173,7 +10173,6 @@ tbody td{font-size:15px}
       <button class="vt" onclick="rhTab('ferias')">🏖️ Férias</button>
       <button class="vt" onclick="rhTab('turnos')">📅 Turnos</button>
       <button class="vt" onclick="rhTab('ordenados')">💶 Ordenados</button>
-      <button class="vt" onclick="rhTab('horas')">⏱️ Pica-ponto</button>
     </div>
   </div>
   <div class="admin-page">
@@ -10207,13 +10206,9 @@ tbody td{font-size:15px}
           <button onclick="foUsarColabsLocais()" class="tbtn" style="font-size:13px">💻 Usar Dados Locais</button>
           <button onclick="foGerarDocumento()" class="tbtn" style="font-size:13px;color:var(--g);border-color:var(--g)">📄 Gerar Documento</button>
           <button onclick="foEnviarTesouraria()" class="tbtn" style="font-size:13px;color:var(--y);border-color:var(--y)" title="Cria a conta a pagar do mês (total líquido dos salários) na Tesouraria">🏦 Enviar p/ Tesouraria</button>
-          <button onclick="foTestarRHTocOnline()" class="tbtn" style="font-size:13px;color:var(--b);border-color:var(--b)" title="Diagnóstico: verifica se o TOConline expõe a folha salarial oficial via API">🔍 Testar RH TOConline</button>
         </div>
         <div id="fo-status" style="font-size:13px;color:var(--muted);align-self:flex-end;padding-bottom:4px"></div>
       </div>
-      <!-- Resultado do diagnóstico RH TOConline (foTestarRHTocOnline) — só
-           leitura, nunca grava nada; ver comentário junto à função. -->
-      <pre id="fo-rh-probe-resultado" style="display:none;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:12px;font-size:11.5px;max-height:400px;overflow:auto;white-space:pre-wrap;margin-bottom:16px"></pre>
       <!-- Encargos de Folha manuais: Seguros e Bónus/Prémios (Fase 4 CFO,
            30/09/2026) — único ponto do projeto CFO onde entrada manual é
            esperada, porque nem o TOConline nem nenhuma outra integração
@@ -10271,30 +10266,6 @@ tbody td{font-size:15px}
       <div id="fo-empty" style="text-align:center;color:var(--muted);padding:40px;font-size:14px">
         Seleciona o mês e clica em <strong>"Carregar Picagens"</strong> ou <strong>"Usar Dados Locais"</strong> para começar.
       </div>
-    </div>
-
-    <!-- Pica-ponto (movido de Despesas) -->
-    <div id="rh-panel-horas" style="display:none;padding:4px 0">
-      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:16px">
-        <select id="wd-periodo" onchange="wdLoad()" style="background:var(--bg3);border:1px solid var(--border);color:var(--txt2);border-radius:7px;padding:6px 10px;font-size:14px">
-          <option value="7">Últimos 7 dias</option>
-          <option value="30" selected>Últimos 30 dias</option>
-          <option value="90">Últimos 90 dias</option>
-        </select>
-        <select id="wd-filtro-func" onchange="wdRender()" style="background:var(--bg3);border:1px solid var(--border);color:var(--txt2);border-radius:7px;padding:6px 10px;font-size:14px">
-          <option value="">— Todos os funcionários —</option>
-        </select>
-        <button onclick="wdLoad()" style="background:var(--bg3);border:1px solid var(--border);color:var(--txt2);border-radius:7px;padding:6px 12px;font-size:14px;cursor:pointer">🔄 Sincronizar</button>
-        <span id="wd-status" style="font-size:13px;color:var(--muted)">Clique em Sincronizar para carregar</span>
-      </div>
-      <div id="wd-resumo" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px"></div>
-      <div class="tw"><table>
-        <thead><tr>
-          <th>Funcionário</th><th>Data</th><th>Entrada</th><th>Saída</th>
-          <th>Horas</th><th>Km</th><th>Estado</th><th>Ação</th>
-        </tr></thead>
-        <tbody id="wd-tbody"></tbody>
-      </table></div>
     </div>
 
     <!-- Férias: mapa anual, saldos e marcação -->
@@ -17331,12 +17302,12 @@ var RH_ESTADO_COLORS = {
 
 // ── TABS ──
 function rhTab(tab){
-  ['colabs','admissoes','recrutamento','ferias','turnos','ordenados','horas'].forEach(t=>{
+  ['colabs','admissoes','recrutamento','ferias','turnos','ordenados'].forEach(t=>{
     var p=document.getElementById('rh-panel-'+t);
     if(p) p.style.display=t===tab?'block':'none';
   });
   document.querySelectorAll('#page-admin-rh .vt').forEach((b,i)=>{
-    const tabs=['colabs','admissoes','recrutamento','ferias','turnos','ordenados','horas'];
+    const tabs=['colabs','admissoes','recrutamento','ferias','turnos','ordenados'];
     b.classList.toggle('on',tabs[i]===tab);
   });
   if(tab==='colabs') rhRenderColabs();
@@ -17345,7 +17316,6 @@ function rhTab(tab){
   if(tab==='ferias' && typeof rhFeriasInit==='function') rhFeriasInit();
   if(tab==='turnos' && typeof rhTurnosInit==='function') rhTurnosInit();
   if(tab==='ordenados') foInit();
-  if(tab==='horas' && !window._wdLoaded) wdLoad();
 }
 
 function rhRender(){
@@ -17410,8 +17380,8 @@ var _foColabModal = null;   // id do colaborador no mini-modal
 // Único ponto de todo o projeto CFO onde entrada manual é esperada e
 // correta: nem a API comercial do TOConline, nem o app de picagens/pontos,
 // nem nenhuma integração existente expõem estes dois valores (confirmado
-// pelo diagnóstico hr_probe de 29-30/09/2026, ver foTestarRHTocOnline()
-// acima) — não há "fonte real" a ler, ao contrário de todo o resto do
+// pelo diagnóstico hr_probe de 29-30/09/2026, entretanto removido depois
+// de responder à pergunta) — não há "fonte real" a ler, ao contrário do resto do
 // custo de folha (folhaBruto/folhaSSEmpresa, lidos de FO_DADOS/picagens).
 // Guardado por mês (chave 'YYYY-MM', mesmo formato de `alvo` em
 // finTotaisMesReal()), independente de o Fecho de Ordenados desse mês já
@@ -38434,31 +38404,6 @@ function finComprasPorCategoriaMes(ano, mes){
 window.finComprasPorCategoriaMes = finComprasPorCategoriaMes;
 
 // ── 1. SALÁRIOS DO MÊS → TESOURARIA ─────────────────────────────────
-// Diagnóstico temporário (29-30/09/2026): confirma se o TOConline expõe a
-// folha salarial oficial (Recibos de Vencimento, com SS/IRS/seguros reais —
-// os PDFs que a Edna partilhou vêm de lá) via a mesma ligação OAuth já usada
-// para compras/vendas (resource=hr_probe, edge function crm-toconline). Só
-// leitura, nunca escreve nada — reporta o HTTP status real de cada caminho
-// testado, nunca inventa. Admin-only (mesma área do Fecho de Ordenados).
-// Remover este botão depois de diagnosticado.
-window.foTestarRHTocOnline=async function(){
-  if(typeof homeIsAdmin==='function' && !homeIsAdmin()){ if(typeof showToast==='function') showToast('Só Admin.'); return; }
-  var el=document.getElementById('fo-rh-probe-resultado');
-  if(!el) return;
-  el.style.display='block';
-  el.textContent='⏳ A testar caminhos do TOConline (Recursos Humanos/Processamento Salarial)…';
-  try{
-    var payload = await tocoEF('hr_probe');
-    var validos = (payload.resultados||[]).filter(function(r){ return r.ok; });
-    var resumo = validos.length
-      ? ('✓ ' + validos.length + ' caminho(s) responderam com sucesso — ver detalhe abaixo.\n\n')
-      : ('ℹ️ Nenhum dos ' + (payload.resultados||[]).length + ' caminhos testados respondeu com sucesso — o scope actual ("' + payload.scope_atual + '") provavelmente não dá acesso a Recursos Humanos.\n\n');
-    el.textContent = resumo + JSON.stringify(payload, null, 2);
-  }catch(e){
-    el.textContent = '⚠️ Falha ao testar: ' + (e && e.message || e);
-  }
-};
-
 window.foEnviarTesouraria=function(){
   if(typeof FO_DADOS==='undefined'||!FO_DADOS.length){
     alert('Carrega primeiro os dados do mês ("Carregar Picagens" ou "Usar Dados Locais").'); return;
