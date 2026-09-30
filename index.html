@@ -10207,9 +10207,13 @@ tbody td{font-size:15px}
           <button onclick="foUsarColabsLocais()" class="tbtn" style="font-size:13px">💻 Usar Dados Locais</button>
           <button onclick="foGerarDocumento()" class="tbtn" style="font-size:13px;color:var(--g);border-color:var(--g)">📄 Gerar Documento</button>
           <button onclick="foEnviarTesouraria()" class="tbtn" style="font-size:13px;color:var(--y);border-color:var(--y)" title="Cria a conta a pagar do mês (total líquido dos salários) na Tesouraria">🏦 Enviar p/ Tesouraria</button>
+          <button onclick="foTestarRHTocOnline()" class="tbtn" style="font-size:13px;color:var(--b);border-color:var(--b)" title="Diagnóstico: verifica se o TOConline expõe a folha salarial oficial via API">🔍 Testar RH TOConline</button>
         </div>
         <div id="fo-status" style="font-size:13px;color:var(--muted);align-self:flex-end;padding-bottom:4px"></div>
       </div>
+      <!-- Resultado do diagnóstico RH TOConline (foTestarRHTocOnline) — só
+           leitura, nunca grava nada; ver comentário junto à função. -->
+      <pre id="fo-rh-probe-resultado" style="display:none;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:12px;font-size:11.5px;max-height:400px;overflow:auto;white-space:pre-wrap;margin-bottom:16px"></pre>
       <!-- KPIs -->
       <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:18px" id="fo-kpis" style="display:none">
         <div class="mn" style="background:var(--bg3)"><div class="mnl">Colaboradores</div><div class="mnv" id="fo-kpi-total">—</div><div class="mns">ativos</div></div>
@@ -38243,6 +38247,31 @@ function finComprasPorCategoriaMes(ano, mes){
 window.finComprasPorCategoriaMes = finComprasPorCategoriaMes;
 
 // ── 1. SALÁRIOS DO MÊS → TESOURARIA ─────────────────────────────────
+// Diagnóstico temporário (29-30/09/2026): confirma se o TOConline expõe a
+// folha salarial oficial (Recibos de Vencimento, com SS/IRS/seguros reais —
+// os PDFs que a Edna partilhou vêm de lá) via a mesma ligação OAuth já usada
+// para compras/vendas (resource=hr_probe, edge function crm-toconline). Só
+// leitura, nunca escreve nada — reporta o HTTP status real de cada caminho
+// testado, nunca inventa. Admin-only (mesma área do Fecho de Ordenados).
+// Remover este botão depois de diagnosticado.
+window.foTestarRHTocOnline=async function(){
+  if(typeof homeIsAdmin==='function' && !homeIsAdmin()){ if(typeof showToast==='function') showToast('Só Admin.'); return; }
+  var el=document.getElementById('fo-rh-probe-resultado');
+  if(!el) return;
+  el.style.display='block';
+  el.textContent='⏳ A testar caminhos do TOConline (Recursos Humanos/Processamento Salarial)…';
+  try{
+    var payload = await tocoEF('hr_probe');
+    var validos = (payload.resultados||[]).filter(function(r){ return r.ok; });
+    var resumo = validos.length
+      ? ('✓ ' + validos.length + ' caminho(s) responderam com sucesso — ver detalhe abaixo.\n\n')
+      : ('ℹ️ Nenhum dos ' + (payload.resultados||[]).length + ' caminhos testados respondeu com sucesso — o scope actual ("' + payload.scope_atual + '") provavelmente não dá acesso a Recursos Humanos.\n\n');
+    el.textContent = resumo + JSON.stringify(payload, null, 2);
+  }catch(e){
+    el.textContent = '⚠️ Falha ao testar: ' + (e && e.message || e);
+  }
+};
+
 window.foEnviarTesouraria=function(){
   if(typeof FO_DADOS==='undefined'||!FO_DADOS.length){
     alert('Carrega primeiro os dados do mês ("Carregar Picagens" ou "Usar Dados Locais").'); return;
