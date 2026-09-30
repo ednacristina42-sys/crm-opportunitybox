@@ -17937,6 +17937,7 @@ function rhRenderColabs(){
       ${c.tel&&c.tel!=='—'?`<div style="margin-top:6px;font-size:12px;color:var(--muted)">📞 ${c.tel}</div>`:''}
       ${contrato?`<div style="margin-top:4px;font-size:11px;color:var(--muted)">${contrato}</div>`:''}
       ${horas?`<div style="font-size:11px;color:var(--muted)">${horas}</div>`:''}
+      <button onclick="event.stopPropagation();rhPromoverColabApp('${c.ec_id}')" class="tbtn" style="margin-top:8px;font-size:11px;padding:4px 8px;width:100%">➕ Promover a Colaborador</button>
     </div>`;
   });
 
@@ -18075,6 +18076,39 @@ function rhCloseColabModal(){
   document.getElementById('rh-colab-modal-form').style.display='block';
   document.getElementById('rh-colab-modal-body').style.display='none';
 }
+// Promove uma pessoa só do App de Pontos (EC_FUNCIONARIOS, sem ficha de RH)
+// a Colaborador local completo (rhColabs) — pedido pela Edna, 30/09/2026:
+// o Fecho de Ordenados só lê rhColabs (precisa de salário/NIF/IBAN, que o
+// App não tem), por isso alguém só no App nunca aparecia na folha. Em vez
+// de duplicar o formulário/gravação, reutiliza tal e qual o modal "+
+// Colaborador" já existente (rhSaveColab abaixo) — só pré-preenche os
+// campos que o App já tem e deixa `rh-c-salario` em branco para a Edna
+// preencher antes de gravar. rhEditColabId=null garante que grava como
+// registo NOVO (nunca edita por engano). Depois de gravado, a reconciliação
+// por nome já existente em rhMesmaPessoa() faz este cartão de App
+// desaparecer sozinho (fica só o cartão local, marcado "📱 App") — nada
+// mais a fazer aqui.
+function rhPromoverColabApp(ecId){
+  const c = EC_FUNCIONARIOS.find(x=>x.ec_id===ecId); if(!c) return;
+  // Delega em rhOpenColab() (possivelmente já sobreposta mais abaixo, na
+  // secção "RH · COLABORADORES — persistência real em Supabase") o reset
+  // completo do formulário para modo "novo registo" — limpa campos, garante
+  // rhEditColabId=null e esconde o botão "Apagar definitivo" que a mesma
+  // secção injeta. Só depois é que pré-preenchemos com o que o App já sabe.
+  rhOpenColab();
+  document.getElementById('rh-c-nome').value = c.nome||'';
+  document.getElementById('rh-c-nif').value = c.nif||'';
+  document.getElementById('rh-c-niss').value = c.niss||'';
+  if(c.admissao) document.getElementById('rh-c-admissao').value = c.admissao;
+  document.getElementById('rh-c-cargo').value = c.cargo||'';
+  if(c.dept) document.getElementById('rh-c-dept').value = c.dept;
+  document.getElementById('rh-c-tel').value = c.tel||'';
+  document.getElementById('rh-c-iban').value = c.iban||'';
+  document.getElementById('rh-c-morada').value = c.morada||'';
+  document.getElementById('rh-colab-title').textContent = '➕ Promover a Colaborador: '+(c.nome||'');
+}
+window.rhPromoverColabApp = rhPromoverColabApp;
+
 function rhOpenColab(){
   rhEditColabId=null;
   ['rh-c-nome','rh-c-nif','rh-c-niss','rh-c-cargo','rh-c-tel','rh-c-email','rh-c-iban','rh-c-morada','rh-c-salario'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
