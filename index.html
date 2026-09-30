@@ -10200,7 +10200,7 @@ tbody td{font-size:15px}
       <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:18px">
         <div>
           <label class="form-label" style="display:block;margin-bottom:4px">Mês / Ano</label>
-          <input type="month" id="fo-mes" class="form-input" style="padding:5px 10px;font-size:14px"/>
+          <input type="month" id="fo-mes" class="form-input" style="padding:5px 10px;font-size:14px" onchange="foEncargosFolhaCarregarInputs()"/>
         </div>
         <div style="display:flex;gap:8px;align-items:flex-end;padding-bottom:1px">
           <button onclick="foCarregarPicagens()" class="tbtn y" style="font-size:13px">⏱️ Carregar Picagens</button>
@@ -10214,6 +10214,32 @@ tbody td{font-size:15px}
       <!-- Resultado do diagnóstico RH TOConline (foTestarRHTocOnline) — só
            leitura, nunca grava nada; ver comentário junto à função. -->
       <pre id="fo-rh-probe-resultado" style="display:none;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:12px;font-size:11.5px;max-height:400px;overflow:auto;white-space:pre-wrap;margin-bottom:16px"></pre>
+      <!-- Encargos de Folha manuais: Seguros e Bónus/Prémios (Fase 4 CFO,
+           30/09/2026) — único ponto do projeto CFO onde entrada manual é
+           esperada, porque nem o TOConline nem nenhuma outra integração
+           expõem estes dois valores (ver comentário junto a ENCARGOS_FOLHA,
+           foGuardarEncargosFolha()). Independente do Fecho de Ordenados —
+           pode ser preenchido antes, depois, ou num mês em que o Fecho nem
+           chegou a ser enviado à Tesouraria. -->
+      <div style="background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:18px">
+        <div style="font-size:13px;font-weight:600;color:var(--txt2);margin-bottom:10px">🧾 Encargos de Folha — Seguros e Bónus/Prémios (lançamento manual, mensal)</div>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
+          <div>
+            <label class="form-label" style="display:block;margin-bottom:4px;font-size:12px">Seguros (€)</label>
+            <input type="number" step="0.01" min="0" id="fo-encargos-seguros" class="form-input" style="padding:5px 10px;font-size:14px;width:130px" placeholder="0,00"/>
+          </div>
+          <div>
+            <label class="form-label" style="display:block;margin-bottom:4px;font-size:12px">Bónus/Prémios (€)</label>
+            <input type="number" step="0.01" min="0" id="fo-encargos-bonus" class="form-input" style="padding:5px 10px;font-size:14px;width:130px" placeholder="0,00"/>
+          </div>
+          <div style="flex:1;min-width:220px">
+            <label class="form-label" style="display:block;margin-bottom:4px;font-size:12px">Nota (opcional)</label>
+            <input type="text" id="fo-encargos-nota" class="form-input" style="padding:5px 10px;font-size:14px;width:100%" placeholder="ex.: Tranquilidade — acidentes de trabalho"/>
+          </div>
+          <button onclick="foGuardarEncargosFolha()" class="tbtn" style="font-size:13px;color:var(--g);border-color:var(--g)">💾 Guardar Encargos</button>
+        </div>
+        <div style="font-size:11.5px;color:var(--muted);margin-top:8px">Estes valores somam-se à folha salarial no Dashboard CFO ("Folha Salarial"), quer o Fecho de Ordenados deste mês já tenha sido enviado à Tesouraria, quer não.</div>
+      </div>
       <!-- KPIs -->
       <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:18px" id="fo-kpis" style="display:none">
         <div class="mn" style="background:var(--bg3)"><div class="mnl">Colaboradores</div><div class="mnv" id="fo-kpi-total">—</div><div class="mns">ativos</div></div>
@@ -17379,6 +17405,94 @@ var FO_DADOS = [];          // array de objetos por colaborador com cálculos
 var FO_AUSENCIAS = JSON.parse(localStorage.getItem('ob-fo-ausencias') || '[]');
 var _foColabModal = null;   // id do colaborador no mini-modal
 
+// ── Encargos de Folha manuais: Seguros e Bónus/Prémios (Fase 4 CFO,
+// 30/09/2026) ──────────────────────────────────────────────────────
+// Único ponto de todo o projeto CFO onde entrada manual é esperada e
+// correta: nem a API comercial do TOConline, nem o app de picagens/pontos,
+// nem nenhuma integração existente expõem estes dois valores (confirmado
+// pelo diagnóstico hr_probe de 29-30/09/2026, ver foTestarRHTocOnline()
+// acima) — não há "fonte real" a ler, ao contrário de todo o resto do
+// custo de folha (folhaBruto/folhaSSEmpresa, lidos de FO_DADOS/picagens).
+// Guardado por mês (chave 'YYYY-MM', mesmo formato de `alvo` em
+// finTotaisMesReal()), independente de o Fecho de Ordenados desse mês já
+// ter sido enviado à Tesouraria ou não — são dois lançamentos
+// completamente independentes um do outro.
+// Mesmo padrão exato de FORNECEDOR_CATEGORIAS (Fase 2 CFO, ~linha 26240):
+// cópia local em localStorage + sincronização remota via obSbPush()
+// genérico em 'ob_crm_dados' (chave 'ob-encargos-folha'), hidratação fresca
+// dedicada quando o painel RH → Ordenados abre (foInit()).
+var ENCARGOS_FOLHA;
+try{ ENCARGOS_FOLHA = JSON.parse(localStorage.getItem('ob-encargos-folha') || '{}'); }catch(e){ ENCARGOS_FOLHA = {}; }
+if(!ENCARGOS_FOLHA || typeof ENCARGOS_FOLHA !== 'object') ENCARGOS_FOLHA = {};
+window.ENCARGOS_FOLHA = ENCARGOS_FOLHA;
+
+// Encargos de UM mês (seguros/bónus/nota) — sempre um objeto com os três
+// campos, mesmo que o mês nunca tenha sido preenchido (0/0/'').
+function foEncargosFolhaDe(mesVal){
+  var mapa = (typeof ENCARGOS_FOLHA !== 'undefined' && ENCARGOS_FOLHA) ? ENCARGOS_FOLHA : {};
+  var e = (mesVal && mapa[mesVal]) || {};
+  return { seguros: parseFloat(e.seguros) || 0, bonus: parseFloat(e.bonus) || 0, nota: e.nota || '' };
+}
+window.foEncargosFolhaDe = foEncargosFolhaDe;
+
+// Pré-preenche os 3 campos de "Encargos de Folha" com o que já está
+// guardado para o mês actualmente selecionado em #fo-mes — chamado no
+// foInit() e sempre que o mês muda (onchange de #fo-mes).
+function foEncargosFolhaCarregarInputs(){
+  var mesVal = (document.getElementById('fo-mes') || {}).value;
+  var elSeguros = document.getElementById('fo-encargos-seguros');
+  var elBonus = document.getElementById('fo-encargos-bonus');
+  var elNota = document.getElementById('fo-encargos-nota');
+  if(!elSeguros || !elBonus || !elNota) return;
+  if(!mesVal){ elSeguros.value = ''; elBonus.value = ''; elNota.value = ''; return; }
+  var e = foEncargosFolhaDe(mesVal);
+  elSeguros.value = e.seguros ? e.seguros : '';
+  elBonus.value = e.bonus ? e.bonus : '';
+  elNota.value = e.nota || '';
+}
+window.foEncargosFolhaCarregarInputs = foEncargosFolhaCarregarInputs;
+
+// Grava (ou substitui) os encargos do mês seleccionado e sincroniza de
+// imediato — mesmo obSbPush() genérico já usado por fornDefinirCategoria().
+function foGuardarEncargosFolha(){
+  var mesVal = (document.getElementById('fo-mes') || {}).value;
+  if(!mesVal){ alert('Seleciona o mês.'); return; }
+  var seguros = parseFloat((document.getElementById('fo-encargos-seguros') || {}).value) || 0;
+  var bonus = parseFloat((document.getElementById('fo-encargos-bonus') || {}).value) || 0;
+  var nota = (((document.getElementById('fo-encargos-nota') || {}).value) || '').trim();
+  ENCARGOS_FOLHA[mesVal] = { seguros: seguros, bonus: bonus, nota: nota };
+  try{ localStorage.setItem('ob-encargos-folha', JSON.stringify(ENCARGOS_FOLHA)); }catch(e){}
+  try{ if(typeof obSbPush === 'function') obSbPush('ob-encargos-folha'); }catch(e){}
+  if(typeof showToast === 'function') showToast('Encargos de folha guardados.'); else alert('Encargos guardados.');
+  if(typeof renderDashboardCFO === 'function'){ try{ renderDashboardCFO(); }catch(e){} }
+}
+window.foGuardarEncargosFolha = foGuardarEncargosFolha;
+
+// Hidratação canónica dedicada (leitura fresca de ob_crm_dados) — mesmo
+// padrão exato de fornHidratarCategorias() (~linha 26276), chamada quando o
+// painel RH → Ordenados abre (foInit()).
+var _foEncargosFolhaHidratacaoPromise = null;
+async function foHidratarEncargosFolha(){
+  if(_foEncargosFolhaHidratacaoPromise) return _foEncargosFolhaHidratacaoPromise;
+  _foEncargosFolhaHidratacaoPromise = (async function(){
+    var sb = (typeof crmSBClient === 'function') ? crmSBClient() : null;
+    if(!sb) return;
+    try{
+      var res = await sb.from('ob_crm_dados').select('dados,updated_at').eq('chave','ob-encargos-folha').maybeSingle();
+      if(res && !res.error && res.data && res.data.dados){
+        ENCARGOS_FOLHA = res.data.dados;
+        window.ENCARGOS_FOLHA = ENCARGOS_FOLHA;
+        try{ localStorage.setItem('ob-encargos-folha', JSON.stringify(ENCARGOS_FOLHA)); }catch(e){}
+      }
+    }catch(e){ console.warn('[RH] Falha a ler ob-encargos-folha remoto — mantém a cópia local como fallback.', e); }
+    if(typeof foEncargosFolhaCarregarInputs === 'function') foEncargosFolhaCarregarInputs();
+    if(typeof renderDashboardCFO === 'function'){ try{ renderDashboardCFO(); }catch(e){} }
+  })();
+  _foEncargosFolhaHidratacaoPromise.finally(function(){ _foEncargosFolhaHidratacaoPromise = null; });
+  return _foEncargosFolhaHidratacaoPromise;
+}
+window.foHidratarEncargosFolha = foHidratarEncargosFolha;
+
 // ── Constantes fiscais Portugal ───────────────────────────────
 var FO_SS_TRAB    = 0.11;   // 11% SS colaborador
 var FO_SS_EMP     = 0.2375; // 23.75% SS empresa
@@ -17397,6 +17511,12 @@ function foInit() {
     mesEl.value = n.getFullYear() + '-' + String(n.getMonth()+1).padStart(2,'0');
   }
   document.getElementById('fo-status').textContent = '';
+  // Encargos de Folha manuais (Seguros/Bónus, Fase 4 CFO) — pré-preenche já
+  // com a cópia local, depois pede uma leitura fresca ao Supabase (a mesma
+  // sequência de fornHidratarCategorias() na Tesouraria: local primeiro,
+  // remoto a seguir a repintar se vier diferente).
+  if (typeof foEncargosFolhaCarregarInputs === 'function') foEncargosFolhaCarregarInputs();
+  if (typeof foHidratarEncargosFolha === 'function') foHidratarEncargosFolha();
 }
 window.foInit = foInit;
 
@@ -22314,7 +22434,7 @@ function renderDashboardCFO(){
   // mesma despesa de logística assim que a conta espelho era paga —
   // bug confirmado na auditoria; finTotaisMesReal nunca lê
   // TES_LOG_DESPESAS).
-  var totFallback = {receita:0,custo:0,receitaRecebida:0,custoContas:0,custoOutros:0,custoDespesas:0,custoCompras:0,custoFolha:0,folhaIndisponivel:true,temReceberCarregado:false};
+  var totFallback = {receita:0,custo:0,receitaRecebida:0,custoContas:0,custoOutros:0,custoDespesas:0,custoCompras:0,custoFolha:0,folhaIndisponivel:true,folhaParcial:false,custoSegurosBonus:0,temReceberCarregado:false};
   var totAtual = (typeof finTotaisMesReal==='function') ? finTotaisMesReal(anoAtual, mesAtualNum) : totFallback;
   var totAnt   = (typeof finTotaisMesReal==='function') ? finTotaisMesReal(anoAnt, mesAntNum) : totFallback;
   var receitaMes = totAtual.receita, custoMes = totAtual.custo;
@@ -22425,17 +22545,29 @@ function renderDashboardCFO(){
     }
   }
 
-  // 3) Folha salarial — custo total de empresa (bruto + SS empresa),
-  // lido da entrada 'Salários — <Mês>' que foEnviarTesouraria() grava em
-  // TES_CONTAS. Sem Fecho de Ordenados enviado este mês (ou entrada
-  // anterior a esta funcionalidade) → estado explícito, nunca €0 mudo —
-  // mesmo convenção de "sem dados" já usada no RH (Fecho de Ordenados).
+  // 3) Folha salarial — custo total de empresa (bruto + SS empresa +
+  // encargos manuais de seguros/bónus, Fase 4 CFO 30/09/2026), lido da
+  // entrada 'Salários — <Mês>' que foEnviarTesouraria() grava em TES_CONTAS
+  // e de ENCARGOS_FOLHA (RH → Ordenados, "Encargos de Folha"). Três
+  // estados possíveis, nunca um €0 mudo quando há dado real por trás:
+  //  - folhaIndisponivel: nem base nem seguros/bónus este mês → "sem dados".
+  //  - folhaParcial: base ainda não enviada à Tesouraria, mas seguros/bónus
+  //    já foram lançados → mostra esse valor parcial, com aviso explícito.
+  //  - normal: base disponível → valor completo (+ linha extra se também
+  //    houver seguros/bónus manuais incluídos, para nunca esconder que uma
+  //    parte da folha exibida não vem do TOConline/RH, mas de lançamento
+  //    manual).
   if(totAtual.folhaIndisponivel){
     set('dash-kpi-folha-val', 'sem dados');
     set('dash-kpi-folha-sub', 'sem Fecho de Ordenados enviado à Tesouraria este mês');
+  } else if(totAtual.folhaParcial){
+    set('dash-kpi-folha-val', fmt(totAtual.custoFolha||0));
+    set('dash-kpi-folha-sub', 'parcial — falta o Fecho de Ordenados deste mês; inclui ' + fmt(totAtual.custoSegurosBonus||0) + ' em seguros/bónus lançados manualmente');
   } else {
     set('dash-kpi-folha-val', fmt(totAtual.custoFolha||0));
-    set('dash-kpi-folha-sub', 'Bruto + Seg. Social da empresa (23,75%)');
+    var folhaSub = 'Bruto + Seg. Social da empresa (23,75%)';
+    if((totAtual.custoSegurosBonus||0) > 0) folhaSub += ' — inclui ' + fmt(totAtual.custoSegurosBonus) + ' em seguros/bónus lançados manualmente';
+    set('dash-kpi-folha-sub', folhaSub);
   }
 
   // 4) Despesas de funcionários — mês corrente, via despCalcularTotaisMes()
@@ -38132,10 +38264,11 @@ function finTotaisMesReal(ano, mes){
   // com fallback pelo padrão da descrição ('Salários — <MêsNome> <Ano>')
   // para entradas cuja data de registo não caia no mês de competência.
   // Se a entrada existir mas for anterior a esta funcionalidade (sem
-  // folhaBruto/folhaSSEmpresa), ou não existir de todo, custoFolha fica 0
-  // e folhaIndisponivel=true, para a UI mostrar um estado explícito
-  // ("sem Fecho de Ordenados enviado este mês") em vez de um €0 enganoso.
-  var custoFolha = 0, folhaIndisponivel = true;
+  // folhaBruto/folhaSSEmpresa), ou não existir de todo, a componente base
+  // (folhaBaseIndisponivel=true) fica 0 — mas isso já não implica
+  // sozinho um €0 total: ver custoSegurosBonus a seguir (Fase 4 CFO,
+  // 30/09/2026), que pode tornar o mês "parcial" em vez de "sem dados".
+  var custoFolha = 0, folhaBaseIndisponivel = true;
   var mesNomeAlvo = (typeof FIN_MESES !== 'undefined') ? (FIN_MESES[mes-1] + ' ' + ano) : null;
   var contaSalarios = contas.find(function(c){
     if(c.categoria !== 'Salários') return false;
@@ -38146,8 +38279,27 @@ function finTotaisMesReal(ano, mes){
   });
   if(contaSalarios && contaSalarios.folhaBruto != null && contaSalarios.folhaSSEmpresa != null){
     custoFolha = (parseFloat(contaSalarios.folhaBruto) || 0) + (parseFloat(contaSalarios.folhaSSEmpresa) || 0);
-    folhaIndisponivel = false;
+    folhaBaseIndisponivel = false;
   }
+  // Encargos de Folha manuais: Seguros e Bónus/Prémios (Fase 4 CFO,
+  // 30/09/2026) — lidos de ENCARGOS_FOLHA[alvo] (mesmo formato de chave
+  // 'YYYY-MM' já usado por `alvo` acima), lançados em RH → Ordenados
+  // (foGuardarEncargosFolha()), SEMPRE independentes de contaSalarios: um
+  // mês pode ter seguros/bónus lançados sem o Fecho de Ordenados desse mês
+  // ter sido enviado à Tesouraria, e vice-versa. €0 aqui é um valor
+  // legítimo (a maioria dos meses não tem bónus) — nunca precisa de uma
+  // flag "indisponível" própria, ao contrário da folha base.
+  var encargosFolhaMes = (typeof ENCARGOS_FOLHA !== 'undefined' && ENCARGOS_FOLHA) ? ENCARGOS_FOLHA[alvo] : null;
+  var custoSegurosBonus = encargosFolhaMes ? ((parseFloat(encargosFolhaMes.seguros) || 0) + (parseFloat(encargosFolhaMes.bonus) || 0)) : 0;
+  custoFolha += custoSegurosBonus;
+  // folhaIndisponivel (nome mantido por compatibilidade — é o que o
+  // Dashboard CFO já lê) só é true quando NÃO há dado nenhum de folha este
+  // mês (nem base, nem seguros/bónus) — "sem dados" genuíno. Quando a base
+  // falta mas seguros/bónus foram lançados, custoFolha já não é €0: o mês
+  // fica "parcial" (folhaParcial=true) em vez de "sem dados", para a UI
+  // nunca sugerir falsamente que a folha custou €0 esse mês.
+  var folhaIndisponivel = folhaBaseIndisponivel && custoSegurosBonus === 0;
+  var folhaParcial = folhaBaseIndisponivel && custoSegurosBonus > 0;
   var custoDespesas = 0;
   despFunc.forEach(function(dp){
     if(dp.estado !== 'Aprovada') return;
@@ -38214,6 +38366,7 @@ function finTotaisMesReal(ano, mes){
     custoContas: custoContas, custoOutros: custoOutros,
     custoDespesas: custoDespesas, custoCompras: custoCompras,
     custoFolha: custoFolha, folhaIndisponivel: folhaIndisponivel,
+    folhaParcial: folhaParcial, custoSegurosBonus: custoSegurosBonus,
     temReceberCarregado: receber.length > 0
   };
 }
