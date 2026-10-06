@@ -21898,6 +21898,28 @@ var CRM_DESP_EDIT_ID = null;
 var DM_FILE_OBJ = null;
 var EC_DESPESAS_APP = [];
 
+// Normaliza o `status` vindo do app de pontos (crm-expenses, outro projecto
+// Supabase) para as 5 chaves inglesas usadas internamente neste ficheiro
+// (pending/submitted/approved/rejected/reimbursed). O app pode devolver o
+// estado em português e com acentos (ex. "Aprovada") — a comparação exacta
+// `d.status==='approved'` falhava sempre nesse caso: a tabela caía sempre
+// no mesmo estilo/fallback e os KPIs "Pendentes"/"Aprovadas" ficavam
+// presos em €0 mesmo com linhas reais aprovadas visíveis na tabela
+// (reportado pela Edna, captura de ecrã 30/09/2026 — afecta
+// despCalcularTotais/despCalcularTotaisMes/despSyncApp/
+// despAppRenderTabela/finDespRegistoDoApp, todos os pontos que liam
+// d.status directamente).
+function despAppEstadoNorm(raw){
+  var s = String(raw||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().trim();
+  if(/^aprovad|^approved/.test(s)) return 'approved';
+  if(/^rejeitad|^rejected/.test(s)) return 'rejected';
+  if(/^reembolsad|^reimbursed/.test(s)) return 'reimbursed';
+  if(/^submetid|^submitted/.test(s)) return 'submitted';
+  if(/^pendente|^pending/.test(s)) return 'pending';
+  return s;
+}
+window.despAppEstadoNorm = despAppEstadoNorm;
+
 const DESP_ESTADO_LABEL = {approved:'Aprovada',pending:'Pendente',rejected:'Rejeitada',reimbursed:'Reembolsada'};
 const DESP_ESTADO_CLS   = {approved:'bg',pending:'ba',rejected:'br',reimbursed:'bg'};
 
@@ -21922,9 +21944,10 @@ function despCalcularTotais(){
     const v = parseFloat(d.amount_eur)||0;
     const dt = d.occurred_at ? new Date(d.occurred_at) : null;
     if(dt && dt.getMonth()===mes && dt.getFullYear()===ano){ totalMes+=v; cntMes++; }
-    if(d.status==='pending'||d.status==='submitted'){ totalPend+=v; cntPend++; }
-    if(d.status==='reimbursed') totalReimb+=v;
-    if(d.status==='approved') totalAprov+=v;
+    var estNorm = despAppEstadoNorm(d.status);
+    if(estNorm==='pending'||estNorm==='submitted'){ totalPend+=v; cntPend++; }
+    if(estNorm==='reimbursed') totalReimb+=v;
+    if(estNorm==='approved') totalAprov+=v;
   });
 
   return {totalMes,cntMes,totalPend,cntPend,totalReimb,totalAprov};
@@ -21957,7 +21980,7 @@ function despCalcularTotaisMes(ano, mes){
     const dt = d.occurred_at ? new Date(d.occurred_at) : null;
     const noMes = dt && (dt.getMonth()+1)===mes && dt.getFullYear()===ano;
     if(noMes){ totalMes+=v; cntMes++; }
-    if(noMes && d.status==='approved'){ totalAprovMes+=v; cntAprovMes++; }
+    if(noMes && despAppEstadoNorm(d.status)==='approved'){ totalAprovMes+=v; cntAprovMes++; }
   });
 
   return {totalMes,cntMes,totalAprovMes,cntAprovMes};
@@ -22206,8 +22229,9 @@ function despAppRenderTabela(){
 
   tbody.innerHTML = filtered.map(d=>{
     const dtStr = d.occurred_at ? new Date(d.occurred_at).toLocaleDateString('pt-PT',{day:'2-digit',month:'2-digit',year:'numeric'}) : '—';
-    const cls = estCls[d.status]||'ba';
-    const lbl = estLabel[d.status]||d.status||'—';
+    const estNorm = despAppEstadoNorm(d.status);
+    const cls = estCls[estNorm]||'ba';
+    const lbl = estLabel[estNorm]||d.status||'—';
     // Correção (24/09/2026, pedido da secretária: "ao solicitar ver o
     // recibo, abre janela de erro"): receipt_signed_url vem já assinado da
     // app de pontos (projecto Supabase à parte, sem acesso daqui para
@@ -22270,8 +22294,9 @@ async function despSyncApp(){
     EC_DESPESAS_APP.forEach(d=>{
       const v=parseFloat(d.amount_eur)||0;
       tot+=v;
-      if(d.status==='pending'||d.status==='submitted'){ pend+=v; cntPend++; }
-      if(d.status==='approved'){ aprov+=v; cntAprov++; }
+      const estNorm = despAppEstadoNorm(d.status);
+      if(estNorm==='pending'||estNorm==='submitted'){ pend+=v; cntPend++; }
+      if(estNorm==='approved'){ aprov+=v; cntAprov++; }
       if(d.toc_sent_at) toc++;
     });
     const fmt=v=>'€'+(v%1===0?v:v.toFixed(2));
@@ -24819,6 +24844,7 @@ function finRowToLocal(r) {
 // que esta linha não tem) — mostra antes "Ver recibo".
 function finDespRegistoDoApp(d) {
   var estLabel = {pending:'Pendente', submitted:'Pendente', approved:'Aprovada', rejected:'Rejeitada', reimbursed:'Reembolsada'};
+  var estNorm = despAppEstadoNorm(d.status);
   return {
     id: 'app-' + d.id,
     appId: d.id,
@@ -24828,7 +24854,7 @@ function finDespRegistoDoApp(d) {
     descricao: d.reference || d.notes || '',
     valor: parseFloat(d.amount_eur) || 0,
     metodoPagamento: '—',
-    estado: estLabel[d.status] || d.status || 'Pendente',
+    estado: estLabel[estNorm] || d.status || 'Pendente',
     temRecibo: !!d.receipt_signed_url,
     origem: 'App de Pontos'
   };
@@ -37810,16 +37836,33 @@ setInterval(obAtualizarPendencias,5*60*1000); // refresca a cada 5 minutos
 
 // ── Lista unificada de colaboradores (App de Pontos + locais + fallback USERS)
 function rhFtColabs(){
-  var out=[], seen={};
-  function add(id,nome,cargo){
-    var k=(nome||'').trim().toLowerCase();
-    if(!k||seen[k]) return; seen[k]=1;
-    out.push({id:String(id), nome:nome, cargo:cargo||''});
+  // Reconciliação App×local por nome (mesma lógica de rhMesmaPessoa(), já
+  // usada em rhRenderColabs() — ver RH → Colaboradores) — antes comparava
+  // nomes por igualdade exacta (trim+lowercase), por isso "André Nolasco"
+  // (ficha local) e "André Nolasco Lamas de Sousa e Silva" (nome completo
+  // do app de pontos, mesma pessoa) ficavam como duas linhas em Férias e
+  // Turnos (reportado pela Edna, 30/09/2026). O registo local vence quando
+  // há correspondência (é o único com CRUD/dados de RH completos); só
+  // entra um cartão do App quando não existir ninguém local com nome
+  // compatível.
+  var out=[];
+  function jaExiste(nome){
+    return out.some(function(o){ return rhMesmaPessoa(o.nome, nome); });
   }
-  (typeof EC_FUNCIONARIOS!=='undefined'?EC_FUNCIONARIOS:[]).forEach(function(c){ add(c.ec_id,c.nome,c.cargo); });
-  (typeof rhColabs!=='undefined'?rhColabs:[]).forEach(function(c){ add(c.id,c.nome,c.cargo); });
+  (typeof rhColabs!=='undefined'?rhColabs:[]).forEach(function(c){
+    if(!c.nome||jaExiste(c.nome)) return;
+    out.push({id:String(c.id), nome:c.nome, cargo:c.cargo||''});
+  });
+  (typeof EC_FUNCIONARIOS!=='undefined'?EC_FUNCIONARIOS:[]).forEach(function(c){
+    if(!c.nome||jaExiste(c.nome)) return;
+    out.push({id:String(c.ec_id), nome:c.nome, cargo:c.cargo||''});
+  });
   if(!out.length&&typeof USERS!=='undefined'){
-    (USERS||[]).forEach(function(u){ add(u.id,u.name||u.nome,u.role); });
+    (USERS||[]).forEach(function(u){
+      var nome=u.name||u.nome;
+      if(!nome||jaExiste(nome)) return;
+      out.push({id:String(u.id), nome:nome, cargo:u.role||''});
+    });
   }
   out.sort(function(a,b){ return a.nome.localeCompare(b.nome,'pt'); });
   return out;

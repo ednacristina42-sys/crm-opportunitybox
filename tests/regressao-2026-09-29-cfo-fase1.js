@@ -61,8 +61,13 @@ const SRC_FIN_TOTAIS = [
   extrairFuncao('finTotaisMesReal'),
 ].join('\n');
 
-const SRC_DESP_MES = extrairFuncao('despCalcularTotaisMes');
-const SRC_DESP_ORIG = extrairFuncao('despCalcularTotais');
+// despCalcularTotaisMes()/despCalcularTotais() dependem de despAppEstadoNorm()
+// (normaliza o `status` do app de pontos — pt/en, acentos — antes de comparar
+// com 'approved'/'pending'/etc.; adicionado 30/09/2026 depois de a Edna
+// reportar os KPIs de Despesas presos em €0 com linhas reais aprovadas).
+const SRC_DESP_NORM = extrairFuncao('despAppEstadoNorm');
+const SRC_DESP_MES = SRC_DESP_NORM + '\n' + extrairFuncao('despCalcularTotaisMes');
+const SRC_DESP_ORIG = SRC_DESP_NORM + '\n' + extrairFuncao('despCalcularTotais');
 
 function correFinTotaisMesReal(ano, mes, globals) {
   const ctx = Object.assign({ console, FIN_MESES: ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'] }, globals);
