@@ -9571,6 +9571,39 @@ tbody td{font-size:15px}
         </div>
       </div>
 
+      <!-- Lançamento manual: Impostos (além do IVA) e Valor Real de IVA pago
+           (Fase C CFO, 30/09/2026) — mesmo padrão de "Encargos de Folha"
+           (RH → Ordenados): nem o TOConline nem nenhuma integração expõem
+           estes dois valores (confirmado pelo diagnóstico hr_probe de
+           29-30/09 para a folha; para Impostos/IVA pago, a Edna confirmou
+           que são lançados manualmente no Excel). Antes, "Impostos" e "IVA"
+           mostravam sempre o mesmo número (estimativa duplicada em duas
+           colunas) e "Valor Real Pago" nunca saía de "—" — ver
+           tesIvaCalcularReal(). -->
+      <div style="background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:18px">
+        <div style="font-size:13px;font-weight:600;color:var(--txt2);margin-bottom:10px">🧾 Impostos e IVA pago — lançamento manual, mensal</div>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
+          <div>
+            <label class="form-label" style="display:block;margin-bottom:4px;font-size:12px">Mês</label>
+            <select id="tes-im-mes" class="form-input" style="padding:5px 10px;font-size:14px" onchange="tesImpostosManuaisCarregarInputs()"></select>
+          </div>
+          <div>
+            <label class="form-label" style="display:block;margin-bottom:4px;font-size:12px">Impostos, além do IVA (€)</label>
+            <input type="number" step="0.01" min="0" id="tes-im-impostos" class="form-input" style="padding:5px 10px;font-size:14px;width:140px" placeholder="0,00"/>
+          </div>
+          <div>
+            <label class="form-label" style="display:block;margin-bottom:4px;font-size:12px">IVA efectivamente pago (€)</label>
+            <input type="number" step="0.01" min="0" id="tes-im-ivapago" class="form-input" style="padding:5px 10px;font-size:14px;width:140px" placeholder="0,00"/>
+          </div>
+          <div style="flex:1;min-width:200px">
+            <label class="form-label" style="display:block;margin-bottom:4px;font-size:12px">Nota (opcional)</label>
+            <input type="text" id="tes-im-nota" class="form-input" style="padding:5px 10px;font-size:14px;width:100%" placeholder="ex.: IRC, Selo, DAS de IVA"/>
+          </div>
+          <button onclick="tesGuardarImpostosManual()" class="tbtn" style="font-size:13px;color:var(--g);border-color:var(--g)">💾 Guardar</button>
+        </div>
+        <div style="font-size:11.5px;color:var(--muted);margin-top:8px">"Impostos" é tudo o que não é IVA (ex.: IRC, Selo) — o IVA já é calculado automaticamente a partir das vendas/compras reais; preencha "IVA efectivamente pago" só quando souber o valor real da declaração.</div>
+      </div>
+
       <div class="tw" style="margin-bottom:18px">
         <table>
           <thead><tr><th colspan="5" style="text-align:center">IVA</th></tr>
@@ -26951,6 +26984,92 @@ function tesIvaConfigurarWebhook(){
 // fora do total de compras/IVA suportado, e o mês fica marcado
 // comprasIncompleto=true para tesIvaRender() mostrar um aviso explícito
 // em vez de inventar ou omitir silenciosamente esse IVA.
+// ── Impostos (além do IVA) e IVA efectivamente pago — lançamento manual
+// mensal (Fase C CFO, 30/09/2026) ───────────────────────────────────────
+// Mesmo padrão exacto de ENCARGOS_FOLHA (RH → Ordenados, Fase 4 CFO):
+// cópia local em localStorage + sincronização remota via obSbPush()
+// genérico em 'ob_crm_dados' (chave 'ob-tes-impostos-manuais'). Único
+// ponto desta tabela onde entrada manual é esperada e correcta — nem o
+// TOConline nem nenhuma integração existente dão "Impostos" (IRC, Selo,
+// etc.) separado do IVA, nem o valor real de uma declaração de IVA já
+// paga (só o estimado por vendas-compras, calculado abaixo).
+var TES_IMPOSTOS_MANUAIS;
+try{ TES_IMPOSTOS_MANUAIS = JSON.parse(localStorage.getItem('ob-tes-impostos-manuais') || '{}'); }catch(e){ TES_IMPOSTOS_MANUAIS = {}; }
+if(!TES_IMPOSTOS_MANUAIS || typeof TES_IMPOSTOS_MANUAIS !== 'object') TES_IMPOSTOS_MANUAIS = {};
+window.TES_IMPOSTOS_MANUAIS = TES_IMPOSTOS_MANUAIS;
+
+function tesImpostosManuaisDe(mesVal){
+  var mapa = (typeof TES_IMPOSTOS_MANUAIS !== 'undefined' && TES_IMPOSTOS_MANUAIS) ? TES_IMPOSTOS_MANUAIS : {};
+  var e = (mesVal && mapa[mesVal]) || {};
+  return { impostos: parseFloat(e.impostos) || 0, ivaPago: (e.ivaPago!=null && e.ivaPago!=='') ? (parseFloat(e.ivaPago)||0) : null, nota: e.nota || '' };
+}
+window.tesImpostosManuaisDe = tesImpostosManuaisDe;
+
+// Popula o <select> de mês com os 12 meses do ano que tesIvaCalcularReal()
+// usa (ano corrente), e pré-preenche os campos com o que já está guardado.
+function tesImpostosManuaisCarregarInputs(){
+  var selMes = document.getElementById('tes-im-mes');
+  var elImp = document.getElementById('tes-im-impostos');
+  var elIva = document.getElementById('tes-im-ivapago');
+  var elNota = document.getElementById('tes-im-nota');
+  if(!selMes || !elImp || !elIva || !elNota) return;
+  if(!selMes.options.length){
+    var ano = new Date().getFullYear();
+    for(var m=0;m<12;m++){
+      var val = ano+'-'+String(m+1).padStart(2,'0');
+      var opt = document.createElement('option');
+      opt.value = val; opt.textContent = TES_MESES[m]+' '+ano;
+      selMes.appendChild(opt);
+    }
+    selMes.value = ano+'-'+String(new Date().getMonth()+1).padStart(2,'0');
+  }
+  var e = tesImpostosManuaisDe(selMes.value);
+  elImp.value = e.impostos ? e.impostos : '';
+  elIva.value = e.ivaPago!=null ? e.ivaPago : '';
+  elNota.value = e.nota || '';
+}
+window.tesImpostosManuaisCarregarInputs = tesImpostosManuaisCarregarInputs;
+
+function tesGuardarImpostosManual(){
+  var selMes = document.getElementById('tes-im-mes');
+  var mesVal = selMes ? selMes.value : '';
+  if(!mesVal){ alert('Seleciona o mês.'); return; }
+  var impostos = parseFloat((document.getElementById('tes-im-impostos')||{}).value) || 0;
+  var ivaPagoRaw = (document.getElementById('tes-im-ivapago')||{}).value;
+  var ivaPago = (ivaPagoRaw!=null && ivaPagoRaw!=='') ? (parseFloat(ivaPagoRaw)||0) : null;
+  var nota = (((document.getElementById('tes-im-nota')||{}).value) || '').trim();
+  TES_IMPOSTOS_MANUAIS[mesVal] = { impostos: impostos, ivaPago: ivaPago, nota: nota };
+  try{ localStorage.setItem('ob-tes-impostos-manuais', JSON.stringify(TES_IMPOSTOS_MANUAIS)); }catch(e){}
+  try{ if(typeof obSbPush === 'function') obSbPush('ob-tes-impostos-manuais'); }catch(e){}
+  if(typeof showToast === 'function') showToast('Impostos/IVA guardados.'); else alert('Guardado.');
+  if(typeof tesIvaSincronizar === 'function') tesIvaSincronizar();
+}
+window.tesGuardarImpostosManual = tesGuardarImpostosManual;
+
+// Hidratação canónica dedicada (leitura fresca de ob_crm_dados) — mesmo
+// padrão exacto de foHidratarEncargosFolha().
+var _tesImpostosManuaisHidratacaoPromise = null;
+async function tesHidratarImpostosManuais(){
+  if(_tesImpostosManuaisHidratacaoPromise) return _tesImpostosManuaisHidratacaoPromise;
+  _tesImpostosManuaisHidratacaoPromise = (async function(){
+    var sb = (typeof crmSBClient === 'function') ? crmSBClient() : null;
+    if(!sb) return;
+    try{
+      var res = await sb.from('ob_crm_dados').select('dados,updated_at').eq('chave','ob-tes-impostos-manuais').maybeSingle();
+      if(res && !res.error && res.data && res.data.dados){
+        TES_IMPOSTOS_MANUAIS = res.data.dados;
+        window.TES_IMPOSTOS_MANUAIS = TES_IMPOSTOS_MANUAIS;
+        try{ localStorage.setItem('ob-tes-impostos-manuais', JSON.stringify(TES_IMPOSTOS_MANUAIS)); }catch(e){}
+      }
+    }catch(e){ console.warn('[Tesouraria] Falha a ler ob-tes-impostos-manuais remoto — mantém a cópia local como fallback.', e); }
+    if(typeof tesImpostosManuaisCarregarInputs === 'function') tesImpostosManuaisCarregarInputs();
+    if(typeof tesIvaSincronizar === 'function') tesIvaSincronizar();
+  })();
+  _tesImpostosManuaisHidratacaoPromise.finally(function(){ _tesImpostosManuaisHidratacaoPromise = null; });
+  return _tesImpostosManuaisHidratacaoPromise;
+}
+window.tesHidratarImpostosManuais = tesHidratarImpostosManuais;
+
 function tesIvaCalcularReal(){
   var receberArr = (typeof TES_RECEBER!=='undefined'?TES_RECEBER:[]);
   var contasPagas = (typeof TES_CONTAS!=='undefined'?TES_CONTAS:[]).filter(function(c){return c.estado==='Paga';});
@@ -26989,10 +27108,20 @@ function tesIvaCalcularReal(){
     ivaCompras += comprasTocoComIva.reduce(function(s,p){return s+(parseFloat(p.ivaDocumento)||0);},0);
     if(comprasTocoSemIva.length>0) comprasSemIva = comprasSemIva.concat(comprasTocoSemIva);
 
-    if(!vendasDoMes.length && !comprasDoMes.length && !comprasTocoDoMes.length) continue;
+    // Salários reais (Fecho de Ordenados + Seguros/Bónus, Fases 1 e 4 CFO)
+    // — antes hardcoded a 0, nunca lido de lado nenhum.
+    var folhaMes = (typeof finTotaisMesReal==='function') ? finTotaisMesReal(ano, m+1) : null;
+    var salariosMes = (folhaMes && !folhaMes.folhaIndisponivel) ? folhaMes.custoFolha : 0;
+    // Impostos (além do IVA) e IVA efectivamente pago — lançamento manual
+    // (tesImpostosManuaisDe() acima); nunca estimados a partir de outro
+    // valor, para não repetir a duplicação que isto substitui.
+    var manual = tesImpostosManuaisDe(prefixo);
+    if(!vendasDoMes.length && !comprasDoMes.length && !comprasTocoDoMes.length
+       && !salariosMes && !manual.impostos && manual.ivaPago==null) continue;
     var estimativa = ivaVendas - ivaCompras;
-    ivaArr.push({mes:TES_MESES[m], vendas:vendasMes, compras:comprasMes, estimativa:estimativa, valorPago:null, comprasIncompleto: comprasSemIva.length>0});
-    resumoArr.push({mes:TES_MESES[m], vendas:vendasMes, despesas:comprasMes, impostos:estimativa, iva:estimativa, salarios:0, saldo:vendasMes-comprasMes-estimativa, comprasIncompleto: comprasSemIva.length>0});
+    ivaArr.push({mes:TES_MESES[m], vendas:vendasMes, compras:comprasMes, estimativa:estimativa, valorPago:manual.ivaPago, comprasIncompleto: comprasSemIva.length>0});
+    resumoArr.push({mes:TES_MESES[m], vendas:vendasMes, despesas:comprasMes, impostos:manual.impostos, iva:estimativa, salarios:salariosMes,
+      saldo:vendasMes-comprasMes-manual.impostos-estimativa-salariosMes, comprasIncompleto: comprasSemIva.length>0});
   }
   return {iva:ivaArr, resumo:resumoArr};
 }
@@ -27103,6 +27232,13 @@ function tesMostrarTab(tab) {
   if(tab==='receber') tesRenderReceber();
   if(tab==='recebidos') tesRenderRecebidos();
   if(tab==='fornecedores' && typeof tesRenderFornecedores==='function') tesRenderFornecedores();
+  // Impostos/IVA pago manuais (Fase C CFO) — pré-preenche com a cópia
+  // local, depois pede leitura fresca ao Supabase, mesma sequência de
+  // foEncargosFolhaCarregarInputs()/foHidratarEncargosFolha().
+  if(tab==='iva'){
+    if(typeof tesImpostosManuaisCarregarInputs==='function') tesImpostosManuaisCarregarInputs();
+    if(typeof tesHidratarImpostosManuais==='function') tesHidratarImpostosManuais();
+  }
   setTimeout(function(){ tesRenderCharts(tab); },50);
 }
 
