@@ -27550,6 +27550,11 @@ function tesMudarFiltroAno(valor){
   if(typeof tesRenderCreditosToco==='function') tesRenderCreditosToco();
   if(typeof tesRenderPagasToco==='function') tesRenderPagasToco();
   if(typeof tesRenderCharts==='function') tesRenderCharts(tabAtiva);
+  // Resumo Geral (A Receber/Recebidos/Em Atraso + A Pagar/Pagas/Em Atraso)
+  // nunca era repintado ao mudar o Período — bug pré-existente, só ficou
+  // visível agora que "Pagas" também passou a respeitar o filtro de ano
+  // (reportado pela Edna, 06/10/2026: "mudando o ano, nada muda").
+  if(typeof tesRenderResumoGeral==='function') tesRenderResumoGeral();
 }
 window.tesMudarFiltroAno = tesMudarFiltroAno;
 
