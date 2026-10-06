@@ -8803,6 +8803,22 @@ tbody td{font-size:15px}
     </div>
   </div>
   <div class="task-content">
+    <!-- Calendário mensal (pedido da Edna, doc "CRM - Parte 5", 30/09/2026:
+         "não pode ter esta visualização? Atualmente é só uma tela preta") —
+         reaproveita a mesma grelha/CSS (.cal-grid/.cal-day/.cal-dh) já usada
+         e testada na vista Calendário de Tarefas (renderTasksCalendar()),
+         mas com os eventos desta Agenda (uniGetItems('admin-agenda')), não
+         tarefas. Estado de mês/ano próprio (agendaCalMonth/agendaCalYear),
+         nunca interfere com o calendário de Tarefas. Ver renderAgendaCalendar(). -->
+    <div class="cal-nav" style="margin-bottom:14px">
+      <button class="tbtn" onclick="agendaCalNav(-1)" style="padding:5px 10px;font-size:16px">‹</button>
+      <button class="tbtn" onclick="agendaCalNav(0)" style="font-size:13px">Hoje</button>
+      <button class="tbtn" onclick="agendaCalNav(1)" style="padding:5px 10px;font-size:16px">›</button>
+      <span class="cal-nav-title" id="agenda-cal-title">—</span>
+      <span style="margin-left:auto;font-size:13px;color:var(--muted)" id="agenda-cal-count"></span>
+    </div>
+    <div id="agenda-cal-grid-wrap" style="margin-bottom:22px"></div>
+
     <div class="g2">
       <div>
         <div class="sh"><h2>Próximos eventos</h2></div>
@@ -16684,6 +16700,79 @@ function agendaDeleteDireto(id, e){
   agendaRender();
 }
 
+// Calendário mensal da Agenda (pedido da Edna, 30/09/2026) — mesmo molde
+// de renderTasksCalendar() (calMonth/calYear/calNav), com estado próprio
+// para nunca interferir com o calendário de Tarefas.
+var agendaCalMonth = new Date().getMonth();
+var agendaCalYear = new Date().getFullYear();
+function agendaCalNav(dir){
+  if(dir===0){ var n=new Date(); agendaCalMonth=n.getMonth(); agendaCalYear=n.getFullYear(); }
+  else { agendaCalMonth+=dir; if(agendaCalMonth<0){agendaCalMonth=11;agendaCalYear--;} if(agendaCalMonth>11){agendaCalMonth=0;agendaCalYear++;} }
+  renderAgendaCalendar();
+}
+window.agendaCalNav = agendaCalNav;
+
+function renderAgendaCalendar(){
+  var wrap = document.getElementById('agenda-cal-grid-wrap');
+  var titleEl = document.getElementById('agenda-cal-title');
+  var countEl = document.getElementById('agenda-cal-count');
+  if(!wrap) return;
+
+  var items = uniGetItems('admin-agenda');
+  var cfg = UNI_CFG['admin-agenda'];
+  var MONTHS = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+  var DAYS = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+  if(titleEl) titleEl.textContent = MONTHS[agendaCalMonth]+' '+agendaCalYear;
+
+  var eventMap = {};
+  var eventosEsteMes = 0;
+  items.forEach(function(i){
+    if(!i.date) return;
+    var d = new Date(i.date);
+    if(isNaN(d.getTime())) return;
+    var key = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+    if(!eventMap[key]) eventMap[key] = [];
+    eventMap[key].push(i);
+    if(d.getFullYear()===agendaCalYear && d.getMonth()===agendaCalMonth) eventosEsteMes++;
+  });
+  if(countEl) countEl.textContent = eventosEsteMes+' evento'+(eventosEsteMes!==1?'s':'')+' este mês';
+
+  var today = new Date(); today.setHours(0,0,0,0);
+  var firstDay = new Date(agendaCalYear, agendaCalMonth, 1);
+  var lastDay = new Date(agendaCalYear, agendaCalMonth+1, 0);
+  var startPad = firstDay.getDay();
+
+  var hdr = DAYS.map(function(d){ return '<div class="cal-dh">'+d+'</div>'; }).join('');
+  var cells = '';
+  var prevLast = new Date(agendaCalYear, agendaCalMonth, 0).getDate();
+  for(var p=startPad-1; p>=0; p--){
+    cells += '<div class="cal-day other-month"><div class="cal-day-num">'+(prevLast-p)+'</div></div>';
+  }
+  var MAX_SHOW = 3;
+  for(var day=1; day<=lastDay.getDate(); day++){
+    var thisDate = new Date(agendaCalYear, agendaCalMonth, day);
+    var isToday = (thisDate.getTime()===today.getTime());
+    var key = agendaCalYear+'-'+String(agendaCalMonth+1).padStart(2,'0')+'-'+String(day).padStart(2,'0');
+    var dayEvents = eventMap[key] || [];
+    var evHtmlCell = dayEvents.slice(0, MAX_SHOW).map(function(i){
+      var cor = (cfg && cfg.colors && cfg.colors[i.status]) || '#6b6b72';
+      var esc = (i.n||'').replace(/'/g,"&#39;").replace(/"/g,"&quot;");
+      return '<div class="cal-task" style="background:'+cor+'" title="'+esc+'" onclick="uniOpen(\'admin-agenda\','+i.id+')">'+esc+'</div>';
+    }).join('');
+    if(dayEvents.length > MAX_SHOW){
+      evHtmlCell += '<div class="cal-more" onclick="uniOpen(\'admin-agenda\','+dayEvents[MAX_SHOW].id+')">+'+(dayEvents.length-MAX_SHOW)+' mais</div>';
+    }
+    cells += '<div class="cal-day'+(isToday?' today':'')+'"><div class="cal-day-num">'+day+'</div>'+evHtmlCell+'</div>';
+  }
+  var total = startPad + lastDay.getDate();
+  var trailing = total%7===0 ? 0 : 7-(total%7);
+  for(var n=1; n<=trailing; n++){
+    cells += '<div class="cal-day other-month"><div class="cal-day-num">'+n+'</div></div>';
+  }
+  wrap.innerHTML = '<div class="cal-grid">'+hdr+cells+'</div>';
+}
+window.renderAgendaCalendar = renderAgendaCalendar;
+
 function agendaRender(){
   const el=document.getElementById('agenda-events'); if(!el) return;
   const fu=document.getElementById('followups');
@@ -16691,6 +16780,7 @@ function agendaRender(){
   const cfg=UNI_CFG['admin-agenda'];
   const upcoming=items.filter(i=>i.status!=='Follow-up').sort((a,b)=>a.date>b.date?1:-1);
   const followups=items.filter(i=>i.status==='Follow-up').sort((a,b)=>a.date>b.date?1:-1);
+  if(typeof renderAgendaCalendar==='function') renderAgendaCalendar();
 
   function evHTML(i){
     const sc=cfg.colors[i.status]||'#6b7280';
