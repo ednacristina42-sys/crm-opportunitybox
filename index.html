@@ -1794,6 +1794,12 @@ async function avSyncVendedoresSheet(){
     var idx = {
       mesAno:   avFindCol(header,['mes/ano','mês/ano','month','mes ano','mesano']),
       totalIVA: avFindCol(header,['total com iva','total c/ iva','total iva','valor total']),
+      // Sem IVA (pedido da Edna, doc "CRM - Parte 5", 30/09/2026: "Valores
+      // com IVA - Considerar valores sem IVA também para as análises dos
+      // vendedores") — só existe se a própria Sheet "Vendas 2026" tiver
+      // esta coluna; nunca estimado a partir do total com IVA (seria
+      // inventar um número, contra a convenção do resto do ficheiro).
+      semIVA:   avFindCol(header,['valor sem iva','total sem iva','sem iva','valor liquido','valor líquido','net amount','netamount']),
       recebido: avFindCol(header,['valor recebido','recebido','pago','received']),
       aReceber: avFindCol(header,['saldo a receber','a receber','por receber','saldo','pendente']),
       vendedor: avFindCol(header,['vendedor','comercial','sales rep','seller']),
@@ -1831,8 +1837,10 @@ async function avSyncVendedoresSheet(){
       var v = avParseNumPT(idx.totalIVA!==-1 ? r[idx.totalIVA] : '0');
       var rec = avParseNumPT(idx.recebido!==-1 ? r[idx.recebido] : '0');
       var nrec = avParseNumPT(idx.aReceber!==-1 ? r[idx.aReceber] : '0');
-      if(!porVend[vend]) porVend[vend] = {n:vend, v:0, st:{rec:0,nrec:0}, meses:{}};
+      var vSemIVA = idx.semIVA!==-1 ? avParseNumPT(r[idx.semIVA]) : null;
+      if(!porVend[vend]) porVend[vend] = {n:vend, v:0, vSemIVA:0, nSemIVA:0, st:{rec:0,nrec:0}, meses:{}};
       porVend[vend].v += v;
+      if(vSemIVA!=null){ porVend[vend].vSemIVA += vSemIVA; porVend[vend].nSemIVA++; }
       porVend[vend].st.rec += rec;
       porVend[vend].st.nrec += nrec;
       // Guardar breakdown por mês para cada vendedor
@@ -2578,7 +2586,12 @@ function avVendedoresFiltrar(ano){
         '<div class="head"><div style="display:flex;align-items:center;gap:12px"><div class="avatar">'+v.init+'</div><div><div class="name">'+v.n+'</div><div class="role">Vendedor · 2026</div></div></div>'+
         '<span class="rank-pill">#'+(i+1)+'</span></div>'+
         '<div class="big"><span class="cur">€</span>'+Math.round(v.v).toLocaleString('pt-PT')+
-          '<span style="font-size:13px;color:var(--muted);font-weight:400;margin-left:10px">YTD</span></div>'+
+          '<span style="font-size:13px;color:var(--muted);font-weight:400;margin-left:10px">YTD (com IVA)</span></div>'+
+        // Sem IVA — só aparece se a Sheet "Vendas 2026" tiver essa coluna
+        // (pedido da Edna, 30/09/2026); nunca estimado a partir do valor
+        // com IVA. v.nSemIVA conta quantas linhas contribuíram — avisa
+        // quando é parcial (nem todas as faturas desse vendedor a têm).
+        (v.nSemIVA>0 ? '<div style="font-size:12px;color:var(--muted);margin-top:2px">€'+Math.round(v.vSemIVA).toLocaleString('pt-PT')+' sem IVA'+(v.nSemIVA<(v.meses?Object.keys(v.meses).reduce(function(s,m){return s+v.meses[m].n;},0):v.nSemIVA)?' (parcial)':'')+'</div>' : '')+
         '<div class="sub-line">'+(v.st?'<span style="color:var(--g)">✓ '+fmtFull(v.st.rec)+' recebido</span>'+(v.st.nrec>0?' · <span style="color:var(--r)">● '+fmtFull(v.st.nrec)+' pendente</span>':''):'')+'</div>'+
         mesesHTML+
         histHTML+
@@ -5654,6 +5667,8 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--txt);min-he
 /* KPI row */
 .krow{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:16px}
 @media(max-width:1200px){.krow{grid-template-columns:repeat(3,1fr)}}
+.krow3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:10px}
+@media(max-width:700px){.krow3{grid-template-columns:1fr}}
 .kpi{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:14px;position:relative;overflow:hidden;transition:border-color .2s}
 .kpi:hover{border-color:var(--border2)}
 .kpi::after{content:'';position:absolute;top:0;left:0;right:0;height:2px}
@@ -9325,18 +9340,23 @@ tbody td{font-size:15px}
 
     <!-- Resumo Geral — pedido da Edna, 24/09/2026: totais de Vencidas/A
          Pagar/A Receber/Pagas/Recebidos sempre visíveis, sem depender da
-         aba activa. Ver tesRenderResumoGeral(). -->
-    <div class="krow" style="margin-bottom:14px">
-      <div class="kpi kR"><div class="klbl">Vencido</div>
-        <div style="display:flex;gap:16px">
-          <div><div class="kval" style="font-size:17px;margin-bottom:2px" id="tes-resumo-vencido-receber">—</div><div class="ksub" style="margin-top:0">a receber</div></div>
-          <div><div class="kval" style="font-size:17px;margin-bottom:2px" id="tes-resumo-vencido-pagar">—</div><div class="ksub" style="margin-top:0">a pagar</div></div>
-        </div>
-      </div>
-      <div class="kpi" style="--c:var(--r)"><div class="klbl">A Pagar</div><div class="kval" id="tes-resumo-apagar">—</div><div class="ksub">total pendente</div></div>
+         aba activa. Ver tesRenderResumoGeral(). Reorganizado em duas linhas
+         (pedido da Edna, doc "CRM - Parte 5", 30/09/2026 — "achava o campo
+         confuso", misturava a receber e a pagar no mesmo cartão "Vencido"):
+         linha de cima só o lado de A Receber (A Receber / Recebidos / Em
+         Atraso), linha de baixo só o lado de A Pagar, na MESMA ordem (A
+         Pagar / Pagas / Em Atraso). Puramente de apresentação — os ids e
+         tesRenderResumoGeral() ficam exactamente iguais, só o HTML à volta
+         mudou. -->
+    <div class="krow3">
       <div class="kpi kB"><div class="klbl">A Receber</div><div class="kval" id="tes-resumo-areceber">—</div><div class="ksub">total pendente</div></div>
-      <div class="kpi kG"><div class="klbl">Pagas</div><div class="kval" id="tes-resumo-pagas">—</div><div class="ksub">total liquidado</div></div>
       <div class="kpi" style="--c:var(--g)"><div class="klbl">Recebidos</div><div class="kval" id="tes-resumo-recebidos">—</div><div class="ksub">total cobrado</div></div>
+      <div class="kpi kR"><div class="klbl">Em Atraso</div><div class="kval" id="tes-resumo-vencido-receber">—</div><div class="ksub">a receber</div></div>
+    </div>
+    <div class="krow3" style="margin-bottom:14px">
+      <div class="kpi" style="--c:var(--r)"><div class="klbl">A Pagar</div><div class="kval" id="tes-resumo-apagar">—</div><div class="ksub">total pendente</div></div>
+      <div class="kpi kG"><div class="klbl">Pagas</div><div class="kval" id="tes-resumo-pagas">—</div><div class="ksub">total liquidado</div></div>
+      <div class="kpi kR"><div class="klbl">Em Atraso</div><div class="kval" id="tes-resumo-vencido-pagar">—</div><div class="ksub">a pagar</div></div>
     </div>
 
     <!-- KPIs dinâmicos (mudam com a tab activa) -->
@@ -38974,15 +38994,27 @@ function _hfRenderKpis(rows){
   // (ver HF_COLS), mas os cartões de resumo só mostravam o total com IVA —
   // sem um valor sem IVA directamente comparável ao lado.
   var sumLiq = function(arr){ return arr.reduce(function(s,r){return s+(parseFloat(r.valorLiq)||0);},0); };
+  // Saldo em falta, SEM IVA — mesma proporção de finSaldoReceber() mas
+  // aplicada ao valor líquido da fatura, para "Não Recebido"/"Parcial"
+  // também passarem a ter sem-IVA como valor principal.
+  var sumSaldoLiq = function(arr){ return arr.reduce(function(s,r){
+    var total = parseFloat(r.total)||0, liq = parseFloat(r.valorLiq)||0;
+    var saldo = (typeof finSaldoReceber==='function')?finSaldoReceber(r):total;
+    var prop = total>0 ? (saldo/total) : 1;
+    return s + liq*prop;
+  },0); };
   var set = function(id, val){ var e=document.getElementById(id); if(e) e.textContent = val; };
-  set('hf-kpi-total', _hfFmtEUR(sum(view)));
-  set('hf-kpi-total-sub', view.length+' faturas · '+_hfFmtEUR(sumLiq(view))+' sem IVA');
-  set('hf-kpi-recebido', _hfFmtEUR(sum(recebido)));
-  set('hf-kpi-recebido-sub', recebido.length+' faturas · '+_hfFmtEUR(sumLiq(recebido))+' sem IVA');
-  set('hf-kpi-naorecebido', _hfFmtEUR(sumSaldo(naoRecebido)));
-  set('hf-kpi-naorecebido-sub', naoRecebido.length+' faturas · '+_hfFmtEUR(sumLiq(naoRecebido))+' sem IVA');
-  set('hf-kpi-parcial', _hfFmtEUR(sumSaldo(parcial)));
-  set('hf-kpi-parcial-sub', parcial.length+' faturas · '+_hfFmtEUR(sumLiq(parcial))+' sem IVA');
+  // Valor principal passa a SEM IVA (pedido da Edna, doc "CRM - Parte 5",
+  // 30/09/2026: "Os valores do total faturado devem ser considerados sem
+  // IVA") — o valor com IVA desce para a sub-linha, nunca desaparece.
+  set('hf-kpi-total', _hfFmtEUR(sumLiq(view)));
+  set('hf-kpi-total-sub', view.length+' faturas · '+_hfFmtEUR(sum(view))+' com IVA');
+  set('hf-kpi-recebido', _hfFmtEUR(sumLiq(recebido)));
+  set('hf-kpi-recebido-sub', recebido.length+' faturas · '+_hfFmtEUR(sum(recebido))+' com IVA');
+  set('hf-kpi-naorecebido', _hfFmtEUR(sumSaldoLiq(naoRecebido)));
+  set('hf-kpi-naorecebido-sub', naoRecebido.length+' faturas · '+_hfFmtEUR(sumSaldo(naoRecebido))+' com IVA');
+  set('hf-kpi-parcial', _hfFmtEUR(sumSaldoLiq(parcial)));
+  set('hf-kpi-parcial-sub', parcial.length+' faturas · '+_hfFmtEUR(sumSaldo(parcial))+' com IVA');
 }
 
 function _hfRenderIndicadores(rows){
