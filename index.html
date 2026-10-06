@@ -9366,12 +9366,12 @@ tbody td{font-size:15px}
          mudou. -->
     <div class="krow3">
       <div class="kpi kB"><div class="klbl">A Receber</div><div class="kval" id="tes-resumo-areceber">—</div><div class="ksub">total pendente</div></div>
-      <div class="kpi" style="--c:var(--g)"><div class="klbl">Recebidos</div><div class="kval" id="tes-resumo-recebidos">—</div><div class="ksub">total cobrado</div></div>
+      <div class="kpi" style="--c:var(--g)"><div class="klbl">Recebidos</div><div class="kval" id="tes-resumo-recebidos">—</div><div class="ksub">total cobrado no período</div></div>
       <div class="kpi kR"><div class="klbl">Em Atraso</div><div class="kval" id="tes-resumo-vencido-receber">—</div><div class="ksub">a receber</div></div>
     </div>
     <div class="krow3" style="margin-bottom:14px">
       <div class="kpi" style="--c:var(--r)"><div class="klbl">A Pagar</div><div class="kval" id="tes-resumo-apagar">—</div><div class="ksub">total pendente</div></div>
-      <div class="kpi kG"><div class="klbl">Pagas</div><div class="kval" id="tes-resumo-pagas">—</div><div class="ksub">total liquidado</div></div>
+      <div class="kpi kG"><div class="klbl">Pagas</div><div class="kval" id="tes-resumo-pagas">—</div><div class="ksub">total liquidado no período</div></div>
       <div class="kpi kR"><div class="klbl">Em Atraso</div><div class="kval" id="tes-resumo-vencido-pagar">—</div><div class="ksub">a pagar</div></div>
     </div>
 
@@ -26335,7 +26335,13 @@ function tesRenderResumoGeral(){
     var k = TES_COMPRAS_TOCO.kpis || {};
     totalAPagar = k.totalAPagar || 0;
     vencidoPagar = k.vencido || 0;
-    totalPagas = (TES_COMPRAS_TOCO.pagas||[]).reduce(function(s,p){ return s+(parseFloat(p.valorPago)||0); },0);
+    // Filtrado pelo mesmo "Período" (TES_FILTRO_ANO) que já se aplica a
+    // "Recebidos" (tesGetRecebidos()) — antes somava TODO o histórico
+    // sincronizado (2018-2026) sem filtro nenhum, inconsistente com o
+    // cartão ao lado e sem resposta clara a "Esse valor Pagas é soma de
+    // qual período?" (pedido da Edna, doc "CRM - Parte 5", 30/09/2026).
+    totalPagas = (TES_COMPRAS_TOCO.pagas||[]).filter(function(p){ return tesPassaFiltroAno(p.dataPagamento); })
+      .reduce(function(s,p){ return s+(parseFloat(p.valorPago)||0); },0);
   } else {
     var pendentesPg = TES_CONTAS.filter(function(c){ return c.estado!=='Paga'; });
     totalAPagar = pendentesPg.reduce(function(s,c){ return s+(parseFloat(c.valor)||0); },0);
