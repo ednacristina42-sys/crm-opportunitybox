@@ -1794,6 +1794,12 @@ async function avSyncVendedoresSheet(){
     var idx = {
       mesAno:   avFindCol(header,['mes/ano','mês/ano','month','mes ano','mesano']),
       totalIVA: avFindCol(header,['total com iva','total c/ iva','total iva','valor total']),
+      // Sem IVA (pedido da Edna, doc "CRM - Parte 5", 30/09/2026: "Valores
+      // com IVA - Considerar valores sem IVA também para as análises dos
+      // vendedores") — só existe se a própria Sheet "Vendas 2026" tiver
+      // esta coluna; nunca estimado a partir do total com IVA (seria
+      // inventar um número, contra a convenção do resto do ficheiro).
+      semIVA:   avFindCol(header,['valor sem iva','total sem iva','sem iva','valor liquido','valor líquido','net amount','netamount']),
       recebido: avFindCol(header,['valor recebido','recebido','pago','received']),
       aReceber: avFindCol(header,['saldo a receber','a receber','por receber','saldo','pendente']),
       vendedor: avFindCol(header,['vendedor','comercial','sales rep','seller']),
@@ -1831,8 +1837,10 @@ async function avSyncVendedoresSheet(){
       var v = avParseNumPT(idx.totalIVA!==-1 ? r[idx.totalIVA] : '0');
       var rec = avParseNumPT(idx.recebido!==-1 ? r[idx.recebido] : '0');
       var nrec = avParseNumPT(idx.aReceber!==-1 ? r[idx.aReceber] : '0');
-      if(!porVend[vend]) porVend[vend] = {n:vend, v:0, st:{rec:0,nrec:0}, meses:{}};
+      var vSemIVA = idx.semIVA!==-1 ? avParseNumPT(r[idx.semIVA]) : null;
+      if(!porVend[vend]) porVend[vend] = {n:vend, v:0, vSemIVA:0, nSemIVA:0, st:{rec:0,nrec:0}, meses:{}};
       porVend[vend].v += v;
+      if(vSemIVA!=null){ porVend[vend].vSemIVA += vSemIVA; porVend[vend].nSemIVA++; }
       porVend[vend].st.rec += rec;
       porVend[vend].st.nrec += nrec;
       // Guardar breakdown por mês para cada vendedor
@@ -2578,7 +2586,12 @@ function avVendedoresFiltrar(ano){
         '<div class="head"><div style="display:flex;align-items:center;gap:12px"><div class="avatar">'+v.init+'</div><div><div class="name">'+v.n+'</div><div class="role">Vendedor · 2026</div></div></div>'+
         '<span class="rank-pill">#'+(i+1)+'</span></div>'+
         '<div class="big"><span class="cur">€</span>'+Math.round(v.v).toLocaleString('pt-PT')+
-          '<span style="font-size:13px;color:var(--muted);font-weight:400;margin-left:10px">YTD</span></div>'+
+          '<span style="font-size:13px;color:var(--muted);font-weight:400;margin-left:10px">YTD (com IVA)</span></div>'+
+        // Sem IVA — só aparece se a Sheet "Vendas 2026" tiver essa coluna
+        // (pedido da Edna, 30/09/2026); nunca estimado a partir do valor
+        // com IVA. v.nSemIVA conta quantas linhas contribuíram — avisa
+        // quando é parcial (nem todas as faturas desse vendedor a têm).
+        (v.nSemIVA>0 ? '<div style="font-size:12px;color:var(--muted);margin-top:2px">€'+Math.round(v.vSemIVA).toLocaleString('pt-PT')+' sem IVA'+(v.nSemIVA<(v.meses?Object.keys(v.meses).reduce(function(s,m){return s+v.meses[m].n;},0):v.nSemIVA)?' (parcial)':'')+'</div>' : '')+
         '<div class="sub-line">'+(v.st?'<span style="color:var(--g)">✓ '+fmtFull(v.st.rec)+' recebido</span>'+(v.st.nrec>0?' · <span style="color:var(--r)">● '+fmtFull(v.st.nrec)+' pendente</span>':''):'')+'</div>'+
         mesesHTML+
         histHTML+
@@ -5654,6 +5667,8 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--txt);min-he
 /* KPI row */
 .krow{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:16px}
 @media(max-width:1200px){.krow{grid-template-columns:repeat(3,1fr)}}
+.krow3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:10px}
+@media(max-width:700px){.krow3{grid-template-columns:1fr}}
 .kpi{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:14px;position:relative;overflow:hidden;transition:border-color .2s}
 .kpi:hover{border-color:var(--border2)}
 .kpi::after{content:'';position:absolute;top:0;left:0;right:0;height:2px}
@@ -8788,6 +8803,22 @@ tbody td{font-size:15px}
     </div>
   </div>
   <div class="task-content">
+    <!-- Calendário mensal (pedido da Edna, doc "CRM - Parte 5", 30/09/2026:
+         "não pode ter esta visualização? Atualmente é só uma tela preta") —
+         reaproveita a mesma grelha/CSS (.cal-grid/.cal-day/.cal-dh) já usada
+         e testada na vista Calendário de Tarefas (renderTasksCalendar()),
+         mas com os eventos desta Agenda (uniGetItems('admin-agenda')), não
+         tarefas. Estado de mês/ano próprio (agendaCalMonth/agendaCalYear),
+         nunca interfere com o calendário de Tarefas. Ver renderAgendaCalendar(). -->
+    <div class="cal-nav" style="margin-bottom:14px">
+      <button class="tbtn" onclick="agendaCalNav(-1)" style="padding:5px 10px;font-size:16px">‹</button>
+      <button class="tbtn" onclick="agendaCalNav(0)" style="font-size:13px">Hoje</button>
+      <button class="tbtn" onclick="agendaCalNav(1)" style="padding:5px 10px;font-size:16px">›</button>
+      <span class="cal-nav-title" id="agenda-cal-title">—</span>
+      <span style="margin-left:auto;font-size:13px;color:var(--muted)" id="agenda-cal-count"></span>
+    </div>
+    <div id="agenda-cal-grid-wrap" style="margin-bottom:22px"></div>
+
     <div class="g2">
       <div>
         <div class="sh"><h2>Próximos eventos</h2></div>
@@ -9287,6 +9318,7 @@ tbody td{font-size:15px}
              existente, nunca altera o comportamento desta última. -->
         <button class="tbtn" style="font-size:13px" onclick="Promise.all([tocoSincronizarFaturas(false).then(function(){ tocoAtualizarTesourariaComFaturas(); }), tocoSincronizarComprasPagamentosReal()])" title="Vai buscar os dados mais recentes ao TOConline (vendas + compras/pagamentos) e actualiza toda a Tesouraria">🔄 Sincronizar TOConline</button>
         <button class="tbtn y" onclick="tesNovaContaPagar()">+ Conta a Pagar</button>
+        <button class="tbtn" onclick="tesAbrirConfigEmailCobranca()" title="Define o texto padrão usado pelo botão 📧 Email na aba A Receber">⚙️ Email de Cobrança</button>
         <button class="tbtn" onclick="tesExportar()">⬇ Exportar</button>
       </div>
     </div>
@@ -9325,18 +9357,23 @@ tbody td{font-size:15px}
 
     <!-- Resumo Geral — pedido da Edna, 24/09/2026: totais de Vencidas/A
          Pagar/A Receber/Pagas/Recebidos sempre visíveis, sem depender da
-         aba activa. Ver tesRenderResumoGeral(). -->
-    <div class="krow" style="margin-bottom:14px">
-      <div class="kpi kR"><div class="klbl">Vencido</div>
-        <div style="display:flex;gap:16px">
-          <div><div class="kval" style="font-size:17px;margin-bottom:2px" id="tes-resumo-vencido-receber">—</div><div class="ksub" style="margin-top:0">a receber</div></div>
-          <div><div class="kval" style="font-size:17px;margin-bottom:2px" id="tes-resumo-vencido-pagar">—</div><div class="ksub" style="margin-top:0">a pagar</div></div>
-        </div>
-      </div>
-      <div class="kpi" style="--c:var(--r)"><div class="klbl">A Pagar</div><div class="kval" id="tes-resumo-apagar">—</div><div class="ksub">total pendente</div></div>
+         aba activa. Ver tesRenderResumoGeral(). Reorganizado em duas linhas
+         (pedido da Edna, doc "CRM - Parte 5", 30/09/2026 — "achava o campo
+         confuso", misturava a receber e a pagar no mesmo cartão "Vencido"):
+         linha de cima só o lado de A Receber (A Receber / Recebidos / Em
+         Atraso), linha de baixo só o lado de A Pagar, na MESMA ordem (A
+         Pagar / Pagas / Em Atraso). Puramente de apresentação — os ids e
+         tesRenderResumoGeral() ficam exactamente iguais, só o HTML à volta
+         mudou. -->
+    <div class="krow3">
       <div class="kpi kB"><div class="klbl">A Receber</div><div class="kval" id="tes-resumo-areceber">—</div><div class="ksub">total pendente</div></div>
-      <div class="kpi kG"><div class="klbl">Pagas</div><div class="kval" id="tes-resumo-pagas">—</div><div class="ksub">total liquidado</div></div>
-      <div class="kpi" style="--c:var(--g)"><div class="klbl">Recebidos</div><div class="kval" id="tes-resumo-recebidos">—</div><div class="ksub">total cobrado</div></div>
+      <div class="kpi" style="--c:var(--g)"><div class="klbl">Recebidos</div><div class="kval" id="tes-resumo-recebidos">—</div><div class="ksub">total cobrado no período</div></div>
+      <div class="kpi kR"><div class="klbl">Em Atraso</div><div class="kval" id="tes-resumo-vencido-receber">—</div><div class="ksub">a receber</div></div>
+    </div>
+    <div class="krow3" style="margin-bottom:14px">
+      <div class="kpi" style="--c:var(--r)"><div class="klbl">A Pagar</div><div class="kval" id="tes-resumo-apagar">—</div><div class="ksub">total pendente</div></div>
+      <div class="kpi kG"><div class="klbl">Pagas</div><div class="kval" id="tes-resumo-pagas">—</div><div class="ksub">total liquidado no período</div></div>
+      <div class="kpi kR"><div class="klbl">Em Atraso</div><div class="kval" id="tes-resumo-vencido-pagar">—</div><div class="ksub">a pagar</div></div>
     </div>
 
     <!-- KPIs dinâmicos (mudam com a tab activa) -->
@@ -9549,6 +9586,39 @@ tbody td{font-size:15px}
           <button class="tbtn" onclick="tesIvaConfigurarWebhook()" style="font-size:13px">⚙️ Configurar Webhook</button>
           <button class="tbtn y" onclick="tesIvaSincronizar()" style="font-size:13px">🔄 Sincronizar agora</button>
         </div>
+      </div>
+
+      <!-- Lançamento manual: Impostos (além do IVA) e Valor Real de IVA pago
+           (Fase C CFO, 30/09/2026) — mesmo padrão de "Encargos de Folha"
+           (RH → Ordenados): nem o TOConline nem nenhuma integração expõem
+           estes dois valores (confirmado pelo diagnóstico hr_probe de
+           29-30/09 para a folha; para Impostos/IVA pago, a Edna confirmou
+           que são lançados manualmente no Excel). Antes, "Impostos" e "IVA"
+           mostravam sempre o mesmo número (estimativa duplicada em duas
+           colunas) e "Valor Real Pago" nunca saía de "—" — ver
+           tesIvaCalcularReal(). -->
+      <div style="background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:18px">
+        <div style="font-size:13px;font-weight:600;color:var(--txt2);margin-bottom:10px">🧾 Impostos e IVA pago — lançamento manual, mensal</div>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
+          <div>
+            <label class="form-label" style="display:block;margin-bottom:4px;font-size:12px">Mês</label>
+            <select id="tes-im-mes" class="form-input" style="padding:5px 10px;font-size:14px" onchange="tesImpostosManuaisCarregarInputs()"></select>
+          </div>
+          <div>
+            <label class="form-label" style="display:block;margin-bottom:4px;font-size:12px">Impostos, além do IVA (€)</label>
+            <input type="number" step="0.01" min="0" id="tes-im-impostos" class="form-input" style="padding:5px 10px;font-size:14px;width:140px" placeholder="0,00"/>
+          </div>
+          <div>
+            <label class="form-label" style="display:block;margin-bottom:4px;font-size:12px">IVA efectivamente pago (€)</label>
+            <input type="number" step="0.01" min="0" id="tes-im-ivapago" class="form-input" style="padding:5px 10px;font-size:14px;width:140px" placeholder="0,00"/>
+          </div>
+          <div style="flex:1;min-width:200px">
+            <label class="form-label" style="display:block;margin-bottom:4px;font-size:12px">Nota (opcional)</label>
+            <input type="text" id="tes-im-nota" class="form-input" style="padding:5px 10px;font-size:14px;width:100%" placeholder="ex.: IRC, Selo, DAS de IVA"/>
+          </div>
+          <button onclick="tesGuardarImpostosManual()" class="tbtn" style="font-size:13px;color:var(--g);border-color:var(--g)">💾 Guardar</button>
+        </div>
+        <div style="font-size:11.5px;color:var(--muted);margin-top:8px">"Impostos" é tudo o que não é IVA (ex.: IRC, Selo) — o IVA já é calculado automaticamente a partir das vendas/compras reais; preencha "IVA efectivamente pago" só quando souber o valor real da declaração.</div>
       </div>
 
       <div class="tw" style="margin-bottom:18px">
@@ -10937,6 +11007,35 @@ tbody td{font-size:15px}
   </div>
 </div>
 
+
+<!-- Modal Tesouraria - Email de Cobrança (template, pedido da Edna
+     06/10/2026: "deixe um local onde adicionarei um email padrão") —
+     guarda só o texto; o envio em si abre o cliente de email da própria
+     Edna (mailto:), nunca envia nada por conta própria. -->
+<div id="tes-email-cobranca-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:3000;align-items:center;justify-content:center" onclick="if(event.target===this)tesFecharConfigEmailCobranca()">
+  <div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:24px;width:600px;max-width:96vw;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.5)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+      <h3 style="font-size:16px;font-weight:700;color:var(--txt2)">⚙️ Email de Cobrança — texto padrão</h3>
+      <button onclick="tesFecharConfigEmailCobranca()" style="background:none;border:none;color:var(--muted);font-size:22px;cursor:pointer;padding:0">&times;</button>
+    </div>
+    <div style="font-size:12.5px;color:var(--muted);background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:14px">
+      Este texto é usado pelo botão "📧 Email" em cada linha da aba "A Receber". Pode usar estas palavras entre chavetas, que são substituídas automaticamente pelos dados reais de cada fatura:
+      <code>{cliente}</code>, <code>{fatura}</code>, <code>{valor}</code>, <code>{vencimento}</code>, <code>{dias_atraso}</code>.
+    </div>
+    <div class="form-group">
+      <label class="form-label">Assunto</label>
+      <input id="tes-ec-assunto" class="form-input" placeholder="ex: Fatura {fatura} — pagamento em atraso"/>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Corpo do email</label>
+      <textarea id="tes-ec-corpo" class="form-input" rows="10" style="resize:vertical;font-family:inherit" placeholder="ex:&#10;Exmo(a) {cliente},&#10;&#10;A fatura {fatura}, no valor de {valor}, venceu em {vencimento} e continua por liquidar.&#10;&#10;Agradecemos a regularização assim que possível.&#10;&#10;Com os melhores cumprimentos,"></textarea>
+    </div>
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:10px">
+      <button class="tbtn" onclick="tesFecharConfigEmailCobranca()">Cancelar</button>
+      <button class="tbtn y" onclick="tesGuardarConfigEmailCobranca()">💾 Guardar</button>
+    </div>
+  </div>
+</div>
 
 <!-- Modal Tesouraria - Nova Conta a Pagar -->
 <div id="tes-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:3000;align-items:center;justify-content:center" onclick="if(event.target===this)tesFecharModal()">
@@ -16631,6 +16730,79 @@ function agendaDeleteDireto(id, e){
   agendaRender();
 }
 
+// Calendário mensal da Agenda (pedido da Edna, 30/09/2026) — mesmo molde
+// de renderTasksCalendar() (calMonth/calYear/calNav), com estado próprio
+// para nunca interferir com o calendário de Tarefas.
+var agendaCalMonth = new Date().getMonth();
+var agendaCalYear = new Date().getFullYear();
+function agendaCalNav(dir){
+  if(dir===0){ var n=new Date(); agendaCalMonth=n.getMonth(); agendaCalYear=n.getFullYear(); }
+  else { agendaCalMonth+=dir; if(agendaCalMonth<0){agendaCalMonth=11;agendaCalYear--;} if(agendaCalMonth>11){agendaCalMonth=0;agendaCalYear++;} }
+  renderAgendaCalendar();
+}
+window.agendaCalNav = agendaCalNav;
+
+function renderAgendaCalendar(){
+  var wrap = document.getElementById('agenda-cal-grid-wrap');
+  var titleEl = document.getElementById('agenda-cal-title');
+  var countEl = document.getElementById('agenda-cal-count');
+  if(!wrap) return;
+
+  var items = uniGetItems('admin-agenda');
+  var cfg = UNI_CFG['admin-agenda'];
+  var MONTHS = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+  var DAYS = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+  if(titleEl) titleEl.textContent = MONTHS[agendaCalMonth]+' '+agendaCalYear;
+
+  var eventMap = {};
+  var eventosEsteMes = 0;
+  items.forEach(function(i){
+    if(!i.date) return;
+    var d = new Date(i.date);
+    if(isNaN(d.getTime())) return;
+    var key = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+    if(!eventMap[key]) eventMap[key] = [];
+    eventMap[key].push(i);
+    if(d.getFullYear()===agendaCalYear && d.getMonth()===agendaCalMonth) eventosEsteMes++;
+  });
+  if(countEl) countEl.textContent = eventosEsteMes+' evento'+(eventosEsteMes!==1?'s':'')+' este mês';
+
+  var today = new Date(); today.setHours(0,0,0,0);
+  var firstDay = new Date(agendaCalYear, agendaCalMonth, 1);
+  var lastDay = new Date(agendaCalYear, agendaCalMonth+1, 0);
+  var startPad = firstDay.getDay();
+
+  var hdr = DAYS.map(function(d){ return '<div class="cal-dh">'+d+'</div>'; }).join('');
+  var cells = '';
+  var prevLast = new Date(agendaCalYear, agendaCalMonth, 0).getDate();
+  for(var p=startPad-1; p>=0; p--){
+    cells += '<div class="cal-day other-month"><div class="cal-day-num">'+(prevLast-p)+'</div></div>';
+  }
+  var MAX_SHOW = 3;
+  for(var day=1; day<=lastDay.getDate(); day++){
+    var thisDate = new Date(agendaCalYear, agendaCalMonth, day);
+    var isToday = (thisDate.getTime()===today.getTime());
+    var key = agendaCalYear+'-'+String(agendaCalMonth+1).padStart(2,'0')+'-'+String(day).padStart(2,'0');
+    var dayEvents = eventMap[key] || [];
+    var evHtmlCell = dayEvents.slice(0, MAX_SHOW).map(function(i){
+      var cor = (cfg && cfg.colors && cfg.colors[i.status]) || '#6b6b72';
+      var esc = (i.n||'').replace(/'/g,"&#39;").replace(/"/g,"&quot;");
+      return '<div class="cal-task" style="background:'+cor+'" title="'+esc+'" onclick="uniOpen(\'admin-agenda\','+i.id+')">'+esc+'</div>';
+    }).join('');
+    if(dayEvents.length > MAX_SHOW){
+      evHtmlCell += '<div class="cal-more" onclick="uniOpen(\'admin-agenda\','+dayEvents[MAX_SHOW].id+')">+'+(dayEvents.length-MAX_SHOW)+' mais</div>';
+    }
+    cells += '<div class="cal-day'+(isToday?' today':'')+'"><div class="cal-day-num">'+day+'</div>'+evHtmlCell+'</div>';
+  }
+  var total = startPad + lastDay.getDate();
+  var trailing = total%7===0 ? 0 : 7-(total%7);
+  for(var n=1; n<=trailing; n++){
+    cells += '<div class="cal-day other-month"><div class="cal-day-num">'+n+'</div></div>';
+  }
+  wrap.innerHTML = '<div class="cal-grid">'+hdr+cells+'</div>';
+}
+window.renderAgendaCalendar = renderAgendaCalendar;
+
 function agendaRender(){
   const el=document.getElementById('agenda-events'); if(!el) return;
   const fu=document.getElementById('followups');
@@ -16638,6 +16810,7 @@ function agendaRender(){
   const cfg=UNI_CFG['admin-agenda'];
   const upcoming=items.filter(i=>i.status!=='Follow-up').sort((a,b)=>a.date>b.date?1:-1);
   const followups=items.filter(i=>i.status==='Follow-up').sort((a,b)=>a.date>b.date?1:-1);
+  if(typeof renderAgendaCalendar==='function') renderAgendaCalendar();
 
   function evHTML(i){
     const sc=cfg.colors[i.status]||'#6b7280';
@@ -21898,6 +22071,28 @@ var CRM_DESP_EDIT_ID = null;
 var DM_FILE_OBJ = null;
 var EC_DESPESAS_APP = [];
 
+// Normaliza o `status` vindo do app de pontos (crm-expenses, outro projecto
+// Supabase) para as 5 chaves inglesas usadas internamente neste ficheiro
+// (pending/submitted/approved/rejected/reimbursed). O app pode devolver o
+// estado em português e com acentos (ex. "Aprovada") — a comparação exacta
+// `d.status==='approved'` falhava sempre nesse caso: a tabela caía sempre
+// no mesmo estilo/fallback e os KPIs "Pendentes"/"Aprovadas" ficavam
+// presos em €0 mesmo com linhas reais aprovadas visíveis na tabela
+// (reportado pela Edna, captura de ecrã 30/09/2026 — afecta
+// despCalcularTotais/despCalcularTotaisMes/despSyncApp/
+// despAppRenderTabela/finDespRegistoDoApp, todos os pontos que liam
+// d.status directamente).
+function despAppEstadoNorm(raw){
+  var s = String(raw||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().trim();
+  if(/^aprovad|^approved/.test(s)) return 'approved';
+  if(/^rejeitad|^rejected/.test(s)) return 'rejected';
+  if(/^reembolsad|^reimbursed/.test(s)) return 'reimbursed';
+  if(/^submetid|^submitted/.test(s)) return 'submitted';
+  if(/^pendente|^pending/.test(s)) return 'pending';
+  return s;
+}
+window.despAppEstadoNorm = despAppEstadoNorm;
+
 const DESP_ESTADO_LABEL = {approved:'Aprovada',pending:'Pendente',rejected:'Rejeitada',reimbursed:'Reembolsada'};
 const DESP_ESTADO_CLS   = {approved:'bg',pending:'ba',rejected:'br',reimbursed:'bg'};
 
@@ -21922,9 +22117,10 @@ function despCalcularTotais(){
     const v = parseFloat(d.amount_eur)||0;
     const dt = d.occurred_at ? new Date(d.occurred_at) : null;
     if(dt && dt.getMonth()===mes && dt.getFullYear()===ano){ totalMes+=v; cntMes++; }
-    if(d.status==='pending'||d.status==='submitted'){ totalPend+=v; cntPend++; }
-    if(d.status==='reimbursed') totalReimb+=v;
-    if(d.status==='approved') totalAprov+=v;
+    var estNorm = despAppEstadoNorm(d.status);
+    if(estNorm==='pending'||estNorm==='submitted'){ totalPend+=v; cntPend++; }
+    if(estNorm==='reimbursed') totalReimb+=v;
+    if(estNorm==='approved') totalAprov+=v;
   });
 
   return {totalMes,cntMes,totalPend,cntPend,totalReimb,totalAprov};
@@ -21957,7 +22153,7 @@ function despCalcularTotaisMes(ano, mes){
     const dt = d.occurred_at ? new Date(d.occurred_at) : null;
     const noMes = dt && (dt.getMonth()+1)===mes && dt.getFullYear()===ano;
     if(noMes){ totalMes+=v; cntMes++; }
-    if(noMes && d.status==='approved'){ totalAprovMes+=v; cntAprovMes++; }
+    if(noMes && despAppEstadoNorm(d.status)==='approved'){ totalAprovMes+=v; cntAprovMes++; }
   });
 
   return {totalMes,cntMes,totalAprovMes,cntAprovMes};
@@ -22206,8 +22402,9 @@ function despAppRenderTabela(){
 
   tbody.innerHTML = filtered.map(d=>{
     const dtStr = d.occurred_at ? new Date(d.occurred_at).toLocaleDateString('pt-PT',{day:'2-digit',month:'2-digit',year:'numeric'}) : '—';
-    const cls = estCls[d.status]||'ba';
-    const lbl = estLabel[d.status]||d.status||'—';
+    const estNorm = despAppEstadoNorm(d.status);
+    const cls = estCls[estNorm]||'ba';
+    const lbl = estLabel[estNorm]||d.status||'—';
     // Correção (24/09/2026, pedido da secretária: "ao solicitar ver o
     // recibo, abre janela de erro"): receipt_signed_url vem já assinado da
     // app de pontos (projecto Supabase à parte, sem acesso daqui para
@@ -22270,8 +22467,9 @@ async function despSyncApp(){
     EC_DESPESAS_APP.forEach(d=>{
       const v=parseFloat(d.amount_eur)||0;
       tot+=v;
-      if(d.status==='pending'||d.status==='submitted'){ pend+=v; cntPend++; }
-      if(d.status==='approved'){ aprov+=v; cntAprov++; }
+      const estNorm = despAppEstadoNorm(d.status);
+      if(estNorm==='pending'||estNorm==='submitted'){ pend+=v; cntPend++; }
+      if(estNorm==='approved'){ aprov+=v; cntAprov++; }
       if(d.toc_sent_at) toc++;
     });
     const fmt=v=>'€'+(v%1===0?v:v.toFixed(2));
@@ -24819,6 +25017,7 @@ function finRowToLocal(r) {
 // que esta linha não tem) — mostra antes "Ver recibo".
 function finDespRegistoDoApp(d) {
   var estLabel = {pending:'Pendente', submitted:'Pendente', approved:'Aprovada', rejected:'Rejeitada', reimbursed:'Reembolsada'};
+  var estNorm = despAppEstadoNorm(d.status);
   return {
     id: 'app-' + d.id,
     appId: d.id,
@@ -24828,7 +25027,7 @@ function finDespRegistoDoApp(d) {
     descricao: d.reference || d.notes || '',
     valor: parseFloat(d.amount_eur) || 0,
     metodoPagamento: '—',
-    estado: estLabel[d.status] || d.status || 'Pendente',
+    estado: estLabel[estNorm] || d.status || 'Pendente',
     temRecibo: !!d.receipt_signed_url,
     origem: 'App de Pontos'
   };
@@ -26166,7 +26365,13 @@ function tesRenderResumoGeral(){
     var k = TES_COMPRAS_TOCO.kpis || {};
     totalAPagar = k.totalAPagar || 0;
     vencidoPagar = k.vencido || 0;
-    totalPagas = (TES_COMPRAS_TOCO.pagas||[]).reduce(function(s,p){ return s+(parseFloat(p.valorPago)||0); },0);
+    // Filtrado pelo mesmo "Período" (TES_FILTRO_ANO) que já se aplica a
+    // "Recebidos" (tesGetRecebidos()) — antes somava TODO o histórico
+    // sincronizado (2018-2026) sem filtro nenhum, inconsistente com o
+    // cartão ao lado e sem resposta clara a "Esse valor Pagas é soma de
+    // qual período?" (pedido da Edna, doc "CRM - Parte 5", 30/09/2026).
+    totalPagas = (TES_COMPRAS_TOCO.pagas||[]).filter(function(p){ return tesPassaFiltroAno(p.dataPagamento); })
+      .reduce(function(s,p){ return s+(parseFloat(p.valorPago)||0); },0);
   } else {
     var pendentesPg = TES_CONTAS.filter(function(c){ return c.estado!=='Paga'; });
     totalAPagar = pendentesPg.reduce(function(s,c){ return s+(parseFloat(c.valor)||0); },0);
@@ -26905,6 +27110,188 @@ function tesIvaConfigurarWebhook(){
 // fora do total de compras/IVA suportado, e o mês fica marcado
 // comprasIncompleto=true para tesIvaRender() mostrar um aviso explícito
 // em vez de inventar ou omitir silenciosamente esse IVA.
+// ── Impostos (além do IVA) e IVA efectivamente pago — lançamento manual
+// mensal (Fase C CFO, 30/09/2026) ───────────────────────────────────────
+// Mesmo padrão exacto de ENCARGOS_FOLHA (RH → Ordenados, Fase 4 CFO):
+// cópia local em localStorage + sincronização remota via obSbPush()
+// genérico em 'ob_crm_dados' (chave 'ob-tes-impostos-manuais'). Único
+// ponto desta tabela onde entrada manual é esperada e correcta — nem o
+// TOConline nem nenhuma integração existente dão "Impostos" (IRC, Selo,
+// etc.) separado do IVA, nem o valor real de uma declaração de IVA já
+// paga (só o estimado por vendas-compras, calculado abaixo).
+var TES_IMPOSTOS_MANUAIS;
+try{ TES_IMPOSTOS_MANUAIS = JSON.parse(localStorage.getItem('ob-tes-impostos-manuais') || '{}'); }catch(e){ TES_IMPOSTOS_MANUAIS = {}; }
+if(!TES_IMPOSTOS_MANUAIS || typeof TES_IMPOSTOS_MANUAIS !== 'object') TES_IMPOSTOS_MANUAIS = {};
+window.TES_IMPOSTOS_MANUAIS = TES_IMPOSTOS_MANUAIS;
+
+function tesImpostosManuaisDe(mesVal){
+  var mapa = (typeof TES_IMPOSTOS_MANUAIS !== 'undefined' && TES_IMPOSTOS_MANUAIS) ? TES_IMPOSTOS_MANUAIS : {};
+  var e = (mesVal && mapa[mesVal]) || {};
+  return { impostos: parseFloat(e.impostos) || 0, ivaPago: (e.ivaPago!=null && e.ivaPago!=='') ? (parseFloat(e.ivaPago)||0) : null, nota: e.nota || '' };
+}
+window.tesImpostosManuaisDe = tesImpostosManuaisDe;
+
+// Popula o <select> de mês com os 12 meses do ano que tesIvaCalcularReal()
+// usa (ano corrente), e pré-preenche os campos com o que já está guardado.
+function tesImpostosManuaisCarregarInputs(){
+  var selMes = document.getElementById('tes-im-mes');
+  var elImp = document.getElementById('tes-im-impostos');
+  var elIva = document.getElementById('tes-im-ivapago');
+  var elNota = document.getElementById('tes-im-nota');
+  if(!selMes || !elImp || !elIva || !elNota) return;
+  if(!selMes.options.length){
+    var ano = new Date().getFullYear();
+    for(var m=0;m<12;m++){
+      var val = ano+'-'+String(m+1).padStart(2,'0');
+      var opt = document.createElement('option');
+      opt.value = val; opt.textContent = TES_MESES[m]+' '+ano;
+      selMes.appendChild(opt);
+    }
+    selMes.value = ano+'-'+String(new Date().getMonth()+1).padStart(2,'0');
+  }
+  var e = tesImpostosManuaisDe(selMes.value);
+  elImp.value = e.impostos ? e.impostos : '';
+  elIva.value = e.ivaPago!=null ? e.ivaPago : '';
+  elNota.value = e.nota || '';
+}
+window.tesImpostosManuaisCarregarInputs = tesImpostosManuaisCarregarInputs;
+
+function tesGuardarImpostosManual(){
+  var selMes = document.getElementById('tes-im-mes');
+  var mesVal = selMes ? selMes.value : '';
+  if(!mesVal){ alert('Seleciona o mês.'); return; }
+  var impostos = parseFloat((document.getElementById('tes-im-impostos')||{}).value) || 0;
+  var ivaPagoRaw = (document.getElementById('tes-im-ivapago')||{}).value;
+  var ivaPago = (ivaPagoRaw!=null && ivaPagoRaw!=='') ? (parseFloat(ivaPagoRaw)||0) : null;
+  var nota = (((document.getElementById('tes-im-nota')||{}).value) || '').trim();
+  TES_IMPOSTOS_MANUAIS[mesVal] = { impostos: impostos, ivaPago: ivaPago, nota: nota };
+  try{ localStorage.setItem('ob-tes-impostos-manuais', JSON.stringify(TES_IMPOSTOS_MANUAIS)); }catch(e){}
+  try{ if(typeof obSbPush === 'function') obSbPush('ob-tes-impostos-manuais'); }catch(e){}
+  if(typeof showToast === 'function') showToast('Impostos/IVA guardados.'); else alert('Guardado.');
+  if(typeof tesIvaSincronizar === 'function') tesIvaSincronizar();
+}
+window.tesGuardarImpostosManual = tesGuardarImpostosManual;
+
+// Hidratação canónica dedicada (leitura fresca de ob_crm_dados) — mesmo
+// padrão exacto de foHidratarEncargosFolha().
+var _tesImpostosManuaisHidratacaoPromise = null;
+async function tesHidratarImpostosManuais(){
+  if(_tesImpostosManuaisHidratacaoPromise) return _tesImpostosManuaisHidratacaoPromise;
+  _tesImpostosManuaisHidratacaoPromise = (async function(){
+    var sb = (typeof crmSBClient === 'function') ? crmSBClient() : null;
+    if(!sb) return;
+    try{
+      var res = await sb.from('ob_crm_dados').select('dados,updated_at').eq('chave','ob-tes-impostos-manuais').maybeSingle();
+      if(res && !res.error && res.data && res.data.dados){
+        TES_IMPOSTOS_MANUAIS = res.data.dados;
+        window.TES_IMPOSTOS_MANUAIS = TES_IMPOSTOS_MANUAIS;
+        try{ localStorage.setItem('ob-tes-impostos-manuais', JSON.stringify(TES_IMPOSTOS_MANUAIS)); }catch(e){}
+      }
+    }catch(e){ console.warn('[Tesouraria] Falha a ler ob-tes-impostos-manuais remoto — mantém a cópia local como fallback.', e); }
+    if(typeof tesImpostosManuaisCarregarInputs === 'function') tesImpostosManuaisCarregarInputs();
+    if(typeof tesIvaSincronizar === 'function') tesIvaSincronizar();
+  })();
+  _tesImpostosManuaisHidratacaoPromise.finally(function(){ _tesImpostosManuaisHidratacaoPromise = null; });
+  return _tesImpostosManuaisHidratacaoPromise;
+}
+window.tesHidratarImpostosManuais = tesHidratarImpostosManuais;
+
+// ── Email de Cobrança — texto padrão (pedido da Edna, 06/10/2026: "deixe
+// um local onde adicionarei um email padrão para isso") ────────────────
+// Mesmo padrão de armazenamento de TES_IMPOSTOS_MANUAIS/ENCARGOS_FOLHA:
+// cópia local em localStorage + sincronização remota via obSbPush() em
+// 'ob_crm_dados' (chave 'ob-tes-email-cobranca'). Guarda só o TEXTO —
+// nunca envia nada sozinho; tesEnviarEmailCobranca() abre sempre um
+// mailto: (o cliente de email da própria Edna é que envia).
+var TES_EMAIL_COBRANCA;
+try{ TES_EMAIL_COBRANCA = JSON.parse(localStorage.getItem('ob-tes-email-cobranca') || 'null'); }catch(e){ TES_EMAIL_COBRANCA = null; }
+if(!TES_EMAIL_COBRANCA || typeof TES_EMAIL_COBRANCA !== 'object') TES_EMAIL_COBRANCA = { assunto: '', corpo: '' };
+window.TES_EMAIL_COBRANCA = TES_EMAIL_COBRANCA;
+
+function tesAbrirConfigEmailCobranca(){
+  var modal = document.getElementById('tes-email-cobranca-modal'); if(!modal) return;
+  var elAss = document.getElementById('tes-ec-assunto');
+  var elCorpo = document.getElementById('tes-ec-corpo');
+  if(elAss) elAss.value = TES_EMAIL_COBRANCA.assunto || '';
+  if(elCorpo) elCorpo.value = TES_EMAIL_COBRANCA.corpo || '';
+  modal.style.display = 'flex';
+}
+window.tesAbrirConfigEmailCobranca = tesAbrirConfigEmailCobranca;
+
+function tesFecharConfigEmailCobranca(){
+  var modal = document.getElementById('tes-email-cobranca-modal'); if(modal) modal.style.display = 'none';
+}
+window.tesFecharConfigEmailCobranca = tesFecharConfigEmailCobranca;
+
+function tesGuardarConfigEmailCobranca(){
+  var assunto = ((document.getElementById('tes-ec-assunto')||{}).value || '').trim();
+  var corpo = ((document.getElementById('tes-ec-corpo')||{}).value || '').trim();
+  TES_EMAIL_COBRANCA = { assunto: assunto, corpo: corpo };
+  window.TES_EMAIL_COBRANCA = TES_EMAIL_COBRANCA;
+  try{ localStorage.setItem('ob-tes-email-cobranca', JSON.stringify(TES_EMAIL_COBRANCA)); }catch(e){}
+  try{ if(typeof obSbPush === 'function') obSbPush('ob-tes-email-cobranca'); }catch(e){}
+  if(typeof showToast === 'function') showToast('Email de cobrança guardado.'); else alert('Guardado.');
+  tesFecharConfigEmailCobranca();
+}
+window.tesGuardarConfigEmailCobranca = tesGuardarConfigEmailCobranca;
+
+// Hidratação canónica dedicada (leitura fresca de ob_crm_dados) — mesmo
+// padrão exacto de tesHidratarImpostosManuais().
+var _tesEmailCobrancaHidratacaoPromise = null;
+async function tesHidratarEmailCobranca(){
+  if(_tesEmailCobrancaHidratacaoPromise) return _tesEmailCobrancaHidratacaoPromise;
+  _tesEmailCobrancaHidratacaoPromise = (async function(){
+    var sb = (typeof crmSBClient === 'function') ? crmSBClient() : null;
+    if(!sb) return;
+    try{
+      var res = await sb.from('ob_crm_dados').select('dados,updated_at').eq('chave','ob-tes-email-cobranca').maybeSingle();
+      if(res && !res.error && res.data && res.data.dados){
+        TES_EMAIL_COBRANCA = res.data.dados;
+        window.TES_EMAIL_COBRANCA = TES_EMAIL_COBRANCA;
+        try{ localStorage.setItem('ob-tes-email-cobranca', JSON.stringify(TES_EMAIL_COBRANCA)); }catch(e){}
+      }
+    }catch(e){ console.warn('[Tesouraria] Falha a ler ob-tes-email-cobranca remoto — mantém a cópia local como fallback.', e); }
+  })();
+  _tesEmailCobrancaHidratacaoPromise.finally(function(){ _tesEmailCobrancaHidratacaoPromise = null; });
+  return _tesEmailCobrancaHidratacaoPromise;
+}
+window.tesHidratarEmailCobranca = tesHidratarEmailCobranca;
+
+// Substitui {cliente}/{fatura}/{valor}/{vencimento}/{dias_atraso} pelos
+// dados reais de uma linha de tesGetReceber() e abre um mailto: — nunca
+// envia nada sozinho, só prepara o email no cliente de email da Edna.
+// Chave que falte no texto fica em branco (nunca "undefined"/"NaN").
+function tesEmailCobrancaPreencher(template, r, diasAtraso){
+  var fmtEUR = function(v){ return '€'+(parseFloat(v)||0).toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2}); };
+  var mapa = {
+    cliente: r.cliente || '',
+    fatura: r.descricao || r.numero || '',
+    valor: fmtEUR(r.total),
+    vencimento: r.vencimento || '',
+    dias_atraso: diasAtraso>0 ? String(diasAtraso) : '0',
+  };
+  return String(template||'').replace(/\{(\w+)\}/g, function(m, chave){ return (chave in mapa) ? mapa[chave] : m; });
+}
+window.tesEmailCobrancaPreencher = tesEmailCobrancaPreencher;
+
+function tesEnviarEmailCobranca(rid){
+  var list = (typeof tesGetReceber==='function') ? tesGetReceber() : [];
+  var r = list.find(function(x){ return String(x.id)===String(rid); });
+  if(!r){ alert('Fatura não encontrada.'); return; }
+  if(!TES_EMAIL_COBRANCA.assunto && !TES_EMAIL_COBRANCA.corpo){
+    alert('Ainda não definiu o texto do email de cobrança. Clique em "⚙️ Email de Cobrança" para o configurar primeiro.');
+    tesAbrirConfigEmailCobranca();
+    return;
+  }
+  var vd = (typeof parseVencTes==='function') ? parseVencTes(r.vencimento) : new Date(r.vencimento);
+  var dias = vd && !isNaN(vd) ? Math.round((new Date()-vd)/86400000) : 0;
+  var assunto = tesEmailCobrancaPreencher(TES_EMAIL_COBRANCA.assunto, r, dias);
+  var corpo = tesEmailCobrancaPreencher(TES_EMAIL_COBRANCA.corpo, r, dias);
+  var mailto = 'mailto:?subject=' + encodeURIComponent(assunto) + '&body=' + encodeURIComponent(corpo);
+  window.location.href = mailto;
+}
+window.tesEnviarEmailCobranca = tesEnviarEmailCobranca;
+
 function tesIvaCalcularReal(){
   var receberArr = (typeof TES_RECEBER!=='undefined'?TES_RECEBER:[]);
   var contasPagas = (typeof TES_CONTAS!=='undefined'?TES_CONTAS:[]).filter(function(c){return c.estado==='Paga';});
@@ -26943,10 +27330,20 @@ function tesIvaCalcularReal(){
     ivaCompras += comprasTocoComIva.reduce(function(s,p){return s+(parseFloat(p.ivaDocumento)||0);},0);
     if(comprasTocoSemIva.length>0) comprasSemIva = comprasSemIva.concat(comprasTocoSemIva);
 
-    if(!vendasDoMes.length && !comprasDoMes.length && !comprasTocoDoMes.length) continue;
+    // Salários reais (Fecho de Ordenados + Seguros/Bónus, Fases 1 e 4 CFO)
+    // — antes hardcoded a 0, nunca lido de lado nenhum.
+    var folhaMes = (typeof finTotaisMesReal==='function') ? finTotaisMesReal(ano, m+1) : null;
+    var salariosMes = (folhaMes && !folhaMes.folhaIndisponivel) ? folhaMes.custoFolha : 0;
+    // Impostos (além do IVA) e IVA efectivamente pago — lançamento manual
+    // (tesImpostosManuaisDe() acima); nunca estimados a partir de outro
+    // valor, para não repetir a duplicação que isto substitui.
+    var manual = tesImpostosManuaisDe(prefixo);
+    if(!vendasDoMes.length && !comprasDoMes.length && !comprasTocoDoMes.length
+       && !salariosMes && !manual.impostos && manual.ivaPago==null) continue;
     var estimativa = ivaVendas - ivaCompras;
-    ivaArr.push({mes:TES_MESES[m], vendas:vendasMes, compras:comprasMes, estimativa:estimativa, valorPago:null, comprasIncompleto: comprasSemIva.length>0});
-    resumoArr.push({mes:TES_MESES[m], vendas:vendasMes, despesas:comprasMes, impostos:estimativa, iva:estimativa, salarios:0, saldo:vendasMes-comprasMes-estimativa, comprasIncompleto: comprasSemIva.length>0});
+    ivaArr.push({mes:TES_MESES[m], vendas:vendasMes, compras:comprasMes, estimativa:estimativa, valorPago:manual.ivaPago, comprasIncompleto: comprasSemIva.length>0});
+    resumoArr.push({mes:TES_MESES[m], vendas:vendasMes, despesas:comprasMes, impostos:manual.impostos, iva:estimativa, salarios:salariosMes,
+      saldo:vendasMes-comprasMes-manual.impostos-estimativa-salariosMes, comprasIncompleto: comprasSemIva.length>0});
   }
   return {iva:ivaArr, resumo:resumoArr};
 }
@@ -27054,9 +27451,19 @@ function tesMostrarTab(tab) {
   // Actualizar KPIs por contexto
   tesUpdateKPIs(tab);
   // Render tab content
-  if(tab==='receber') tesRenderReceber();
+  if(tab==='receber'){
+    tesRenderReceber();
+    if(typeof tesHidratarEmailCobranca==='function') tesHidratarEmailCobranca();
+  }
   if(tab==='recebidos') tesRenderRecebidos();
   if(tab==='fornecedores' && typeof tesRenderFornecedores==='function') tesRenderFornecedores();
+  // Impostos/IVA pago manuais (Fase C CFO) — pré-preenche com a cópia
+  // local, depois pede leitura fresca ao Supabase, mesma sequência de
+  // foEncargosFolhaCarregarInputs()/foHidratarEncargosFolha().
+  if(tab==='iva'){
+    if(typeof tesImpostosManuaisCarregarInputs==='function') tesImpostosManuaisCarregarInputs();
+    if(typeof tesHidratarImpostosManuais==='function') tesHidratarImpostosManuais();
+  }
   setTimeout(function(){ tesRenderCharts(tab); },50);
 }
 
@@ -27272,6 +27679,11 @@ function tesMudarFiltroAno(valor){
   if(typeof tesRenderCreditosToco==='function') tesRenderCreditosToco();
   if(typeof tesRenderPagasToco==='function') tesRenderPagasToco();
   if(typeof tesRenderCharts==='function') tesRenderCharts(tabAtiva);
+  // Resumo Geral (A Receber/Recebidos/Em Atraso + A Pagar/Pagas/Em Atraso)
+  // nunca era repintado ao mudar o Período — bug pré-existente, só ficou
+  // visível agora que "Pagas" também passou a respeitar o filtro de ano
+  // (reportado pela Edna, 06/10/2026: "mudando o ano, nada muda").
+  if(typeof tesRenderResumoGeral==='function') tesRenderResumoGeral();
 }
 window.tesMudarFiltroAno = tesMudarFiltroAno;
 
@@ -28854,7 +29266,8 @@ function tesRenderReceber(){
       +'<td style="font-weight:700;color:var(--y)">€'+parseFloat(r.total||0).toFixed(2)+'</td>'
       +'<td style="color:'+vcol+';font-size:13px">'+r.vencimento+(dias<0?' ⚠️':'')+'</td>'
       +'<td><span style="font-size:12px;background:rgba(77,148,219,.15);color:var(--b);border-radius:5px;padding:2px 7px">Pendente</span></td>'
-      +'<td><button onclick="tesReceberMarcarPago(this.dataset.id)" data-id="'+rid+'" style="background:rgba(63,207,142,.12);border:1px solid rgba(63,207,142,.3);color:var(--g);border-radius:5px;font-size:12px;padding:2px 8px;cursor:pointer">✓ Recebido</button></td>'
+      +'<td style="display:flex;gap:4px"><button onclick="tesReceberMarcarPago(this.dataset.id)" data-id="'+rid+'" style="background:rgba(63,207,142,.12);border:1px solid rgba(63,207,142,.3);color:var(--g);border-radius:5px;font-size:12px;padding:2px 8px;cursor:pointer">✓ Recebido</button>'
+      +'<button onclick="tesEnviarEmailCobranca(this.dataset.id)" data-id="'+rid+'" title="Abre um email de cobrança pré-preenchido no seu cliente de email" style="background:rgba(77,148,219,.12);border:1px solid rgba(77,148,219,.3);color:var(--b);border-radius:5px;font-size:12px;padding:2px 8px;cursor:pointer">📧 Email</button></td>'
       +'</tr>';
   }).join('');
 }
@@ -30647,33 +31060,33 @@ window.finSincronizarFaturasComFeedback = finSincronizarFaturasComFeedback;
 // para não perder histórico de outros anos já sincronizados anteriormente.
 async function tocoSincronizarFaturas(silent, ano) {
   console.log('TocOnline: a sincronizar faturas...');
-  var cfg = tocoGetConfig();
-  // ADD: só bloqueia se não houver NEM API key directa NEM proxy Make configurado.
-  // Com o proxy (caso por omissão), a "API Key" do browser é irrelevante — as
-  // credenciais OAuth reais do TocOnline ficam só no Make, nunca no browser.
-  if(!cfg || (!cfg.key && !(cfg.proxy && cfg.webhook))) {
-    if(!silent) tocoAbrirConfig();
-    return;
-  }
+  // Caminho directo por OAuth (resource=sync_docs, crm-toconline), igual ao
+  // já usado por sincFinBuscarRecursoCompleto()/compras/hr_probe — substitui
+  // o webhook Make.com antigo (TOCO_WEBHOOK_DEFAULT), que a Edna confirmou
+  // já não usar (06/10/2026: "Corrija, não uso mais o make"). `cfg`/`ano`
+  // deixam de condicionar o arranque: a autenticação passa a ser só a
+  // sessão do CRM (tocoEF() já trata disso), nunca uma API key/proxy no
+  // browser — `ano` fica só como parâmetro aceite por compatibilidade com
+  // quem já chama esta função, mas sync_docs pagina sempre até ao fim
+  // (paginacao_completa), nunca só 1 página como o caminho antigo.
   var syncDot = document.getElementById('toco-sync-dot');
   var syncStatus = document.getElementById('toco-sync-status');
   if(syncDot) syncDot.classList.add('active');
   if(syncStatus) syncStatus.textContent = '⏳ A sincronizar...';
 
   try {
-    // ADD: a API real do TocOnline é JSON:API (api-docs.toconline.pt). Faturas (FT) e
-    // notas de crédito (NC) vivem no recurso "commercial_sales_documents"; recibos (RC)
-    // vivem em "commercial_sales_receipts". O endpoint antigo "/api/v1.0/Sales/Documents"
-    // não existe na API real — por isso nunca trazia dados (era sempre vazio/404).
     var recursos = [
-      { tipo: 'FT', path: '/api/v1/commercial_sales_documents', filtro: 'filter[document_type]=FT' },
-      { tipo: 'NC', path: '/api/v1/commercial_sales_documents', filtro: 'filter[document_type]=NC' },
-      { tipo: 'RC', path: '/api/v1/commercial_sales_receipts', filtro: '' }
+      { tipo: 'FT', sync: 'invoices' },
+      { tipo: 'NC', sync: 'credit_notes' },
+      { tipo: 'RC', sync: 'receipts' }
     ];
     var todos = [];
-    // ADD: mapeia o formato JSON:API real (data:[{id,attributes:{...}}]) para os nomes
-    // de campo (Number, CustomerName, Date, DueDate, TotalAmount, Status...) que o
-    // resto do código (tocoRenderFaturas, tocoGetEstado, Tesouraria) já espera.
+    // Mapeia o formato achatado da Edge Function (achatarDocumento() em
+    // crm-toconline/index.ts: document_no/customer_business_name/
+    // net_total/gross_total/status_bruto/pending_total) para os nomes de
+    // campo (Number, CustomerName, Date, DueDate, TotalAmount, Status...)
+    // que o resto do código (tocoRenderFaturas, tocoGetEstado, Tesouraria)
+    // já espera — mesmos nomes finais de sempre, só a fonte mudou.
     function mapearDoc(item, tipo){
       var a = item.attributes || item;
       return Object.assign({}, a, {
@@ -30689,7 +31102,7 @@ async function tocoSincronizarFaturas(silent, ano) {
         // fica COM IVA de propósito, é o que Contas a Receber/Faturas
         // precisam). Ver nota igual em avSyncTocOnlineViaEF().
         NetAmount: (a.net_total != null ? a.net_total : a.gross_total) != null ? (a.net_total != null ? a.net_total : a.gross_total) : a.amount,
-        Status: a.status,
+        Status: a.status_bruto != null ? a.status_bruto : a.status,
         // Usado pela baixa automática por _tocoId (tocoBaixarRecebidosPorTocoId) —
         // <=0.005 = documento totalmente liquidado no TOConline. Correção
         // 24/09/2026; campo novo, não existia antes nesta cache.
@@ -30698,33 +31111,13 @@ async function tocoSincronizarFaturas(silent, ano) {
     }
     for(var i=0; i<recursos.length; i++) {
       try {
-        var pagina = 1;
-        // CORRIGIDO: quando se pede um ano específico, é preciso percorrer TODAS as
-        // páginas desse ano (não parar na primeira página onde aparece 1 fatura), senão
-        // fica-se com dados incompletos. Os documentos vêm ordenados por data descendente
-        // (sort=-date), por isso paramos só quando a página já está claramente ANTES do
-        // início do ano pedido — até aí, continuamos a acumular.
-        var maxPaginas = ano ? 40 : 1;
-        while(pagina <= maxPaginas) {
-          var qs = (recursos[i].filtro ? recursos[i].filtro + '&' : '') + 'sort=-date&page[size]=100&page[number]=' + pagina;
-          var endpoint = recursos[i].path + '?' + qs;
-          var data = await tocoFetch(cfg.url, cfg.key, cfg.webhook, endpoint, 'GET', null, cfg.proxy);
-          var brutos = Array.isArray(data) ? data : (data && Array.isArray(data.data) ? data.data : []);
-          if(!brutos.length) break;
-          var docs = brutos.map(function(item){ return mapearDoc(item, recursos[i].tipo); });
-          todos = todos.concat(docs);
-          if(ano) {
-            var anosPagina = docs.map(function(d){
-              var dt = new Date(d.Date || d.DocumentDate || d.CreatedAt || 0);
-              return dt.getFullYear();
-            }).filter(function(y){ return !isNaN(y) && y>0; });
-            var minAno = anosPagina.length ? Math.min.apply(null, anosPagina) : null;
-            // Já passámos a fronteira do ano pedido (ex: chegámos a 2025 ao procurar 2026) — parar.
-            if(minAno!==null && minAno < Number(ano)) break;
-          }
-          pagina++;
+        var resultado = await sincFinBuscarRecursoCompleto(recursos[i].sync);
+        var docs = (resultado.dados || []).map(function(item){ return mapearDoc(item, recursos[i].tipo); });
+        todos = todos.concat(docs);
+        if(!resultado.completo){
+          console.warn('[TocOnline] ' + recursos[i].sync + ': paginação não terminou nesta chamada (' + resultado.chamadas + ' chamadas) — repita a sincronização para completar.');
         }
-      } catch(e) { /* continua com os outros tipos */ }
+      } catch(e) { console.error('[TocOnline] Falha a sincronizar ' + recursos[i].sync + ':', e); /* continua com os outros tipos */ }
     }
     // ADD: mesclar com a cache existente em vez de substituir (preserva anos já sincronizados)
     var chave = function(d){ return (d._tipo||'') + '-' + (d.Id || d.Number || d.DocumentNumber || JSON.stringify(d).slice(0,40)); };
@@ -37810,16 +38203,33 @@ setInterval(obAtualizarPendencias,5*60*1000); // refresca a cada 5 minutos
 
 // ── Lista unificada de colaboradores (App de Pontos + locais + fallback USERS)
 function rhFtColabs(){
-  var out=[], seen={};
-  function add(id,nome,cargo){
-    var k=(nome||'').trim().toLowerCase();
-    if(!k||seen[k]) return; seen[k]=1;
-    out.push({id:String(id), nome:nome, cargo:cargo||''});
+  // Reconciliação App×local por nome (mesma lógica de rhMesmaPessoa(), já
+  // usada em rhRenderColabs() — ver RH → Colaboradores) — antes comparava
+  // nomes por igualdade exacta (trim+lowercase), por isso "André Nolasco"
+  // (ficha local) e "André Nolasco Lamas de Sousa e Silva" (nome completo
+  // do app de pontos, mesma pessoa) ficavam como duas linhas em Férias e
+  // Turnos (reportado pela Edna, 30/09/2026). O registo local vence quando
+  // há correspondência (é o único com CRUD/dados de RH completos); só
+  // entra um cartão do App quando não existir ninguém local com nome
+  // compatível.
+  var out=[];
+  function jaExiste(nome){
+    return out.some(function(o){ return rhMesmaPessoa(o.nome, nome); });
   }
-  (typeof EC_FUNCIONARIOS!=='undefined'?EC_FUNCIONARIOS:[]).forEach(function(c){ add(c.ec_id,c.nome,c.cargo); });
-  (typeof rhColabs!=='undefined'?rhColabs:[]).forEach(function(c){ add(c.id,c.nome,c.cargo); });
+  (typeof rhColabs!=='undefined'?rhColabs:[]).forEach(function(c){
+    if(!c.nome||jaExiste(c.nome)) return;
+    out.push({id:String(c.id), nome:c.nome, cargo:c.cargo||''});
+  });
+  (typeof EC_FUNCIONARIOS!=='undefined'?EC_FUNCIONARIOS:[]).forEach(function(c){
+    if(!c.nome||jaExiste(c.nome)) return;
+    out.push({id:String(c.ec_id), nome:c.nome, cargo:c.cargo||''});
+  });
   if(!out.length&&typeof USERS!=='undefined'){
-    (USERS||[]).forEach(function(u){ add(u.id,u.name||u.nome,u.role); });
+    (USERS||[]).forEach(function(u){
+      var nome=u.name||u.nome;
+      if(!nome||jaExiste(nome)) return;
+      out.push({id:String(u.id), nome:nome, cargo:u.role||''});
+    });
   }
   out.sort(function(a,b){ return a.nome.localeCompare(b.nome,'pt'); });
   return out;
@@ -38183,8 +38593,17 @@ function finCalcularFluxoCaixaSemanal(){
     labels.push(String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0'));
     ent.push(0); sai.push(0);
   }
+  // Vencidos excluídos (nunca entram na 1.ª semana) — antes disto, TODOS
+  // os documentos já vencidos (frequentemente a maior parte do "A Pagar",
+  // ex.: €149k de €185k vencidos na Tesouraria) caíam na semana 0,
+  // inflando-a artificialmente e esmagando a visualização das semanas
+  // seguintes — o gráfico de "próximos 90 dias" ficava, na prática, um
+  // pico enorme seguido de quase nada (reportado pela Edna, doc "CRM -
+  // Parte 5": "não consegui encontrar exatamente esses cálculos").
+  // Vencidos já têm o seu próprio destaque nos cartões "Em Atraso" da
+  // Tesouraria — este gráfico é só sobre o que ainda está para vencer.
   function bucket(d){
-    if(d<hoje) return 0;
+    if(d<hoje) return -1;
     var idx=Math.floor((d-hoje)/MS_SEM);
     return idx<N?idx:-1;
   }
@@ -38460,8 +38879,9 @@ window.foEnviarTesouraria=function(){
 
 // ── 2. PREVISÃO DE TESOURARIA — PRÓXIMOS 90 DIAS ────────────────────
 // Semana a semana: entradas (faturas a receber pendentes) vs saídas
-// (contas a pagar pendentes), por data de vencimento. Vencidos contam
-// para a 1.ª semana (dinheiro que devia entrar/sair já).
+// (contas a pagar pendentes), por data de vencimento. Vencidos ficam de
+// fora (ver finCalcularFluxoCaixaSemanal) — já têm destaque próprio nos
+// cartões "Em Atraso" da Tesouraria.
 function finPrevRender(){
   var canvas=document.getElementById('finPrevChart');
   var empty=document.getElementById('finPrevChart-empty');
@@ -38931,15 +39351,27 @@ function _hfRenderKpis(rows){
   // (ver HF_COLS), mas os cartões de resumo só mostravam o total com IVA —
   // sem um valor sem IVA directamente comparável ao lado.
   var sumLiq = function(arr){ return arr.reduce(function(s,r){return s+(parseFloat(r.valorLiq)||0);},0); };
+  // Saldo em falta, SEM IVA — mesma proporção de finSaldoReceber() mas
+  // aplicada ao valor líquido da fatura, para "Não Recebido"/"Parcial"
+  // também passarem a ter sem-IVA como valor principal.
+  var sumSaldoLiq = function(arr){ return arr.reduce(function(s,r){
+    var total = parseFloat(r.total)||0, liq = parseFloat(r.valorLiq)||0;
+    var saldo = (typeof finSaldoReceber==='function')?finSaldoReceber(r):total;
+    var prop = total>0 ? (saldo/total) : 1;
+    return s + liq*prop;
+  },0); };
   var set = function(id, val){ var e=document.getElementById(id); if(e) e.textContent = val; };
-  set('hf-kpi-total', _hfFmtEUR(sum(view)));
-  set('hf-kpi-total-sub', view.length+' faturas · '+_hfFmtEUR(sumLiq(view))+' sem IVA');
-  set('hf-kpi-recebido', _hfFmtEUR(sum(recebido)));
-  set('hf-kpi-recebido-sub', recebido.length+' faturas · '+_hfFmtEUR(sumLiq(recebido))+' sem IVA');
-  set('hf-kpi-naorecebido', _hfFmtEUR(sumSaldo(naoRecebido)));
-  set('hf-kpi-naorecebido-sub', naoRecebido.length+' faturas · '+_hfFmtEUR(sumLiq(naoRecebido))+' sem IVA');
-  set('hf-kpi-parcial', _hfFmtEUR(sumSaldo(parcial)));
-  set('hf-kpi-parcial-sub', parcial.length+' faturas · '+_hfFmtEUR(sumLiq(parcial))+' sem IVA');
+  // Valor principal passa a SEM IVA (pedido da Edna, doc "CRM - Parte 5",
+  // 30/09/2026: "Os valores do total faturado devem ser considerados sem
+  // IVA") — o valor com IVA desce para a sub-linha, nunca desaparece.
+  set('hf-kpi-total', _hfFmtEUR(sumLiq(view)));
+  set('hf-kpi-total-sub', view.length+' faturas · '+_hfFmtEUR(sum(view))+' com IVA');
+  set('hf-kpi-recebido', _hfFmtEUR(sumLiq(recebido)));
+  set('hf-kpi-recebido-sub', recebido.length+' faturas · '+_hfFmtEUR(sum(recebido))+' com IVA');
+  set('hf-kpi-naorecebido', _hfFmtEUR(sumSaldoLiq(naoRecebido)));
+  set('hf-kpi-naorecebido-sub', naoRecebido.length+' faturas · '+_hfFmtEUR(sumSaldo(naoRecebido))+' com IVA');
+  set('hf-kpi-parcial', _hfFmtEUR(sumSaldoLiq(parcial)));
+  set('hf-kpi-parcial-sub', parcial.length+' faturas · '+_hfFmtEUR(sumSaldo(parcial))+' com IVA');
 }
 
 function _hfRenderIndicadores(rows){
