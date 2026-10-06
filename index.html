@@ -1799,7 +1799,10 @@ async function avSyncVendedoresSheet(){
       // vendedores") — só existe se a própria Sheet "Vendas 2026" tiver
       // esta coluna; nunca estimado a partir do total com IVA (seria
       // inventar um número, contra a convenção do resto do ficheiro).
-      semIVA:   avFindCol(header,['valor sem iva','total sem iva','sem iva','valor liquido','valor líquido','net amount','netamount']),
+      // Confirmado pela Edna (06/10/2026): na folha "Vendas 2026" esta
+      // coluna chama-se "Total Líquido" (coluna E) — adicionado aos
+      // variants; 'valor liquido'/'valor líquido' ficam como alias antigos.
+      semIVA:   avFindCol(header,['total liquido','total líquido','valor sem iva','total sem iva','sem iva','valor liquido','valor líquido','net amount','netamount']),
       recebido: avFindCol(header,['valor recebido','recebido','pago','received']),
       aReceber: avFindCol(header,['saldo a receber','a receber','por receber','saldo','pendente']),
       vendedor: avFindCol(header,['vendedor','comercial','sales rep','seller']),
@@ -1861,6 +1864,7 @@ async function avSyncVendedoresSheet(){
         numero: idx.numero!==-1 ? (r[idx.numero]||'').trim() : '',
         nome:   idx.nome!==-1   ? (r[idx.nome]||'').trim()   : vend,
         total:  v,
+        semIVA: vSemIVA,
         recebido: rec,
         aReceber: nrec,
         vendedor: vend,
@@ -7249,8 +7253,15 @@ tbody td{font-size:15px}
     <!-- Orçamentos (genérico): oculto na visão comercial a pedido do CEO,
          14/08/2026 — o comercial usa "Meu Mapa de Vendas" para a sua carteira
          pessoal. Reutiliza admin-only/toggleAdminSensitiveFields(), mesma
-         mecânica já usada acima em Pipeline/Follow-up/Clientes. -->
-    <button class="sl-item admin-only" data-action="goPage" data-page="comercial-orcamentos"><span class="mk-ic">📄</span>Orçamentos<span id="toco-vencidas-badge">!</span></button>
+         mecânica já usada acima em Pipeline/Follow-up/Clientes.
+         06/10/2026 — Edna: a responsabilidade de Orçamentos vai passar para
+         o ORÇ.box (sistema externo), por isso este item fica também
+         escondido do menu para Admin (display:none), já não só para
+         não-admins. SÓ a entrada do menu — os dados (ob_orcamentos), a
+         própria página e tudo o que depende dela (Mapa de Vendas,
+         Histórico de Faturação, Dashboard CFO, Tesouraria) continuam
+         intactos e a funcionar normalmente; nenhuma outra alteração aqui. -->
+    <button class="sl-item admin-only" data-action="goPage" data-page="comercial-orcamentos" style="display:none"><span class="mk-ic">📄</span>Orçamentos<span id="toco-vencidas-badge">!</span></button>
     <button class="sl-item" data-action="goPage" data-page="equipa-campo"><span class="mk-ic">🗺️</span>Equipa em Campo</button>
     <!-- Minhas Tarefas: atalho pessoal, visível só na visão comercial (login real de
          Comercial ou admin em "Ver como"). Reutiliza homeFilterTasks() já existente,
@@ -9598,7 +9609,7 @@ tbody td{font-size:15px}
            colunas) e "Valor Real Pago" nunca saía de "—" — ver
            tesIvaCalcularReal(). -->
       <div style="background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:18px">
-        <div style="font-size:13px;font-weight:600;color:var(--txt2);margin-bottom:10px">🧾 Impostos e IVA pago — lançamento manual, mensal</div>
+        <div style="font-size:13px;font-weight:600;color:var(--txt2);margin-bottom:10px">🧾 Impostos, IVA pago e Salários — lançamento manual, mensal</div>
         <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
           <div>
             <label class="form-label" style="display:block;margin-bottom:4px;font-size:12px">Mês</label>
@@ -9612,13 +9623,17 @@ tbody td{font-size:15px}
             <label class="form-label" style="display:block;margin-bottom:4px;font-size:12px">IVA efectivamente pago (€)</label>
             <input type="number" step="0.01" min="0" id="tes-im-ivapago" class="form-input" style="padding:5px 10px;font-size:14px;width:140px" placeholder="0,00"/>
           </div>
+          <div>
+            <label class="form-label" style="display:block;margin-bottom:4px;font-size:12px">Salários (€) — só se o Fecho de Ordenados deste mês ainda não foi enviado</label>
+            <input type="number" step="0.01" min="0" id="tes-im-salarios" class="form-input" style="padding:5px 10px;font-size:14px;width:160px" placeholder="0,00"/>
+          </div>
           <div style="flex:1;min-width:200px">
             <label class="form-label" style="display:block;margin-bottom:4px;font-size:12px">Nota (opcional)</label>
             <input type="text" id="tes-im-nota" class="form-input" style="padding:5px 10px;font-size:14px;width:100%" placeholder="ex.: IRC, Selo, DAS de IVA"/>
           </div>
           <button onclick="tesGuardarImpostosManual()" class="tbtn" style="font-size:13px;color:var(--g);border-color:var(--g)">💾 Guardar</button>
         </div>
-        <div style="font-size:11.5px;color:var(--muted);margin-top:8px">"Impostos" é tudo o que não é IVA (ex.: IRC, Selo) — o IVA já é calculado automaticamente a partir das vendas/compras reais; preencha "IVA efectivamente pago" só quando souber o valor real da declaração.</div>
+        <div style="font-size:11.5px;color:var(--muted);margin-top:8px">"Impostos" é tudo o que não é IVA (ex.: IRC, Selo) — o IVA já é calculado automaticamente a partir das vendas/compras reais; preencha "IVA efectivamente pago" só quando souber o valor real da declaração. "Salários" é o valor TOTAL da folha desse mês (não por colaborador) — só é usado quando o Fecho de Ordenados desse mês ainda não foi enviado à Tesouraria; depois de enviado, o valor real do Fecho substitui automaticamente este lançamento manual.</div>
       </div>
 
       <div class="tw" style="margin-bottom:18px">
@@ -27127,7 +27142,7 @@ window.TES_IMPOSTOS_MANUAIS = TES_IMPOSTOS_MANUAIS;
 function tesImpostosManuaisDe(mesVal){
   var mapa = (typeof TES_IMPOSTOS_MANUAIS !== 'undefined' && TES_IMPOSTOS_MANUAIS) ? TES_IMPOSTOS_MANUAIS : {};
   var e = (mesVal && mapa[mesVal]) || {};
-  return { impostos: parseFloat(e.impostos) || 0, ivaPago: (e.ivaPago!=null && e.ivaPago!=='') ? (parseFloat(e.ivaPago)||0) : null, nota: e.nota || '' };
+  return { impostos: parseFloat(e.impostos) || 0, ivaPago: (e.ivaPago!=null && e.ivaPago!=='') ? (parseFloat(e.ivaPago)||0) : null, salarios: parseFloat(e.salarios) || 0, nota: e.nota || '' };
 }
 window.tesImpostosManuaisDe = tesImpostosManuaisDe;
 
@@ -27137,6 +27152,7 @@ function tesImpostosManuaisCarregarInputs(){
   var selMes = document.getElementById('tes-im-mes');
   var elImp = document.getElementById('tes-im-impostos');
   var elIva = document.getElementById('tes-im-ivapago');
+  var elSal = document.getElementById('tes-im-salarios');
   var elNota = document.getElementById('tes-im-nota');
   if(!selMes || !elImp || !elIva || !elNota) return;
   if(!selMes.options.length){
@@ -27152,6 +27168,7 @@ function tesImpostosManuaisCarregarInputs(){
   var e = tesImpostosManuaisDe(selMes.value);
   elImp.value = e.impostos ? e.impostos : '';
   elIva.value = e.ivaPago!=null ? e.ivaPago : '';
+  if(elSal) elSal.value = e.salarios ? e.salarios : '';
   elNota.value = e.nota || '';
 }
 window.tesImpostosManuaisCarregarInputs = tesImpostosManuaisCarregarInputs;
@@ -27163,11 +27180,12 @@ function tesGuardarImpostosManual(){
   var impostos = parseFloat((document.getElementById('tes-im-impostos')||{}).value) || 0;
   var ivaPagoRaw = (document.getElementById('tes-im-ivapago')||{}).value;
   var ivaPago = (ivaPagoRaw!=null && ivaPagoRaw!=='') ? (parseFloat(ivaPagoRaw)||0) : null;
+  var salarios = parseFloat((document.getElementById('tes-im-salarios')||{}).value) || 0;
   var nota = (((document.getElementById('tes-im-nota')||{}).value) || '').trim();
-  TES_IMPOSTOS_MANUAIS[mesVal] = { impostos: impostos, ivaPago: ivaPago, nota: nota };
+  TES_IMPOSTOS_MANUAIS[mesVal] = { impostos: impostos, ivaPago: ivaPago, salarios: salarios, nota: nota };
   try{ localStorage.setItem('ob-tes-impostos-manuais', JSON.stringify(TES_IMPOSTOS_MANUAIS)); }catch(e){}
   try{ if(typeof obSbPush === 'function') obSbPush('ob-tes-impostos-manuais'); }catch(e){}
-  if(typeof showToast === 'function') showToast('Impostos/IVA guardados.'); else alert('Guardado.');
+  if(typeof showToast === 'function') showToast('Impostos/IVA/Salários guardados.'); else alert('Guardado.');
   if(typeof tesIvaSincronizar === 'function') tesIvaSincronizar();
 }
 window.tesGuardarImpostosManual = tesGuardarImpostosManual;
@@ -27330,14 +27348,19 @@ function tesIvaCalcularReal(){
     ivaCompras += comprasTocoComIva.reduce(function(s,p){return s+(parseFloat(p.ivaDocumento)||0);},0);
     if(comprasTocoSemIva.length>0) comprasSemIva = comprasSemIva.concat(comprasTocoSemIva);
 
-    // Salários reais (Fecho de Ordenados + Seguros/Bónus, Fases 1 e 4 CFO)
-    // — antes hardcoded a 0, nunca lido de lado nenhum.
-    var folhaMes = (typeof finTotaisMesReal==='function') ? finTotaisMesReal(ano, m+1) : null;
-    var salariosMes = (folhaMes && !folhaMes.folhaIndisponivel) ? folhaMes.custoFolha : 0;
     // Impostos (além do IVA) e IVA efectivamente pago — lançamento manual
     // (tesImpostosManuaisDe() acima); nunca estimados a partir de outro
     // valor, para não repetir a duplicação que isto substitui.
     var manual = tesImpostosManuaisDe(prefixo);
+    // Salários reais (Fecho de Ordenados + Seguros/Bónus, Fases 1 e 4 CFO)
+    // — antes hardcoded a 0, nunca lido de lado nenhum. Quando o Fecho de
+    // Ordenados desse mês ainda não foi enviado à Tesouraria
+    // (folhaIndisponivel), cai no lançamento manual (manual.salarios, geral
+    // por mês — mesmo padrão do Impostos) em vez de ficar sempre a €0
+    // (pedido da Edna/secretária, 06/10/2026: "não encontrei local para
+    // indicar o valor dos ordenados").
+    var folhaMes = (typeof finTotaisMesReal==='function') ? finTotaisMesReal(ano, m+1) : null;
+    var salariosMes = (folhaMes && !folhaMes.folhaIndisponivel) ? folhaMes.custoFolha : manual.salarios;
     if(!vendasDoMes.length && !comprasDoMes.length && !comprasTocoDoMes.length
        && !salariosMes && !manual.impostos && manual.ivaPago==null) continue;
     var estimativa = ivaVendas - ivaCompras;
@@ -28211,7 +28234,12 @@ function sincFinAplicarSheetPura(existentesSupabase, sheetRows){
     if(!sid) return; // mesma regra de sheetMergeReceber: sem número, ignora
     var total = r.total || 0;
     if(!total) return; // mesma regra: sem valor, ignora
-    var liq = total / 1.23;
+    // Sem IVA real da Sheet ("Total Líquido", coluna E de Vendas 2026)
+    // quando existe — nunca estimado por uma taxa fixa de 23% (podia não
+    // bater com faturas a taxa reduzida/isentas; pedido da Edna 06/10/2026,
+    // "os valores ainda não estão de acordo com o sistema ou com o excel").
+    // /1.23 fica só como fallback para quando a Sheet não tem a coluna.
+    var liq = (r.semIVA!=null) ? r.semIVA : (total / 1.23);
     var stLow = String(r.status || '').toLowerCase();
     var recebido = r.recebido || 0;
     var aReceber = r.aReceber || 0;
