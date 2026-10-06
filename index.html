@@ -9318,6 +9318,7 @@ tbody td{font-size:15px}
              existente, nunca altera o comportamento desta última. -->
         <button class="tbtn" style="font-size:13px" onclick="Promise.all([tocoSincronizarFaturas(false).then(function(){ tocoAtualizarTesourariaComFaturas(); }), tocoSincronizarComprasPagamentosReal()])" title="Vai buscar os dados mais recentes ao TOConline (vendas + compras/pagamentos) e actualiza toda a Tesouraria">🔄 Sincronizar TOConline</button>
         <button class="tbtn y" onclick="tesNovaContaPagar()">+ Conta a Pagar</button>
+        <button class="tbtn" onclick="tesAbrirConfigEmailCobranca()" title="Define o texto padrão usado pelo botão 📧 Email na aba A Receber">⚙️ Email de Cobrança</button>
         <button class="tbtn" onclick="tesExportar()">⬇ Exportar</button>
       </div>
     </div>
@@ -11006,6 +11007,35 @@ tbody td{font-size:15px}
   </div>
 </div>
 
+
+<!-- Modal Tesouraria - Email de Cobrança (template, pedido da Edna
+     06/10/2026: "deixe um local onde adicionarei um email padrão") —
+     guarda só o texto; o envio em si abre o cliente de email da própria
+     Edna (mailto:), nunca envia nada por conta própria. -->
+<div id="tes-email-cobranca-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:3000;align-items:center;justify-content:center" onclick="if(event.target===this)tesFecharConfigEmailCobranca()">
+  <div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:24px;width:600px;max-width:96vw;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.5)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+      <h3 style="font-size:16px;font-weight:700;color:var(--txt2)">⚙️ Email de Cobrança — texto padrão</h3>
+      <button onclick="tesFecharConfigEmailCobranca()" style="background:none;border:none;color:var(--muted);font-size:22px;cursor:pointer;padding:0">&times;</button>
+    </div>
+    <div style="font-size:12.5px;color:var(--muted);background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:14px">
+      Este texto é usado pelo botão "📧 Email" em cada linha da aba "A Receber". Pode usar estas palavras entre chavetas, que são substituídas automaticamente pelos dados reais de cada fatura:
+      <code>{cliente}</code>, <code>{fatura}</code>, <code>{valor}</code>, <code>{vencimento}</code>, <code>{dias_atraso}</code>.
+    </div>
+    <div class="form-group">
+      <label class="form-label">Assunto</label>
+      <input id="tes-ec-assunto" class="form-input" placeholder="ex: Fatura {fatura} — pagamento em atraso"/>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Corpo do email</label>
+      <textarea id="tes-ec-corpo" class="form-input" rows="10" style="resize:vertical;font-family:inherit" placeholder="ex:&#10;Exmo(a) {cliente},&#10;&#10;A fatura {fatura}, no valor de {valor}, venceu em {vencimento} e continua por liquidar.&#10;&#10;Agradecemos a regularização assim que possível.&#10;&#10;Com os melhores cumprimentos,"></textarea>
+    </div>
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:10px">
+      <button class="tbtn" onclick="tesFecharConfigEmailCobranca()">Cancelar</button>
+      <button class="tbtn y" onclick="tesGuardarConfigEmailCobranca()">💾 Guardar</button>
+    </div>
+  </div>
+</div>
 
 <!-- Modal Tesouraria - Nova Conta a Pagar -->
 <div id="tes-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:3000;align-items:center;justify-content:center" onclick="if(event.target===this)tesFecharModal()">
@@ -27166,6 +27196,102 @@ async function tesHidratarImpostosManuais(){
 }
 window.tesHidratarImpostosManuais = tesHidratarImpostosManuais;
 
+// ── Email de Cobrança — texto padrão (pedido da Edna, 06/10/2026: "deixe
+// um local onde adicionarei um email padrão para isso") ────────────────
+// Mesmo padrão de armazenamento de TES_IMPOSTOS_MANUAIS/ENCARGOS_FOLHA:
+// cópia local em localStorage + sincronização remota via obSbPush() em
+// 'ob_crm_dados' (chave 'ob-tes-email-cobranca'). Guarda só o TEXTO —
+// nunca envia nada sozinho; tesEnviarEmailCobranca() abre sempre um
+// mailto: (o cliente de email da própria Edna é que envia).
+var TES_EMAIL_COBRANCA;
+try{ TES_EMAIL_COBRANCA = JSON.parse(localStorage.getItem('ob-tes-email-cobranca') || 'null'); }catch(e){ TES_EMAIL_COBRANCA = null; }
+if(!TES_EMAIL_COBRANCA || typeof TES_EMAIL_COBRANCA !== 'object') TES_EMAIL_COBRANCA = { assunto: '', corpo: '' };
+window.TES_EMAIL_COBRANCA = TES_EMAIL_COBRANCA;
+
+function tesAbrirConfigEmailCobranca(){
+  var modal = document.getElementById('tes-email-cobranca-modal'); if(!modal) return;
+  var elAss = document.getElementById('tes-ec-assunto');
+  var elCorpo = document.getElementById('tes-ec-corpo');
+  if(elAss) elAss.value = TES_EMAIL_COBRANCA.assunto || '';
+  if(elCorpo) elCorpo.value = TES_EMAIL_COBRANCA.corpo || '';
+  modal.style.display = 'flex';
+}
+window.tesAbrirConfigEmailCobranca = tesAbrirConfigEmailCobranca;
+
+function tesFecharConfigEmailCobranca(){
+  var modal = document.getElementById('tes-email-cobranca-modal'); if(modal) modal.style.display = 'none';
+}
+window.tesFecharConfigEmailCobranca = tesFecharConfigEmailCobranca;
+
+function tesGuardarConfigEmailCobranca(){
+  var assunto = ((document.getElementById('tes-ec-assunto')||{}).value || '').trim();
+  var corpo = ((document.getElementById('tes-ec-corpo')||{}).value || '').trim();
+  TES_EMAIL_COBRANCA = { assunto: assunto, corpo: corpo };
+  window.TES_EMAIL_COBRANCA = TES_EMAIL_COBRANCA;
+  try{ localStorage.setItem('ob-tes-email-cobranca', JSON.stringify(TES_EMAIL_COBRANCA)); }catch(e){}
+  try{ if(typeof obSbPush === 'function') obSbPush('ob-tes-email-cobranca'); }catch(e){}
+  if(typeof showToast === 'function') showToast('Email de cobrança guardado.'); else alert('Guardado.');
+  tesFecharConfigEmailCobranca();
+}
+window.tesGuardarConfigEmailCobranca = tesGuardarConfigEmailCobranca;
+
+// Hidratação canónica dedicada (leitura fresca de ob_crm_dados) — mesmo
+// padrão exacto de tesHidratarImpostosManuais().
+var _tesEmailCobrancaHidratacaoPromise = null;
+async function tesHidratarEmailCobranca(){
+  if(_tesEmailCobrancaHidratacaoPromise) return _tesEmailCobrancaHidratacaoPromise;
+  _tesEmailCobrancaHidratacaoPromise = (async function(){
+    var sb = (typeof crmSBClient === 'function') ? crmSBClient() : null;
+    if(!sb) return;
+    try{
+      var res = await sb.from('ob_crm_dados').select('dados,updated_at').eq('chave','ob-tes-email-cobranca').maybeSingle();
+      if(res && !res.error && res.data && res.data.dados){
+        TES_EMAIL_COBRANCA = res.data.dados;
+        window.TES_EMAIL_COBRANCA = TES_EMAIL_COBRANCA;
+        try{ localStorage.setItem('ob-tes-email-cobranca', JSON.stringify(TES_EMAIL_COBRANCA)); }catch(e){}
+      }
+    }catch(e){ console.warn('[Tesouraria] Falha a ler ob-tes-email-cobranca remoto — mantém a cópia local como fallback.', e); }
+  })();
+  _tesEmailCobrancaHidratacaoPromise.finally(function(){ _tesEmailCobrancaHidratacaoPromise = null; });
+  return _tesEmailCobrancaHidratacaoPromise;
+}
+window.tesHidratarEmailCobranca = tesHidratarEmailCobranca;
+
+// Substitui {cliente}/{fatura}/{valor}/{vencimento}/{dias_atraso} pelos
+// dados reais de uma linha de tesGetReceber() e abre um mailto: — nunca
+// envia nada sozinho, só prepara o email no cliente de email da Edna.
+// Chave que falte no texto fica em branco (nunca "undefined"/"NaN").
+function tesEmailCobrancaPreencher(template, r, diasAtraso){
+  var fmtEUR = function(v){ return '€'+(parseFloat(v)||0).toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2}); };
+  var mapa = {
+    cliente: r.cliente || '',
+    fatura: r.descricao || r.numero || '',
+    valor: fmtEUR(r.total),
+    vencimento: r.vencimento || '',
+    dias_atraso: diasAtraso>0 ? String(diasAtraso) : '0',
+  };
+  return String(template||'').replace(/\{(\w+)\}/g, function(m, chave){ return (chave in mapa) ? mapa[chave] : m; });
+}
+window.tesEmailCobrancaPreencher = tesEmailCobrancaPreencher;
+
+function tesEnviarEmailCobranca(rid){
+  var list = (typeof tesGetReceber==='function') ? tesGetReceber() : [];
+  var r = list.find(function(x){ return String(x.id)===String(rid); });
+  if(!r){ alert('Fatura não encontrada.'); return; }
+  if(!TES_EMAIL_COBRANCA.assunto && !TES_EMAIL_COBRANCA.corpo){
+    alert('Ainda não definiu o texto do email de cobrança. Clique em "⚙️ Email de Cobrança" para o configurar primeiro.');
+    tesAbrirConfigEmailCobranca();
+    return;
+  }
+  var vd = (typeof parseVencTes==='function') ? parseVencTes(r.vencimento) : new Date(r.vencimento);
+  var dias = vd && !isNaN(vd) ? Math.round((new Date()-vd)/86400000) : 0;
+  var assunto = tesEmailCobrancaPreencher(TES_EMAIL_COBRANCA.assunto, r, dias);
+  var corpo = tesEmailCobrancaPreencher(TES_EMAIL_COBRANCA.corpo, r, dias);
+  var mailto = 'mailto:?subject=' + encodeURIComponent(assunto) + '&body=' + encodeURIComponent(corpo);
+  window.location.href = mailto;
+}
+window.tesEnviarEmailCobranca = tesEnviarEmailCobranca;
+
 function tesIvaCalcularReal(){
   var receberArr = (typeof TES_RECEBER!=='undefined'?TES_RECEBER:[]);
   var contasPagas = (typeof TES_CONTAS!=='undefined'?TES_CONTAS:[]).filter(function(c){return c.estado==='Paga';});
@@ -27325,7 +27451,10 @@ function tesMostrarTab(tab) {
   // Actualizar KPIs por contexto
   tesUpdateKPIs(tab);
   // Render tab content
-  if(tab==='receber') tesRenderReceber();
+  if(tab==='receber'){
+    tesRenderReceber();
+    if(typeof tesHidratarEmailCobranca==='function') tesHidratarEmailCobranca();
+  }
   if(tab==='recebidos') tesRenderRecebidos();
   if(tab==='fornecedores' && typeof tesRenderFornecedores==='function') tesRenderFornecedores();
   // Impostos/IVA pago manuais (Fase C CFO) — pré-preenche com a cópia
@@ -29137,7 +29266,8 @@ function tesRenderReceber(){
       +'<td style="font-weight:700;color:var(--y)">€'+parseFloat(r.total||0).toFixed(2)+'</td>'
       +'<td style="color:'+vcol+';font-size:13px">'+r.vencimento+(dias<0?' ⚠️':'')+'</td>'
       +'<td><span style="font-size:12px;background:rgba(77,148,219,.15);color:var(--b);border-radius:5px;padding:2px 7px">Pendente</span></td>'
-      +'<td><button onclick="tesReceberMarcarPago(this.dataset.id)" data-id="'+rid+'" style="background:rgba(63,207,142,.12);border:1px solid rgba(63,207,142,.3);color:var(--g);border-radius:5px;font-size:12px;padding:2px 8px;cursor:pointer">✓ Recebido</button></td>'
+      +'<td style="display:flex;gap:4px"><button onclick="tesReceberMarcarPago(this.dataset.id)" data-id="'+rid+'" style="background:rgba(63,207,142,.12);border:1px solid rgba(63,207,142,.3);color:var(--g);border-radius:5px;font-size:12px;padding:2px 8px;cursor:pointer">✓ Recebido</button>'
+      +'<button onclick="tesEnviarEmailCobranca(this.dataset.id)" data-id="'+rid+'" title="Abre um email de cobrança pré-preenchido no seu cliente de email" style="background:rgba(77,148,219,.12);border:1px solid rgba(77,148,219,.3);color:var(--b);border-radius:5px;font-size:12px;padding:2px 8px;cursor:pointer">📧 Email</button></td>'
       +'</tr>';
   }).join('');
 }
