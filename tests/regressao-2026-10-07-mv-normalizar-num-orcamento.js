@@ -73,6 +73,23 @@ teste('duas linhas com o mesmo ano e mês, sequências diferentes, geram IDs dif
   assert.notStrictEqual(b, 'ORC-2026OB-2026');
 });
 
+teste('caracter invisível (espaço de largura zero \\u200B) junto às iniciais não cria um ID diferente do mesmo orçamento real', () => {
+  // Confirmado em produção (07/10/2026): a mesma linha real "2026.09.804.RM"
+  // apareceu na folha ora sem, ora com um ​ a seguir a "RM" — \s não
+  // apanha este caracter, por isso gerava dois IDs fabricados diferentes
+  // para a MESMA linha, criando um duplicado verdadeiro no Supabase.
+  const semInvisivel = rodar('OB-2026.09.804.RM');
+  const comInvisivel = rodar('OB-2026.09.804.RM​');
+  assert.strictEqual(semInvisivel, comInvisivel, 'o mesmo orçamento real, com ou sem o caracter invisível, tem de gerar o MESMO ID');
+});
+
+teste('BOM (\\uFEFF) e outros espaços de largura zero (\\u200C, \\u200D) também são ignorados', () => {
+  const base = rodar('OB-2026.10.1.RM');
+  assert.strictEqual(rodar('﻿OB-2026.10.1.RM'), base);
+  assert.strictEqual(rodar('OB-2026.10.1.RM‌'), base);
+  assert.strictEqual(rodar('OB-2026.10.1.RM‍'), base);
+});
+
 teste('formato antigo (só número, ex.: "786") mantém o comportamento histórico — não duplica orçamentos já sincronizados', () => {
   assert.strictEqual(rodar('786'), 'ORC-2026OB-786');
 });

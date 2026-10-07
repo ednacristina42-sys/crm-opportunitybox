@@ -19499,7 +19499,14 @@ function mvNormalizarNumOrcamento(bruto){
   // primeira linha processada (ficou presa desde 21/09/2026, sempre a
   // reportar "0 orçamentos novos" depois disso).
   if(/^OB-/i.test(s)){
-    return 'ORC-' + s.toUpperCase().replace(/\s+/g,'');
+    // Além de espaços normais, a folha por vezes traz caracteres invisíveis
+    // (espaço de largura zero ​/‌/‍, BOM ﻿ — comuns em
+    // copiar/colar) junto às iniciais do comercial. \s não os apanha.
+    // Confirmado em produção (07/10/2026): o mesmo orçamento real
+    // "2026.09.804.RM" apareceu duas vezes — uma sem o caracter invisível,
+    // outra com — gerando dois IDs fabricados diferentes para a MESMA
+    // linha da folha e criando um duplicado verdadeiro no Supabase.
+    return 'ORC-' + s.toUpperCase().replace(/[\s​‌‍﻿]+/g,'');
   }
   // Formato antigo (só o número, ex.: "786") — mantém o comportamento
   // histórico, para não duplicar orçamentos já sincronizados antes da
