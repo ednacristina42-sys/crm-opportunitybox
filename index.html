@@ -1611,7 +1611,14 @@ function avParseNumPT(s){
   if(!s) return 0;
   s=String(s).trim().replace(/[€$€]/g,'').trim();
   if(!s) return 0;
-  s=s.replace(/\./g,'').replace(',', '.');
+  // Espaço (normal ou não-separável  ) também é separador de milhares
+  // no formato pt-PT usado pelo Google Sheets (ex.: "7 980,00") — sem isto,
+  // parseFloat parava no primeiro espaço e devolvia só "7" em vez de 7980.
+  // Confirmado em produção (07/10/2026): orçamentos sincronizados da folha
+  // apareciam no Follow-up com valores truncados (ex.: "JF Santa Luzia
+  // €7,00" em vez de €7.980,00; "5 a Seco Portugal €26,00" em vez de
+  // €26.277,71).
+  s=s.replace(/[.\s ]/g,'').replace(',', '.');
   var n=parseFloat(s);
   return isNaN(n)?0:n;
 }
