@@ -19517,7 +19517,13 @@ var MV_SYNC_ULTIMA_EXECUCAO = (function(){
 // fica só em localStorage como acontecia com importarOrcamentos2026().
 async function mvSincronizarGoogleSheet(){
   if(MV_SYNC_EM_CURSO) return;
-  if(!(typeof CU!=='undefined' && CU && CU.admin===true)) return;
+  // Correcção (07/10/2026): exigia CU.admin===true à letra, nunca
+  // CU.role==='administrativo' — mesmo critério "vê tudo" usado em todo
+  // o resto do CRM (crmVeTudo()). A conta do dia-a-dia (Edna/Carolina)
+  // usa 'administrativo', por isso esta sincronização nunca disparava
+  // silenciosamente, sem erro nem aviso nenhum — a tabela ob_orcamentos
+  // ficou parada desde o dia em que esta função foi criada (21/09/2026).
+  if(!(typeof crmVeTudo==='function' && crmVeTudo())) return;
   if(Date.now() - MV_SYNC_ULTIMA_EXECUCAO < 120000) return;
   MV_SYNC_EM_CURSO = true;
   MV_SYNC_ULTIMA_EXECUCAO = Date.now();
