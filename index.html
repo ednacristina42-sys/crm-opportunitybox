@@ -10476,8 +10476,8 @@ tbody td{font-size:15px}
         </div>
       </div>
       <div class="form-group"><label class="form-label">Tipo de Contrato</label>
-        <select class="form-select" id="rh-c-contrato">
-          <option>A termo certo</option><option>Sem termo</option><option>Prestação de serviços</option><option>Estágio</option><option>Part-time</option>
+        <select class="form-select" id="rh-c-contrato" onchange="rhToggleContratoFields()">
+          <option>A termo certo</option><option>A termo incerto</option><option>Sem termo</option><option>Prestação de serviços</option><option>Estágio</option><option>Part-time</option>
         </select>
       </div>
     </div>
@@ -10489,8 +10489,26 @@ tbody td{font-size:15px}
       <div class="form-group"><label class="form-label">IBAN</label><input class="form-input" id="rh-c-iban" placeholder="PT50 XXXX XXXX XXXX XXXX XXXX X"/></div>
       <div class="form-group"><label class="form-label">Morada</label><input class="form-input" id="rh-c-morada" placeholder="Rua, Localidade"/></div>
     </div>
+    <!-- Documento de identificação + motivo do termo incerto: só usados para
+         "Gerar Contrato" (pedido da Edna, texto real do contrato enviado
+         06/10/2026) — nunca inventados, ficam em branco até serem
+         preenchidos. -->
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Tipo de Documento</label>
+        <select class="form-select" id="rh-c-doc-tipo">
+          <option>Cartão de Cidadão</option><option>Cartão de Residência</option><option>Título de Residência</option><option>Passaporte</option>
+        </select>
+      </div>
+      <div class="form-group"><label class="form-label">N.º do Documento</label><input class="form-input" id="rh-c-doc-num" placeholder="ex: 12798S33H"/></div>
+      <div class="form-group"><label class="form-label">Validade do Documento</label><input type="date" class="form-input" id="rh-c-doc-validade"/></div>
+    </div>
+    <div class="form-group" id="rh-c-motivo-wrap" style="display:none">
+      <label class="form-label">Motivo do termo incerto (projeto/obra/substituição — obrigatório para gerar o contrato)</label>
+      <textarea class="form-input" id="rh-c-motivo" rows="2" placeholder="ex: execução de projeto específico de desenvolvimento, construção, implementação e operacionalização da loja online da Primeira Contraente, incluindo a sua estruturação técnica, integração de sistemas, testes, entrada em funcionamento e consolidação operacional."></textarea>
+    </div>
     <div class="crm-modal-btns">
       <button class="tbtn" id="rh-c-del" onclick="rhDeleteColab()" style="color:var(--r);border-color:var(--r);margin-right:auto;display:none">🗑️ Eliminar</button>
+      <button class="tbtn" onclick="rhGerarContrato()" title="Só disponível para Tipo de Contrato = A termo incerto (único modelo real fornecido pela Edna)">🖨️ Gerar Contrato</button>
       <button class="tbtn" onclick="rhCloseColabModal()">Cancelar</button>
       <button class="tbtn y" onclick="rhSaveColab()">💾 Guardar</button>
     </div>
@@ -18298,14 +18316,26 @@ function rhPromoverColabApp(ecId){
 }
 window.rhPromoverColabApp = rhPromoverColabApp;
 
+// Mostra/esconde "Motivo do termo incerto" consoante o Tipo de Contrato —
+// só este tipo tem modelo real de contrato (pedido/texto da Edna,
+// 06/10/2026); os outros tipos nunca inventam um motivo de termo incerto.
+function rhToggleContratoFields(){
+  const tipo=document.getElementById('rh-c-contrato')?.value;
+  const wrap=document.getElementById('rh-c-motivo-wrap');
+  if(wrap) wrap.style.display = (tipo==='A termo incerto') ? 'block' : 'none';
+}
+window.rhToggleContratoFields = rhToggleContratoFields;
+
 function rhOpenColab(){
   rhEditColabId=null;
-  ['rh-c-nome','rh-c-nif','rh-c-niss','rh-c-cargo','rh-c-tel','rh-c-email','rh-c-iban','rh-c-morada','rh-c-salario'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  ['rh-c-nome','rh-c-nif','rh-c-niss','rh-c-cargo','rh-c-tel','rh-c-email','rh-c-iban','rh-c-morada','rh-c-salario','rh-c-doc-num','rh-c-doc-validade','rh-c-motivo'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   document.getElementById('rh-c-admissao').value=new Date().toISOString().split('T')[0];
+  const docTipoEl=document.getElementById('rh-c-doc-tipo'); if(docTipoEl) docTipoEl.value='Cartão de Cidadão';
   document.getElementById('rh-colab-title').textContent='+ Colaborador';
   document.getElementById('rh-c-del').style.display='none';
   document.getElementById('rh-colab-modal-form').style.display='block';
   document.getElementById('rh-colab-modal-body').style.display='none';
+  rhToggleContratoFields();
   document.getElementById('rh-colab-modal').classList.add('open');
 }
 function rhEditColab(id){
@@ -18323,8 +18353,13 @@ function rhEditColab(id){
   document.getElementById('rh-c-email').value=c.email||'';
   document.getElementById('rh-c-iban').value=c.iban||'';
   document.getElementById('rh-c-morada').value=c.morada||'';
+  const docTipoEl=document.getElementById('rh-c-doc-tipo'); if(docTipoEl) docTipoEl.value=c.docTipo||'Cartão de Cidadão';
+  document.getElementById('rh-c-doc-num').value=c.docNumero||'';
+  document.getElementById('rh-c-doc-validade').value=c.docValidade||'';
+  document.getElementById('rh-c-motivo').value=c.motivoContrato||'';
   document.getElementById('rh-colab-title').textContent='✏️ Editar Colaborador';
   document.getElementById('rh-c-del').style.display='block';
+  rhToggleContratoFields();
   document.getElementById('rh-colab-modal').classList.add('open');
 }
 function rhSaveColab(){
@@ -18339,6 +18374,10 @@ function rhSaveColab(){
     cargo:document.getElementById('rh-c-cargo').value.trim(),
     dept:document.getElementById('rh-c-dept').value,
     salario:document.getElementById('rh-c-salario').value,
+    docTipo:document.getElementById('rh-c-doc-tipo').value,
+    docNumero:document.getElementById('rh-c-doc-num').value.trim(),
+    docValidade:document.getElementById('rh-c-doc-validade').value,
+    motivoContrato:document.getElementById('rh-c-motivo').value.trim(),
     contrato:document.getElementById('rh-c-contrato').value,
     tel:document.getElementById('rh-c-tel').value.trim(),
     email:document.getElementById('rh-c-email').value.trim(),
@@ -18352,6 +18391,123 @@ function rhSaveColab(){
   document.getElementById('rh-colab-modal').classList.remove('open');
   rhRenderColabs();
 }
+
+// ── Gerar Contrato (termo incerto) ──────────────────────────────────────
+// Texto real fornecido pela Edna (06/10/2026), modelo "CONTRATO DE
+// TRABALHO A TERMO INCERTO" assinado com a Suyenne — usado tal e qual,
+// só com os campos variáveis substituídos. Só existe este modelo: para
+// qualquer outro Tipo de Contrato, rhGerarContrato() recusa gerar em vez
+// de inventar texto legal que a Edna nunca forneceu. A "Primeira
+// Outorgante" (empresa) é sempre a mesma, por isso fica fixa aqui.
+var RH_EMPRESA = {
+  nome: 'OPPORTUNITYBOX - DESIGN & STORE CONCEPT UNIPESSOAL LDA.',
+  nif: '510575170',
+  morada: 'Parque Industrial Alcopark I, Estrada da Ribeirinha, Armazém E, 2705-832 Terrugem',
+};
+// Subsídio de almoço — valor padrão da empresa à data do modelo fornecido
+// (06/10/2026); ajustável aqui se a Edna confirmar um valor diferente no
+// futuro, nunca por colaborador (não há esse dado na ficha).
+var RH_SUBSIDIO_ALMOCO_PADRAO = 10.46;
+
+var RH_MESES_EXTENSO = ['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
+function rhDataExtenso(iso){
+  if(!iso) return '';
+  var p = String(iso).split('-');
+  if(p.length!==3) return iso;
+  var d = parseInt(p[2],10), m = parseInt(p[1],10)-1, y = p[0];
+  return String(d).padStart(2,'0') + ' de ' + (RH_MESES_EXTENSO[m]||'') + ' de ' + y;
+}
+function rhDataPT(iso){
+  if(!iso) return '';
+  var p = String(iso).split('-');
+  return p.length===3 ? (p[2]+'/'+p[1]+'/'+p[0]) : iso;
+}
+function rhDocTipoFrase(tipo){
+  return String(tipo||'Cartão de Cidadão').toLowerCase();
+}
+
+function rhGerarContrato(){
+  var tipoContrato = document.getElementById('rh-c-contrato').value;
+  if(tipoContrato !== 'A termo incerto'){
+    alert('Ainda só há um modelo real de contrato disponível — "A termo incerto". Escolhe esse Tipo de Contrato para gerar, ou pede à Edna o texto para "'+tipoContrato+'".');
+    return;
+  }
+  var nome = document.getElementById('rh-c-nome').value.trim();
+  var nif = document.getElementById('rh-c-nif').value.trim();
+  var niss = document.getElementById('rh-c-niss').value.trim();
+  var morada = document.getElementById('rh-c-morada').value.trim();
+  var docTipo = document.getElementById('rh-c-doc-tipo').value;
+  var docNum = document.getElementById('rh-c-doc-num').value.trim();
+  var docValidade = document.getElementById('rh-c-doc-validade').value;
+  var cargo = document.getElementById('rh-c-cargo').value.trim();
+  var admissao = document.getElementById('rh-c-admissao').value;
+  var salario = parseFloat(document.getElementById('rh-c-salario').value) || 0;
+  var motivo = document.getElementById('rh-c-motivo').value.trim();
+  var faltam = [];
+  if(!nome) faltam.push('Nome');
+  if(!nif) faltam.push('NIF');
+  if(!niss) faltam.push('NISS');
+  if(!morada) faltam.push('Morada');
+  if(!docNum) faltam.push('N.º do Documento');
+  if(!docValidade) faltam.push('Validade do Documento');
+  if(!cargo) faltam.push('Cargo / Função');
+  if(!admissao) faltam.push('Data de Admissão');
+  if(!salario) faltam.push('Salário Base');
+  if(!motivo) faltam.push('Motivo do termo incerto');
+  if(faltam.length){
+    alert('Para gerar o contrato falta preencher: '+faltam.join(', ')+'.');
+    return;
+  }
+  var fmtEUR = function(v){ return v.toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2}); };
+  var hoje = new Date();
+  var hojeISO = hoje.getFullYear()+'-'+String(hoje.getMonth()+1).padStart(2,'0')+'-'+String(hoje.getDate()).padStart(2,'0');
+  var html = '<!DOCTYPE html><html lang="pt"><head><meta charset="UTF-8"><title>Contrato de Trabalho — '+nome+'</title>'
+    + '<style>body{font-family:Arial,sans-serif;color:#1a1a1a;margin:0;padding:40px;line-height:1.5;font-size:14px}'
+    + 'h1{font-size:16px;text-align:center;margin-bottom:24px}'
+    + 'h2{font-size:13px;margin:18px 0 6px;font-weight:700}'
+    + 'p{margin:0 0 10px;text-align:justify}'
+    + '.assinaturas{margin-top:60px;display:flex;justify-content:space-between}'
+    + '.sig{width:45%;text-align:center;border-top:1px solid #333;padding-top:6px;margin-top:50px}'
+    + '@media print{body{padding:15mm}}</style></head><body>'
+    + '<h1>CONTRATO DE TRABALHO A TERMO INCERTO</h1>'
+    + '<p>ENTRE:</p>'
+    + '<p>'+RH_EMPRESA.nome+', pessoa coletiva n.º '+RH_EMPRESA.nif+', com sede no '+RH_EMPRESA.morada+', adiante designada como PRIMEIRA OUTORGANTE,</p>'
+    + '<p>E</p>'
+    + '<p>Exmo(a). Sr(a). '+nome.toUpperCase()+', residente em '+morada+', titular do '+rhDocTipoFrase(docTipo)+' n.º '+docNum+', válido até '+rhDataPT(docValidade)+', do contribuinte n.º '+nif+' e número de segurança social '+niss+', como SEGUNDO OUTORGANTE,</p>'
+    + '<p>É livremente e de boa fé celebrado o presente Contrato de Trabalho a Termo Incerto, que se regerá de acordo com os termos e condições seguintes:</p>'
+    + '<h2>CLÁUSULA PRIMEIRA</h2>'
+    + '<p>1. A PRIMEIRA OUTORGANTE admite o SEGUNDO OUTORGANTE como seu funcionário e ao seu serviço para lhe prestar a atividade correspondente, com a categoria profissional de '+cargo+'.</p>'
+    + '<p>2. Na atividade mencionada em 1. são incluídas as tarefas afins ou funcionalmente ligadas para as quais tenha qualificação adequada e que não impliquem desvalorização profissional.</p>'
+    + '<h2>CLÁUSULA SEGUNDA</h2>'
+    + '<p>O presente Contrato inicia a '+rhDataPT(admissao)+' e caduca no término do trabalho para o qual foi contratado.</p>'
+    + '<h2>CLÁUSULA TERCEIRA</h2>'
+    + '<p>1 - O presente contrato é celebrado a termo incerto ao abrigo do disposto no artigo 140.º, n.º 2, alínea f) do Código do Trabalho.</p>'
+    + '<p>2 - O motivo justificativo é o seguinte: '+motivo+'</p>'
+    + '<p>3 - O contrato manter-se-á em vigor enquanto durar o referido projeto e cessará quando o mesmo se encontre concluído e estabilizado, deixando de subsistir a necessidade temporária que fundamenta a presente contratação.</p>'
+    + '<h2>CLÁUSULA QUARTA</h2>'
+    + '<p>Como retribuição ajustada entre a PRIMEIRA e a SEGUNDA OUTORGANTES, pagará a PRIMEIRA à SEGUNDA, mensalmente, a quantia de '+fmtEUR(salario)+' Euros, ilíquida, acrescida de um subsídio de almoço liquidado em cartão no valor de '+fmtEUR(RH_SUBSIDIO_ALMOCO_PADRAO)+' €, por cada dia útil de trabalho.</p>'
+    + '<h2>CLÁUSULA QUINTA</h2>'
+    + '<p>A atividade do SEGUNDO OUTORGANTE será prestada nas instalações da PRIMEIRA OUTORGANTE sita no '+RH_EMPRESA.morada+', ou noutro local determinado nos termos legais, com o período normal de trabalho de 8 horas diárias, e 40 horas semanais.</p>'
+    + '<p>O período normal de trabalho pode ser aumentado em termos médios, até 2 horas por dia e 50 horas por semana, tendo o acréscimo o limite de 150 horas por ano.</p>'
+    + '<h2>CLÁUSULA SEXTA</h2>'
+    + '<p>O SEGUNDO OUTORGANTE tem direito a um período de férias retribuídas conforme previsto nos artigos 237.º e 238.º do Código do Trabalho ou, caso a duração efectiva venha a ser inferior a 6 (seis) meses, nos termos do art. 239.º do Código do Trabalho.</p>'
+    + '<h2>CLÁUSULA SÉTIMA</h2>'
+    + '<p>O segundo contraente obriga-se a guardar sigilo relativamente a quaisquer informações respeitantes à primeira contraente, sendo-lhe, nomeadamente, vedado efetuar reproduções, cópias ou distribuição de documentos que lhe pertençam.</p>'
+    + '<h2>CLÁUSULA OITAVA</h2>'
+    + '<p>1. O contrato caduca quando deixar de se verificar o motivo justificativo que determinou a sua celebração.</p>'
+    + '<p>2. A caducidade deve ser comunicada por escrito com antecedência mínima de:</p>'
+    + '<p>&nbsp;&nbsp;&nbsp;7 dias, se o contrato tiver durado até 6 meses;<br>&nbsp;&nbsp;&nbsp;30 dias, se tiver durado de 6 meses a 2 anos;<br>&nbsp;&nbsp;&nbsp;60 dias, se tiver durado mais de 2 anos.</p>'
+    + '<h2>CLÁUSULA NONA</h2>'
+    + '<p>Em tudo o que não estiver expressamente regulado no presente Contrato, aplica-se a legislação geral do Código do Trabalho.</p>'
+    + '<p>Este Contrato é feito em dois originais, sendo cada um deles destinado a uma das Partes.</p>'
+    + '<p>Sintra, '+rhDataExtenso(hojeISO)+'</p>'
+    + '<div class="assinaturas"><div class="sig">PRIMEIRA OUTORGANTE</div><div class="sig">SEGUNDO OUTORGANTE</div></div>'
+    + '</body></html>';
+  var w = window.open('', '_blank', 'width=900,height=700');
+  if(w){ w.document.write(html); w.document.close(); setTimeout(function(){ w.print(); }, 600); }
+}
+window.rhGerarContrato = rhGerarContrato;
+
 function rhDeleteColab(){
   if(!rhEditColabId||!confirm('Eliminar colaborador?')) return;
   rhColabs=rhColabs.filter(c=>c.id!==rhEditColabId);
