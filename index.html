@@ -1799,7 +1799,10 @@ async function avSyncVendedoresSheet(){
       // vendedores") — só existe se a própria Sheet "Vendas 2026" tiver
       // esta coluna; nunca estimado a partir do total com IVA (seria
       // inventar um número, contra a convenção do resto do ficheiro).
-      semIVA:   avFindCol(header,['valor sem iva','total sem iva','sem iva','valor liquido','valor líquido','net amount','netamount']),
+      // Confirmado pela Edna (06/10/2026): na folha "Vendas 2026" esta
+      // coluna chama-se "Total Líquido" (coluna E) — adicionado aos
+      // variants; 'valor liquido'/'valor líquido' ficam como alias antigos.
+      semIVA:   avFindCol(header,['total liquido','total líquido','valor sem iva','total sem iva','sem iva','valor liquido','valor líquido','net amount','netamount']),
       recebido: avFindCol(header,['valor recebido','recebido','pago','received']),
       aReceber: avFindCol(header,['saldo a receber','a receber','por receber','saldo','pendente']),
       vendedor: avFindCol(header,['vendedor','comercial','sales rep','seller']),
@@ -1861,6 +1864,7 @@ async function avSyncVendedoresSheet(){
         numero: idx.numero!==-1 ? (r[idx.numero]||'').trim() : '',
         nome:   idx.nome!==-1   ? (r[idx.nome]||'').trim()   : vend,
         total:  v,
+        semIVA: vSemIVA,
         recebido: rec,
         aReceber: nrec,
         vendedor: vend,
@@ -7249,8 +7253,15 @@ tbody td{font-size:15px}
     <!-- Orçamentos (genérico): oculto na visão comercial a pedido do CEO,
          14/08/2026 — o comercial usa "Meu Mapa de Vendas" para a sua carteira
          pessoal. Reutiliza admin-only/toggleAdminSensitiveFields(), mesma
-         mecânica já usada acima em Pipeline/Follow-up/Clientes. -->
-    <button class="sl-item admin-only" data-action="goPage" data-page="comercial-orcamentos"><span class="mk-ic">📄</span>Orçamentos<span id="toco-vencidas-badge">!</span></button>
+         mecânica já usada acima em Pipeline/Follow-up/Clientes.
+         06/10/2026 — Edna: a responsabilidade de Orçamentos vai passar para
+         o ORÇ.box (sistema externo), por isso este item fica também
+         escondido do menu para Admin (display:none), já não só para
+         não-admins. SÓ a entrada do menu — os dados (ob_orcamentos), a
+         própria página e tudo o que depende dela (Mapa de Vendas,
+         Histórico de Faturação, Dashboard CFO, Tesouraria) continuam
+         intactos e a funcionar normalmente; nenhuma outra alteração aqui. -->
+    <button class="sl-item admin-only" data-action="goPage" data-page="comercial-orcamentos" style="display:none"><span class="mk-ic">📄</span>Orçamentos<span id="toco-vencidas-badge">!</span></button>
     <button class="sl-item" data-action="goPage" data-page="equipa-campo"><span class="mk-ic">🗺️</span>Equipa em Campo</button>
     <!-- Minhas Tarefas: atalho pessoal, visível só na visão comercial (login real de
          Comercial ou admin em "Ver como"). Reutiliza homeFilterTasks() já existente,
@@ -7303,9 +7314,14 @@ tbody td{font-size:15px}
     <button class="sl-item" data-action="goPage" data-page="fabrica-pintura"><span class="mk-ic">🎨</span>Pintura</button>
     <button class="sl-item" data-action="goPage" data-page="fabrica-eletrificacao"><span class="mk-ic">💡</span>Eletrificação &amp; Acabamentos</button>
     <button class="sl-item" data-action="goPage" data-page="fabrica-qualidade-expedicao"><span class="mk-ic">✅</span>Qualidade &amp; Expedição</button>
-    <button class="sl-item" data-action="goPage" data-page="fabrica-equipa-montagem-1"><span class="mk-ic">🔨</span>Equipa Montagem 1</button>
-    <button class="sl-item" data-action="goPage" data-page="fabrica-equipa-montagem-2"><span class="mk-ic">🔨</span>Equipa Montagem 2</button>
-    <button class="sl-item" data-action="goPage" data-page="fabrica-montagem-externa"><span class="mk-ic">🌍</span>Montagem Externa</button>
+    <!-- Equipa Montagem 1/2 e Montagem Externa: escondidas do menu a pedido
+         da Edna (doc "CRM - Parte 6", 30/09/2026 — "Aqui ficaram itens a
+         mais: Equipas de montagem e Montagem externa são englobadas pelas
+         instalações"). Só o item do menu; páginas/Kanban (UNI_CFG) e
+         dados continuam intactos, caso seja preciso reverter. -->
+    <button class="sl-item" data-action="goPage" data-page="fabrica-equipa-montagem-1" style="display:none"><span class="mk-ic">🔨</span>Equipa Montagem 1</button>
+    <button class="sl-item" data-action="goPage" data-page="fabrica-equipa-montagem-2" style="display:none"><span class="mk-ic">🔨</span>Equipa Montagem 2</button>
+    <button class="sl-item" data-action="goPage" data-page="fabrica-montagem-externa" style="display:none"><span class="mk-ic">🌍</span>Montagem Externa</button>
     <button class="sl-item" data-action="goPage" data-page="fabrica-ordens-producao"><span class="mk-ic">📦</span>Ordens de Produção</button>
     <button class="sl-item" data-action="goPage" data-page="fabrica-arquivo-obras"><span class="mk-ic">🗂️</span>Arquivo de Obras</button>
     <button class="sl-item" data-action="goPage" data-page="fabrica-urgentes-atrasos"><span class="mk-ic">🚨</span>Urgentes &amp; Atrasos</button>
@@ -9598,7 +9614,7 @@ tbody td{font-size:15px}
            colunas) e "Valor Real Pago" nunca saía de "—" — ver
            tesIvaCalcularReal(). -->
       <div style="background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:18px">
-        <div style="font-size:13px;font-weight:600;color:var(--txt2);margin-bottom:10px">🧾 Impostos e IVA pago — lançamento manual, mensal</div>
+        <div style="font-size:13px;font-weight:600;color:var(--txt2);margin-bottom:10px">🧾 Impostos, IVA pago e Salários — lançamento manual, mensal</div>
         <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
           <div>
             <label class="form-label" style="display:block;margin-bottom:4px;font-size:12px">Mês</label>
@@ -9612,13 +9628,17 @@ tbody td{font-size:15px}
             <label class="form-label" style="display:block;margin-bottom:4px;font-size:12px">IVA efectivamente pago (€)</label>
             <input type="number" step="0.01" min="0" id="tes-im-ivapago" class="form-input" style="padding:5px 10px;font-size:14px;width:140px" placeholder="0,00"/>
           </div>
+          <div>
+            <label class="form-label" style="display:block;margin-bottom:4px;font-size:12px">Salários (€) — só se o Fecho de Ordenados deste mês ainda não foi enviado</label>
+            <input type="number" step="0.01" min="0" id="tes-im-salarios" class="form-input" style="padding:5px 10px;font-size:14px;width:160px" placeholder="0,00"/>
+          </div>
           <div style="flex:1;min-width:200px">
             <label class="form-label" style="display:block;margin-bottom:4px;font-size:12px">Nota (opcional)</label>
             <input type="text" id="tes-im-nota" class="form-input" style="padding:5px 10px;font-size:14px;width:100%" placeholder="ex.: IRC, Selo, DAS de IVA"/>
           </div>
           <button onclick="tesGuardarImpostosManual()" class="tbtn" style="font-size:13px;color:var(--g);border-color:var(--g)">💾 Guardar</button>
         </div>
-        <div style="font-size:11.5px;color:var(--muted);margin-top:8px">"Impostos" é tudo o que não é IVA (ex.: IRC, Selo) — o IVA já é calculado automaticamente a partir das vendas/compras reais; preencha "IVA efectivamente pago" só quando souber o valor real da declaração.</div>
+        <div style="font-size:11.5px;color:var(--muted);margin-top:8px">"Impostos" é tudo o que não é IVA (ex.: IRC, Selo) — o IVA já é calculado automaticamente a partir das vendas/compras reais; preencha "IVA efectivamente pago" só quando souber o valor real da declaração. "Salários" é o valor TOTAL da folha desse mês (não por colaborador) — só é usado quando o Fecho de Ordenados desse mês ainda não foi enviado à Tesouraria; depois de enviado, o valor real do Fecho substitui automaticamente este lançamento manual.</div>
       </div>
 
       <div class="tw" style="margin-bottom:18px">
@@ -10456,8 +10476,8 @@ tbody td{font-size:15px}
         </div>
       </div>
       <div class="form-group"><label class="form-label">Tipo de Contrato</label>
-        <select class="form-select" id="rh-c-contrato">
-          <option>A termo certo</option><option>Sem termo</option><option>Prestação de serviços</option><option>Estágio</option><option>Part-time</option>
+        <select class="form-select" id="rh-c-contrato" onchange="rhToggleContratoFields()">
+          <option>A termo certo</option><option>A termo incerto</option><option>Sem termo</option><option>Prestação de serviços</option><option>Estágio</option><option>Part-time</option>
         </select>
       </div>
     </div>
@@ -10469,8 +10489,26 @@ tbody td{font-size:15px}
       <div class="form-group"><label class="form-label">IBAN</label><input class="form-input" id="rh-c-iban" placeholder="PT50 XXXX XXXX XXXX XXXX XXXX X"/></div>
       <div class="form-group"><label class="form-label">Morada</label><input class="form-input" id="rh-c-morada" placeholder="Rua, Localidade"/></div>
     </div>
+    <!-- Documento de identificação + motivo do termo incerto: só usados para
+         "Gerar Contrato" (pedido da Edna, texto real do contrato enviado
+         06/10/2026) — nunca inventados, ficam em branco até serem
+         preenchidos. -->
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Tipo de Documento</label>
+        <select class="form-select" id="rh-c-doc-tipo">
+          <option>Cartão de Cidadão</option><option>Cartão de Residência</option><option>Título de Residência</option><option>Passaporte</option>
+        </select>
+      </div>
+      <div class="form-group"><label class="form-label">N.º do Documento</label><input class="form-input" id="rh-c-doc-num" placeholder="ex: 12798S33H"/></div>
+      <div class="form-group"><label class="form-label">Validade do Documento</label><input type="date" class="form-input" id="rh-c-doc-validade"/></div>
+    </div>
+    <div class="form-group" id="rh-c-motivo-wrap" style="display:none">
+      <label class="form-label">Motivo do termo incerto (projeto/obra/substituição — obrigatório para gerar o contrato)</label>
+      <textarea class="form-input" id="rh-c-motivo" rows="2" placeholder="ex: execução de projeto específico de desenvolvimento, construção, implementação e operacionalização da loja online da Primeira Contraente, incluindo a sua estruturação técnica, integração de sistemas, testes, entrada em funcionamento e consolidação operacional."></textarea>
+    </div>
     <div class="crm-modal-btns">
       <button class="tbtn" id="rh-c-del" onclick="rhDeleteColab()" style="color:var(--r);border-color:var(--r);margin-right:auto;display:none">🗑️ Eliminar</button>
+      <button class="tbtn" onclick="rhGerarContrato()" title="Só disponível para Tipo de Contrato = A termo incerto (único modelo real fornecido pela Edna)">🖨️ Gerar Contrato</button>
       <button class="tbtn" onclick="rhCloseColabModal()">Cancelar</button>
       <button class="tbtn y" onclick="rhSaveColab()">💾 Guardar</button>
     </div>
@@ -10926,7 +10964,9 @@ tbody td{font-size:15px}
         <tbody id="stk-mov-tbody"></tbody>
       </table>
     </div>
-  
+
+</div>
+
 </div>
 
 <!-- Modal Stock -->
@@ -12008,7 +12048,7 @@ tbody td{font-size:15px}
       <!-- lista vencidos e a vencer -->
       <div style="font-size:12px;font-weight:600;color:var(--y);letter-spacing:.05em;border-top:1px solid var(--border);padding-top:10px">VENCIDOS E A VENCER EM BREVE</div>
       <div id="cli-receb-lista" style="display:flex;flex-direction:column;gap:8px;font-size:13px">
-        <div style="color:var(--muted);font-style:italic">Sem orçamentos pendentes.</div>
+        <div style="color:var(--muted);font-style:italic">Sem faturas pendentes.</div>
       </div>
     </div>
 
@@ -12894,6 +12934,11 @@ window.toggleAdminSensitiveFields = toggleAdminSensitiveFields;
 // e troca o rótulo de "Mapa de Vendas" para "Meu Mapa de Vendas". Reutiliza
 // obIsComercialView() — mesma condição central usada em toda a visão comercial.
 // Chamada em toggleAdminSensitiveFields(), que já corre em todo goPage().
+// Itens do sidebar "Chão da Fábrica" escondidos do menu PARA TODA A GENTE
+// (admin incluído) — doc "CRM - Parte 6" (30/09/2026): "Equipas de
+// montagem e Montagem externa são englobadas pelas instalações". Só o
+// item do menu; páginas/Kanban (UNI_CFG) continuam intactos.
+var OB_FABRICA_MENU_SEMPRE_ESCONDIDO = ['fabrica-equipa-montagem-1','fabrica-equipa-montagem-2','fabrica-montagem-externa'];
 function obAplicarVisaoComercialSidebar(){
   var comercial = !!(typeof obIsComercialView==='function' && obIsComercialView());
   var btnMinhas = document.getElementById('sl-minhas-tarefas');
@@ -12922,6 +12967,14 @@ function obAplicarVisaoComercialSidebar(){
     // tenha deixado numa sessão comercial anterior na mesma aba (ex.: admin a
     // sair de "Ver como").
     itensComerciaisEsconde.forEach(function(sel){ var el=document.querySelector(sel); if(el) el.style.display=''; });
+    // Equipa Montagem 1/2 e Montagem Externa: escondidas do menu também
+    // para Admin (doc "CRM - Parte 6", 30/09/2026 — "são englobadas pelas
+    // instalações"). Sem isto, o reset acima ('') devolvia-as visíveis de
+    // cada vez que a sidebar era reaplicada (ex.: ao navegar com goPage()).
+    OB_FABRICA_MENU_SEMPRE_ESCONDIDO.forEach(function(pg){
+      var el=document.querySelector('#sl-fabrica [data-page="'+pg+'"]');
+      if(el) el.style.display='none';
+    });
   }
 }
 window.obAplicarVisaoComercialSidebar = obAplicarVisaoComercialSidebar;
@@ -14072,13 +14125,27 @@ function homeDistribuirSubtarefas(task){
 // ── COMERCIAIS ──────────────────────────────────────────
 var CRM_CORES = ['#e74c3c','#3b82f6','#8b5cf6','#3fcf8e','#f97316','#ec4899','#06b6d4','#84cc16'];
 
+// André Nolasco (07/10/2026, pedido da Edna: "falta o nome do André") —
+// já reconhecido como comercial noutros sítios do CRM (MV_COMERCIAIS_ROSTER,
+// ob_colaboradores · Dep. Comercial), só nunca tinha entrado aqui; por
+// causa disso nunca aparecia como responsável no Follow-up/dropdowns que
+// usam esta lista.
 var crmComerciais; try{ crmComerciais=JSON.parse(localStorage.getItem('ob-comerciais')||'null'); }catch(e){ crmComerciais=null; } crmComerciais = crmComerciais || [
   {id:1, nome:'Paulo Faria',   email:'paulo@opportunitybox.pt',   cor:'#e74c3c', ativo:true},
   {id:2, nome:'Rui Mota',      email:'rui@opportunitybox.pt',     cor:'#3b82f6', ativo:true},
   {id:3, nome:'Humberto Estrelinha', email:'humberto@opportunitybox.pt', cor:'#8b5cf6', ativo:true},
+  {id:4, nome:'André Nolasco', email:'andre@opportunitybox.pt',   cor:'#10b981', ativo:true},
 ];
 
 function saveComerciaisData(){ localStorage.setItem('ob-comerciais', JSON.stringify(crmComerciais)); }
+// Migração (07/10/2026): browsers que já tinham 'ob-comerciais' gravado
+// localmente (de antes desta correção) nunca passariam pelo valor por
+// omissão acima — adiciona o André directamente à lista já guardada, se
+// ainda lá não estiver, e grava de volta.
+if(!crmComerciais.some(function(c){ return c.nome==='André Nolasco'; })){
+  crmComerciais.push({id: crmComerciais.length+1, nome:'André Nolasco', email:'andre@opportunitybox.pt', cor:'#10b981', ativo:true});
+  saveComerciaisData();
+}
 function crmGetComercial(nome){ return crmComerciais.find(c=>c.nome===nome)||{nome,cor:'#6b7280',email:'geral@opportunitybox.pt'}; }
 function crmInitials(n){ return n.split(' ').map(w=>w[0]).join('').substring(0,2).toUpperCase(); }
 
@@ -17296,7 +17363,18 @@ function uniShowTabs(item){
 // segurança caso o roster real (obListaResponsaveisAtivos) ainda não tenha
 // sido carregado quando o checklist é desenhado.
 var INST_EQUIPA_FALLBACK = ['Ricardo Faria','Pedro Silva','Sérgio Nunes','Luís Cardoso','Nuno Bento','Diogo Costa','Carlos Melo','Bruno Ferreira'];
+// Correção (doc "CRM - Parte 6", 30/09/2026): "Aqui nas Obras, é preciso
+// colocar os colaboradores lá de baixo, Não é preciso todo mundo!" — o
+// mesmo pedido já tinha sido feito e corrigido para o <select> de
+// Responsável de Obras (obColaboradoresProducaoCurada(), doc "parte 4",
+// 28/09/2026), mas o checklist "Equipa de Montagem" de Instalações nunca
+// tinha sido ligado a essa lista curada — continuava a mostrar o roster
+// inteiro (todos os departamentos). Passa a usar a mesma lista curada
+// como primeira escolha; só cai no roster completo/fallback se, por
+// algum motivo, a lista curada vier vazia.
 function instEquipaAtiva(){
+  var curada = (typeof obColaboradoresProducaoCurada==='function') ? obColaboradoresProducaoCurada() : [];
+  if(curada.length) return curada;
   var lista = (typeof obListaResponsaveisAtivos==='function') ? obListaResponsaveisAtivos() : [];
   return lista.length ? lista : INST_EQUIPA_FALLBACK;
 }
@@ -18252,14 +18330,26 @@ function rhPromoverColabApp(ecId){
 }
 window.rhPromoverColabApp = rhPromoverColabApp;
 
+// Mostra/esconde "Motivo do termo incerto" consoante o Tipo de Contrato —
+// só este tipo tem modelo real de contrato (pedido/texto da Edna,
+// 06/10/2026); os outros tipos nunca inventam um motivo de termo incerto.
+function rhToggleContratoFields(){
+  const tipo=document.getElementById('rh-c-contrato')?.value;
+  const wrap=document.getElementById('rh-c-motivo-wrap');
+  if(wrap) wrap.style.display = (tipo==='A termo incerto') ? 'block' : 'none';
+}
+window.rhToggleContratoFields = rhToggleContratoFields;
+
 function rhOpenColab(){
   rhEditColabId=null;
-  ['rh-c-nome','rh-c-nif','rh-c-niss','rh-c-cargo','rh-c-tel','rh-c-email','rh-c-iban','rh-c-morada','rh-c-salario'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  ['rh-c-nome','rh-c-nif','rh-c-niss','rh-c-cargo','rh-c-tel','rh-c-email','rh-c-iban','rh-c-morada','rh-c-salario','rh-c-doc-num','rh-c-doc-validade','rh-c-motivo'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   document.getElementById('rh-c-admissao').value=new Date().toISOString().split('T')[0];
+  const docTipoEl=document.getElementById('rh-c-doc-tipo'); if(docTipoEl) docTipoEl.value='Cartão de Cidadão';
   document.getElementById('rh-colab-title').textContent='+ Colaborador';
   document.getElementById('rh-c-del').style.display='none';
   document.getElementById('rh-colab-modal-form').style.display='block';
   document.getElementById('rh-colab-modal-body').style.display='none';
+  rhToggleContratoFields();
   document.getElementById('rh-colab-modal').classList.add('open');
 }
 function rhEditColab(id){
@@ -18277,8 +18367,13 @@ function rhEditColab(id){
   document.getElementById('rh-c-email').value=c.email||'';
   document.getElementById('rh-c-iban').value=c.iban||'';
   document.getElementById('rh-c-morada').value=c.morada||'';
+  const docTipoEl=document.getElementById('rh-c-doc-tipo'); if(docTipoEl) docTipoEl.value=c.docTipo||'Cartão de Cidadão';
+  document.getElementById('rh-c-doc-num').value=c.docNumero||'';
+  document.getElementById('rh-c-doc-validade').value=c.docValidade||'';
+  document.getElementById('rh-c-motivo').value=c.motivoContrato||'';
   document.getElementById('rh-colab-title').textContent='✏️ Editar Colaborador';
   document.getElementById('rh-c-del').style.display='block';
+  rhToggleContratoFields();
   document.getElementById('rh-colab-modal').classList.add('open');
 }
 function rhSaveColab(){
@@ -18293,6 +18388,10 @@ function rhSaveColab(){
     cargo:document.getElementById('rh-c-cargo').value.trim(),
     dept:document.getElementById('rh-c-dept').value,
     salario:document.getElementById('rh-c-salario').value,
+    docTipo:document.getElementById('rh-c-doc-tipo').value,
+    docNumero:document.getElementById('rh-c-doc-num').value.trim(),
+    docValidade:document.getElementById('rh-c-doc-validade').value,
+    motivoContrato:document.getElementById('rh-c-motivo').value.trim(),
     contrato:document.getElementById('rh-c-contrato').value,
     tel:document.getElementById('rh-c-tel').value.trim(),
     email:document.getElementById('rh-c-email').value.trim(),
@@ -18306,6 +18405,123 @@ function rhSaveColab(){
   document.getElementById('rh-colab-modal').classList.remove('open');
   rhRenderColabs();
 }
+
+// ── Gerar Contrato (termo incerto) ──────────────────────────────────────
+// Texto real fornecido pela Edna (06/10/2026), modelo "CONTRATO DE
+// TRABALHO A TERMO INCERTO" assinado com a Suyenne — usado tal e qual,
+// só com os campos variáveis substituídos. Só existe este modelo: para
+// qualquer outro Tipo de Contrato, rhGerarContrato() recusa gerar em vez
+// de inventar texto legal que a Edna nunca forneceu. A "Primeira
+// Outorgante" (empresa) é sempre a mesma, por isso fica fixa aqui.
+var RH_EMPRESA = {
+  nome: 'OPPORTUNITYBOX - DESIGN & STORE CONCEPT UNIPESSOAL LDA.',
+  nif: '510575170',
+  morada: 'Parque Industrial Alcopark I, Estrada da Ribeirinha, Armazém E, 2705-832 Terrugem',
+};
+// Subsídio de almoço — valor padrão da empresa à data do modelo fornecido
+// (06/10/2026); ajustável aqui se a Edna confirmar um valor diferente no
+// futuro, nunca por colaborador (não há esse dado na ficha).
+var RH_SUBSIDIO_ALMOCO_PADRAO = 10.46;
+
+var RH_MESES_EXTENSO = ['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
+function rhDataExtenso(iso){
+  if(!iso) return '';
+  var p = String(iso).split('-');
+  if(p.length!==3) return iso;
+  var d = parseInt(p[2],10), m = parseInt(p[1],10)-1, y = p[0];
+  return String(d).padStart(2,'0') + ' de ' + (RH_MESES_EXTENSO[m]||'') + ' de ' + y;
+}
+function rhDataPT(iso){
+  if(!iso) return '';
+  var p = String(iso).split('-');
+  return p.length===3 ? (p[2]+'/'+p[1]+'/'+p[0]) : iso;
+}
+function rhDocTipoFrase(tipo){
+  return String(tipo||'Cartão de Cidadão').toLowerCase();
+}
+
+function rhGerarContrato(){
+  var tipoContrato = document.getElementById('rh-c-contrato').value;
+  if(tipoContrato !== 'A termo incerto'){
+    alert('Ainda só há um modelo real de contrato disponível — "A termo incerto". Escolhe esse Tipo de Contrato para gerar, ou pede à Edna o texto para "'+tipoContrato+'".');
+    return;
+  }
+  var nome = document.getElementById('rh-c-nome').value.trim();
+  var nif = document.getElementById('rh-c-nif').value.trim();
+  var niss = document.getElementById('rh-c-niss').value.trim();
+  var morada = document.getElementById('rh-c-morada').value.trim();
+  var docTipo = document.getElementById('rh-c-doc-tipo').value;
+  var docNum = document.getElementById('rh-c-doc-num').value.trim();
+  var docValidade = document.getElementById('rh-c-doc-validade').value;
+  var cargo = document.getElementById('rh-c-cargo').value.trim();
+  var admissao = document.getElementById('rh-c-admissao').value;
+  var salario = parseFloat(document.getElementById('rh-c-salario').value) || 0;
+  var motivo = document.getElementById('rh-c-motivo').value.trim();
+  var faltam = [];
+  if(!nome) faltam.push('Nome');
+  if(!nif) faltam.push('NIF');
+  if(!niss) faltam.push('NISS');
+  if(!morada) faltam.push('Morada');
+  if(!docNum) faltam.push('N.º do Documento');
+  if(!docValidade) faltam.push('Validade do Documento');
+  if(!cargo) faltam.push('Cargo / Função');
+  if(!admissao) faltam.push('Data de Admissão');
+  if(!salario) faltam.push('Salário Base');
+  if(!motivo) faltam.push('Motivo do termo incerto');
+  if(faltam.length){
+    alert('Para gerar o contrato falta preencher: '+faltam.join(', ')+'.');
+    return;
+  }
+  var fmtEUR = function(v){ return v.toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2}); };
+  var hoje = new Date();
+  var hojeISO = hoje.getFullYear()+'-'+String(hoje.getMonth()+1).padStart(2,'0')+'-'+String(hoje.getDate()).padStart(2,'0');
+  var html = '<!DOCTYPE html><html lang="pt"><head><meta charset="UTF-8"><title>Contrato de Trabalho — '+nome+'</title>'
+    + '<style>body{font-family:Arial,sans-serif;color:#1a1a1a;margin:0;padding:40px;line-height:1.5;font-size:14px}'
+    + 'h1{font-size:16px;text-align:center;margin-bottom:24px}'
+    + 'h2{font-size:13px;margin:18px 0 6px;font-weight:700}'
+    + 'p{margin:0 0 10px;text-align:justify}'
+    + '.assinaturas{margin-top:60px;display:flex;justify-content:space-between}'
+    + '.sig{width:45%;text-align:center;border-top:1px solid #333;padding-top:6px;margin-top:50px}'
+    + '@media print{body{padding:15mm}}</style></head><body>'
+    + '<h1>CONTRATO DE TRABALHO A TERMO INCERTO</h1>'
+    + '<p>ENTRE:</p>'
+    + '<p>'+RH_EMPRESA.nome+', pessoa coletiva n.º '+RH_EMPRESA.nif+', com sede no '+RH_EMPRESA.morada+', adiante designada como PRIMEIRA OUTORGANTE,</p>'
+    + '<p>E</p>'
+    + '<p>Exmo(a). Sr(a). '+nome.toUpperCase()+', residente em '+morada+', titular do '+rhDocTipoFrase(docTipo)+' n.º '+docNum+', válido até '+rhDataPT(docValidade)+', do contribuinte n.º '+nif+' e número de segurança social '+niss+', como SEGUNDO OUTORGANTE,</p>'
+    + '<p>É livremente e de boa fé celebrado o presente Contrato de Trabalho a Termo Incerto, que se regerá de acordo com os termos e condições seguintes:</p>'
+    + '<h2>CLÁUSULA PRIMEIRA</h2>'
+    + '<p>1. A PRIMEIRA OUTORGANTE admite o SEGUNDO OUTORGANTE como seu funcionário e ao seu serviço para lhe prestar a atividade correspondente, com a categoria profissional de '+cargo+'.</p>'
+    + '<p>2. Na atividade mencionada em 1. são incluídas as tarefas afins ou funcionalmente ligadas para as quais tenha qualificação adequada e que não impliquem desvalorização profissional.</p>'
+    + '<h2>CLÁUSULA SEGUNDA</h2>'
+    + '<p>O presente Contrato inicia a '+rhDataPT(admissao)+' e caduca no término do trabalho para o qual foi contratado.</p>'
+    + '<h2>CLÁUSULA TERCEIRA</h2>'
+    + '<p>1 - O presente contrato é celebrado a termo incerto ao abrigo do disposto no artigo 140.º, n.º 2, alínea f) do Código do Trabalho.</p>'
+    + '<p>2 - O motivo justificativo é o seguinte: '+motivo+'</p>'
+    + '<p>3 - O contrato manter-se-á em vigor enquanto durar o referido projeto e cessará quando o mesmo se encontre concluído e estabilizado, deixando de subsistir a necessidade temporária que fundamenta a presente contratação.</p>'
+    + '<h2>CLÁUSULA QUARTA</h2>'
+    + '<p>Como retribuição ajustada entre a PRIMEIRA e a SEGUNDA OUTORGANTES, pagará a PRIMEIRA à SEGUNDA, mensalmente, a quantia de '+fmtEUR(salario)+' Euros, ilíquida, acrescida de um subsídio de almoço liquidado em cartão no valor de '+fmtEUR(RH_SUBSIDIO_ALMOCO_PADRAO)+' €, por cada dia útil de trabalho.</p>'
+    + '<h2>CLÁUSULA QUINTA</h2>'
+    + '<p>A atividade do SEGUNDO OUTORGANTE será prestada nas instalações da PRIMEIRA OUTORGANTE sita no '+RH_EMPRESA.morada+', ou noutro local determinado nos termos legais, com o período normal de trabalho de 8 horas diárias, e 40 horas semanais.</p>'
+    + '<p>O período normal de trabalho pode ser aumentado em termos médios, até 2 horas por dia e 50 horas por semana, tendo o acréscimo o limite de 150 horas por ano.</p>'
+    + '<h2>CLÁUSULA SEXTA</h2>'
+    + '<p>O SEGUNDO OUTORGANTE tem direito a um período de férias retribuídas conforme previsto nos artigos 237.º e 238.º do Código do Trabalho ou, caso a duração efectiva venha a ser inferior a 6 (seis) meses, nos termos do art. 239.º do Código do Trabalho.</p>'
+    + '<h2>CLÁUSULA SÉTIMA</h2>'
+    + '<p>O segundo contraente obriga-se a guardar sigilo relativamente a quaisquer informações respeitantes à primeira contraente, sendo-lhe, nomeadamente, vedado efetuar reproduções, cópias ou distribuição de documentos que lhe pertençam.</p>'
+    + '<h2>CLÁUSULA OITAVA</h2>'
+    + '<p>1. O contrato caduca quando deixar de se verificar o motivo justificativo que determinou a sua celebração.</p>'
+    + '<p>2. A caducidade deve ser comunicada por escrito com antecedência mínima de:</p>'
+    + '<p>&nbsp;&nbsp;&nbsp;7 dias, se o contrato tiver durado até 6 meses;<br>&nbsp;&nbsp;&nbsp;30 dias, se tiver durado de 6 meses a 2 anos;<br>&nbsp;&nbsp;&nbsp;60 dias, se tiver durado mais de 2 anos.</p>'
+    + '<h2>CLÁUSULA NONA</h2>'
+    + '<p>Em tudo o que não estiver expressamente regulado no presente Contrato, aplica-se a legislação geral do Código do Trabalho.</p>'
+    + '<p>Este Contrato é feito em dois originais, sendo cada um deles destinado a uma das Partes.</p>'
+    + '<p>Sintra, '+rhDataExtenso(hojeISO)+'</p>'
+    + '<div class="assinaturas"><div class="sig">PRIMEIRA OUTORGANTE</div><div class="sig">SEGUNDO OUTORGANTE</div></div>'
+    + '</body></html>';
+  var w = window.open('', '_blank', 'width=900,height=700');
+  if(w){ w.document.write(html); w.document.close(); setTimeout(function(){ w.print(); }, 600); }
+}
+window.rhGerarContrato = rhGerarContrato;
+
 function rhDeleteColab(){
   if(!rhEditColabId||!confirm('Eliminar colaborador?')) return;
   rhColabs=rhColabs.filter(c=>c.id!==rhEditColabId);
@@ -18825,18 +19041,22 @@ function cliToggleIvaIsento(){
 function cliRenderRecebimentos(c){
   const panel=document.getElementById('cli-recebimentos-panel');
   if(!panel||!c) return;
-  // Buscar orçamentos deste cliente em estados que geram obrigação de pagamento
+  // Faturas REAIS deste cliente, ainda por receber (nunca orçamentos —
+  // pedido da Edna, doc "CRM - Parte 6", 30/09/2026: "Essa previsão não
+  // pode ser preenchida por orçamentos, mas sim por faturas reais!").
+  // Mesma fonte/regras da Tesouraria → A Receber (TES_RECEBER, exclui NC,
+  // finSaldoReceber() para o saldo real em "Recebido Parcial").
   const hoje=new Date(); hoje.setHours(0,0,0,0);
-  const ESTADOS_PAGAMENTO=['Aprovado','Em Produção','Em Producao','Concluído','Concluido','Faturado'];
-  const orcsPend=(orcData||[]).filter(o=>o.cli===c.n && ESTADOS_PAGAMENTO.includes(o.st));
-  if(!orcsPend.length){ panel.style.display='none'; return; }
+  const receberArr=(typeof TES_RECEBER!=='undefined'?TES_RECEBER:[]);
+  const faturasPend=receberArr.filter(r=>r.tipo!=='NC' && r.cliente===c.n && r.estado!=='Recebido');
+  if(!faturasPend.length){ panel.style.display='none'; return; }
   panel.style.display='flex';
-  // Calcular buckets — apenas orçamentos com data de validade válida
+  // Calcular buckets — apenas faturas com data de vencimento válida
   let venc=0,a30=0,a60=0,mais60=0;
   const lista=[];
-  orcsPend.forEach(o=>{
-    const val=o.totais?.total||0;
-    const vd=o.val?new Date(o.val):null;
+  faturasPend.forEach(r=>{
+    const val=(typeof finSaldoReceber==='function')?finSaldoReceber(r):(parseFloat(r.total)||0);
+    const vd=(typeof parseVencTes==='function')?parseVencTes(r.vencimento):null;
     const valido=!!vd&&!isNaN(vd);
     const dias=valido?Math.round((vd-hoje)/86400000):null;
     if(valido){
@@ -18845,7 +19065,7 @@ function cliRenderRecebimentos(c){
       else if(dias<=60){a60+=val;}
       else{mais60+=val;}
     }
-    lista.push({num:o.num,val,dias,vd,cli:o.cli,st:o.st});
+    lista.push({num:r.descricao||r.numero||'Fatura',val,dias,vd,cli:r.cliente,st:r.estado});
   });
   const total=venc+a30+a60+mais60;
   // Donut
@@ -18871,7 +19091,7 @@ function cliRenderRecebimentos(c){
   if(!listaEl)return;
   const listaVisivel=lista.filter(o=>o.dias===null||o.dias<=30);
   listaVisivel.sort((a,b)=>{ if(a.dias===null) return 1; if(b.dias===null) return -1; return a.dias-b.dias; });
-  if(!listaVisivel.length){listaEl.innerHTML='<div style="color:var(--muted);font-style:italic">Sem orçamentos vencidos ou a vencer em breve.</div>';return;}
+  if(!listaVisivel.length){listaEl.innerHTML='<div style="color:var(--muted);font-style:italic">Sem faturas vencidas ou a vencer em breve.</div>';return;}
   listaEl.innerHTML=listaVisivel.slice(0,6).map(o=>{
     const color=o.dias===null?'var(--muted)':o.dias<0?'var(--r)':o.dias<=30?'var(--y)':o.dias<=60?'var(--b)':'var(--g)';
     const label=o.dias===null?'Sem data de vencimento':o.dias<0?'Vencido há '+Math.abs(o.dias)+' dias':o.dias===0?'Vence hoje':'Vence em '+o.dias+' dias';
@@ -27127,7 +27347,7 @@ window.TES_IMPOSTOS_MANUAIS = TES_IMPOSTOS_MANUAIS;
 function tesImpostosManuaisDe(mesVal){
   var mapa = (typeof TES_IMPOSTOS_MANUAIS !== 'undefined' && TES_IMPOSTOS_MANUAIS) ? TES_IMPOSTOS_MANUAIS : {};
   var e = (mesVal && mapa[mesVal]) || {};
-  return { impostos: parseFloat(e.impostos) || 0, ivaPago: (e.ivaPago!=null && e.ivaPago!=='') ? (parseFloat(e.ivaPago)||0) : null, nota: e.nota || '' };
+  return { impostos: parseFloat(e.impostos) || 0, ivaPago: (e.ivaPago!=null && e.ivaPago!=='') ? (parseFloat(e.ivaPago)||0) : null, salarios: parseFloat(e.salarios) || 0, nota: e.nota || '' };
 }
 window.tesImpostosManuaisDe = tesImpostosManuaisDe;
 
@@ -27137,6 +27357,7 @@ function tesImpostosManuaisCarregarInputs(){
   var selMes = document.getElementById('tes-im-mes');
   var elImp = document.getElementById('tes-im-impostos');
   var elIva = document.getElementById('tes-im-ivapago');
+  var elSal = document.getElementById('tes-im-salarios');
   var elNota = document.getElementById('tes-im-nota');
   if(!selMes || !elImp || !elIva || !elNota) return;
   if(!selMes.options.length){
@@ -27152,6 +27373,7 @@ function tesImpostosManuaisCarregarInputs(){
   var e = tesImpostosManuaisDe(selMes.value);
   elImp.value = e.impostos ? e.impostos : '';
   elIva.value = e.ivaPago!=null ? e.ivaPago : '';
+  if(elSal) elSal.value = e.salarios ? e.salarios : '';
   elNota.value = e.nota || '';
 }
 window.tesImpostosManuaisCarregarInputs = tesImpostosManuaisCarregarInputs;
@@ -27163,11 +27385,12 @@ function tesGuardarImpostosManual(){
   var impostos = parseFloat((document.getElementById('tes-im-impostos')||{}).value) || 0;
   var ivaPagoRaw = (document.getElementById('tes-im-ivapago')||{}).value;
   var ivaPago = (ivaPagoRaw!=null && ivaPagoRaw!=='') ? (parseFloat(ivaPagoRaw)||0) : null;
+  var salarios = parseFloat((document.getElementById('tes-im-salarios')||{}).value) || 0;
   var nota = (((document.getElementById('tes-im-nota')||{}).value) || '').trim();
-  TES_IMPOSTOS_MANUAIS[mesVal] = { impostos: impostos, ivaPago: ivaPago, nota: nota };
+  TES_IMPOSTOS_MANUAIS[mesVal] = { impostos: impostos, ivaPago: ivaPago, salarios: salarios, nota: nota };
   try{ localStorage.setItem('ob-tes-impostos-manuais', JSON.stringify(TES_IMPOSTOS_MANUAIS)); }catch(e){}
   try{ if(typeof obSbPush === 'function') obSbPush('ob-tes-impostos-manuais'); }catch(e){}
-  if(typeof showToast === 'function') showToast('Impostos/IVA guardados.'); else alert('Guardado.');
+  if(typeof showToast === 'function') showToast('Impostos/IVA/Salários guardados.'); else alert('Guardado.');
   if(typeof tesIvaSincronizar === 'function') tesIvaSincronizar();
 }
 window.tesGuardarImpostosManual = tesGuardarImpostosManual;
@@ -27330,14 +27553,19 @@ function tesIvaCalcularReal(){
     ivaCompras += comprasTocoComIva.reduce(function(s,p){return s+(parseFloat(p.ivaDocumento)||0);},0);
     if(comprasTocoSemIva.length>0) comprasSemIva = comprasSemIva.concat(comprasTocoSemIva);
 
-    // Salários reais (Fecho de Ordenados + Seguros/Bónus, Fases 1 e 4 CFO)
-    // — antes hardcoded a 0, nunca lido de lado nenhum.
-    var folhaMes = (typeof finTotaisMesReal==='function') ? finTotaisMesReal(ano, m+1) : null;
-    var salariosMes = (folhaMes && !folhaMes.folhaIndisponivel) ? folhaMes.custoFolha : 0;
     // Impostos (além do IVA) e IVA efectivamente pago — lançamento manual
     // (tesImpostosManuaisDe() acima); nunca estimados a partir de outro
     // valor, para não repetir a duplicação que isto substitui.
     var manual = tesImpostosManuaisDe(prefixo);
+    // Salários reais (Fecho de Ordenados + Seguros/Bónus, Fases 1 e 4 CFO)
+    // — antes hardcoded a 0, nunca lido de lado nenhum. Quando o Fecho de
+    // Ordenados desse mês ainda não foi enviado à Tesouraria
+    // (folhaIndisponivel), cai no lançamento manual (manual.salarios, geral
+    // por mês — mesmo padrão do Impostos) em vez de ficar sempre a €0
+    // (pedido da Edna/secretária, 06/10/2026: "não encontrei local para
+    // indicar o valor dos ordenados").
+    var folhaMes = (typeof finTotaisMesReal==='function') ? finTotaisMesReal(ano, m+1) : null;
+    var salariosMes = (folhaMes && !folhaMes.folhaIndisponivel) ? folhaMes.custoFolha : manual.salarios;
     if(!vendasDoMes.length && !comprasDoMes.length && !comprasTocoDoMes.length
        && !salariosMes && !manual.impostos && manual.ivaPago==null) continue;
     var estimativa = ivaVendas - ivaCompras;
@@ -28211,7 +28439,12 @@ function sincFinAplicarSheetPura(existentesSupabase, sheetRows){
     if(!sid) return; // mesma regra de sheetMergeReceber: sem número, ignora
     var total = r.total || 0;
     if(!total) return; // mesma regra: sem valor, ignora
-    var liq = total / 1.23;
+    // Sem IVA real da Sheet ("Total Líquido", coluna E de Vendas 2026)
+    // quando existe — nunca estimado por uma taxa fixa de 23% (podia não
+    // bater com faturas a taxa reduzida/isentas; pedido da Edna 06/10/2026,
+    // "os valores ainda não estão de acordo com o sistema ou com o excel").
+    // /1.23 fica só como fallback para quando a Sheet não tem a coluna.
+    var liq = (r.semIVA!=null) ? r.semIVA : (total / 1.23);
     var stLow = String(r.status || '').toLowerCase();
     var recebido = r.recebido || 0;
     var aReceber = r.aReceber || 0;
@@ -35311,33 +35544,31 @@ function _mvRenderMetaAnual(view){
   if(!wrap) return;
   if(!view.isAdmin){ wrap.style.display='none'; return; }
   wrap.style.display='';
-  // Pedido da Edna (doc "Sugestões CRM - parte 4"): "Em Meta Anual
-  // considerar (Orçamentos 'Aprovado' + Vendas 2026 (Soma))" — antes
-  // somava Aprovado+Faturado do pipeline de orçamentos (contava o valor
-  // ORÇAMENTADO de quem já foi faturado, não o valor REAL faturado).
-  // Passa a somar só os Aprovados ainda não faturados (pipeline) + a
-  // faturação real do ano (_mvTesData/Vendas 2026), mesma fonte já usada
-  // em Total Faturado/Ranking/Vendas por Comercial.
+  // Pedido do Paulo (doc "CRM - Parte 6", 30/09/2026): "Aqui o Paulo quer
+  // que seja representado só pelo total faturado!" — antes somava
+  // Orçamentos "Aprovado" (pipeline, valor orçamentado) + Vendas 2026
+  // (valor real faturado), misturando um valor ainda não faturado com um
+  // já faturado. Passa a usar SÓ a faturação real do ano (_mvTesData/
+  // valorLiq), mesma fonte exacta do cartão "Total Faturado" acima
+  // (_mvRenderKpis) — nunca mais lê de ob_orcamentos.
   if(_mvTesData===null) _mvEnsureTesData().then(function(){ _mvRenderMetaAnual(view); });
-  var rows = view.rows;
-  var acumuladoAprovado = rows.filter(function(o){return o.st==='Aprovado';}).reduce(function(s,o){return s+_mvValor(o);},0);
   var anoAtualMeta = new Date().getFullYear();
-  var vendas2026 = (_mvTesData||[]).filter(function(r){
+  var totalFaturado2026 = (_mvTesData||[]).filter(function(r){
     var d = _mvParseData(r.dataEmissao||r.data);
     return !!d && d.getFullYear()===anoAtualMeta;
   }).reduce(function(s,r){ return s+(parseFloat(r.valorLiq)||0); }, 0);
-  var acumulado = acumuladoAprovado + vendas2026;
+  var acumulado = totalFaturado2026;
   var meta = MV_META_CONFIG.anual;
   var falta = Math.max(0, meta-acumulado);
   var pct = meta>0 ? Math.min(100, acumulado/meta*100) : 0;
   wrap.innerHTML = ''
     + '<div style="display:flex;justify-content:space-between;align-items:flex-start">'
-    + '<div><div class="mv-card-title">🎯 Meta Anual</div><div class="mv-card-sub">Orçamentos Aprovados + Vendas 2026 vs. meta de referência</div></div>'
+    + '<div><div class="mv-card-title">🎯 Meta Anual</div><div class="mv-card-sub">Total Faturado 2026 vs. meta de referência</div></div>'
     + '<div style="text-align:right"><div style="font-size:22px;font-weight:700;color:var(--mv-y)">'+_mvFmtPct(pct)+'</div><div style="font-size:9.5px;text-transform:uppercase;color:var(--mv-muted)">concluído</div></div>'
     + '</div>'
     + '<div class="mv-progress-track" style="margin-top:12px"><div class="mv-progress-fill'+(pct>=100?' mv-done':'')+'" style="width:'+pct+'%"></div></div>'
     + '<div class="mv-mini-grid mv-mini4">'
-      + '<div class="mv-mini"><div class="mv-mini-lbl">Vendas Acumuladas</div><div class="mv-mini-val" style="color:#4ade80">'+_mvFmtEUR(acumulado)+'</div></div>'
+      + '<div class="mv-mini"><div class="mv-mini-lbl">Total Faturado</div><div class="mv-mini-val" style="color:#4ade80">'+_mvFmtEUR(acumulado)+'</div></div>'
       + '<div class="mv-mini"><div class="mv-mini-lbl">Falta para Meta</div><div class="mv-mini-val" style="color:#fb923c">'+_mvFmtEUR(falta)+'</div></div>'
       + '<div class="mv-mini"><div class="mv-mini-lbl">Meta Anual</div><div class="mv-mini-val" style="color:var(--mv-y)">'+_mvFmtEUR(meta)+'</div></div>'
       + '<div class="mv-mini"><div class="mv-mini-lbl">Meta Mensal</div><div class="mv-mini-val" style="color:#60a5fa">'+_mvFmtEUR(MV_META_CONFIG.mensal)+'</div></div>'
@@ -37186,10 +37417,32 @@ window.fuMinhasOrc = fuMinhasOrc;
 // Agrupa por comercial (o.vendedor) -> coluna -> lista de cards. Admin
 // real (sem "Ver como") vê todos os grupos; qualquer outra sessão (real
 // ou impersonada via fuMinhasOrc) só vê o próprio grupo.
+// Nomes reconhecidos como comerciais reais (crmComerciais, activos) — um
+// orçamento cujo o.vendedor não seja nenhum destes (ex.: ficou gravado
+// com o nome de quem o criou/editou, como um admin a fazer testes) cai
+// num grupo neutro, nunca é mostrado como se fosse o quadro pessoal de
+// alguém que não é comercial (pedido da Edna, 07/10/2026: "meu nome não
+// deve estar aí, não sou comercial").
+var FU_SEM_COMERCIAL = 'Sem comercial atribuído';
+function fuComercialReconhecido(nome){
+  var roster = (typeof crmComerciais!=='undefined' ? crmComerciais : []).filter(function(c){ return c.ativo; }).map(function(c){ return c.nome; });
+  return roster.length ? roster.indexOf(nome)!==-1 : true;
+}
 function fuAgruparKanban(){
   var grupos={};
+  // Vista admin (todos os grupos): pré-cria um quadro vazio para cada
+  // comercial activo do roster, para a equipa toda aparecer mesmo sem
+  // orçamentos ainda atribuídos (ex.: André, antes de ter o 1º) — só
+  // nesta vista; a de cada comercial/"Ver como" continua a só mostrar o
+  // que lhe pertence (fuMinhasOrc já trata disso).
+  if(crmVeTudo()){
+    (typeof crmComerciais!=='undefined' ? crmComerciais : []).filter(function(c){ return c.ativo; }).forEach(function(c){
+      grupos[c.nome]={a_contactar:[],contactado:[],em_negociacao:[],contactar_novamente:[]};
+    });
+  }
   fuMinhasOrc(fuOrcamentosAtivos()).forEach(function(o){
     var com=o.vendedor||'—';
+    if(!fuComercialReconhecido(com)) com=FU_SEM_COMERCIAL;
     if(!grupos[com]) grupos[com]={a_contactar:[],contactado:[],em_negociacao:[],contactar_novamente:[]};
     var col=fuColunaDoOrc(o);
     var triagem=_fuTriagemPorOrc[o.num];
