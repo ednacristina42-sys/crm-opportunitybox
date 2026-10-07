@@ -7314,9 +7314,14 @@ tbody td{font-size:15px}
     <button class="sl-item" data-action="goPage" data-page="fabrica-pintura"><span class="mk-ic">🎨</span>Pintura</button>
     <button class="sl-item" data-action="goPage" data-page="fabrica-eletrificacao"><span class="mk-ic">💡</span>Eletrificação &amp; Acabamentos</button>
     <button class="sl-item" data-action="goPage" data-page="fabrica-qualidade-expedicao"><span class="mk-ic">✅</span>Qualidade &amp; Expedição</button>
-    <button class="sl-item" data-action="goPage" data-page="fabrica-equipa-montagem-1"><span class="mk-ic">🔨</span>Equipa Montagem 1</button>
-    <button class="sl-item" data-action="goPage" data-page="fabrica-equipa-montagem-2"><span class="mk-ic">🔨</span>Equipa Montagem 2</button>
-    <button class="sl-item" data-action="goPage" data-page="fabrica-montagem-externa"><span class="mk-ic">🌍</span>Montagem Externa</button>
+    <!-- Equipa Montagem 1/2 e Montagem Externa: escondidas do menu a pedido
+         da Edna (doc "CRM - Parte 6", 30/09/2026 — "Aqui ficaram itens a
+         mais: Equipas de montagem e Montagem externa são englobadas pelas
+         instalações"). Só o item do menu; páginas/Kanban (UNI_CFG) e
+         dados continuam intactos, caso seja preciso reverter. -->
+    <button class="sl-item" data-action="goPage" data-page="fabrica-equipa-montagem-1" style="display:none"><span class="mk-ic">🔨</span>Equipa Montagem 1</button>
+    <button class="sl-item" data-action="goPage" data-page="fabrica-equipa-montagem-2" style="display:none"><span class="mk-ic">🔨</span>Equipa Montagem 2</button>
+    <button class="sl-item" data-action="goPage" data-page="fabrica-montagem-externa" style="display:none"><span class="mk-ic">🌍</span>Montagem Externa</button>
     <button class="sl-item" data-action="goPage" data-page="fabrica-ordens-producao"><span class="mk-ic">📦</span>Ordens de Produção</button>
     <button class="sl-item" data-action="goPage" data-page="fabrica-arquivo-obras"><span class="mk-ic">🗂️</span>Arquivo de Obras</button>
     <button class="sl-item" data-action="goPage" data-page="fabrica-urgentes-atrasos"><span class="mk-ic">🚨</span>Urgentes &amp; Atrasos</button>
@@ -12025,7 +12030,7 @@ tbody td{font-size:15px}
       <!-- lista vencidos e a vencer -->
       <div style="font-size:12px;font-weight:600;color:var(--y);letter-spacing:.05em;border-top:1px solid var(--border);padding-top:10px">VENCIDOS E A VENCER EM BREVE</div>
       <div id="cli-receb-lista" style="display:flex;flex-direction:column;gap:8px;font-size:13px">
-        <div style="color:var(--muted);font-style:italic">Sem orçamentos pendentes.</div>
+        <div style="color:var(--muted);font-style:italic">Sem faturas pendentes.</div>
       </div>
     </div>
 
@@ -12911,6 +12916,11 @@ window.toggleAdminSensitiveFields = toggleAdminSensitiveFields;
 // e troca o rótulo de "Mapa de Vendas" para "Meu Mapa de Vendas". Reutiliza
 // obIsComercialView() — mesma condição central usada em toda a visão comercial.
 // Chamada em toggleAdminSensitiveFields(), que já corre em todo goPage().
+// Itens do sidebar "Chão da Fábrica" escondidos do menu PARA TODA A GENTE
+// (admin incluído) — doc "CRM - Parte 6" (30/09/2026): "Equipas de
+// montagem e Montagem externa são englobadas pelas instalações". Só o
+// item do menu; páginas/Kanban (UNI_CFG) continuam intactos.
+var OB_FABRICA_MENU_SEMPRE_ESCONDIDO = ['fabrica-equipa-montagem-1','fabrica-equipa-montagem-2','fabrica-montagem-externa'];
 function obAplicarVisaoComercialSidebar(){
   var comercial = !!(typeof obIsComercialView==='function' && obIsComercialView());
   var btnMinhas = document.getElementById('sl-minhas-tarefas');
@@ -12939,6 +12949,14 @@ function obAplicarVisaoComercialSidebar(){
     // tenha deixado numa sessão comercial anterior na mesma aba (ex.: admin a
     // sair de "Ver como").
     itensComerciaisEsconde.forEach(function(sel){ var el=document.querySelector(sel); if(el) el.style.display=''; });
+    // Equipa Montagem 1/2 e Montagem Externa: escondidas do menu também
+    // para Admin (doc "CRM - Parte 6", 30/09/2026 — "são englobadas pelas
+    // instalações"). Sem isto, o reset acima ('') devolvia-as visíveis de
+    // cada vez que a sidebar era reaplicada (ex.: ao navegar com goPage()).
+    OB_FABRICA_MENU_SEMPRE_ESCONDIDO.forEach(function(pg){
+      var el=document.querySelector('#sl-fabrica [data-page="'+pg+'"]');
+      if(el) el.style.display='none';
+    });
   }
 }
 window.obAplicarVisaoComercialSidebar = obAplicarVisaoComercialSidebar;
@@ -17313,7 +17331,18 @@ function uniShowTabs(item){
 // segurança caso o roster real (obListaResponsaveisAtivos) ainda não tenha
 // sido carregado quando o checklist é desenhado.
 var INST_EQUIPA_FALLBACK = ['Ricardo Faria','Pedro Silva','Sérgio Nunes','Luís Cardoso','Nuno Bento','Diogo Costa','Carlos Melo','Bruno Ferreira'];
+// Correção (doc "CRM - Parte 6", 30/09/2026): "Aqui nas Obras, é preciso
+// colocar os colaboradores lá de baixo, Não é preciso todo mundo!" — o
+// mesmo pedido já tinha sido feito e corrigido para o <select> de
+// Responsável de Obras (obColaboradoresProducaoCurada(), doc "parte 4",
+// 28/09/2026), mas o checklist "Equipa de Montagem" de Instalações nunca
+// tinha sido ligado a essa lista curada — continuava a mostrar o roster
+// inteiro (todos os departamentos). Passa a usar a mesma lista curada
+// como primeira escolha; só cai no roster completo/fallback se, por
+// algum motivo, a lista curada vier vazia.
 function instEquipaAtiva(){
+  var curada = (typeof obColaboradoresProducaoCurada==='function') ? obColaboradoresProducaoCurada() : [];
+  if(curada.length) return curada;
   var lista = (typeof obListaResponsaveisAtivos==='function') ? obListaResponsaveisAtivos() : [];
   return lista.length ? lista : INST_EQUIPA_FALLBACK;
 }
@@ -18842,18 +18871,22 @@ function cliToggleIvaIsento(){
 function cliRenderRecebimentos(c){
   const panel=document.getElementById('cli-recebimentos-panel');
   if(!panel||!c) return;
-  // Buscar orçamentos deste cliente em estados que geram obrigação de pagamento
+  // Faturas REAIS deste cliente, ainda por receber (nunca orçamentos —
+  // pedido da Edna, doc "CRM - Parte 6", 30/09/2026: "Essa previsão não
+  // pode ser preenchida por orçamentos, mas sim por faturas reais!").
+  // Mesma fonte/regras da Tesouraria → A Receber (TES_RECEBER, exclui NC,
+  // finSaldoReceber() para o saldo real em "Recebido Parcial").
   const hoje=new Date(); hoje.setHours(0,0,0,0);
-  const ESTADOS_PAGAMENTO=['Aprovado','Em Produção','Em Producao','Concluído','Concluido','Faturado'];
-  const orcsPend=(orcData||[]).filter(o=>o.cli===c.n && ESTADOS_PAGAMENTO.includes(o.st));
-  if(!orcsPend.length){ panel.style.display='none'; return; }
+  const receberArr=(typeof TES_RECEBER!=='undefined'?TES_RECEBER:[]);
+  const faturasPend=receberArr.filter(r=>r.tipo!=='NC' && r.cliente===c.n && r.estado!=='Recebido');
+  if(!faturasPend.length){ panel.style.display='none'; return; }
   panel.style.display='flex';
-  // Calcular buckets — apenas orçamentos com data de validade válida
+  // Calcular buckets — apenas faturas com data de vencimento válida
   let venc=0,a30=0,a60=0,mais60=0;
   const lista=[];
-  orcsPend.forEach(o=>{
-    const val=o.totais?.total||0;
-    const vd=o.val?new Date(o.val):null;
+  faturasPend.forEach(r=>{
+    const val=(typeof finSaldoReceber==='function')?finSaldoReceber(r):(parseFloat(r.total)||0);
+    const vd=(typeof parseVencTes==='function')?parseVencTes(r.vencimento):null;
     const valido=!!vd&&!isNaN(vd);
     const dias=valido?Math.round((vd-hoje)/86400000):null;
     if(valido){
@@ -18862,7 +18895,7 @@ function cliRenderRecebimentos(c){
       else if(dias<=60){a60+=val;}
       else{mais60+=val;}
     }
-    lista.push({num:o.num,val,dias,vd,cli:o.cli,st:o.st});
+    lista.push({num:r.descricao||r.numero||'Fatura',val,dias,vd,cli:r.cliente,st:r.estado});
   });
   const total=venc+a30+a60+mais60;
   // Donut
@@ -18888,7 +18921,7 @@ function cliRenderRecebimentos(c){
   if(!listaEl)return;
   const listaVisivel=lista.filter(o=>o.dias===null||o.dias<=30);
   listaVisivel.sort((a,b)=>{ if(a.dias===null) return 1; if(b.dias===null) return -1; return a.dias-b.dias; });
-  if(!listaVisivel.length){listaEl.innerHTML='<div style="color:var(--muted);font-style:italic">Sem orçamentos vencidos ou a vencer em breve.</div>';return;}
+  if(!listaVisivel.length){listaEl.innerHTML='<div style="color:var(--muted);font-style:italic">Sem faturas vencidas ou a vencer em breve.</div>';return;}
   listaEl.innerHTML=listaVisivel.slice(0,6).map(o=>{
     const color=o.dias===null?'var(--muted)':o.dias<0?'var(--r)':o.dias<=30?'var(--y)':o.dias<=60?'var(--b)':'var(--g)';
     const label=o.dias===null?'Sem data de vencimento':o.dias<0?'Vencido há '+Math.abs(o.dias)+' dias':o.dias===0?'Vence hoje':'Vence em '+o.dias+' dias';
@@ -35341,33 +35374,31 @@ function _mvRenderMetaAnual(view){
   if(!wrap) return;
   if(!view.isAdmin){ wrap.style.display='none'; return; }
   wrap.style.display='';
-  // Pedido da Edna (doc "Sugestões CRM - parte 4"): "Em Meta Anual
-  // considerar (Orçamentos 'Aprovado' + Vendas 2026 (Soma))" — antes
-  // somava Aprovado+Faturado do pipeline de orçamentos (contava o valor
-  // ORÇAMENTADO de quem já foi faturado, não o valor REAL faturado).
-  // Passa a somar só os Aprovados ainda não faturados (pipeline) + a
-  // faturação real do ano (_mvTesData/Vendas 2026), mesma fonte já usada
-  // em Total Faturado/Ranking/Vendas por Comercial.
+  // Pedido do Paulo (doc "CRM - Parte 6", 30/09/2026): "Aqui o Paulo quer
+  // que seja representado só pelo total faturado!" — antes somava
+  // Orçamentos "Aprovado" (pipeline, valor orçamentado) + Vendas 2026
+  // (valor real faturado), misturando um valor ainda não faturado com um
+  // já faturado. Passa a usar SÓ a faturação real do ano (_mvTesData/
+  // valorLiq), mesma fonte exacta do cartão "Total Faturado" acima
+  // (_mvRenderKpis) — nunca mais lê de ob_orcamentos.
   if(_mvTesData===null) _mvEnsureTesData().then(function(){ _mvRenderMetaAnual(view); });
-  var rows = view.rows;
-  var acumuladoAprovado = rows.filter(function(o){return o.st==='Aprovado';}).reduce(function(s,o){return s+_mvValor(o);},0);
   var anoAtualMeta = new Date().getFullYear();
-  var vendas2026 = (_mvTesData||[]).filter(function(r){
+  var totalFaturado2026 = (_mvTesData||[]).filter(function(r){
     var d = _mvParseData(r.dataEmissao||r.data);
     return !!d && d.getFullYear()===anoAtualMeta;
   }).reduce(function(s,r){ return s+(parseFloat(r.valorLiq)||0); }, 0);
-  var acumulado = acumuladoAprovado + vendas2026;
+  var acumulado = totalFaturado2026;
   var meta = MV_META_CONFIG.anual;
   var falta = Math.max(0, meta-acumulado);
   var pct = meta>0 ? Math.min(100, acumulado/meta*100) : 0;
   wrap.innerHTML = ''
     + '<div style="display:flex;justify-content:space-between;align-items:flex-start">'
-    + '<div><div class="mv-card-title">🎯 Meta Anual</div><div class="mv-card-sub">Orçamentos Aprovados + Vendas 2026 vs. meta de referência</div></div>'
+    + '<div><div class="mv-card-title">🎯 Meta Anual</div><div class="mv-card-sub">Total Faturado 2026 vs. meta de referência</div></div>'
     + '<div style="text-align:right"><div style="font-size:22px;font-weight:700;color:var(--mv-y)">'+_mvFmtPct(pct)+'</div><div style="font-size:9.5px;text-transform:uppercase;color:var(--mv-muted)">concluído</div></div>'
     + '</div>'
     + '<div class="mv-progress-track" style="margin-top:12px"><div class="mv-progress-fill'+(pct>=100?' mv-done':'')+'" style="width:'+pct+'%"></div></div>'
     + '<div class="mv-mini-grid mv-mini4">'
-      + '<div class="mv-mini"><div class="mv-mini-lbl">Vendas Acumuladas</div><div class="mv-mini-val" style="color:#4ade80">'+_mvFmtEUR(acumulado)+'</div></div>'
+      + '<div class="mv-mini"><div class="mv-mini-lbl">Total Faturado</div><div class="mv-mini-val" style="color:#4ade80">'+_mvFmtEUR(acumulado)+'</div></div>'
       + '<div class="mv-mini"><div class="mv-mini-lbl">Falta para Meta</div><div class="mv-mini-val" style="color:#fb923c">'+_mvFmtEUR(falta)+'</div></div>'
       + '<div class="mv-mini"><div class="mv-mini-lbl">Meta Anual</div><div class="mv-mini-val" style="color:var(--mv-y)">'+_mvFmtEUR(meta)+'</div></div>'
       + '<div class="mv-mini"><div class="mv-mini-lbl">Meta Mensal</div><div class="mv-mini-val" style="color:#60a5fa">'+_mvFmtEUR(MV_META_CONFIG.mensal)+'</div></div>'
