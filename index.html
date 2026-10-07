@@ -19532,7 +19532,17 @@ var MV_SYNC_ULTIMA_EXECUCAO = (function(){
 // _sbOrcUpsert() (a mesma função usada por todo o resto do CRM) — nunca
 // fica só em localStorage como acontecia com importarOrcamentos2026().
 async function mvSincronizarGoogleSheet(){
-  if(MV_SYNC_EM_CURSO) return;
+  // Os dois travões abaixo (sincronização já em curso / travão de 2min)
+  // devolviam silenciosamente sem qualquer aviso — clicar no botão não fazia
+  // NADA visível no ecrã nenhuma vez que caía num destes casos, o que
+  // parece exactamente "o botão não funciona" (confirmado pela Edna,
+  // 07/10/2026, ao testar a sincronização várias vezes seguidas em poucos
+  // minutos). Agora avisam sempre, para nunca mais parecer que o clique foi
+  // ignorado.
+  if(MV_SYNC_EM_CURSO){
+    if(typeof showToast==='function') showToast('⏳ Já há uma sincronização em curso — aguarde que termine.');
+    return;
+  }
   // Correcção (07/10/2026): exigia CU.admin===true à letra, nunca
   // CU.role==='administrativo' — mesmo critério "vê tudo" usado em todo
   // o resto do CRM (crmVeTudo()). A conta do dia-a-dia (Edna/Carolina)
@@ -19540,7 +19550,11 @@ async function mvSincronizarGoogleSheet(){
   // silenciosamente, sem erro nem aviso nenhum — a tabela ob_orcamentos
   // ficou parada desde o dia em que esta função foi criada (21/09/2026).
   if(!(typeof crmVeTudo==='function' && crmVeTudo())) return;
-  if(Date.now() - MV_SYNC_ULTIMA_EXECUCAO < 120000) return;
+  var faltamMs = 120000 - (Date.now() - MV_SYNC_ULTIMA_EXECUCAO);
+  if(faltamMs > 0){
+    if(typeof showToast==='function') showToast('⏳ Aguarde mais ' + Math.ceil(faltamMs/1000) + 's antes de sincronizar outra vez (travão de 2min entre sincronizações).');
+    return;
+  }
   MV_SYNC_EM_CURSO = true;
   MV_SYNC_ULTIMA_EXECUCAO = Date.now();
   try{ localStorage.setItem('ob-mv-sync-auto-ultima', String(MV_SYNC_ULTIMA_EXECUCAO)); }catch(e){}
