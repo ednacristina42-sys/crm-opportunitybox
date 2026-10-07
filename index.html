@@ -14125,13 +14125,27 @@ function homeDistribuirSubtarefas(task){
 // ── COMERCIAIS ──────────────────────────────────────────
 var CRM_CORES = ['#e74c3c','#3b82f6','#8b5cf6','#3fcf8e','#f97316','#ec4899','#06b6d4','#84cc16'];
 
+// André Nolasco (07/10/2026, pedido da Edna: "falta o nome do André") —
+// já reconhecido como comercial noutros sítios do CRM (MV_COMERCIAIS_ROSTER,
+// ob_colaboradores · Dep. Comercial), só nunca tinha entrado aqui; por
+// causa disso nunca aparecia como responsável no Follow-up/dropdowns que
+// usam esta lista.
 var crmComerciais; try{ crmComerciais=JSON.parse(localStorage.getItem('ob-comerciais')||'null'); }catch(e){ crmComerciais=null; } crmComerciais = crmComerciais || [
   {id:1, nome:'Paulo Faria',   email:'paulo@opportunitybox.pt',   cor:'#e74c3c', ativo:true},
   {id:2, nome:'Rui Mota',      email:'rui@opportunitybox.pt',     cor:'#3b82f6', ativo:true},
   {id:3, nome:'Humberto Estrelinha', email:'humberto@opportunitybox.pt', cor:'#8b5cf6', ativo:true},
+  {id:4, nome:'André Nolasco', email:'andre@opportunitybox.pt',   cor:'#10b981', ativo:true},
 ];
 
 function saveComerciaisData(){ localStorage.setItem('ob-comerciais', JSON.stringify(crmComerciais)); }
+// Migração (07/10/2026): browsers que já tinham 'ob-comerciais' gravado
+// localmente (de antes desta correção) nunca passariam pelo valor por
+// omissão acima — adiciona o André directamente à lista já guardada, se
+// ainda lá não estiver, e grava de volta.
+if(!crmComerciais.some(function(c){ return c.nome==='André Nolasco'; })){
+  crmComerciais.push({id: crmComerciais.length+1, nome:'André Nolasco', email:'andre@opportunitybox.pt', cor:'#10b981', ativo:true});
+  saveComerciaisData();
+}
 function crmGetComercial(nome){ return crmComerciais.find(c=>c.nome===nome)||{nome,cor:'#6b7280',email:'geral@opportunitybox.pt'}; }
 function crmInitials(n){ return n.split(' ').map(w=>w[0]).join('').substring(0,2).toUpperCase(); }
 
@@ -37403,10 +37417,32 @@ window.fuMinhasOrc = fuMinhasOrc;
 // Agrupa por comercial (o.vendedor) -> coluna -> lista de cards. Admin
 // real (sem "Ver como") vê todos os grupos; qualquer outra sessão (real
 // ou impersonada via fuMinhasOrc) só vê o próprio grupo.
+// Nomes reconhecidos como comerciais reais (crmComerciais, activos) — um
+// orçamento cujo o.vendedor não seja nenhum destes (ex.: ficou gravado
+// com o nome de quem o criou/editou, como um admin a fazer testes) cai
+// num grupo neutro, nunca é mostrado como se fosse o quadro pessoal de
+// alguém que não é comercial (pedido da Edna, 07/10/2026: "meu nome não
+// deve estar aí, não sou comercial").
+var FU_SEM_COMERCIAL = 'Sem comercial atribuído';
+function fuComercialReconhecido(nome){
+  var roster = (typeof crmComerciais!=='undefined' ? crmComerciais : []).filter(function(c){ return c.ativo; }).map(function(c){ return c.nome; });
+  return roster.length ? roster.indexOf(nome)!==-1 : true;
+}
 function fuAgruparKanban(){
   var grupos={};
+  // Vista admin (todos os grupos): pré-cria um quadro vazio para cada
+  // comercial activo do roster, para a equipa toda aparecer mesmo sem
+  // orçamentos ainda atribuídos (ex.: André, antes de ter o 1º) — só
+  // nesta vista; a de cada comercial/"Ver como" continua a só mostrar o
+  // que lhe pertence (fuMinhasOrc já trata disso).
+  if(crmVeTudo()){
+    (typeof crmComerciais!=='undefined' ? crmComerciais : []).filter(function(c){ return c.ativo; }).forEach(function(c){
+      grupos[c.nome]={a_contactar:[],contactado:[],em_negociacao:[],contactar_novamente:[]};
+    });
+  }
   fuMinhasOrc(fuOrcamentosAtivos()).forEach(function(o){
     var com=o.vendedor||'—';
+    if(!fuComercialReconhecido(com)) com=FU_SEM_COMERCIAL;
     if(!grupos[com]) grupos[com]={a_contactar:[],contactado:[],em_negociacao:[],contactar_novamente:[]};
     var col=fuColunaDoOrc(o);
     var triagem=_fuTriagemPorOrc[o.num];
