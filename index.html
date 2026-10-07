@@ -19620,7 +19620,14 @@ async function mvSincronizarGoogleSheet(){
     if(resumo.novos){
       localStorage.setItem('ob-orcamentos', JSON.stringify(orcData.slice(0,5000)));
       if(typeof orcRenderList==='function') orcRenderList();
-      _mvData = null; // força releitura do Supabase para o Mapa de Vendas mostrar os novos já
+      // _mvData vive dentro da IIFE do bloco "Mapa de Vendas" (muito mais à
+      // frente no ficheiro) — um "_mvData = null" aqui, de fora, nunca lhe
+      // tocava: criava uma global solta e desligada, sem qualquer efeito.
+      // _mvInvalidarCache() é a função exportada por essa IIFE exactamente
+      // para isto (07/10/2026 — sincronização gravava no Supabase mas o
+      // ecrã do Mapa de Vendas nunca actualizava, por mais orçamentos novos
+      // que entrassem).
+      if(typeof window._mvInvalidarCache==='function') window._mvInvalidarCache();
       if(typeof renderMapaVendas==='function') renderMapaVendas();
     }
     if(typeof showToast==='function'){
@@ -28582,7 +28589,16 @@ function sincFinDocParaLinhaTes(doc, tipoTes){
   }
   var totalBruto = doc.gross_total || 0;
   var totalAssinado = tipoTes === 'NC' ? -Math.abs(totalBruto) : totalBruto;
-  var liq = totalAssinado / 1.23;
+  // Sem IVA real do TOConline (net_total, já devolvido pela Edge Function —
+  // ver amostra_nc_toconline_bruta acima) quando existe — nunca estimado por
+  // uma taxa fixa de 23%, que não bate certo com faturas a taxa reduzida/
+  // isentas nem com os arredondamentos reais. Mesma correção já aplicada a
+  // sincFinAplicarSheetPura() (pedido da Edna, 06/10/2026: "os valores ainda
+  // não estão de acordo com o sistema"); esta função convertia os documentos
+  // REAIS da API do TOConline e tinha ficado por corrigir, continuando a
+  // divergir do "Rendimentos" que o próprio TOConline mostra.
+  var liqBruto = (doc.net_total != null) ? Math.abs(parseFloat(doc.net_total) || 0) : (Math.abs(totalBruto) / 1.23);
+  var liq = tipoTes === 'NC' ? -liqBruto : liqBruto;
   var pago = (doc.pending_total <= 0.005) && !doc.voided_reason;
   var estado = pago ? 'Recebido' : 'Pendente';
   var vendedorLinha = typeof tesResolverVendedor === 'function' ? (tesResolverVendedor(doc.customer_business_name) || '') : '';
@@ -35464,6 +35480,18 @@ function renderMapaVendas(){
   _mvRenderTable(view);
 }
 window.renderMapaVendas = renderMapaVendas;
+// mvSincronizarGoogleSheet() (secção "Mapa de Vendas: sincronização
+// automática", bloco de script bem anterior a este) precisa de forçar a
+// releitura de _mvData depois de criar orçamentos novos — mas essa variável
+// vive dentro desta IIFE (module pattern deste bloco), só acessível aqui
+// dentro. Um "_mvData = null;" feito de fora (noutro bloco de script) nunca
+// tocava nesta variável: criava, sem ninguém reparar, uma global solta
+// completamente desligada desta, por isso o Mapa de Vendas nunca
+// re-renderizava os orçamentos recém-sincronizados (07/10/2026 — "ele leu
+// mas não atualizou", confirmado em produção: 63 orçamentos novos gravados
+// no Supabase, ecrã continuou com os dados antigos). Esta função exportada é
+// a única forma correcta de invalidar o cache a partir de fora.
+window._mvInvalidarCache = function(){ _mvData = null; };
 
 function _mvRenderBanner(){
   var isAdmin = crmVeTudo();
