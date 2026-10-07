@@ -18225,6 +18225,7 @@ function rhVerFuncionarioApp(ecId){
     <div class="form-group" style="margin-top:8px"><label class="form-label">Notas</label><textarea class="form-input" id="ecf-notes" rows="2" style="resize:vertical">${c.notes||''}</textarea></div>
     <div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end">
       <button class="tbtn" onclick="rhCloseColabModal()">Cancelar</button>
+      <button class="tbtn" title="Esta ficha vem do App de Pontos, que não tem Salário/Tipo de Contrato/Motivo — promove primeiro para os poderes preencher" onclick="rhPromoverColabApp('${c.ec_id}'); if(typeof showToast==='function') showToast('Agora preenche Tipo de Contrato, Salário e Motivo, e clica outra vez em 🖨️ Gerar Contrato.');">🖨️ Gerar Contrato</button>
       <button class="tbtn y" onclick="ecSaveFuncionario('${c.ec_id}')">💾 Guardar no App</button>
     </div>`;
   document.getElementById('rh-colab-modal-body').innerHTML = body;
