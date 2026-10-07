@@ -19481,7 +19481,23 @@ window.importarOrcamentos2026 = importarOrcamentos2026;
 // que as duas vias de importação nunca criem números concorrentes para o
 // mesmo orçamento.
 function mvNormalizarNumOrcamento(bruto){
-  var m = /(\d+)/.exec(String(bruto||''));
+  var s = String(bruto||'').trim();
+  if(!s) return null;
+  // Formato novo da folha "Orçamentos" (em uso desde, pelo menos, out/2026):
+  // "OB-2026.10.830.RM" — já é, por si só, um identificador único por linha
+  // (ano.mês.sequência.iniciais do comercial). A versão anterior tentava
+  // extrair "o número" com /(\d+)/, mas isso apanha sempre o primeiro grupo
+  // de dígitos — o ANO — gerando o mesmíssimo ID fabricado para TODAS as
+  // linhas da folha. Resultado: a sincronização nunca avançava além da
+  // primeira linha processada (ficou presa desde 21/09/2026, sempre a
+  // reportar "0 orçamentos novos" depois disso).
+  if(/^OB-/i.test(s)){
+    return 'ORC-' + s.toUpperCase().replace(/\s+/g,'');
+  }
+  // Formato antigo (só o número, ex.: "786") — mantém o comportamento
+  // histórico, para não duplicar orçamentos já sincronizados antes da
+  // folha passar a usar o formato "OB-...".
+  var m = /(\d+)/.exec(s);
   return m ? ('ORC-2026OB-' + m[1]) : null;
 }
 
