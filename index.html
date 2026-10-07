@@ -1816,7 +1816,7 @@ async function avSyncVendedoresSheet(){
     if(idx.vendedor===-1 || idx.totalIVA===-1){
       throw new Error('Colunas obrigatórias não encontradas. Cabeçalho detectado: [' + header.slice(0,12).join(' | ') + ']');
     }
-    var porVend = {}, totalYTD = 0, nFaturas = 0;
+    var porVend = {}, totalYTD = 0, nFaturas = 0, totalYTDSemIVA = 0, nFaturasSemIVA = 0;
     var sheetRows = []; // linhas individuais para tabela ordenada
     var dataStart = headerRow + 1;
     for(var i=dataStart;i<rows.length;i++){
@@ -1851,6 +1851,7 @@ async function avSyncVendedoresSheet(){
       if(dataStr){ var dmv=dataStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/); if(dmv) mIdx=parseInt(dmv[2])-1; }
       if(mIdx>=0){ if(!porVend[vend].meses[mIdx]) porVend[vend].meses[mIdx]={v:0,rec:0,nrec:0,n:0}; porVend[vend].meses[mIdx].v+=v; porVend[vend].meses[mIdx].rec+=rec; porVend[vend].meses[mIdx].nrec+=nrec; porVend[vend].meses[mIdx].n++; }
       totalYTD += v; nFaturas++;
+      if(vSemIVA!=null){ totalYTDSemIVA += vSemIVA; nFaturasSemIVA++; }
       // Parse data para ordenação (formato dd/mm/yyyy ou yyyy-mm-dd)
       var dtSort = 0;
       if(dataStr){
@@ -1889,12 +1890,22 @@ async function avSyncVendedoresSheet(){
     }
 
     AV_VEND_26 = lista;
-    // Atualiza YTD no card principal
-    AV_YTD = totalYTD;
+    // Atualiza YTD no card principal — SEM IVA como valor principal (pedido
+    // da Edna, doc "CRM - Parte 07", 07/10/2026: "Valores devem ser sem
+    // IVA"), vindo da coluna real "Total Líquido" da Sheet. Só troca para
+    // sem IVA quando TODAS as linhas 2026 têm essa coluna preenchida —
+    // uma cobertura parcial deixaria o total sem IVA artificialmente
+    // baixo (nunca inventa o que falta). Sem essa coluna, mantém o
+    // comportamento antigo mas agora rotulado como "(com IVA)", nunca
+    // ambíguo.
+    var temSemIVACompleto = nFaturas>0 && nFaturasSemIVA===nFaturas;
+    AV_YTD = temSemIVACompleto ? totalYTDSemIVA : totalYTD;
     var kpiEl = document.getElementById('av-kpi-2026');
-    if(kpiEl) kpiEl.innerHTML = '<span class="cur">€</span>' + Math.round(totalYTD).toLocaleString('pt-PT');
+    if(kpiEl) kpiEl.innerHTML = '<span class="cur">€</span>' + Math.round(AV_YTD).toLocaleString('pt-PT');
     var kpiDelta = document.getElementById('av-kpi-2026-delta');
-    if(kpiDelta) kpiDelta.textContent = nFaturas + ' faturas · Google Sheets';
+    if(kpiDelta) kpiDelta.textContent = temSemIVACompleto
+      ? (nFaturas + ' faturas · sem IVA · €' + Math.round(totalYTD).toLocaleString('pt-PT') + ' com IVA')
+      : (nFaturas + ' faturas · (com IVA) · Google Sheets');
 
     if(tsEl) tsEl.textContent = '✅ Sheets · ' + nFaturas + ' faturas · ' + lista.length + ' vendedores';
     console.log('[GSheets] AV_VEND_26 atualizado:', AV_VEND_26);
@@ -19047,9 +19058,17 @@ function cliRenderRecebimentos(c){
   // pode ser preenchida por orçamentos, mas sim por faturas reais!").
   // Mesma fonte/regras da Tesouraria → A Receber (TES_RECEBER, exclui NC,
   // finSaldoReceber() para o saldo real em "Recebido Parcial").
+  // Correcção (doc "CRM - Parte 07", 07/10/2026): "este cliente tem mais
+  // faturas a vencer" — faturas reais vêm do TOConline/Sheet com o nome
+  // do cliente escrito de formas ligeiramente diferentes da ficha
+  // (abreviaturas, pontuação); r.cliente===c.n (igualdade exacta) deixava
+  // de fora faturas genuinamente deste cliente. Passa a usar a mesma
+  // comparação difusa já usada para ligar faturas importadas a clientes
+  // (obSimilaridadeNomes/obEncontrarClienteSimilar, limiar 0.8).
   const hoje=new Date(); hoje.setHours(0,0,0,0);
   const receberArr=(typeof TES_RECEBER!=='undefined'?TES_RECEBER:[]);
-  const faturasPend=receberArr.filter(r=>r.tipo!=='NC' && r.cliente===c.n && r.estado!=='Recebido');
+  const mesmoCliente=(nome)=> (typeof obSimilaridadeNomes==='function') ? obSimilaridadeNomes(nome, c.n)>=0.8 : nome===c.n;
+  const faturasPend=receberArr.filter(r=>r.tipo!=='NC' && mesmoCliente(r.cliente) && r.estado!=='Recebido');
   if(!faturasPend.length){ panel.style.display='none'; return; }
   panel.style.display='flex';
   // Calcular buckets — apenas faturas com data de vencimento válida
@@ -39256,10 +39275,17 @@ if(typeof window.goPage==='function'){
 
   function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
   function rowToColab(r){
+    var extra = (r.extra && typeof r.extra==='object') ? r.extra : {};
     return { id:r.id, legacy_id:r.legacy_id, nome:r.nome||'', nif:r.nif||'', niss:r.niss||'',
       admissao:r.admissao||'', cargo:r.funcao||'', dept:r.departamento||'', salario:(r.salario==null?'':r.salario),
       contrato:r.contrato||'', tel:r.telefone||'', email:r.email||'', iban:r.iban||'', morada:r.morada||'',
-      foto:r.foto||'', color:r.cor||'#ec4899', ativo:r.ativo, deleted_at:r.deleted_at||null };
+      foto:r.foto||'', color:r.cor||'#ec4899', ativo:r.ativo, deleted_at:r.deleted_at||null,
+      // Documento de identificação + motivo do termo incerto (usados só por
+      // "Gerar Contrato", 07/10/2026) — a tabela ob_colaboradores não tem
+      // colunas dedicadas para isto, por isso vivem dentro de "extra"
+      // (jsonb), nunca inventados quando ainda não foram preenchidos.
+      docTipo: extra.docTipo||'', docNumero: extra.docNumero||'', docValidade: extra.docValidade||'',
+      motivoContrato: extra.motivoContrato||'' };
   }
   function formToPayload(){
     var g=function(id){ var el=document.getElementById(id); return el?String(el.value||'').trim():''; };
@@ -39271,7 +39297,8 @@ if(typeof window.goPage==='function'){
       nome:g('rh-c-nome'), nif:g('rh-c-nif')||null, niss:g('rh-c-niss')||null, admissao:adm,
       funcao:g('rh-c-cargo')||null, departamento:val('rh-c-dept')||null, salario:salN, contrato:val('rh-c-contrato')||null,
       telefone:g('rh-c-tel')||null, email:g('rh-c-email')||null, iban:g('rh-c-iban')||null, morada:g('rh-c-morada')||null,
-      foto:(fotoEl&&fotoEl.dataset?fotoEl.dataset.foto:'')||null, cor:'#ec4899'
+      foto:(fotoEl&&fotoEl.dataset?fotoEl.dataset.foto:'')||null, cor:'#ec4899',
+      extra: { docTipo:val('rh-c-doc-tipo')||'', docNumero:g('rh-c-doc-num'), docValidade:g('rh-c-doc-validade'), motivoContrato:g('rh-c-motivo') }
     };
   }
   async function uid(){ try{ var r=await sb().auth.getUser(); return (r&&r.data&&r.data.user)?r.data.user.id:null; }catch(e){ return null; } }
@@ -39543,11 +39570,14 @@ function _hfApplyFilters(rows, opts){
   opts = opts || {};
   var f = _hfFilters;
   return rows.filter(function(r){
-    // NC nunca entra aqui — mesma regra de tesGetReceber()/tesGetRecebidos()
-    // (fonte é a mesma tabela ob-tes-receber): é uma redução de faturação,
-    // não uma fatura nem um recebimento; contá-la em "Total"/"Recebido"
-    // duplicaria/distorceria os KPIs desta página.
-    if(r.tipo==='NC') return false;
+    // NC nunca entra nos cartões por estado (Recebido/Não Recebido/Parcial)
+    // — não faz sentido uma nota de crédito "estar recebida". Mas o
+    // "Total Faturado" tem de incluir a NC (reduz a faturação, é essa a
+    // natureza de uma NC) para bater com o Mapa de Vendas, que já soma
+    // tudo incluindo NC (pedido da Edna, doc "CRM - Parte 07", 07/10/2026:
+    // "esse mesmo valor tem que ser igual") — por isso opts.incluirNC
+    // permite ao "Total Faturado" passar por aqui sem excluir a NC.
+    if(r.tipo==='NC' && !opts.incluirNC) return false;
     if(!opts.skipEstado && f.estado && r.estado!==f.estado) return false;
     if(!opts.skipComercial && f.comercial && r.vendedor!==f.comercial) return false;
     if(f.busca){
@@ -39590,6 +39620,9 @@ function _hfRenderAll(){
 
 function _hfRenderKpis(rows){
   var view = _hfApplyFilters(rows, {skipEstado:true});
+  // Só para "Total Faturado" — mesmo filtro, mas incluindo NC (ver
+  // opts.incluirNC em _hfApplyFilters), para bater com o Mapa de Vendas.
+  var viewComNC = _hfApplyFilters(rows, {skipEstado:true, incluirNC:true});
   var recebido = view.filter(function(r){return r.estado==='Recebido';});
   var naoRecebido = view.filter(function(r){return r.estado==='Não Recebido';});
   var parcial = view.filter(function(r){return r.estado==='Recebido Parcial';});
@@ -39618,8 +39651,8 @@ function _hfRenderKpis(rows){
   // Valor principal passa a SEM IVA (pedido da Edna, doc "CRM - Parte 5",
   // 30/09/2026: "Os valores do total faturado devem ser considerados sem
   // IVA") — o valor com IVA desce para a sub-linha, nunca desaparece.
-  set('hf-kpi-total', _hfFmtEUR(sumLiq(view)));
-  set('hf-kpi-total-sub', view.length+' faturas · '+_hfFmtEUR(sum(view))+' com IVA');
+  set('hf-kpi-total', _hfFmtEUR(sumLiq(viewComNC)));
+  set('hf-kpi-total-sub', viewComNC.length+' faturas · '+_hfFmtEUR(sum(viewComNC))+' com IVA');
   set('hf-kpi-recebido', _hfFmtEUR(sumLiq(recebido)));
   set('hf-kpi-recebido-sub', recebido.length+' faturas · '+_hfFmtEUR(sum(recebido))+' com IVA');
   set('hf-kpi-naorecebido', _hfFmtEUR(sumSaldoLiq(naoRecebido)));
