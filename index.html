@@ -19859,7 +19859,20 @@ async function _sbOrcUpsert(orc, opts) {
       owner_id: (cu.admin === true && opts.reassignOwnerId) ? opts.reassignOwnerId : cu.id,
       updated_by: cu.id
     };
-    if (opts.isCreate) row.created_by = cu.id;
+    if (opts.isCreate) {
+      row.created_by = cu.id;
+      // Um "criar" nunca deixa a linha apagada por baixo — sem isto, o
+      // upsert (onConflict:'id') atualiza o conteúdo de uma linha já
+      // existente mas com deleted_at preenchido (ex.: de uma limpeza
+      // antiga) e NUNCA o limpa, porque deleted_at não fazia parte do
+      // objecto enviado. Confirmado em produção (11/11/2026): 16
+      // orçamentos da sincronização do Mapa de Vendas ficavam sempre de
+      // fora, sincronização após sincronização, porque já existiam
+      // apagados desde 07/10 — o conteúdo era actualizado em silêncio,
+      // mas a linha continuava invisível em todo o CRM.
+      row.deleted_at = null;
+      row.deleted_by = null;
+    }
 
     // Concorrência segura por versionamento otimista (ajuste 12/09/2026) —
     // usa a coluna updated_at que já existe em ob_orcamentos (com trigger
