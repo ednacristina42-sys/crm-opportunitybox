@@ -39553,6 +39553,15 @@ if(typeof window.goPage==='function'){
       if(typeof rhRenderColabs==='function') rhRenderColabs();
       ensureToolbar(); setStatus(rhColabs.length+' ativo(s)');
       if(window._rhShowInativos) rhRenderInativos();
+      // Reportado pela Edna (11/11/2026): desativou o Humberto em RH →
+      // Colaboradores e ele continuava na barra lateral ("ESPAÇOS >
+      // Comercial") e no seletor "Ver como (comercial)" — ambos só eram
+      // construídos uma vez no arranque da página, nunca depois de
+      // rhColabs mudar. Esta é a única função que todas as acções sobre
+      // colaboradores (gravar, desativar, restaurar, apagar) chamam no
+      // fim, por isso é aqui que os dois ficam sempre em dia.
+      if(typeof obRenderComerciaisSidebar==='function') obRenderComerciaisSidebar();
+      if(typeof renderUserSwitcher==='function') renderUserSwitcher();
       return true;
     }catch(e){ console.error('[colab] load ex', e); setStatus('erro'); return false; }
   };
