@@ -1575,16 +1575,19 @@ window.afExportarExcel = afExportarExcel;
 // Colunas: Data | Número | Nome | Total líquido | IVA TOTAL | Total com IVA |
 // Mês/Ano | Valor Recebido | Saldo a Receber | Data Recebimento | Status | Vendedor
 // URL publicado via "Ficheiro → Publicar na Web → CSV" (sem autenticação, sem CORS)
-// Republicado 04/09 — o link anterior (pub id ...cePzSN9bOm-E3CAGYoPnQ)
-// estava a devolver HTTP 410 Gone (publicação expirada/revogada).
-var AV_VEND_SHEET_PUB_ID = '2PACX-1vQerK5QKGIG7JKHC8FmrF7z7WQRnBLXXD9f8OG9FQYYsDeTaAvuDyC_8s22fr3WXsPyBH-7VYrx7xzb';
-var AV_VEND_SHEET_GID = '1231149814';
+// Republicado 11/11/2026 — a folha "Mapa de vendas" foi migrada para um
+// novo ficheiro (id 1qQQc-5s2AwBnqZFw7x8PO43lzGWk99voMZuy_MECR2M) e
+// republicada; o pub id e os gids anteriores deixaram de responder.
+// Gids confirmados directamente pela API do Google Sheets (sheets.properties.sheetId),
+// não só pela Edna a clicar nos separadores: Orcamentos=1432909584, Vendas 2026=1299826483.
+var AV_VEND_SHEET_PUB_ID = '2PACX-1vTBFrj-c5_Q--XreJq8TSXD_i8aicMIk9Prm9crJgkywyMWJ-prmPW-qwS4e-w4sz64bKUyLzp681qz';
+var AV_VEND_SHEET_GID = '1299826483';
 var AV_VEND_SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/' + AV_VEND_SHEET_PUB_ID + '/pub?output=csv&gid=' + AV_VEND_SHEET_GID;
 
-// Mapa de Vendas — aba "Orçamentos 2026" da MESMA planilha publicada (mesmo
-// pub id de AV_VEND_SHEET_PUB_ID, confirmado pela Edna 21/09/2026 — só o
-// gid muda, para apontar à aba de Orçamentos em vez de Vendas).
-var MV_ORC_SHEET_GID = '529213940';
+// Mapa de Vendas — aba "Orçamentos" da MESMA planilha publicada (mesmo
+// pub id de AV_VEND_SHEET_PUB_ID) — só o gid muda, para apontar à aba de
+// Orçamentos em vez de Vendas.
+var MV_ORC_SHEET_GID = '1432909584';
 var MV_ORC_SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/' + AV_VEND_SHEET_PUB_ID + '/pub?output=csv&gid=' + MV_ORC_SHEET_GID;
 
 function avParseCSV(text){
