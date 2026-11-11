@@ -15463,8 +15463,9 @@ function crmRenderComerciaisList(){
     </div>
     <div style="font-size:13px;color:${c.ativo?'var(--g)':'var(--muted)'}">${c.ativo?'● Activo':'○ Inactivo'}</div>
     <div class="com-btns">
-      <button class="com-edit-btn" onclick="crmEditComercial(${c.id})">✏️</button>
-      <button class="com-del-btn" onclick="crmToggleComercial(${c.id})">${c.ativo?'⏸':'▶'}</button>
+      <button class="com-edit-btn" onclick="crmEditComercial(${c.id})" title="Editar">✏️</button>
+      <button class="com-edit-btn" onclick="crmToggleComercial(${c.id})" title="${c.ativo?'Pausar (ex.: baixa, férias)':'Reativar'}">${c.ativo?'⏸':'▶'}</button>
+      <button class="com-del-btn" onclick="crmEliminarComercial(${c.id})" title="Eliminar (saiu da empresa)">🗑</button>
     </div>
   </div>`).join('');
 }
@@ -15503,6 +15504,22 @@ function crmToggleComercial(id){
   if(c) c.ativo = !c.ativo;
   saveComerciaisData();
   crmRenderComerciaisList();
+}
+
+// Eliminar um comercial da lista (ex.: saiu da empresa). Isto só remove a
+// entrada da lista de comerciais (usada nos menus para novos leads/
+// orçamentos e nos rankings de "activos") — os leads, orçamentos e vendas
+// já existentes continuam gravados com o nome dele tal como estavam
+// (crmGetComercial() já tem fallback para um nome que já não está na
+// lista), por isso eliminar aqui não apaga nada do histórico.
+function crmEliminarComercial(id){
+  const c = crmComerciais.find(x=>x.id===id);
+  if(!c) return;
+  if(!confirm('Eliminar "'+c.nome+'" da lista de comerciais?\n\nOs leads, orçamentos e vendas já atribuídos a este nome mantêm-se no histórico tal como estão — só deixa de aparecer nas opções para novos registos.')) return;
+  crmComerciais = crmComerciais.filter(x=>x.id!==id);
+  saveComerciaisData();
+  crmRenderComerciaisList();
+  syncOrcEmails();
 }
 
 // Sync emails dos orçamentos com comerciais actuais
