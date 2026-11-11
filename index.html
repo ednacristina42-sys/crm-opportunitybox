@@ -19942,13 +19942,29 @@ async function _sbOrcLoadAll() {
     return { ok: false, reason: 'no-session', rows: null };
   }
   try {
-    var res = await sb.from('ob_orcamentos').select('*').order('created_at', { ascending: false }).limit(2000);
-    if (res.error) {
-      var msg = _sbOrcErroLegivel(res.error, res.status);
-      console.warn('[SB-ORC] load falhou: ' + msg, res.error);
-      return { ok: false, reason: _sbOrcClassificarErro(res.error, res.status), error: res.error, message: msg, rows: null };
+    // .limit(2000) sozinho nunca devolvia mais de 1000 linhas — é o tecto
+    // por omissão do PostgREST/Supabase por pedido, aplicado no servidor
+    // mesmo pedindo mais no cliente (confirmado em produção, 11/11/2026:
+    // 1705 orçamentos reais na tabela, só 1000 chegavam a orcData). Como
+    // esta função ordena por created_at DESC, os que ficavam de fora eram
+    // sempre os ~700 orçamentos MAIS ANTIGOS — silenciosamente ausentes de
+    // Orçamentos, Follow-up, Recebimentos, etc. Pagina com .range() até
+    // uma página vir mais curta que o pedido.
+    var brutos = [];
+    var pagina = 1000, inicio = 0, seguranca = 0;
+    while (seguranca++ < 50) {
+      var resPag = await sb.from('ob_orcamentos').select('*').order('created_at', { ascending: false }).range(inicio, inicio + pagina - 1);
+      if (resPag.error) {
+        var msgPag = _sbOrcErroLegivel(resPag.error, resPag.status);
+        console.warn('[SB-ORC] load falhou: ' + msgPag, resPag.error);
+        return { ok: false, reason: _sbOrcClassificarErro(resPag.error, resPag.status), error: resPag.error, message: msgPag, rows: null };
+      }
+      var linhasPag = resPag.data || [];
+      brutos = brutos.concat(linhasPag);
+      if (linhasPag.length < pagina) break; // última página
+      inicio += pagina;
     }
-    var rows = (res.data || []).map(function(row) {
+    var rows = brutos.map(function(row) {
       var extra = row.extra || {};
       if (row.extra && typeof row.extra !== 'object') {
         console.warn('[SB-ORC] orçamento ' + row.num + ': campo extra em formato inesperado — leadId não recuperado.');
@@ -35401,12 +35417,29 @@ async function _mvEnsureData(){
     try{
       var sb = (typeof crmSBClient==='function') ? crmSBClient() : null;
       if(!sb){ _mvData = []; return _mvData; }
-      var res = await sb.from('ob_orcamentos')
-        .select('id,cli,vendedor,nif,val,st,data,dt,obs,extra,owner_id')
-        .is('deleted_at', null)
-        .limit(5000);
-      if(res.error){ console.warn('[MV] load falhou:', res.error); _mvData = []; }
-      else { _mvData = res.data || []; }
+      // .limit(5000) sozinho nunca chegava a devolver mais de 1000 linhas —
+      // é o tecto por omissão do PostgREST/Supabase por pedido, aplicado no
+      // servidor mesmo pedindo mais no cliente, e sem ORDER BY não há
+      // garantia nenhuma de que os 1000 devolvidos sejam os mais recentes
+      // (confirmado em produção, 11/11/2026: 1705 orçamentos reais na
+      // tabela, ecrã só mostrava 1000, sem os sincronizados em
+      // novembro). Pagina com .range() até uma página vir mais curta que
+      // o pedido, ordenado por created_at para a paginação ser estável.
+      var tudo = [];
+      var pagina = 1000, inicio = 0, seguranca = 0;
+      while(seguranca++ < 50){
+        var res = await sb.from('ob_orcamentos')
+          .select('id,cli,vendedor,nif,val,st,data,dt,obs,extra,owner_id')
+          .is('deleted_at', null)
+          .order('created_at', { ascending: true })
+          .range(inicio, inicio + pagina - 1);
+        if(res.error){ console.warn('[MV] load falhou:', res.error); if(!tudo.length) _mvData = []; break; }
+        var linhas = res.data || [];
+        tudo = tudo.concat(linhas);
+        if(linhas.length < pagina) break; // última página
+        inicio += pagina;
+      }
+      _mvData = tudo;
     }catch(e){ console.warn('[MV] load exception:', e); _mvData = []; }
     return _mvData;
   })();
