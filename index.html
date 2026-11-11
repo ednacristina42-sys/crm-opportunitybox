@@ -1575,16 +1575,19 @@ window.afExportarExcel = afExportarExcel;
 // Colunas: Data | Número | Nome | Total líquido | IVA TOTAL | Total com IVA |
 // Mês/Ano | Valor Recebido | Saldo a Receber | Data Recebimento | Status | Vendedor
 // URL publicado via "Ficheiro → Publicar na Web → CSV" (sem autenticação, sem CORS)
-// Republicado 04/09 — o link anterior (pub id ...cePzSN9bOm-E3CAGYoPnQ)
-// estava a devolver HTTP 410 Gone (publicação expirada/revogada).
-var AV_VEND_SHEET_PUB_ID = '2PACX-1vQerK5QKGIG7JKHC8FmrF7z7WQRnBLXXD9f8OG9FQYYsDeTaAvuDyC_8s22fr3WXsPyBH-7VYrx7xzb';
-var AV_VEND_SHEET_GID = '1231149814';
+// Republicado 11/11/2026 — a folha "Mapa de vendas" foi migrada para um
+// novo ficheiro (id 1qQQc-5s2AwBnqZFw7x8PO43lzGWk99voMZuy_MECR2M) e
+// republicada; o pub id e os gids anteriores deixaram de responder.
+// Gids confirmados directamente pela API do Google Sheets (sheets.properties.sheetId),
+// não só pela Edna a clicar nos separadores: Orcamentos=1432909584, Vendas 2026=1299826483.
+var AV_VEND_SHEET_PUB_ID = '2PACX-1vTBFrj-c5_Q--XreJq8TSXD_i8aicMIk9Prm9crJgkywyMWJ-prmPW-qwS4e-w4sz64bKUyLzp681qz';
+var AV_VEND_SHEET_GID = '1299826483';
 var AV_VEND_SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/' + AV_VEND_SHEET_PUB_ID + '/pub?output=csv&gid=' + AV_VEND_SHEET_GID;
 
-// Mapa de Vendas — aba "Orçamentos 2026" da MESMA planilha publicada (mesmo
-// pub id de AV_VEND_SHEET_PUB_ID, confirmado pela Edna 21/09/2026 — só o
-// gid muda, para apontar à aba de Orçamentos em vez de Vendas).
-var MV_ORC_SHEET_GID = '529213940';
+// Mapa de Vendas — aba "Orçamentos" da MESMA planilha publicada (mesmo
+// pub id de AV_VEND_SHEET_PUB_ID) — só o gid muda, para apontar à aba de
+// Orçamentos em vez de Vendas.
+var MV_ORC_SHEET_GID = '1432909584';
 var MV_ORC_SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/' + AV_VEND_SHEET_PUB_ID + '/pub?output=csv&gid=' + MV_ORC_SHEET_GID;
 
 function avParseCSV(text){
@@ -1611,7 +1614,14 @@ function avParseNumPT(s){
   if(!s) return 0;
   s=String(s).trim().replace(/[€$€]/g,'').trim();
   if(!s) return 0;
-  s=s.replace(/\./g,'').replace(',', '.');
+  // Espaço (normal ou não-separável  ) também é separador de milhares
+  // no formato pt-PT usado pelo Google Sheets (ex.: "7 980,00") — sem isto,
+  // parseFloat parava no primeiro espaço e devolvia só "7" em vez de 7980.
+  // Confirmado em produção (07/10/2026): orçamentos sincronizados da folha
+  // apareciam no Follow-up com valores truncados (ex.: "JF Santa Luzia
+  // €7,00" em vez de €7.980,00; "5 a Seco Portugal €26,00" em vez de
+  // €26.277,71).
+  s=s.replace(/[.\s ]/g,'').replace(',', '.');
   var n=parseFloat(s);
   return isNaN(n)?0:n;
 }
@@ -1816,7 +1826,7 @@ async function avSyncVendedoresSheet(){
     if(idx.vendedor===-1 || idx.totalIVA===-1){
       throw new Error('Colunas obrigatórias não encontradas. Cabeçalho detectado: [' + header.slice(0,12).join(' | ') + ']');
     }
-    var porVend = {}, totalYTD = 0, nFaturas = 0;
+    var porVend = {}, totalYTD = 0, nFaturas = 0, totalYTDSemIVA = 0, nFaturasSemIVA = 0;
     var sheetRows = []; // linhas individuais para tabela ordenada
     var dataStart = headerRow + 1;
     for(var i=dataStart;i<rows.length;i++){
@@ -1851,6 +1861,7 @@ async function avSyncVendedoresSheet(){
       if(dataStr){ var dmv=dataStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/); if(dmv) mIdx=parseInt(dmv[2])-1; }
       if(mIdx>=0){ if(!porVend[vend].meses[mIdx]) porVend[vend].meses[mIdx]={v:0,rec:0,nrec:0,n:0}; porVend[vend].meses[mIdx].v+=v; porVend[vend].meses[mIdx].rec+=rec; porVend[vend].meses[mIdx].nrec+=nrec; porVend[vend].meses[mIdx].n++; }
       totalYTD += v; nFaturas++;
+      if(vSemIVA!=null){ totalYTDSemIVA += vSemIVA; nFaturasSemIVA++; }
       // Parse data para ordenação (formato dd/mm/yyyy ou yyyy-mm-dd)
       var dtSort = 0;
       if(dataStr){
@@ -1888,13 +1899,39 @@ async function avSyncVendedoresSheet(){
       return;
     }
 
+    // A folha "Vendas 2026" é mantida à mão (pela secretária) em paralelo
+    // ao TOConline, e confirmámos com a Edna (11/11/2026) que diverge do
+    // TOConline — sempre por mais, em todos os comerciais (ex.: Paulo
+    // Faria: €641.916 na folha vs €513.617 de faturação real no
+    // TOConline). O TOConline é a fonte certa. Antes desta correção, esta
+    // função corria sempre DEPOIS de avSyncTocOnline() (ver
+    // renderAnaliseVendas()) e sobrescrevia sem condição o KPI principal
+    // e os totais mensais reais com os valores — errados — da folha. A
+    // folha só actualiza estes dois agora quando não há mesmo nenhuma
+    // fatura real do TOConline em cache (mesmo critério "temToco" já
+    // usado mais abaixo, na Área Financeira).
+    var fatCacheGS = JSON.parse(localStorage.getItem('ob-toconline-faturas')||'null');
+    var temTocoGS = fatCacheGS && fatCacheGS.data && fatCacheGS.data.length>0;
+
     AV_VEND_26 = lista;
-    // Atualiza YTD no card principal
-    AV_YTD = totalYTD;
+    if(!temTocoGS){
+    // Atualiza YTD no card principal — SEM IVA como valor principal (pedido
+    // da Edna, doc "CRM - Parte 07", 07/10/2026: "Valores devem ser sem
+    // IVA"), vindo da coluna real "Total Líquido" da Sheet. Só troca para
+    // sem IVA quando TODAS as linhas 2026 têm essa coluna preenchida —
+    // uma cobertura parcial deixaria o total sem IVA artificialmente
+    // baixo (nunca inventa o que falta). Sem essa coluna, mantém o
+    // comportamento antigo mas agora rotulado como "(com IVA)", nunca
+    // ambíguo.
+    var temSemIVACompleto = nFaturas>0 && nFaturasSemIVA===nFaturas;
+    AV_YTD = temSemIVACompleto ? totalYTDSemIVA : totalYTD;
     var kpiEl = document.getElementById('av-kpi-2026');
-    if(kpiEl) kpiEl.innerHTML = '<span class="cur">€</span>' + Math.round(totalYTD).toLocaleString('pt-PT');
+    if(kpiEl) kpiEl.innerHTML = '<span class="cur">€</span>' + Math.round(AV_YTD).toLocaleString('pt-PT');
     var kpiDelta = document.getElementById('av-kpi-2026-delta');
-    if(kpiDelta) kpiDelta.textContent = nFaturas + ' faturas · Google Sheets';
+    if(kpiDelta) kpiDelta.textContent = temSemIVACompleto
+      ? (nFaturas + ' faturas · sem IVA · €' + Math.round(totalYTD).toLocaleString('pt-PT') + ' com IVA')
+      : (nFaturas + ' faturas · (com IVA) · Google Sheets');
+    } // fim do if(!temTocoGS) — KPI principal
 
     if(tsEl) tsEl.textContent = '✅ Sheets · ' + nFaturas + ' faturas · ' + lista.length + ' vendedores';
     console.log('[GSheets] AV_VEND_26 atualizado:', AV_VEND_26);
@@ -1905,7 +1942,9 @@ async function avSyncVendedoresSheet(){
     if(typeof avAtualizarMetricasCartoes==='function') avAtualizarMetricasCartoes();
     avRenderSheetTable();
 
-    // Agregar por mês e alimentar a tabela mensal (substitui zeros do TocOnline)
+    if(!temTocoGS){
+    // Agregar por mês e alimentar a tabela mensal (substitui zeros do TocOnline,
+    // só quando não há mesmo nenhuma fatura real do TocOnline em cache)
     var porMesSheet = {};
     sheetRows.forEach(function(r){
       // Extrair índice de mês da data (dd/mm/yyyy)
@@ -1940,6 +1979,7 @@ async function avSyncVendedoresSheet(){
     if(typeof avLine==='function') avLine();
     if(typeof avBars==='function') avBars();
     if(typeof avAnnualTable==='function') avAnnualTable();
+    } // fim do if(!temTocoGS) — totais mensais/gráficos
 
     // ── TOP CLIENTES 2026 a partir da planilha ──────────────────
     var porCliente = {};
@@ -18225,6 +18265,7 @@ function rhVerFuncionarioApp(ecId){
     <div class="form-group" style="margin-top:8px"><label class="form-label">Notas</label><textarea class="form-input" id="ecf-notes" rows="2" style="resize:vertical">${c.notes||''}</textarea></div>
     <div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end">
       <button class="tbtn" onclick="rhCloseColabModal()">Cancelar</button>
+      <button class="tbtn" title="Esta ficha vem do App de Pontos, que não tem Salário/Tipo de Contrato/Motivo — promove primeiro para os poderes preencher" onclick="rhPromoverColabApp('${c.ec_id}'); if(typeof showToast==='function') showToast('Agora preenche Tipo de Contrato, Salário e Motivo, e clica outra vez em 🖨️ Gerar Contrato.');">🖨️ Gerar Contrato</button>
       <button class="tbtn y" onclick="ecSaveFuncionario('${c.ec_id}')">💾 Guardar no App</button>
     </div>`;
   document.getElementById('rh-colab-modal-body').innerHTML = body;
@@ -19046,9 +19087,17 @@ function cliRenderRecebimentos(c){
   // pode ser preenchida por orçamentos, mas sim por faturas reais!").
   // Mesma fonte/regras da Tesouraria → A Receber (TES_RECEBER, exclui NC,
   // finSaldoReceber() para o saldo real em "Recebido Parcial").
+  // Correcção (doc "CRM - Parte 07", 07/10/2026): "este cliente tem mais
+  // faturas a vencer" — faturas reais vêm do TOConline/Sheet com o nome
+  // do cliente escrito de formas ligeiramente diferentes da ficha
+  // (abreviaturas, pontuação); r.cliente===c.n (igualdade exacta) deixava
+  // de fora faturas genuinamente deste cliente. Passa a usar a mesma
+  // comparação difusa já usada para ligar faturas importadas a clientes
+  // (obSimilaridadeNomes/obEncontrarClienteSimilar, limiar 0.8).
   const hoje=new Date(); hoje.setHours(0,0,0,0);
   const receberArr=(typeof TES_RECEBER!=='undefined'?TES_RECEBER:[]);
-  const faturasPend=receberArr.filter(r=>r.tipo!=='NC' && r.cliente===c.n && r.estado!=='Recebido');
+  const mesmoCliente=(nome)=> (typeof obSimilaridadeNomes==='function') ? obSimilaridadeNomes(nome, c.n)>=0.8 : nome===c.n;
+  const faturasPend=receberArr.filter(r=>r.tipo!=='NC' && mesmoCliente(r.cliente) && r.estado!=='Recebido');
   if(!faturasPend.length){ panel.style.display='none'; return; }
   panel.style.display='flex';
   // Calcular buckets — apenas faturas com data de vencimento válida
@@ -19461,7 +19510,30 @@ window.importarOrcamentos2026 = importarOrcamentos2026;
 // que as duas vias de importação nunca criem números concorrentes para o
 // mesmo orçamento.
 function mvNormalizarNumOrcamento(bruto){
-  var m = /(\d+)/.exec(String(bruto||''));
+  var s = String(bruto||'').trim();
+  if(!s) return null;
+  // Formato novo da folha "Orçamentos" (em uso desde, pelo menos, out/2026):
+  // "OB-2026.10.830.RM" — já é, por si só, um identificador único por linha
+  // (ano.mês.sequência.iniciais do comercial). A versão anterior tentava
+  // extrair "o número" com /(\d+)/, mas isso apanha sempre o primeiro grupo
+  // de dígitos — o ANO — gerando o mesmíssimo ID fabricado para TODAS as
+  // linhas da folha. Resultado: a sincronização nunca avançava além da
+  // primeira linha processada (ficou presa desde 21/09/2026, sempre a
+  // reportar "0 orçamentos novos" depois disso).
+  if(/^OB-/i.test(s)){
+    // Além de espaços normais, a folha por vezes traz caracteres invisíveis
+    // (espaço de largura zero ​/‌/‍, BOM ﻿ — comuns em
+    // copiar/colar) junto às iniciais do comercial. \s não os apanha.
+    // Confirmado em produção (07/10/2026): o mesmo orçamento real
+    // "2026.09.804.RM" apareceu duas vezes — uma sem o caracter invisível,
+    // outra com — gerando dois IDs fabricados diferentes para a MESMA
+    // linha da folha e criando um duplicado verdadeiro no Supabase.
+    return 'ORC-' + s.toUpperCase().replace(/[\s​‌‍﻿]+/g,'');
+  }
+  // Formato antigo (só o número, ex.: "786") — mantém o comportamento
+  // histórico, para não duplicar orçamentos já sincronizados antes da
+  // folha passar a usar o formato "OB-...".
+  var m = /(\d+)/.exec(s);
   return m ? ('ORC-2026OB-' + m[1]) : null;
 }
 
@@ -19496,9 +19568,29 @@ var MV_SYNC_ULTIMA_EXECUCAO = (function(){
 // _sbOrcUpsert() (a mesma função usada por todo o resto do CRM) — nunca
 // fica só em localStorage como acontecia com importarOrcamentos2026().
 async function mvSincronizarGoogleSheet(){
-  if(MV_SYNC_EM_CURSO) return;
-  if(!(typeof CU!=='undefined' && CU && CU.admin===true)) return;
-  if(Date.now() - MV_SYNC_ULTIMA_EXECUCAO < 120000) return;
+  // Os dois travões abaixo (sincronização já em curso / travão de 2min)
+  // devolviam silenciosamente sem qualquer aviso — clicar no botão não fazia
+  // NADA visível no ecrã nenhuma vez que caía num destes casos, o que
+  // parece exactamente "o botão não funciona" (confirmado pela Edna,
+  // 07/10/2026, ao testar a sincronização várias vezes seguidas em poucos
+  // minutos). Agora avisam sempre, para nunca mais parecer que o clique foi
+  // ignorado.
+  if(MV_SYNC_EM_CURSO){
+    if(typeof showToast==='function') showToast('⏳ Já há uma sincronização em curso — aguarde que termine.');
+    return;
+  }
+  // Correcção (07/10/2026): exigia CU.admin===true à letra, nunca
+  // CU.role==='administrativo' — mesmo critério "vê tudo" usado em todo
+  // o resto do CRM (crmVeTudo()). A conta do dia-a-dia (Edna/Carolina)
+  // usa 'administrativo', por isso esta sincronização nunca disparava
+  // silenciosamente, sem erro nem aviso nenhum — a tabela ob_orcamentos
+  // ficou parada desde o dia em que esta função foi criada (21/09/2026).
+  if(!(typeof crmVeTudo==='function' && crmVeTudo())) return;
+  var faltamMs = 120000 - (Date.now() - MV_SYNC_ULTIMA_EXECUCAO);
+  if(faltamMs > 0){
+    if(typeof showToast==='function') showToast('⏳ Aguarde mais ' + Math.ceil(faltamMs/1000) + 's antes de sincronizar outra vez (travão de 2min entre sincronizações).');
+    return;
+  }
   MV_SYNC_EM_CURSO = true;
   MV_SYNC_ULTIMA_EXECUCAO = Date.now();
   try{ localStorage.setItem('ob-mv-sync-auto-ultima', String(MV_SYNC_ULTIMA_EXECUCAO)); }catch(e){}
@@ -19578,7 +19670,14 @@ async function mvSincronizarGoogleSheet(){
     if(resumo.novos){
       localStorage.setItem('ob-orcamentos', JSON.stringify(orcData.slice(0,5000)));
       if(typeof orcRenderList==='function') orcRenderList();
-      _mvData = null; // força releitura do Supabase para o Mapa de Vendas mostrar os novos já
+      // _mvData vive dentro da IIFE do bloco "Mapa de Vendas" (muito mais à
+      // frente no ficheiro) — um "_mvData = null" aqui, de fora, nunca lhe
+      // tocava: criava uma global solta e desligada, sem qualquer efeito.
+      // _mvInvalidarCache() é a função exportada por essa IIFE exactamente
+      // para isto (07/10/2026 — sincronização gravava no Supabase mas o
+      // ecrã do Mapa de Vendas nunca actualizava, por mais orçamentos novos
+      // que entrassem).
+      if(typeof window._mvInvalidarCache==='function') window._mvInvalidarCache();
       if(typeof renderMapaVendas==='function') renderMapaVendas();
     }
     if(typeof showToast==='function'){
@@ -19779,7 +19878,20 @@ async function _sbOrcUpsert(orc, opts) {
       owner_id: (cu.admin === true && opts.reassignOwnerId) ? opts.reassignOwnerId : cu.id,
       updated_by: cu.id
     };
-    if (opts.isCreate) row.created_by = cu.id;
+    if (opts.isCreate) {
+      row.created_by = cu.id;
+      // Um "criar" nunca deixa a linha apagada por baixo — sem isto, o
+      // upsert (onConflict:'id') atualiza o conteúdo de uma linha já
+      // existente mas com deleted_at preenchido (ex.: de uma limpeza
+      // antiga) e NUNCA o limpa, porque deleted_at não fazia parte do
+      // objecto enviado. Confirmado em produção (11/11/2026): 16
+      // orçamentos da sincronização do Mapa de Vendas ficavam sempre de
+      // fora, sincronização após sincronização, porque já existiam
+      // apagados desde 07/10 — o conteúdo era actualizado em silêncio,
+      // mas a linha continuava invisível em todo o CRM.
+      row.deleted_at = null;
+      row.deleted_by = null;
+    }
 
     // Concorrência segura por versionamento otimista (ajuste 12/09/2026) —
     // usa a coluna updated_at que já existe em ob_orcamentos (com trigger
@@ -19862,13 +19974,29 @@ async function _sbOrcLoadAll() {
     return { ok: false, reason: 'no-session', rows: null };
   }
   try {
-    var res = await sb.from('ob_orcamentos').select('*').order('created_at', { ascending: false }).limit(2000);
-    if (res.error) {
-      var msg = _sbOrcErroLegivel(res.error, res.status);
-      console.warn('[SB-ORC] load falhou: ' + msg, res.error);
-      return { ok: false, reason: _sbOrcClassificarErro(res.error, res.status), error: res.error, message: msg, rows: null };
+    // .limit(2000) sozinho nunca devolvia mais de 1000 linhas — é o tecto
+    // por omissão do PostgREST/Supabase por pedido, aplicado no servidor
+    // mesmo pedindo mais no cliente (confirmado em produção, 11/11/2026:
+    // 1705 orçamentos reais na tabela, só 1000 chegavam a orcData). Como
+    // esta função ordena por created_at DESC, os que ficavam de fora eram
+    // sempre os ~700 orçamentos MAIS ANTIGOS — silenciosamente ausentes de
+    // Orçamentos, Follow-up, Recebimentos, etc. Pagina com .range() até
+    // uma página vir mais curta que o pedido.
+    var brutos = [];
+    var pagina = 1000, inicio = 0, seguranca = 0;
+    while (seguranca++ < 50) {
+      var resPag = await sb.from('ob_orcamentos').select('*').order('created_at', { ascending: false }).range(inicio, inicio + pagina - 1);
+      if (resPag.error) {
+        var msgPag = _sbOrcErroLegivel(resPag.error, resPag.status);
+        console.warn('[SB-ORC] load falhou: ' + msgPag, resPag.error);
+        return { ok: false, reason: _sbOrcClassificarErro(resPag.error, resPag.status), error: resPag.error, message: msgPag, rows: null };
+      }
+      var linhasPag = resPag.data || [];
+      brutos = brutos.concat(linhasPag);
+      if (linhasPag.length < pagina) break; // última página
+      inicio += pagina;
     }
-    var rows = (res.data || []).map(function(row) {
+    var rows = brutos.map(function(row) {
       var extra = row.extra || {};
       if (row.extra && typeof row.extra !== 'object') {
         console.warn('[SB-ORC] orçamento ' + row.num + ': campo extra em formato inesperado — leadId não recuperado.');
@@ -28540,7 +28668,16 @@ function sincFinDocParaLinhaTes(doc, tipoTes){
   }
   var totalBruto = doc.gross_total || 0;
   var totalAssinado = tipoTes === 'NC' ? -Math.abs(totalBruto) : totalBruto;
-  var liq = totalAssinado / 1.23;
+  // Sem IVA real do TOConline (net_total, já devolvido pela Edge Function —
+  // ver amostra_nc_toconline_bruta acima) quando existe — nunca estimado por
+  // uma taxa fixa de 23%, que não bate certo com faturas a taxa reduzida/
+  // isentas nem com os arredondamentos reais. Mesma correção já aplicada a
+  // sincFinAplicarSheetPura() (pedido da Edna, 06/10/2026: "os valores ainda
+  // não estão de acordo com o sistema"); esta função convertia os documentos
+  // REAIS da API do TOConline e tinha ficado por corrigir, continuando a
+  // divergir do "Rendimentos" que o próprio TOConline mostra.
+  var liqBruto = (doc.net_total != null) ? Math.abs(parseFloat(doc.net_total) || 0) : (Math.abs(totalBruto) / 1.23);
+  var liq = tipoTes === 'NC' ? -liqBruto : liqBruto;
   var pago = (doc.pending_total <= 0.005) && !doc.voided_reason;
   var estado = pago ? 'Recebido' : 'Pendente';
   var vendedorLinha = typeof tesResolverVendedor === 'function' ? (tesResolverVendedor(doc.customer_business_name) || '') : '';
@@ -35312,12 +35449,29 @@ async function _mvEnsureData(){
     try{
       var sb = (typeof crmSBClient==='function') ? crmSBClient() : null;
       if(!sb){ _mvData = []; return _mvData; }
-      var res = await sb.from('ob_orcamentos')
-        .select('id,cli,vendedor,nif,val,st,data,dt,obs,extra,owner_id')
-        .is('deleted_at', null)
-        .limit(5000);
-      if(res.error){ console.warn('[MV] load falhou:', res.error); _mvData = []; }
-      else { _mvData = res.data || []; }
+      // .limit(5000) sozinho nunca chegava a devolver mais de 1000 linhas —
+      // é o tecto por omissão do PostgREST/Supabase por pedido, aplicado no
+      // servidor mesmo pedindo mais no cliente, e sem ORDER BY não há
+      // garantia nenhuma de que os 1000 devolvidos sejam os mais recentes
+      // (confirmado em produção, 11/11/2026: 1705 orçamentos reais na
+      // tabela, ecrã só mostrava 1000, sem os sincronizados em
+      // novembro). Pagina com .range() até uma página vir mais curta que
+      // o pedido, ordenado por created_at para a paginação ser estável.
+      var tudo = [];
+      var pagina = 1000, inicio = 0, seguranca = 0;
+      while(seguranca++ < 50){
+        var res = await sb.from('ob_orcamentos')
+          .select('id,cli,vendedor,nif,val,st,data,dt,obs,extra,owner_id')
+          .is('deleted_at', null)
+          .order('created_at', { ascending: true })
+          .range(inicio, inicio + pagina - 1);
+        if(res.error){ console.warn('[MV] load falhou:', res.error); if(!tudo.length) _mvData = []; break; }
+        var linhas = res.data || [];
+        tudo = tudo.concat(linhas);
+        if(linhas.length < pagina) break; // última página
+        inicio += pagina;
+      }
+      _mvData = tudo;
     }catch(e){ console.warn('[MV] load exception:', e); _mvData = []; }
     return _mvData;
   })();
@@ -35422,6 +35576,18 @@ function renderMapaVendas(){
   _mvRenderTable(view);
 }
 window.renderMapaVendas = renderMapaVendas;
+// mvSincronizarGoogleSheet() (secção "Mapa de Vendas: sincronização
+// automática", bloco de script bem anterior a este) precisa de forçar a
+// releitura de _mvData depois de criar orçamentos novos — mas essa variável
+// vive dentro desta IIFE (module pattern deste bloco), só acessível aqui
+// dentro. Um "_mvData = null;" feito de fora (noutro bloco de script) nunca
+// tocava nesta variável: criava, sem ninguém reparar, uma global solta
+// completamente desligada desta, por isso o Mapa de Vendas nunca
+// re-renderizava os orçamentos recém-sincronizados (07/10/2026 — "ele leu
+// mas não atualizou", confirmado em produção: 63 orçamentos novos gravados
+// no Supabase, ecrã continuou com os dados antigos). Esta função exportada é
+// a única forma correcta de invalidar o cache a partir de fora.
+window._mvInvalidarCache = function(){ _mvData = null; };
 
 function _mvRenderBanner(){
   var isAdmin = crmVeTudo();
@@ -39255,10 +39421,17 @@ if(typeof window.goPage==='function'){
 
   function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
   function rowToColab(r){
+    var extra = (r.extra && typeof r.extra==='object') ? r.extra : {};
     return { id:r.id, legacy_id:r.legacy_id, nome:r.nome||'', nif:r.nif||'', niss:r.niss||'',
       admissao:r.admissao||'', cargo:r.funcao||'', dept:r.departamento||'', salario:(r.salario==null?'':r.salario),
       contrato:r.contrato||'', tel:r.telefone||'', email:r.email||'', iban:r.iban||'', morada:r.morada||'',
-      foto:r.foto||'', color:r.cor||'#ec4899', ativo:r.ativo, deleted_at:r.deleted_at||null };
+      foto:r.foto||'', color:r.cor||'#ec4899', ativo:r.ativo, deleted_at:r.deleted_at||null,
+      // Documento de identificação + motivo do termo incerto (usados só por
+      // "Gerar Contrato", 07/10/2026) — a tabela ob_colaboradores não tem
+      // colunas dedicadas para isto, por isso vivem dentro de "extra"
+      // (jsonb), nunca inventados quando ainda não foram preenchidos.
+      docTipo: extra.docTipo||'', docNumero: extra.docNumero||'', docValidade: extra.docValidade||'',
+      motivoContrato: extra.motivoContrato||'' };
   }
   function formToPayload(){
     var g=function(id){ var el=document.getElementById(id); return el?String(el.value||'').trim():''; };
@@ -39270,7 +39443,8 @@ if(typeof window.goPage==='function'){
       nome:g('rh-c-nome'), nif:g('rh-c-nif')||null, niss:g('rh-c-niss')||null, admissao:adm,
       funcao:g('rh-c-cargo')||null, departamento:val('rh-c-dept')||null, salario:salN, contrato:val('rh-c-contrato')||null,
       telefone:g('rh-c-tel')||null, email:g('rh-c-email')||null, iban:g('rh-c-iban')||null, morada:g('rh-c-morada')||null,
-      foto:(fotoEl&&fotoEl.dataset?fotoEl.dataset.foto:'')||null, cor:'#ec4899'
+      foto:(fotoEl&&fotoEl.dataset?fotoEl.dataset.foto:'')||null, cor:'#ec4899',
+      extra: { docTipo:val('rh-c-doc-tipo')||'', docNumero:g('rh-c-doc-num'), docValidade:g('rh-c-doc-validade'), motivoContrato:g('rh-c-motivo') }
     };
   }
   async function uid(){ try{ var r=await sb().auth.getUser(); return (r&&r.data&&r.data.user)?r.data.user.id:null; }catch(e){ return null; } }
@@ -39542,11 +39716,14 @@ function _hfApplyFilters(rows, opts){
   opts = opts || {};
   var f = _hfFilters;
   return rows.filter(function(r){
-    // NC nunca entra aqui — mesma regra de tesGetReceber()/tesGetRecebidos()
-    // (fonte é a mesma tabela ob-tes-receber): é uma redução de faturação,
-    // não uma fatura nem um recebimento; contá-la em "Total"/"Recebido"
-    // duplicaria/distorceria os KPIs desta página.
-    if(r.tipo==='NC') return false;
+    // NC nunca entra nos cartões por estado (Recebido/Não Recebido/Parcial)
+    // — não faz sentido uma nota de crédito "estar recebida". Mas o
+    // "Total Faturado" tem de incluir a NC (reduz a faturação, é essa a
+    // natureza de uma NC) para bater com o Mapa de Vendas, que já soma
+    // tudo incluindo NC (pedido da Edna, doc "CRM - Parte 07", 07/10/2026:
+    // "esse mesmo valor tem que ser igual") — por isso opts.incluirNC
+    // permite ao "Total Faturado" passar por aqui sem excluir a NC.
+    if(r.tipo==='NC' && !opts.incluirNC) return false;
     if(!opts.skipEstado && f.estado && r.estado!==f.estado) return false;
     if(!opts.skipComercial && f.comercial && r.vendedor!==f.comercial) return false;
     if(f.busca){
@@ -39589,6 +39766,9 @@ function _hfRenderAll(){
 
 function _hfRenderKpis(rows){
   var view = _hfApplyFilters(rows, {skipEstado:true});
+  // Só para "Total Faturado" — mesmo filtro, mas incluindo NC (ver
+  // opts.incluirNC em _hfApplyFilters), para bater com o Mapa de Vendas.
+  var viewComNC = _hfApplyFilters(rows, {skipEstado:true, incluirNC:true});
   var recebido = view.filter(function(r){return r.estado==='Recebido';});
   var naoRecebido = view.filter(function(r){return r.estado==='Não Recebido';});
   var parcial = view.filter(function(r){return r.estado==='Recebido Parcial';});
@@ -39617,8 +39797,8 @@ function _hfRenderKpis(rows){
   // Valor principal passa a SEM IVA (pedido da Edna, doc "CRM - Parte 5",
   // 30/09/2026: "Os valores do total faturado devem ser considerados sem
   // IVA") — o valor com IVA desce para a sub-linha, nunca desaparece.
-  set('hf-kpi-total', _hfFmtEUR(sumLiq(view)));
-  set('hf-kpi-total-sub', view.length+' faturas · '+_hfFmtEUR(sum(view))+' com IVA');
+  set('hf-kpi-total', _hfFmtEUR(sumLiq(viewComNC)));
+  set('hf-kpi-total-sub', viewComNC.length+' faturas · '+_hfFmtEUR(sum(viewComNC))+' com IVA');
   set('hf-kpi-recebido', _hfFmtEUR(sumLiq(recebido)));
   set('hf-kpi-recebido-sub', recebido.length+' faturas · '+_hfFmtEUR(sum(recebido))+' com IVA');
   set('hf-kpi-naorecebido', _hfFmtEUR(sumSaldoLiq(naoRecebido)));
