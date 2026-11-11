@@ -41,17 +41,18 @@ function extrairFuncao(nome) {
 const SRC = extrairFuncao('crmEliminarComercial');
 
 function rodar(comerciaisIniciais, confirmaResposta) {
-  var chamouSave = false, chamouRenderAll = false, chamouSyncEmails = false;
+  var chamouSave = false, chamouRenderAll = false, chamouSyncEmails = false, chamouRefrescarSelects = false;
   const ctx = {
     confirm: function () { return confirmaResposta; },
     crmComerciais: comerciaisIniciais.slice(),
     saveComerciaisData: function () { chamouSave = true; },
     crmRenderComerciaisList: function () { chamouRenderAll = true; },
     syncOrcEmails: function () { chamouSyncEmails = true; },
+    crmRefrescarSelectsComerciais: function () { chamouRefrescarSelects = true; },
   };
   vm.createContext(ctx);
   vm.runInContext(SRC, ctx);
-  return { ctx: ctx, chamadas: function () { return { save: chamouSave, render: chamouRenderAll, syncEmails: chamouSyncEmails }; } };
+  return { ctx: ctx, chamadas: function () { return { save: chamouSave, render: chamouRenderAll, syncEmails: chamouSyncEmails, refrescarSelects: chamouRefrescarSelects }; } };
 }
 
 console.log('\n[A] crmEliminarComercial() remove da lista mas nunca toca em dados de leads/orçamentos/vendas (isso fica noutro sítio, atribuído por nome)');
@@ -67,6 +68,12 @@ teste('confirma -> remove o comercial certo, grava, re-renderiza e sincroniza em
   assert.strictEqual(c.save, true);
   assert.strictEqual(c.render, true);
   assert.strictEqual(c.syncEmails, true);
+});
+
+teste('confirma -> também refresca o dropdown "Filtrar por vendedor" (senão o nome eliminado continua lá até sair/voltar à página)', () => {
+  const r = rodar([{ id: 1, nome: 'Humberto Estrelinha', email: 'humberto@opportunitybox.pt', cor: '#8b5cf6', ativo: true }], true);
+  vm.runInContext('crmEliminarComercial(1)', r.ctx);
+  assert.strictEqual(r.chamadas().refrescarSelects, true, 'tinha de chamar crmRefrescarSelectsComerciais() para o filtro deixar de mostrar o Humberto imediatamente');
 });
 
 teste('não confirma -> não mexe em nada', () => {

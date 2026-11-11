@@ -15483,6 +15483,7 @@ function crmAddComercial(){
   document.getElementById('com-new-email').value = '';
   // Sync emails dos orçamentos
   syncOrcEmails();
+  crmRefrescarSelectsComerciais();
 }
 
 function crmEditComercial(id){
@@ -15497,6 +15498,18 @@ function crmEditComercial(id){
   saveComerciaisData();
   crmRenderComerciaisList();
   syncOrcEmails();
+  crmRefrescarSelectsComerciais();
+}
+
+// Refresca o dropdown "Filtrar por vendedor" do Pipeline de Leads e o
+// select de responsável do formulário de lead — ambos só se actualizavam
+// quando o Kanban era re-renderizado do zero, por isso um comercial
+// eliminado/pausado/editado no modal continuava a aparecer lá até se
+// navegar para fora da página e voltar (11/11/2026, reportado pela Edna:
+// "eliminei o Humberto mas não saiu do pipeline de leads").
+function crmRefrescarSelectsComerciais(){
+  if(typeof crmPopulateFiltroVendedor==='function') crmPopulateFiltroVendedor();
+  if(typeof crmPopulateAssSelect==='function') crmPopulateAssSelect(document.getElementById('clm-ass') ? document.getElementById('clm-ass').value : '');
 }
 
 function crmToggleComercial(id){
@@ -15504,6 +15517,7 @@ function crmToggleComercial(id){
   if(c) c.ativo = !c.ativo;
   saveComerciaisData();
   crmRenderComerciaisList();
+  crmRefrescarSelectsComerciais();
 }
 
 // Eliminar um comercial da lista (ex.: saiu da empresa). Isto só remove a
@@ -15520,6 +15534,7 @@ function crmEliminarComercial(id){
   saveComerciaisData();
   crmRenderComerciaisList();
   syncOrcEmails();
+  crmRefrescarSelectsComerciais();
 }
 
 // Sync emails dos orçamentos com comerciais actuais
