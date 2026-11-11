@@ -37246,6 +37246,22 @@ function obPendenciasTotal(p){
     +fin.pagar.length+fin.aVencer.length+fin.receber.length;
 }
 
+// Eliminar um lead directamente a partir do cartão "Pendências Comerciais"
+// (ex.: leads de teste ou obsoletos que ficam ali parados sem ninguém os
+// limpar) — sem precisar de abrir o lead primeiro. Mesma regra de
+// crmDeleteLead() (confirmação, registo da operação, persistência), só
+// que a partir do id do lead directamente, não de crmEditingId.
+function obEliminarLeadRapido(id){
+  if(!confirm('Eliminar este lead?')) return;
+  if(typeof crmLeads==='undefined') return;
+  crmLeads = crmLeads.filter(function(l){ return l.id!==id; });
+  if(typeof crmRegistarOperacaoLead==='function') crmRegistarOperacaoLead('delete', id);
+  if(typeof saveCrmLeads==='function') saveCrmLeads();
+  if(typeof crmRenderAll==='function') crmRenderAll();
+  obAtualizarPendencias();
+}
+window.obEliminarLeadRapido = obEliminarLeadRapido;
+
 function renderDashPendencias(p){
   var el=document.getElementById('ob-dash-pendencias');
   if(!el) return;
@@ -37259,7 +37275,8 @@ function renderDashPendencias(p){
       +'<span style="color:var(--r);font-family:\'DM Mono\',monospace;font-size:12px;min-width:38px">'+x.dias+'d</span>'
       +'<span style="color:var(--txt2);font-weight:600">'+(l.n||'—')+'</span>'
       +'<span style="color:var(--muted)">'+(l.emp||'')+'</span>'
-      +'<span style="margin-left:auto;color:var(--muted);font-size:12px">'+(l.ass||'—')+' · '+(l.st||'')+'</span></div>';
+      +'<span style="margin-left:auto;color:var(--muted);font-size:12px">'+(l.ass||'—')+' · '+(l.st||'')+'</span>'
+      +'<button onclick="event.stopPropagation();obEliminarLeadRapido('+l.id+')" title="Eliminar este lead" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;padding:2px 4px;line-height:1;border-radius:4px" onmouseover="this.style.color=\'var(--r)\';this.style.background=\'rgba(224,85,85,.12)\'" onmouseout="this.style.color=\'var(--muted)\';this.style.background=\'none\'">🗑</button></div>';
   }
   function rowAcao(x,cor){
     var l=x.lead, pa=x.pa;
