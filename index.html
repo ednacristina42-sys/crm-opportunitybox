@@ -15463,8 +15463,9 @@ function crmRenderComerciaisList(){
     </div>
     <div style="font-size:13px;color:${c.ativo?'var(--g)':'var(--muted)'}">${c.ativo?'● Activo':'○ Inactivo'}</div>
     <div class="com-btns">
-      <button class="com-edit-btn" onclick="crmEditComercial(${c.id})">✏️</button>
-      <button class="com-del-btn" onclick="crmToggleComercial(${c.id})">${c.ativo?'⏸':'▶'}</button>
+      <button class="com-edit-btn" onclick="crmEditComercial(${c.id})" title="Editar">✏️</button>
+      <button class="com-edit-btn" onclick="crmToggleComercial(${c.id})" title="${c.ativo?'Pausar (ex.: baixa, férias)':'Reativar'}">${c.ativo?'⏸':'▶'}</button>
+      <button class="com-del-btn" onclick="crmEliminarComercial(${c.id})" title="Eliminar (saiu da empresa)">🗑</button>
     </div>
   </div>`).join('');
 }
@@ -15482,6 +15483,7 @@ function crmAddComercial(){
   document.getElementById('com-new-email').value = '';
   // Sync emails dos orçamentos
   syncOrcEmails();
+  crmRefrescarSelectsComerciais();
 }
 
 function crmEditComercial(id){
@@ -15496,6 +15498,18 @@ function crmEditComercial(id){
   saveComerciaisData();
   crmRenderComerciaisList();
   syncOrcEmails();
+  crmRefrescarSelectsComerciais();
+}
+
+// Refresca o dropdown "Filtrar por vendedor" do Pipeline de Leads e o
+// select de responsável do formulário de lead — ambos só se actualizavam
+// quando o Kanban era re-renderizado do zero, por isso um comercial
+// eliminado/pausado/editado no modal continuava a aparecer lá até se
+// navegar para fora da página e voltar (11/11/2026, reportado pela Edna:
+// "eliminei o Humberto mas não saiu do pipeline de leads").
+function crmRefrescarSelectsComerciais(){
+  if(typeof crmPopulateFiltroVendedor==='function') crmPopulateFiltroVendedor();
+  if(typeof crmPopulateAssSelect==='function') crmPopulateAssSelect(document.getElementById('clm-ass') ? document.getElementById('clm-ass').value : '');
 }
 
 function crmToggleComercial(id){
@@ -15503,6 +15517,24 @@ function crmToggleComercial(id){
   if(c) c.ativo = !c.ativo;
   saveComerciaisData();
   crmRenderComerciaisList();
+  crmRefrescarSelectsComerciais();
+}
+
+// Eliminar um comercial da lista (ex.: saiu da empresa). Isto só remove a
+// entrada da lista de comerciais (usada nos menus para novos leads/
+// orçamentos e nos rankings de "activos") — os leads, orçamentos e vendas
+// já existentes continuam gravados com o nome dele tal como estavam
+// (crmGetComercial() já tem fallback para um nome que já não está na
+// lista), por isso eliminar aqui não apaga nada do histórico.
+function crmEliminarComercial(id){
+  const c = crmComerciais.find(x=>x.id===id);
+  if(!c) return;
+  if(!confirm('Eliminar "'+c.nome+'" da lista de comerciais?\n\nOs leads, orçamentos e vendas já atribuídos a este nome mantêm-se no histórico tal como estão — só deixa de aparecer nas opções para novos registos.')) return;
+  crmComerciais = crmComerciais.filter(x=>x.id!==id);
+  saveComerciaisData();
+  crmRenderComerciaisList();
+  syncOrcEmails();
+  crmRefrescarSelectsComerciais();
 }
 
 // Sync emails dos orçamentos com comerciais actuais
@@ -39521,6 +39553,15 @@ if(typeof window.goPage==='function'){
       if(typeof rhRenderColabs==='function') rhRenderColabs();
       ensureToolbar(); setStatus(rhColabs.length+' ativo(s)');
       if(window._rhShowInativos) rhRenderInativos();
+      // Reportado pela Edna (11/11/2026): desativou o Humberto em RH →
+      // Colaboradores e ele continuava na barra lateral ("ESPAÇOS >
+      // Comercial") e no seletor "Ver como (comercial)" — ambos só eram
+      // construídos uma vez no arranque da página, nunca depois de
+      // rhColabs mudar. Esta é a única função que todas as acções sobre
+      // colaboradores (gravar, desativar, restaurar, apagar) chamam no
+      // fim, por isso é aqui que os dois ficam sempre em dia.
+      if(typeof obRenderComerciaisSidebar==='function') obRenderComerciaisSidebar();
+      if(typeof renderUserSwitcher==='function') renderUserSwitcher();
       return true;
     }catch(e){ console.error('[colab] load ex', e); setStatus('erro'); return false; }
   };
