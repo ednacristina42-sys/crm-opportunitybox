@@ -75,8 +75,23 @@ const SRC_CF = [
   extrairFuncao('cfTotais'),
 ].join('\n');
 
+// cfCombinarCompras() decide Pendente/Vencido comparando com `new Date()`
+// (o "hoje" real). Sem fixar esta data, o teste ia apodrecendo sozinho à
+// medida que o tempo passava: o vencimento de FC 2026/100 (2026-10-15),
+// no FUTURO quando este teste foi escrito a 29/09/2026, ficou no PASSADO
+// a partir de 16/10/2026 — passando a "Vencido" e fazendo o teste [4]
+// falhar (encontrado na auditoria overnight de 13/11/2026, pedida pela
+// Edna: "verificando todo o crm e veja se tem erros"), sem que
+// cfCombinarCompras()/cfFiltrarCompras() tivessem mudado nem um bocadinho.
+// Fixa-se "hoje" em HOJE_FIXA, tal como os testes mais recentes desta
+// suite já fazem, para o teste nunca mais depender da data real.
+const RealDate = Date;
 function correr(chamada, globals) {
   const ctx = Object.assign({ console }, globals);
+  ctx.Date = class extends RealDate {
+    constructor(...args) { if (args.length === 0) { super(HOJE_FIXA + 'T12:00:00.000Z'); } else { super(...args); } }
+    static now() { return new RealDate(HOJE_FIXA + 'T12:00:00.000Z').getTime(); }
+  };
   vm.createContext(ctx);
   vm.runInContext(SRC_CF + '\n_RESULT = (' + chamada + ');', ctx);
   return ctx._RESULT;
@@ -84,7 +99,7 @@ function correr(chamada, globals) {
 
 // ── Dados mock: 2 meses (Agosto e Setembro 2026), 2 fornecedores (um
 // categorizado, um não), abrangendo os 3 buckets (aPagar/pagas/creditos).
-const HOJE_FIXA = '2026-09-29'; // "hoje" real da sessão, usado só para calcular Vencido nos comentários abaixo
+const HOJE_FIXA = '2026-09-29'; // "hoje" fixo para o teste (ver nota em correr() acima) — nunca o "hoje" real da máquina
 const FORNECEDOR_CATEGORIAS = {
   'Alumínios do Norte, Lda': 'Matéria-prima / Fornecedores',
   // 'Fornecedor Novo, Lda' fica SEM entrada — deve cair em "Não categorizado"

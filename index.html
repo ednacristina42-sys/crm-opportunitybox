@@ -38677,9 +38677,16 @@ function obSbIniciarRealtimeLeads(){
   var sb = (typeof crmSBClient==='function') ? crmSBClient() : null;
   if(!sb || _obSbRealtimeCh) return;
   try{
+    // Nota (13/11/2026): a versão anterior usava filter:'chave=eq.ob-leads' /
+    // filter:'chave=eq.ob-crm-atividades'. O Supabase Realtime rejeitava
+    // esses filtros em produção ("invalid column for filter chave", visto
+    // repetidamente nos logs do Postgres, horas a fio) e o evento nunca
+    // chegava ao browser. O handler já ignora qual chave mudou — mescla
+    // sempre leads+atividades+follow-ups — por isso ouvir todas as
+    // alterações da tabela (sem filter, tal como finIniciarRealtime() já
+    // faz sem problemas) mantém o mesmo comportamento e corrige o erro.
     _obSbRealtimeCh = sb.channel('ob_crm_dados_rt')
-      .on('postgres_changes', { event:'*', schema:'public', table:'ob_crm_dados', filter:'chave=eq.ob-leads' }, function(){ obSbMesclarRemotoAntesDoBackup(); })
-      .on('postgres_changes', { event:'*', schema:'public', table:'ob_crm_dados', filter:'chave=eq.ob-crm-atividades' }, function(){ obSbMesclarRemotoAntesDoBackup(); })
+      .on('postgres_changes', { event:'*', schema:'public', table:'ob_crm_dados' }, function(){ obSbMesclarRemotoAntesDoBackup(); })
       .subscribe();
   }catch(e){ console.warn('[SB-CRM] Realtime indisponível:', e.message||e); }
 }
