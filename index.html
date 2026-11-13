@@ -10028,7 +10028,7 @@ tbody td{font-size:15px}
         <select id="fin-desp-filtro-func" onchange="finRenderDespesas()" style="background:var(--bg3);border:1px solid var(--border);color:var(--txt2);border-radius:7px;padding:5px 10px;font-size:13px">
           <option value="">— Todos os funcionários —</option>
         </select>
-        <select id="fin-desp-filtro-mes" onchange="finRenderDespesas()" style="background:var(--bg3);border:1px solid var(--border);color:var(--txt2);border-radius:7px;padding:5px 10px;font-size:13px">
+        <select id="fin-desp-filtro-mes" onchange="this.setAttribute('data-tocado','1');finRenderDespesas()" style="background:var(--bg3);border:1px solid var(--border);color:var(--txt2);border-radius:7px;padding:5px 10px;font-size:13px">
           <option value="">— Todos os meses —</option>
         </select>
         <select id="fin-desp-filtro-estado" onchange="finRenderDespesas()" style="background:var(--bg3);border:1px solid var(--border);color:var(--txt2);border-radius:7px;padding:5px 10px;font-size:13px">
@@ -25455,7 +25455,7 @@ function finDespLimparFiltros() {
   var sf = document.getElementById('fin-desp-filtro-func');
   var sm = document.getElementById('fin-desp-filtro-mes');
   var se = document.getElementById('fin-desp-filtro-estado');
-  if(sf) sf.value=''; if(sm) sm.value=''; if(se) se.value='';
+  if(sf) sf.value=''; if(sm){ sm.value=''; sm.setAttribute('data-tocado','1'); } if(se) se.value='';
   finRenderDespesas();
 }
 
@@ -25492,14 +25492,33 @@ function finRenderDespesas() {
     var funcs=[...new Set(todasDespesas.map(function(d){return d.funcionario||'';}).filter(Boolean))].sort();
     funcs.forEach(function(f){ var o=document.createElement('option'); o.value=f; o.textContent=f; sfEl.appendChild(o); });
     sfEl.value=prevFunc; }
-  if(smEl){ smEl.innerHTML='<option value="">— Todos os meses —</option>';
+  if(smEl){
+    // Correção (13/11/2026, pedido da Edna): a tabela ficava sempre em
+    // "Todos os meses" por omissão, enquanto o cartão "Este mês" já só
+    // soma o mês actual — pareciam não bater certo (eram só meses
+    // diferentes à vista, nunca um erro de cálculo; confirmado: filtrada a
+    // Novembro, a tabela dá exactamente os mesmos 13 registos/€666,23 do
+    // cartão). Agora a tabela já abre nesse mesmo mês por omissão — mas só
+    // enquanto a Edna não tiver mexido ela própria no filtro ('data-tocado',
+    // marcado pelo onchange do próprio <select>). Sem isto, se Novembro só
+    // aparecesse na lista depois do app de pontos carregar (despSyncApp()
+    // corre depois do primeiro render desta tabela), um "só na primeira
+    // vez" ficaria preso a "Todos os meses" para sempre nessa sessão.
+    var tocadoPelaEdna = smEl.getAttribute('data-tocado');
+    smEl.innerHTML='<option value="">— Todos os meses —</option>';
     var mesesUniq=[...new Set(sorted.map(function(d){
       var dt=finDespParseData(d.data); if(!dt) return null;
       return dt.toISOString().slice(0,7);
     }).filter(Boolean))];
     mesesUniq.forEach(function(m){ var o=document.createElement('option'); o.value=m;
       o.textContent=new Date(m+'-15').toLocaleDateString('pt-PT',{month:'long',year:'numeric'}); smEl.appendChild(o); });
-    smEl.value=prevMes; }
+    if(!tocadoPelaEdna){
+      var mesAtual = new Date().toISOString().slice(0,7);
+      smEl.value = mesesUniq.indexOf(mesAtual)!==-1 ? mesAtual : prevMes;
+    } else {
+      smEl.value=prevMes;
+    }
+  }
 
   // Ler filtros ativos
   var filtFunc = sfEl ? sfEl.value : '';
