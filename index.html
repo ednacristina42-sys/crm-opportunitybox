@@ -22467,6 +22467,15 @@ function despAppEstadoNorm(raw){
   if(/^aprovad|^approved/.test(s)) return 'approved';
   if(/^rejeitad|^rejected/.test(s)) return 'rejected';
   if(/^reembolsad|^reimbursed/.test(s)) return 'reimbursed';
+  // "paga"/"pago"/"paid" (13/11/2026, pedido da Edna): o app de pontos
+  // nunca manda "aprovada" nem "reembolsada" — manda directamente "paga"
+  // quando a empresa já devolveu o dinheiro ao funcionário. Sem isto, as
+  // despesas pagas não entravam em NENHUM dos 4 estados reconhecidos, e os
+  // cartões "Pendentes/Reembolsos/Aprovadas" ficavam sempre a zero, por
+  // mais despesas pagas que existissem — só "Este mês" (que conta tudo,
+  // sem olhar ao estado) alguma vez reflectia o valor real. "Paga" é, na
+  // prática, um reembolso já concluído — conta para aí.
+  if(/^pag[ao]\b|^paid/.test(s)) return 'reimbursed';
   if(/^submetid|^submitted/.test(s)) return 'submitted';
   if(/^pendente|^pending/.test(s)) return 'pending';
   return s;
