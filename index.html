@@ -22879,6 +22879,14 @@ async function despSyncApp(){
     // Painel Financeiro (finRenderDespesas() já junta EC_DESPESAS_APP), para
     // quem já lá estava não ficar com a tabela desatualizada até navegar.
     try{ if(typeof finRenderDespesas==='function') finRenderDespesas(); }catch(e){}
+    // Correção (13/11/2026, reportado pela Edna: "Este mês" ficava sempre
+    // abaixo do real — "não fique só em 666, isso tá errado") — a tabela já
+    // era atualizada acima, mas os 4 cartões (Este mês/Pendentes/Reembolsos/
+    // Aprovadas) ficavam presos ao valor calculado ANTES do app de pontos
+    // responder (só CRM_DESPESAS, sem EC_DESPESAS_APP). despCalcularTotais()
+    // soma os dois, mas só é chamada aqui depois de EC_DESPESAS_APP já ter
+    // os dados reais.
+    try{ if(typeof finAtualizarKpisDespesas==='function') finAtualizarKpisDespesas(); }catch(e){}
   } catch(e){
     if(status) status.textContent='❌ Erro ao carregar app de pontos: '+e.message.slice(0,80);
     if(btn){ btn.textContent='🔄 Actualizar App'; btn.disabled=false; }
