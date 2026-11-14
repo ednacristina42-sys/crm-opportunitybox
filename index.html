@@ -28548,6 +28548,20 @@ function sincFinReconciliar(tipoTes, existentesRows, tocDocs){
     var k = nm + '|' + d;
     (idx[k] = idx[k] || []).push(r);
   });
+  // Índice por _tocoId — uma ligação já firmada antes (ex.: corrigida à mão
+  // por SQL depois de uma sincronização incompleta) nunca deve voltar a ser
+  // recalculada por nome+data+valor. Sem isto, bastava o nome/data normalizados
+  // já não baterem byte a byte com o que o TOConline devolve agora (datas
+  // ligeiramente diferentes, acentuação, etc.) para a mesma linha cair sempre
+  // em "novos" aqui — e a escrita real então abortava sempre no mesmo "já
+  // existe" (duplicado por _tocoId, verificado em sincFinExecutarEscritaReal),
+  // em loop, sem que "Correr dry-run" alguma vez resolvesse (reportado pela
+  // Edna, repetido 3x em 13/11/2026, mesmos 2 documentos _tocoId=12646570 e
+  // 12646729 — auditoria overnight).
+  var idxTocoId = {};
+  existentesDoTipo.forEach(function(r){
+    if(r._tocoId) idxTocoId[String(r.tipo||tipoTes) + '|' + String(r._tocoId)] = r;
+  });
 
   var usados = {};
   var matches = [], novos = [], ambiguidades = [], placeholdersExcluidosToc = 0, voidedExcluidosToc = 0;
@@ -28571,6 +28585,15 @@ function sincFinReconciliar(tipoTes, existentesRows, tocDocs){
     if(sincFinEhPlaceholder(doc.customer_business_name, doc.customer_tax_registration_number)){
       placeholdersExcluidosToc++;
       placeholdersDocs.push({ id: doc.id, doc_no: doc.document_no, cliente: doc.customer_business_name, data: doc.date, valor: doc.gross_total, motivo: 'cliente placeholder (Cliente Final/NIF genérico) — nunca usado como identidade' });
+      return;
+    }
+    // Ligação já firmada por _tocoId — identidade exata, nunca recalculada
+    // por nome+data+valor, nem sujeita a ambiguidade (ver nota no índice
+    // idxTocoId acima).
+    var rLigado = idxTocoId[tipoTes + '|' + String(doc.id)];
+    if(rLigado){
+      usados[rLigado.id] = doc.document_no || doc.id;
+      matches.push({ doc: doc, linha_existente: rLigado });
       return;
     }
     var nm = sincFinNomeNorm(doc.customer_business_name);
