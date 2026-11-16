@@ -22467,6 +22467,15 @@ function despAppEstadoNorm(raw){
   if(/^aprovad|^approved/.test(s)) return 'approved';
   if(/^rejeitad|^rejected/.test(s)) return 'rejected';
   if(/^reembolsad|^reimbursed/.test(s)) return 'reimbursed';
+  // "paga"/"pago"/"paid" (13/11/2026, pedido da Edna): o app de pontos
+  // nunca manda "aprovada" nem "reembolsada" — manda directamente "paga"
+  // quando a empresa já devolveu o dinheiro ao funcionário. Sem isto, as
+  // despesas pagas não entravam em NENHUM dos 4 estados reconhecidos, e os
+  // cartões "Pendentes/Reembolsos/Aprovadas" ficavam sempre a zero, por
+  // mais despesas pagas que existissem — só "Este mês" (que conta tudo,
+  // sem olhar ao estado) alguma vez reflectia o valor real. "Paga" é, na
+  // prática, um reembolso já concluído — conta para aí.
+  if(/^pag[ao]\b|^paid/.test(s)) return 'reimbursed';
   if(/^submetid|^submitted/.test(s)) return 'submitted';
   if(/^pendente|^pending/.test(s)) return 'pending';
   return s;
@@ -28539,6 +28548,20 @@ function sincFinReconciliar(tipoTes, existentesRows, tocDocs){
     var k = nm + '|' + d;
     (idx[k] = idx[k] || []).push(r);
   });
+  // Índice por _tocoId — uma ligação já firmada antes (ex.: corrigida à mão
+  // por SQL depois de uma sincronização incompleta) nunca deve voltar a ser
+  // recalculada por nome+data+valor. Sem isto, bastava o nome/data normalizados
+  // já não baterem byte a byte com o que o TOConline devolve agora (datas
+  // ligeiramente diferentes, acentuação, etc.) para a mesma linha cair sempre
+  // em "novos" aqui — e a escrita real então abortava sempre no mesmo "já
+  // existe" (duplicado por _tocoId, verificado em sincFinExecutarEscritaReal),
+  // em loop, sem que "Correr dry-run" alguma vez resolvesse (reportado pela
+  // Edna, repetido 3x em 13/11/2026, mesmos 2 documentos _tocoId=12646570 e
+  // 12646729 — auditoria overnight).
+  var idxTocoId = {};
+  existentesDoTipo.forEach(function(r){
+    if(r._tocoId) idxTocoId[String(r.tipo||tipoTes) + '|' + String(r._tocoId)] = r;
+  });
 
   var usados = {};
   var matches = [], novos = [], ambiguidades = [], placeholdersExcluidosToc = 0, voidedExcluidosToc = 0;
@@ -28562,6 +28585,15 @@ function sincFinReconciliar(tipoTes, existentesRows, tocDocs){
     if(sincFinEhPlaceholder(doc.customer_business_name, doc.customer_tax_registration_number)){
       placeholdersExcluidosToc++;
       placeholdersDocs.push({ id: doc.id, doc_no: doc.document_no, cliente: doc.customer_business_name, data: doc.date, valor: doc.gross_total, motivo: 'cliente placeholder (Cliente Final/NIF genérico) — nunca usado como identidade' });
+      return;
+    }
+    // Ligação já firmada por _tocoId — identidade exata, nunca recalculada
+    // por nome+data+valor, nem sujeita a ambiguidade (ver nota no índice
+    // idxTocoId acima).
+    var rLigado = idxTocoId[tipoTes + '|' + String(doc.id)];
+    if(rLigado){
+      usados[rLigado.id] = doc.document_no || doc.id;
+      matches.push({ doc: doc, linha_existente: rLigado });
       return;
     }
     var nm = sincFinNomeNorm(doc.customer_business_name);
@@ -31510,6 +31542,7 @@ async function tocoSincronizarFaturas(silent, ano) {
       { tipo: 'RC', sync: 'receipts' }
     ];
     var todos = [];
+    var falhas = [];
     // Mapeia o formato achatado da Edge Function (achatarDocumento() em
     // crm-toconline/index.ts: document_no/customer_business_name/
     // net_total/gross_total/status_bruto/pending_total) para os nomes de
@@ -31546,7 +31579,16 @@ async function tocoSincronizarFaturas(silent, ano) {
         if(!resultado.completo){
           console.warn('[TocOnline] ' + recursos[i].sync + ': paginação não terminou nesta chamada (' + resultado.chamadas + ' chamadas) — repita a sincronização para completar.');
         }
-      } catch(e) { console.error('[TocOnline] Falha a sincronizar ' + recursos[i].sync + ':', e); /* continua com os outros tipos */ }
+      } catch(e) { console.error('[TocOnline] Falha a sincronizar ' + recursos[i].sync + ':', e); falhas.push(recursos[i].sync + ': ' + (e.message || e)); /* continua com os outros tipos */ }
+    }
+    // Se TODAS as fontes falharam, nunca mostrar "sem documentos" — isso
+    // parece um sucesso vazio e escondia por completo a falha real (ex.:
+    // TOConline desligado/token expirado) atrás de uma mensagem que parece
+    // benigna. Reportado pela Edna via revisão externa, 16/11/2026: "o botão
+    // de sincronizar do TOConline vai para a tela de Tesouraria, e aqui não
+    // tem nenhum dado" — exactamente este cenário.
+    if(!todos.length && falhas.length){
+      throw new Error('Falha a sincronizar TOConline (' + falhas.length + '/' + recursos.length + ' fontes): ' + falhas.join(' | '));
     }
     // ADD: mesclar com a cache existente em vez de substituir (preserva anos já sincronizados)
     var chave = function(d){ return (d._tipo||'') + '-' + (d.Id || d.Number || d.DocumentNumber || JSON.stringify(d).slice(0,40)); };
@@ -31574,7 +31616,8 @@ async function tocoSincronizarFaturas(silent, ano) {
       console.log('TocOnline: sincronização concluída sem documentos.');
       if(syncStatus) syncStatus.textContent = 'ℹ️ Sem documentos — última verificação às ' + agora;
     } else {
-      if(syncStatus) syncStatus.textContent = '✅ Sincronizado às ' + agora + ' — ' + todos.length + ' documentos';
+      if(syncStatus) syncStatus.textContent = '✅ Sincronizado às ' + agora + ' — ' + todos.length + ' documentos'
+        + (falhas.length ? (' · ⚠️ ' + falhas.length + ' fonte(s) falhou/falharam: ' + falhas.join(' | ')) : '');
     }
     if(syncDot) syncDot.classList.remove('active');
     tocoUpdateVencidasBadge(todos);
@@ -38668,9 +38711,16 @@ function obSbIniciarRealtimeLeads(){
   var sb = (typeof crmSBClient==='function') ? crmSBClient() : null;
   if(!sb || _obSbRealtimeCh) return;
   try{
+    // Nota (13/11/2026): a versão anterior usava filter:'chave=eq.ob-leads' /
+    // filter:'chave=eq.ob-crm-atividades'. O Supabase Realtime rejeitava
+    // esses filtros em produção ("invalid column for filter chave", visto
+    // repetidamente nos logs do Postgres, horas a fio) e o evento nunca
+    // chegava ao browser. O handler já ignora qual chave mudou — mescla
+    // sempre leads+atividades+follow-ups — por isso ouvir todas as
+    // alterações da tabela (sem filter, tal como finIniciarRealtime() já
+    // faz sem problemas) mantém o mesmo comportamento e corrige o erro.
     _obSbRealtimeCh = sb.channel('ob_crm_dados_rt')
-      .on('postgres_changes', { event:'*', schema:'public', table:'ob_crm_dados', filter:'chave=eq.ob-leads' }, function(){ obSbMesclarRemotoAntesDoBackup(); })
-      .on('postgres_changes', { event:'*', schema:'public', table:'ob_crm_dados', filter:'chave=eq.ob-crm-atividades' }, function(){ obSbMesclarRemotoAntesDoBackup(); })
+      .on('postgres_changes', { event:'*', schema:'public', table:'ob_crm_dados' }, function(){ obSbMesclarRemotoAntesDoBackup(); })
       .subscribe();
   }catch(e){ console.warn('[SB-CRM] Realtime indisponível:', e.message||e); }
 }
