@@ -31542,6 +31542,7 @@ async function tocoSincronizarFaturas(silent, ano) {
       { tipo: 'RC', sync: 'receipts' }
     ];
     var todos = [];
+    var falhas = [];
     // Mapeia o formato achatado da Edge Function (achatarDocumento() em
     // crm-toconline/index.ts: document_no/customer_business_name/
     // net_total/gross_total/status_bruto/pending_total) para os nomes de
@@ -31578,7 +31579,16 @@ async function tocoSincronizarFaturas(silent, ano) {
         if(!resultado.completo){
           console.warn('[TocOnline] ' + recursos[i].sync + ': paginação não terminou nesta chamada (' + resultado.chamadas + ' chamadas) — repita a sincronização para completar.');
         }
-      } catch(e) { console.error('[TocOnline] Falha a sincronizar ' + recursos[i].sync + ':', e); /* continua com os outros tipos */ }
+      } catch(e) { console.error('[TocOnline] Falha a sincronizar ' + recursos[i].sync + ':', e); falhas.push(recursos[i].sync + ': ' + (e.message || e)); /* continua com os outros tipos */ }
+    }
+    // Se TODAS as fontes falharam, nunca mostrar "sem documentos" — isso
+    // parece um sucesso vazio e escondia por completo a falha real (ex.:
+    // TOConline desligado/token expirado) atrás de uma mensagem que parece
+    // benigna. Reportado pela Edna via revisão externa, 16/11/2026: "o botão
+    // de sincronizar do TOConline vai para a tela de Tesouraria, e aqui não
+    // tem nenhum dado" — exactamente este cenário.
+    if(!todos.length && falhas.length){
+      throw new Error('Falha a sincronizar TOConline (' + falhas.length + '/' + recursos.length + ' fontes): ' + falhas.join(' | '));
     }
     // ADD: mesclar com a cache existente em vez de substituir (preserva anos já sincronizados)
     var chave = function(d){ return (d._tipo||'') + '-' + (d.Id || d.Number || d.DocumentNumber || JSON.stringify(d).slice(0,40)); };
@@ -31606,7 +31616,8 @@ async function tocoSincronizarFaturas(silent, ano) {
       console.log('TocOnline: sincronização concluída sem documentos.');
       if(syncStatus) syncStatus.textContent = 'ℹ️ Sem documentos — última verificação às ' + agora;
     } else {
-      if(syncStatus) syncStatus.textContent = '✅ Sincronizado às ' + agora + ' — ' + todos.length + ' documentos';
+      if(syncStatus) syncStatus.textContent = '✅ Sincronizado às ' + agora + ' — ' + todos.length + ' documentos'
+        + (falhas.length ? (' · ⚠️ ' + falhas.length + ' fonte(s) falhou/falharam: ' + falhas.join(' | ')) : '');
     }
     if(syncDot) syncDot.classList.remove('active');
     tocoUpdateVencidasBadge(todos);
