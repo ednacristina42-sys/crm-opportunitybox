@@ -22896,6 +22896,16 @@ async function despSyncApp(){
     // soma os dois, mas só é chamada aqui depois de EC_DESPESAS_APP já ter
     // os dados reais.
     try{ if(typeof finAtualizarKpisDespesas==='function') finAtualizarKpisDespesas(); }catch(e){}
+    // Mesma correção, terceira superfície (17/11/2026, reportado pela Edna:
+    // Dashboard CFO mostrava "Despesas de funcionários: €0" mesmo com
+    // despesas reais "aprovadas" no app de pontos) — o cartão do Dashboard
+    // (dash-kpi-despfunc-*) é calculado por despCalcularTotaisMes(), que lê
+    // EC_DESPESAS_APP; ao arrancar o CRM, renderDashboardCFO() já corre
+    // ANTES de este fetch (acima) responder, por isso ficava sempre preso a
+    // 0 até a Edna navegar manualmente para a página de Despesas. Chamar
+    // renderDashboardCFO() de novo aqui não cria gráficos (initCharts() é
+    // uma função separada) — só atualiza os cartões de texto, em segurança.
+    try{ if(typeof renderDashboardCFO==='function') renderDashboardCFO(); }catch(e){}
   } catch(e){
     if(status) status.textContent='❌ Erro ao carregar app de pontos: '+e.message.slice(0,80);
     if(btn){ btn.textContent='🔄 Actualizar App'; btn.disabled=false; }
