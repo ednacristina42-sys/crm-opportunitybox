@@ -22,6 +22,22 @@ window.addEventListener('unhandledrejection', function(e) {
   console.error('[OB DEBUG] Promise rejeitada:', e.reason);
 });
 
+// Estados terminais do pipeline comercial/orçamentos — declarados aqui, bem
+// cedo, em vez de só lá para a frente do ficheiro (onde continuam
+// declarados também, de forma redundante mas inofensiva — var permite
+// reatribuir). Causa raiz (17/11/2026, "FU_ESTADOS_LEAD_TERMINAIS is not
+// defined" dentro de crmUpdateFunnel()): a declaração original vive num
+// <script> separado, bem mais à frente no ficheiro; se qualquer coisa
+// lançar uma exceção síncrona mais cedo NESSE MESMO <script> (window.onerror
+// acima apanha-a e regista-a, mas não impede o resto desse bloco de parar),
+// o resto desse <script> — incluindo esta declaração — nunca chega a correr,
+// e qualquer código que a use antes fica com "not defined" para sempre. Como
+// obSbMesclarRemotoAntesDoBackup() passou a disparar de verdade depois da
+// correção do filtro do Realtime (13/11/2026), este caminho (nunca
+// exercitado antes) começou a ser atingido e expôs o problema.
+var FU_ESTADOS_LEAD_TERMINAIS = ['Produção/Adjudicação','Orçamento Perdido','Arquivo'];
+var FU_ESTADOS_ORC_TERMINAIS = ['Aprovado','Faturado','Cancelado'];
+
 // ══════════════════════════════════════════════════════════════
 // EVENT BUS — Barramento de eventos central para agentes colaborativos
 // ══════════════════════════════════════════════════════════════
@@ -22896,6 +22912,16 @@ async function despSyncApp(){
     // soma os dois, mas só é chamada aqui depois de EC_DESPESAS_APP já ter
     // os dados reais.
     try{ if(typeof finAtualizarKpisDespesas==='function') finAtualizarKpisDespesas(); }catch(e){}
+    // Mesma correção, terceira superfície (17/11/2026, reportado pela Edna:
+    // Dashboard CFO mostrava "Despesas de funcionários: €0" mesmo com
+    // despesas reais "aprovadas" no app de pontos) — o cartão do Dashboard
+    // (dash-kpi-despfunc-*) é calculado por despCalcularTotaisMes(), que lê
+    // EC_DESPESAS_APP; ao arrancar o CRM, renderDashboardCFO() já corre
+    // ANTES de este fetch (acima) responder, por isso ficava sempre preso a
+    // 0 até a Edna navegar manualmente para a página de Despesas. Chamar
+    // renderDashboardCFO() de novo aqui não cria gráficos (initCharts() é
+    // uma função separada) — só atualiza os cartões de texto, em segurança.
+    try{ if(typeof renderDashboardCFO==='function') renderDashboardCFO(); }catch(e){}
   } catch(e){
     if(status) status.textContent='❌ Erro ao carregar app de pontos: '+e.message.slice(0,80);
     if(btn){ btn.textContent='🔄 Actualizar App'; btn.disabled=false; }
@@ -29327,8 +29353,20 @@ function sincFinRenderPainel(state){
   }
   if(re && re.ts){
     var okCor = re.ok ? '#34c759' : '#ff453a';
+    // Este cartão é o registo da ÚLTIMA tentativa de escrita real — só muda
+    // quando se clica "Confirmar escrita real" de novo, nunca só por correr
+    // um dry-run. Sem isto, uma tentativa falhada de há semanas/meses parece
+    // sempre um erro que acabou de acontecer agora (confundiu a Edna duas
+    // vezes, 16/11/2026, com tentativas de 24/09 e de 29/09 — "de logo
+    // solução a isto" a um cartão que já nem era novidade). Mostra um aviso
+    // claro sempre que a tentativa tem mais de 10 minutos.
+    var minsDesde = (Date.now() - new Date(re.ts).getTime()) / 60000;
+    var avisoAntigo = (minsDesde > 10)
+      ? '<div style="font-size:11.5px;color:#f5a623;margin-bottom:6px">⚠️ Isto é o registo de uma tentativa ANTERIOR — não aconteceu agora. Só muda quando clicares "Confirmar escrita real" outra vez.</div>'
+      : '';
     html += '<div style="margin-top:16px;padding:12px;border:1px solid ' + okCor + ';background:' + (re.ok ? 'rgba(52,199,89,.08)' : 'rgba(255,69,58,.08)') + ';border-radius:10px">'
       + '<div style="font-weight:600;font-size:13px;margin-bottom:6px;color:' + okCor + '">' + (re.ok ? '✓ Escrita real concluída e confirmada' : '✗ Escrita real PAROU — ver erro abaixo (nunca repetida automaticamente)') + '</div>'
+      + avisoAntigo
       + '<div style="font-size:11.5px;color:var(--muted);margin-bottom:8px">Última tentativa: ' + new Date(re.ts).toLocaleString('pt-PT') + ' · etapa: ' + esc0(re.etapa || '—') + '</div>'
       + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:9px">'
       + cartao('Backup gerado', re.backup_gerado ? '✓' : '✗', re.backup_gerado ? '#34c759' : '#ff453a')

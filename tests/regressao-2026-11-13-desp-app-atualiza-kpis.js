@@ -12,6 +12,15 @@
 // (finRenderDespesas()) já era atualizada; só os cartões do topo ficavam
 // presos ao valor incompleto.
 //
+// Atualizado 17/11/2026 — mesma causa raiz, terceira superfície: o Dashboard
+// CFO ("dash-kpi-despfunc-*", via despCalcularTotaisMes()) também lê
+// EC_DESPESAS_APP e também é desenhado (no arranque do CRM) ANTES de este
+// fetch responder, por isso ficava igualmente preso a "€0 · 0 despesas
+// aprovadas" até a Edna navegar manualmente para a página de Despesas
+// (reportado: "Despesas de Funcionários: €0" no Dashboard CFO, com despesas
+// reais aprovadas no app de pontos). despSyncApp() agora chama também
+// renderDashboardCFO() depois de EC_DESPESAS_APP chegar.
+//
 // Corre com: node tests/regressao-2026-11-13-desp-app-atualiza-kpis.js
 // Sem dependências externas — só Node core (fs, vm, assert).
 // ══════════════════════════════════════════════════════════════════════════
@@ -52,7 +61,7 @@ function fakeFetchOk(dados) {
 }
 
 function montarCtx(dadosApp) {
-  var chamouKpis = false, chamouRenderDespesas = false, chamouFinRenderDespesas = false, chamouAppRenderTabela = false;
+  var chamouKpis = false, chamouRenderDespesas = false, chamouFinRenderDespesas = false, chamouAppRenderTabela = false, chamouDashboardCFO = false;
   var elementos = {};
   function elFalso() { return { textContent: '', style: {}, disabled: false, value: '', innerHTML: '', appendChild: function () {} }; }
   const ctx = {
@@ -70,13 +79,14 @@ function montarCtx(dadosApp) {
     renderDespesas: function () { chamouRenderDespesas = true; },
     finRenderDespesas: function () { chamouFinRenderDespesas = true; },
     finAtualizarKpisDespesas: function () { chamouKpis = true; },
+    renderDashboardCFO: function () { chamouDashboardCFO = true; },
   };
   vm.createContext(ctx);
   vm.runInContext(SRC_SYNC, ctx);
   return {
     ctx: ctx,
     chamadas: function () {
-      return { kpis: chamouKpis, renderDespesas: chamouRenderDespesas, finRenderDespesas: chamouFinRenderDespesas, appRenderTabela: chamouAppRenderTabela };
+      return { kpis: chamouKpis, renderDespesas: chamouRenderDespesas, finRenderDespesas: chamouFinRenderDespesas, appRenderTabela: chamouAppRenderTabela, dashboardCFO: chamouDashboardCFO };
     },
   };
 }
@@ -94,6 +104,7 @@ function montarCtx(dadosApp) {
     assert.strictEqual(c.renderDespesas, true, 'já chamava renderDespesas() — não pode deixar de chamar');
     assert.strictEqual(c.finRenderDespesas, true, 'já chamava finRenderDespesas() (a tabela) — não pode deixar de chamar');
     assert.strictEqual(c.kpis, true, 'tinha de chamar finAtualizarKpisDespesas() — é isto que faltava, por isso os cartões do topo ficavam presos ao valor antigo');
+    assert.strictEqual(c.dashboardCFO, true, 'tinha de chamar renderDashboardCFO() também — o cartão "Despesas de funcionários" do Dashboard CFO lê o mesmo EC_DESPESAS_APP e ficava igualmente preso a €0');
   });
 
   console.log('\n' + passou + ' ok, ' + falhou + ' falha(s)');
