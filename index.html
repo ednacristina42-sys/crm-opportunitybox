@@ -22,6 +22,22 @@ window.addEventListener('unhandledrejection', function(e) {
   console.error('[OB DEBUG] Promise rejeitada:', e.reason);
 });
 
+// Estados terminais do pipeline comercial/orçamentos — declarados aqui, bem
+// cedo, em vez de só lá para a frente do ficheiro (onde continuam
+// declarados também, de forma redundante mas inofensiva — var permite
+// reatribuir). Causa raiz (17/11/2026, "FU_ESTADOS_LEAD_TERMINAIS is not
+// defined" dentro de crmUpdateFunnel()): a declaração original vive num
+// <script> separado, bem mais à frente no ficheiro; se qualquer coisa
+// lançar uma exceção síncrona mais cedo NESSE MESMO <script> (window.onerror
+// acima apanha-a e regista-a, mas não impede o resto desse bloco de parar),
+// o resto desse <script> — incluindo esta declaração — nunca chega a correr,
+// e qualquer código que a use antes fica com "not defined" para sempre. Como
+// obSbMesclarRemotoAntesDoBackup() passou a disparar de verdade depois da
+// correção do filtro do Realtime (13/11/2026), este caminho (nunca
+// exercitado antes) começou a ser atingido e expôs o problema.
+var FU_ESTADOS_LEAD_TERMINAIS = ['Produção/Adjudicação','Orçamento Perdido','Arquivo'];
+var FU_ESTADOS_ORC_TERMINAIS = ['Aprovado','Faturado','Cancelado'];
+
 // ══════════════════════════════════════════════════════════════
 // EVENT BUS — Barramento de eventos central para agentes colaborativos
 // ══════════════════════════════════════════════════════════════
