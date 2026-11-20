@@ -52,18 +52,23 @@ function extrairFuncao(nome) {
 }
 
 const SRC = [
+  extrairFuncao('kmFrotaLeiturasPorMatricula_'),
+  extrairFuncao('kmFrotaDistanciaMatriculaMes_'),
+  extrairFuncao('kmFrotaDespesaMatriculaMes_'),
   extrairFuncao('kmFrotaDistanciaMes'),
   extrairFuncao('kmFrotaCustoPorKm'),
+  extrairFuncao('kmFrotaPorVeiculoMes'),
   extrairFuncao('kmFrotaAdicionar'),
 ].join('\n\n');
 
-function montarCtx(listaInicial, porCategoriaMes) {
+function montarCtx(listaInicial, porCategoriaMes, veiculos) {
   var localStorageData = {};
   var toastMsgs = [];
   const ctx = {
     console,
     window: {},
     KM_FROTA_LISTA: listaInicial || [],
+    FROTA_VEICULOS: veiculos || [],
     localStorage: {
       getItem: function (k) { return Object.prototype.hasOwnProperty.call(localStorageData, k) ? localStorageData[k] : null; },
       setItem: function (k, v) { localStorageData[k] = v; },
@@ -164,6 +169,70 @@ teste('entrada válida -> grava e normaliza a matrícula para maiúsculas', () =
   assert.strictEqual(r.ctx.KM_FROTA_LISTA.length, 1);
   assert.strictEqual(r.ctx.KM_FROTA_LISTA[0].matricula, 'BG-19-HA');
   assert.strictEqual(r.ctx.KM_FROTA_LISTA[0].km, 186500);
+  assert.strictEqual(r.ctx.KM_FROTA_LISTA[0].despesa, null);
+});
+
+teste('só despesa (sem km) -> aceita, tal como a folha permitia', () => {
+  const r = montarCtx([]);
+  const ok = r.ctx.kmFrotaAdicionar('BG-19-HA', '2026-11-20', '', 'Combustível', 160.25);
+  assert.strictEqual(ok, true);
+  assert.strictEqual(r.ctx.KM_FROTA_LISTA[0].km, null);
+  assert.strictEqual(r.ctx.KM_FROTA_LISTA[0].despesa, 'Combustível');
+  assert.strictEqual(r.ctx.KM_FROTA_LISTA[0].valor, 160.25);
+});
+
+teste('despesa escolhida sem valor -> rejeita (não grava um custo a fingir que é zero)', () => {
+  const r = montarCtx([]);
+  const ok = r.ctx.kmFrotaAdicionar('BG-19-HA', '2026-11-20', '', 'Combustível', '');
+  assert.strictEqual(ok, false);
+  assert.strictEqual(r.ctx.KM_FROTA_LISTA.length, 0);
+});
+
+teste('nem km nem despesa -> rejeita', () => {
+  const r = montarCtx([]);
+  const ok = r.ctx.kmFrotaAdicionar('BG-19-HA', '2026-11-20', '', '', '');
+  assert.strictEqual(ok, false);
+});
+
+console.log('\n[D] kmFrotaPorVeiculoMes — custo/km POR VIATURA, a partir da despesa lançada à mão');
+
+teste('viatura com km e despesa este mês -> custo/km = despesa ÷ km, com o modelo da ficha', () => {
+  const r = montarCtx([
+    { matricula: 'BG-19-HA', data: '2026-10-01', km: 184964 },
+    { matricula: 'BG-19-HA', data: '2026-11-30', km: 186464 },
+    { matricula: 'BG-19-HA', data: '2026-11-10', valor: 750, despesa: 'Combustível' },
+  ], {}, [
+    { matricula: 'BG-19-HA', modelo: 'Ford Transit L4 - 2021', anoAquisicao: '11/2023', valorAquisicao: 20066 },
+  ]);
+  const lista = r.ctx.kmFrotaPorVeiculoMes(2026, 11);
+  const bg = lista.find(v => v.matricula === 'BG-19-HA');
+  assert.ok(bg, 'devia incluir a BG-19-HA');
+  assert.strictEqual(bg.modelo, 'Ford Transit L4 - 2021');
+  assert.strictEqual(bg.distanciaKm, 1500);
+  assert.strictEqual(bg.despesaTotal, 750);
+  assert.strictEqual(bg.custoPorKm, 0.5);
+});
+
+teste('viatura com despesa mas sem km suficiente -> custoPorKm null, nunca inventado', () => {
+  const r = montarCtx([
+    { matricula: 'CJ-53-DZ', data: '2026-11-05', valor: 100, despesa: 'Via Verde' },
+  ]);
+  const lista = r.ctx.kmFrotaPorVeiculoMes(2026, 11);
+  const cj = lista.find(v => v.matricula === 'CJ-53-DZ');
+  assert.ok(cj);
+  assert.strictEqual(cj.distanciaKm, null);
+  assert.strictEqual(cj.despesaTotal, 100);
+  assert.strictEqual(cj.custoPorKm, null);
+});
+
+teste('viatura só na ficha (FROTA_VEICULOS), sem nenhum registo -> aparece com tudo a null/zero, nunca inventado', () => {
+  const r = montarCtx([], {}, [{ matricula: 'BO-HJ-33', modelo: 'Renault Zoe - 2023' }]);
+  const lista = r.ctx.kmFrotaPorVeiculoMes(2026, 11);
+  const bo = lista.find(v => v.matricula === 'BO-HJ-33');
+  assert.ok(bo);
+  assert.strictEqual(bo.distanciaKm, null);
+  assert.strictEqual(bo.despesaTotal, 0);
+  assert.strictEqual(bo.custoPorKm, null);
 });
 
 console.log('\n' + passou + ' ok, ' + falhou + ' falha(s)');
