@@ -9949,6 +9949,124 @@ tbody td{font-size:15px}
       </div>
     </div>
 
+    <!-- ADD: Equipamentos e Ferramentas — substitui a folha "Equipamentos e
+         Ferramentas" (pedido da Edna, 20/11/2026, plano de transição:
+         "quero otimizar grande parte dos trabalhos" antes de ficar no
+         lugar da secretária). A folha original estava incompleta (muitas
+         colunas Em Uso/Localização em branco) — migrados os 190 ativos
+         exatamente como estavam na folha, sem inventar o que faltava.
+         Ver ativoAdicionar()/ativoRenderTabela(), perto de kmFrotaRender(). -->
+    <div class="cc" style="margin-top:18px">
+      <div class="sh"><h2>🧰 Equipamentos e Ferramentas</h2></div>
+      <div style="font-size:12.5px;color:var(--muted);margin-bottom:12px">
+        Substitui a folha de Equipamentos e Ferramentas. Regista aqui cada ativo — a folha tinha muitos campos em branco (Em Uso/Localização); preenche o que souberes, sem inventar o resto.
+      </div>
+
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:12px">
+        <div>
+          <label class="form-label" style="font-size:11.5px">Tipo</label><br>
+          <select id="atv-filtro-tipo" class="form-select" style="font-size:13px" onchange="ativosRenderTabela()">
+            <option value="">Todos</option>
+            <option>Maquinário</option><option>Informática</option><option>Mobiliário</option>
+            <option>Equipamento de Transporte</option><option>Utens. Domésticos</option>
+            <option>Outros Ativos Fixos</option><option>Edifiícios e Construções</option>
+            <option>Ferramentas</option><option>HST</option><option>Outro</option>
+          </select>
+        </div>
+        <div>
+          <label class="form-label" style="font-size:11.5px">Estado</label><br>
+          <select id="atv-filtro-estado" class="form-select" style="font-size:13px" onchange="ativosRenderTabela()">
+            <option value="">Todos</option>
+            <option>Ativo</option><option>Inativo</option><option>Em Reparação</option>
+          </select>
+        </div>
+        <div>
+          <label class="form-label" style="font-size:11.5px">Pesquisar</label><br>
+          <input id="atv-filtro-texto" class="form-input" style="font-size:13px;width:220px" placeholder="Equipamento, nº série, pessoa, local…" oninput="ativosRenderTabela()">
+        </div>
+        <button class="tbtn" style="font-size:12.5px" onclick="document.getElementById('atv-filtro-tipo').value='';document.getElementById('atv-filtro-estado').value='';document.getElementById('atv-filtro-texto').value='';ativosRenderTabela()">✕ Limpar filtros</button>
+      </div>
+
+      <details style="margin-bottom:14px">
+        <summary style="cursor:pointer;font-size:13px;color:var(--txt2);user-select:none">+ Adicionar / editar ativo</summary>
+        <div style="margin-top:10px;display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+          <input type="hidden" id="atv-editid">
+          <div>
+            <label class="form-label" style="font-size:11.5px">Identificação do ativo</label><br>
+            <input id="atv-identificacao" class="form-input" style="font-size:13px;width:120px" placeholder="2026.00191">
+          </div>
+          <div>
+            <label class="form-label" style="font-size:11.5px">Tipo</label><br>
+            <select id="atv-tipo" class="form-select" style="font-size:13px">
+              <option value="">—</option>
+              <option>Maquinário</option><option>Informática</option><option>Mobiliário</option>
+              <option>Equipamento de Transporte</option><option>Utens. Domésticos</option>
+              <option>Outros Ativos Fixos</option><option>Edifiícios e Construções</option>
+              <option>Ferramentas</option><option>HST</option><option>Outro</option>
+            </select>
+          </div>
+          <div>
+            <label class="form-label" style="font-size:11.5px">Equipamento</label><br>
+            <input id="atv-equipamento" class="form-input" style="font-size:13px;width:220px" placeholder="Nome do equipamento">
+          </div>
+          <div>
+            <label class="form-label" style="font-size:11.5px">Nº de série</label><br>
+            <input id="atv-nserie" class="form-input" style="font-size:13px;width:140px">
+          </div>
+          <div>
+            <label class="form-label" style="font-size:11.5px">Valor aquisição (€)</label><br>
+            <input id="atv-valor" type="number" step="0.01" min="0" class="form-input" style="font-size:13px;width:110px">
+          </div>
+          <div>
+            <label class="form-label" style="font-size:11.5px">Data aquisição</label><br>
+            <input id="atv-data-aquisicao" type="date" class="form-input" style="font-size:13px">
+          </div>
+          <div>
+            <label class="form-label" style="font-size:11.5px">Em uso (pessoa)</label><br>
+            <input id="atv-emuso" class="form-input" style="font-size:13px;width:140px">
+          </div>
+          <div>
+            <label class="form-label" style="font-size:11.5px">Localização</label><br>
+            <input id="atv-localizacao" class="form-input" style="font-size:13px;width:140px">
+          </div>
+          <div>
+            <label class="form-label" style="font-size:11.5px">Estado</label><br>
+            <select id="atv-estado" class="form-select" style="font-size:13px">
+              <option>Ativo</option><option>Inativo</option><option>Em Reparação</option>
+            </select>
+          </div>
+          <div>
+            <label class="form-label" style="font-size:11.5px">Fornecedor</label><br>
+            <input id="atv-fornecedor" class="form-input" style="font-size:13px;width:130px">
+          </div>
+          <div>
+            <label class="form-label" style="font-size:11.5px">Fatura</label><br>
+            <input id="atv-fatura" class="form-input" style="font-size:13px;width:110px">
+          </div>
+          <div>
+            <label class="form-label" style="font-size:11.5px">Validade / manutenção</label><br>
+            <input id="atv-validade" type="date" class="form-input" style="font-size:13px">
+          </div>
+          <div>
+            <label class="form-label" style="font-size:11.5px">Imagem (link Drive)</label><br>
+            <input id="atv-imagem" class="form-input" style="font-size:13px;width:160px" placeholder="https://drive.google.com/…">
+          </div>
+          <button class="tbtn y" onclick="ativoFormSubmeter()">💾 Guardar</button>
+          <button class="tbtn" onclick="ativoFormLimpar()">✕ Cancelar edição</button>
+        </div>
+      </details>
+
+      <div style="font-size:11.5px;color:var(--muted);margin-bottom:8px" id="atv-contagem">—</div>
+      <div class="tw">
+        <table>
+          <thead><tr><th>ID</th><th>Tipo</th><th>Equipamento</th><th>Em Uso</th><th>Localização</th><th>Estado</th><th>Valor</th><th></th></tr></thead>
+          <tbody id="atv-tbody">
+            <tr><td colspan="8" style="text-align:center;color:var(--muted);padding:16px">A carregar…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
   </div>
 </div>
 
@@ -27849,6 +27967,179 @@ function kmFrotaRender(){
 }
 window.kmFrotaRender = kmFrotaRender;
 
+// ══════════════════════════════════════════════════════════════════
+// ADD: Equipamentos e Ferramentas (pedido da Edna, 20/11/2026, plano de
+// transição: "quero otimizar grande parte dos trabalhos" antes de ficar
+// no lugar da secretária). Substitui a folha "Equipamentos e
+// Ferramentas" — mesmo padrão genérico de 'ob-km-frota'/'ob-frota-
+// veiculos': cópia local em localStorage + sincronização remota via
+// obSbPush() em 'ob_crm_dados'. A folha original tinha muitos campos em
+// branco (Em Uso/Localização) — isso é migrado tal como estava, nunca
+// inventado.
+// ══════════════════════════════════════════════════════════════════
+var ATIVOS_LISTA;
+try{ ATIVOS_LISTA = JSON.parse(localStorage.getItem('ob-ativos-equipamentos')||'[]'); }catch(e){ ATIVOS_LISTA = []; }
+if(!Array.isArray(ATIVOS_LISTA)) ATIVOS_LISTA = [];
+window.ATIVOS_LISTA = ATIVOS_LISTA;
+
+var _ativosHidratacaoPromise = null;
+async function ativosHidratar(){
+  if(_ativosHidratacaoPromise) return _ativosHidratacaoPromise;
+  _ativosHidratacaoPromise = (async function(){
+    var sb = (typeof crmSBClient==='function') ? crmSBClient() : null;
+    if(!sb) return;
+    try{
+      var res = await sb.from('ob_crm_dados').select('dados,updated_at').eq('chave','ob-ativos-equipamentos').maybeSingle();
+      if(res && !res.error && res.data && Array.isArray(res.data.dados)){
+        ATIVOS_LISTA = res.data.dados;
+        window.ATIVOS_LISTA = ATIVOS_LISTA;
+        try{ localStorage.setItem('ob-ativos-equipamentos', JSON.stringify(ATIVOS_LISTA)); }catch(e){}
+      }
+    }catch(e){ console.warn('[Equipamentos] Falha a ler ob-ativos-equipamentos remoto — mantém a cópia local como fallback.', e); }
+    if(typeof ativosRenderTabela==='function') ativosRenderTabela();
+  })();
+  return _ativosHidratacaoPromise;
+}
+window.ativosHidratar = ativosHidratar;
+
+function ativosSalvar(){
+  window.ATIVOS_LISTA = ATIVOS_LISTA;
+  try{ localStorage.setItem('ob-ativos-equipamentos', JSON.stringify(ATIVOS_LISTA)); }catch(e){}
+  if(typeof obSbPush==='function') obSbPush('ob-ativos-equipamentos');
+}
+
+// Guarda (criação ou edição, por id) um ativo — só exige 'equipamento'
+// (nome). Todos os outros campos ficam null quando não preenchidos,
+// nunca um valor inventado, tal como a folha original tinha muitos
+// campos em branco.
+function ativoAdicionar(dados, idExistente){
+  var equipamento = (dados.equipamento||'').trim();
+  if(!equipamento){
+    if(typeof showToast==='function') showToast('⚠ Preenche pelo menos o nome do equipamento.');
+    return false;
+  }
+  var limpa = function(v){ v=(v||'').trim(); return v || null; };
+  var valorNum = (dados.valorAquisicao===''||dados.valorAquisicao===null||dados.valorAquisicao===undefined) ? null : parseFloat(dados.valorAquisicao);
+  if(valorNum!==null && isNaN(valorNum)) valorNum = null;
+  var registo = {
+    id: idExistente || ('atv_'+Date.now()+'_'+Math.random().toString(36).slice(2,7)),
+    identificacaoAtivo: limpa(dados.identificacaoAtivo),
+    tipo: limpa(dados.tipo),
+    equipamento: equipamento,
+    nSerie: limpa(dados.nSerie),
+    imagem: limpa(dados.imagem),
+    valorAquisicao: valorNum,
+    dataAquisicao: limpa(dados.dataAquisicao),
+    emUso: limpa(dados.emUso),
+    localizacao: limpa(dados.localizacao),
+    estado: limpa(dados.estado) || 'Ativo',
+    fornecedor: limpa(dados.fornecedor),
+    fatura: limpa(dados.fatura),
+    validadeManutencao: limpa(dados.validadeManutencao),
+  };
+  if(idExistente){
+    var i = ATIVOS_LISTA.findIndex(function(a){ return a.id === idExistente; });
+    if(i>=0) ATIVOS_LISTA[i] = registo; else ATIVOS_LISTA.push(registo);
+  } else {
+    ATIVOS_LISTA.push(registo);
+  }
+  ativosSalvar();
+  return true;
+}
+window.ativoAdicionar = ativoAdicionar;
+
+function ativoRemover(id){
+  if(!confirm('Eliminar este ativo?')) return;
+  ATIVOS_LISTA = ATIVOS_LISTA.filter(function(a){ return a.id !== id; });
+  ativosSalvar();
+  if(typeof ativosRenderTabela==='function') ativosRenderTabela();
+}
+window.ativoRemover = ativoRemover;
+
+function ativoFormLimpar(){
+  ['atv-editid','atv-identificacao','atv-nserie','atv-valor','atv-data-aquisicao','atv-emuso','atv-localizacao','atv-fornecedor','atv-fatura','atv-validade','atv-imagem','atv-equipamento'].forEach(function(id){ var el=document.getElementById(id); if(el) el.value=''; });
+  var elTipo = document.getElementById('atv-tipo'); if(elTipo) elTipo.value='';
+  var elEstado = document.getElementById('atv-estado'); if(elEstado) elEstado.value='Ativo';
+}
+window.ativoFormLimpar = ativoFormLimpar;
+
+function ativoEditarAbrir(id){
+  var a = ATIVOS_LISTA.find(function(x){ return x.id === id; });
+  if(!a) return;
+  var setVal = function(elId, v){ var el = document.getElementById(elId); if(el) el.value = v || ''; };
+  setVal('atv-editid', a.id);
+  setVal('atv-identificacao', a.identificacaoAtivo);
+  setVal('atv-tipo', a.tipo);
+  setVal('atv-equipamento', a.equipamento);
+  setVal('atv-nserie', a.nSerie);
+  setVal('atv-valor', a.valorAquisicao);
+  setVal('atv-data-aquisicao', a.dataAquisicao);
+  setVal('atv-emuso', a.emUso);
+  setVal('atv-localizacao', a.localizacao);
+  setVal('atv-estado', a.estado || 'Ativo');
+  setVal('atv-fornecedor', a.fornecedor);
+  setVal('atv-fatura', a.fatura);
+  setVal('atv-validade', a.validadeManutencao);
+  setVal('atv-imagem', a.imagem);
+}
+window.ativoEditarAbrir = ativoEditarAbrir;
+
+function ativoFormSubmeter(){
+  var get = function(id){ var el = document.getElementById(id); return el ? el.value : ''; };
+  var idExistente = get('atv-editid') || null;
+  var ok = ativoAdicionar({
+    identificacaoAtivo: get('atv-identificacao'),
+    tipo: get('atv-tipo'),
+    equipamento: get('atv-equipamento'),
+    nSerie: get('atv-nserie'),
+    valorAquisicao: get('atv-valor'),
+    dataAquisicao: get('atv-data-aquisicao'),
+    emUso: get('atv-emuso'),
+    localizacao: get('atv-localizacao'),
+    estado: get('atv-estado'),
+    fornecedor: get('atv-fornecedor'),
+    fatura: get('atv-fatura'),
+    validadeManutencao: get('atv-validade'),
+    imagem: get('atv-imagem'),
+  }, idExistente);
+  if(!ok) return;
+  ativoFormLimpar();
+  if(typeof ativosRenderTabela==='function') ativosRenderTabela();
+}
+window.ativoFormSubmeter = ativoFormSubmeter;
+
+function ativosRenderTabela(){
+  var tbody = document.getElementById('atv-tbody');
+  if(!tbody) return;
+  var tipo = (document.getElementById('atv-filtro-tipo')||{}).value || '';
+  var estado = (document.getElementById('atv-filtro-estado')||{}).value || '';
+  var texto = ((document.getElementById('atv-filtro-texto')||{}).value || '').trim().toLowerCase();
+  var filtrados = ATIVOS_LISTA.filter(function(a){
+    if(tipo && a.tipo !== tipo) return false;
+    if(estado && a.estado !== estado) return false;
+    if(texto){
+      var alvo = [a.equipamento, a.nSerie, a.emUso, a.localizacao, a.identificacaoAtivo, a.fornecedor].filter(Boolean).join(' ').toLowerCase();
+      if(alvo.indexOf(texto) === -1) return false;
+    }
+    return true;
+  });
+  var contagem = document.getElementById('atv-contagem');
+  if(contagem) contagem.textContent = filtrados.length + ' de ' + ATIVOS_LISTA.length + ' ativo(s)';
+  tbody.innerHTML = filtrados.map(function(a){
+    return '<tr style="cursor:pointer" onclick="ativoEditarAbrir(\''+a.id+'\')">'
+      + '<td style="font-size:12.5px">'+(a.identificacaoAtivo||'—')+'</td>'
+      + '<td style="font-size:12.5px">'+(a.tipo||'—')+'</td>'
+      + '<td style="font-size:13px">'+a.equipamento+'</td>'
+      + '<td style="font-size:12.5px">'+(a.emUso||'—')+'</td>'
+      + '<td style="font-size:12.5px">'+(a.localizacao||'—')+'</td>'
+      + '<td style="font-size:12px;color:'+(a.estado==='Ativo'?'var(--g)':a.estado==='Inativo'?'var(--muted)':'var(--y)')+'">'+(a.estado||'—')+'</td>'
+      + '<td style="font-size:13px">'+(typeof a.valorAquisicao==='number' ? fmtEurT(a.valorAquisicao) : '—')+'</td>'
+      + '<td><button class="tbtn" style="font-size:11px;padding:3px 8px" onclick="event.stopPropagation();ativoRemover(\''+a.id+'\')">🗑</button></td>'
+    + '</tr>';
+  }).join('') || '<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:16px">Nenhum ativo encontrado.</td></tr>';
+}
+window.ativosRenderTabela = ativosRenderTabela;
+
 function cfLimparFiltros(){
   var setVal = function(id, v){ var el = document.getElementById(id); if(el) el.value = v; };
   var hoje = new Date();
@@ -31621,6 +31912,8 @@ window.goPage = function(id) {
       if(typeof kmFrotaRender==='function') kmFrotaRender();
       if(typeof kmFrotaHidratar==='function') kmFrotaHidratar();
       if(typeof frotaVeiculosHidratar==='function') frotaVeiculosHidratar();
+      if(typeof ativosRenderTabela==='function') ativosRenderTabela();
+      if(typeof ativosHidratar==='function') ativosHidratar();
     }, 50);
   }
   if (id === 'admin-analise-vendas') {
