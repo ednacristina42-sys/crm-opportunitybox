@@ -13220,7 +13220,14 @@ window.goPage=function goPage(id){
   if(id==='admin-docs')          { crmDocsRender(); docsTab('crm'); }
   if(id==='admin-utilizadores')  { try{ admUsersCarregarAprovacoes(); admUsersCarregarContas(); }catch(e){} }
   if(id==='pedir-aprovacao')     { try{ aprovCarregarMinhas(); }catch(e){} }
-  if(id==='dashboard')           { try{ renderDashLeads(); setTimeout(initCharts,50); if(typeof renderDashboardCFO==='function') renderDashboardCFO(); }catch(e){} }
+  // mvSincronizarGoogleSheet() (orçamentos novos da folha "Mapa de vendas"
+  // dos comerciais → ob_orcamentos) só corria ao abrir Mapa de Vendas —
+  // chegou a ficar 8 dias sem novos orçamentos por ninguém ter aberto essa
+  // página específica (pedido da Edna, 20/11/2026: "deixar de usar o
+  // Excel"). Chamada aqui e na Tesouraria também — tem o seu próprio
+  // travão de 2min e verificação de permissão, por isso é seguro chamar
+  // de vários pontos sem duplicar nem sobrecarregar.
+  if(id==='dashboard')           { try{ renderDashLeads(); setTimeout(initCharts,50); if(typeof renderDashboardCFO==='function') renderDashboardCFO(); if(typeof mvSincronizarGoogleSheet==='function') mvSincronizarGoogleSheet(); }catch(e){} }
   if(id==='financeiro')          { try{ renderFinanceiro(); setTimeout(initCharts,50);
     // Bug 7 (auditoria 12/09): garantir CRM_DESPESAS carregado (mesmo loader
     // usado por admin-despesas) mesmo que o utilizador nunca tenha visitado
@@ -31591,7 +31598,7 @@ window.goPage = function(id) {
       }
     }, 50);
   }
-  if (id === 'tesouraria') { setTimeout(function(){ tesRender(); if(typeof tesHidratarCanonico==='function') tesHidratarCanonico(); if(typeof tesHidratarComprasToco==='function') tesHidratarComprasToco(); if(typeof fornHidratarCategorias==='function') fornHidratarCategorias(); if(typeof sincFinAutoSincronizar==='function') sincFinAutoSincronizar(); }, 50); }
+  if (id === 'tesouraria') { setTimeout(function(){ tesRender(); if(typeof tesHidratarCanonico==='function') tesHidratarCanonico(); if(typeof tesHidratarComprasToco==='function') tesHidratarComprasToco(); if(typeof fornHidratarCategorias==='function') fornHidratarCategorias(); if(typeof sincFinAutoSincronizar==='function') sincFinAutoSincronizar(); if(typeof mvSincronizarGoogleSheet==='function') mvSincronizarGoogleSheet(); }, 50); }
   // Fase 3 CFO (29/09/2026): "Compras e Fornecedores" — página NOVA e
   // aditiva, lê o mesmo TES_COMPRAS_TOCO/FORNECEDOR_CATEGORIAS já
   // hidratados para a Tesouraria (nunca duplica sync própria); define os
