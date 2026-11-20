@@ -9841,6 +9841,114 @@ tbody td{font-size:15px}
       ℹ️ "Sem IVA"/"IVA" aparecem como "—" para documentos ainda pendentes ou créditos (o TOConline não expõe o valor de imposto desses documentos antes de pagos) — nunca um valor inventado.
     </div>
 
+    <!-- ADD: Frota — substitui a folha "OpportunityBox Veículos" (pedido da
+         Edna, 20/11/2026: "podemos fazer de uma forma que deixe de existir
+         o Excel"). Guarda, por viatura: ficha (modelo/ano/valor de
+         aquisição — aba "Outras Informações" da folha) + leituras de km e
+         despesas (combustível, seguro, Via Verde, IUC, inspeção,
+         manutenção — aba "Dados Veículos"). A despesa aqui é lançada à mão,
+         exatamente como na folha — é o único jeito de ligar uma despesa a
+         UMA viatura, porque o TOConline categoriza por fornecedor, nunca
+         por fatura. Custo/km agora é POR VIATURA (kmFrotaPorVeiculoMes()),
+         não só a média da frota — ver também kmFrotaCustoPorKm() (TOConline
+         "Veículos & Combustível" ÷ km total), mantido como verificação
+         cruzada do total gasto. -->
+    <div class="cc" style="margin-top:18px">
+      <div class="sh"><h2>🚗 Frota</h2></div>
+      <div style="font-size:12.5px;color:var(--muted);margin-bottom:12px">
+        Substitui a folha de Veículos. Regista aqui a ficha de cada viatura e as leituras de km/despesa — o custo/km fica por viatura.
+      </div>
+
+      <details style="margin-bottom:16px">
+        <summary style="cursor:pointer;font-size:13px;color:var(--txt2);user-select:none">🚙 Viaturas da frota (ficha)</summary>
+        <div style="margin-top:10px">
+          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:12px">
+            <div>
+              <label class="form-label" style="font-size:11.5px">Matrícula</label><br>
+              <input id="fv-matricula" class="form-input" style="font-size:13px;width:130px" placeholder="AA-00-AA">
+            </div>
+            <div>
+              <label class="form-label" style="font-size:11.5px">Modelo</label><br>
+              <input id="fv-modelo" class="form-input" style="font-size:13px;width:200px" placeholder="Ford Transit L4 - 2021">
+            </div>
+            <div>
+              <label class="form-label" style="font-size:11.5px">Aquisição (mm/aaaa)</label><br>
+              <input id="fv-ano-aquisicao" class="form-input" style="font-size:13px;width:110px" placeholder="11/2023">
+            </div>
+            <div>
+              <label class="form-label" style="font-size:11.5px">Valor de compra (€)</label><br>
+              <input id="fv-valor-aquisicao" type="number" step="0.01" min="0" class="form-input" style="font-size:13px;width:120px" placeholder="20066">
+            </div>
+            <button class="tbtn y" onclick="frotaVeiculoFormSubmeter()">+ Adicionar / atualizar</button>
+          </div>
+          <div class="tw">
+            <table>
+              <thead><tr><th>Matrícula</th><th>Modelo</th><th>Aquisição</th><th>Valor de compra</th><th></th></tr></thead>
+              <tbody id="fv-tbody">
+                <tr><td colspan="5" style="text-align:center;color:var(--muted);padding:16px">Sem viaturas registadas ainda.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </details>
+
+      <div id="km-frota-kpi" style="margin-bottom:14px;font-size:13px;color:var(--muted)">A carregar…</div>
+
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:14px">
+        <div>
+          <label class="form-label" style="font-size:11.5px">Matrícula</label><br>
+          <input id="kmf-matricula" class="form-input" style="font-size:13px;width:130px" placeholder="AA-00-AA" list="fv-matriculas-list">
+          <datalist id="fv-matriculas-list"></datalist>
+        </div>
+        <div>
+          <label class="form-label" style="font-size:11.5px">Data</label><br>
+          <input id="kmf-data" type="date" class="form-input" style="font-size:13px">
+        </div>
+        <div>
+          <label class="form-label" style="font-size:11.5px">Km no odómetro (opcional)</label><br>
+          <input id="kmf-km" type="number" step="1" min="0" class="form-input" style="font-size:13px;width:120px" placeholder="177624">
+        </div>
+        <div>
+          <label class="form-label" style="font-size:11.5px">Tipo de despesa (opcional)</label><br>
+          <select id="kmf-despesa" class="form-select" style="font-size:13px">
+            <option value="">— nenhuma —</option>
+            <option>Combustível</option>
+            <option>Seguro</option>
+            <option>Via Verde</option>
+            <option>IUC</option>
+            <option>Inspeção</option>
+            <option>Manutenção / Peças</option>
+            <option>Outro</option>
+          </select>
+        </div>
+        <div>
+          <label class="form-label" style="font-size:11.5px">Valor (€)</label><br>
+          <input id="kmf-valor" type="number" step="0.01" min="0" class="form-input" style="font-size:13px;width:110px" placeholder="160.25">
+        </div>
+        <button class="tbtn y" onclick="kmFrotaFormSubmeter()">+ Adicionar registo</button>
+      </div>
+      <div style="font-size:11.5px;color:var(--muted);margin-bottom:10px">ℹ️ Preenche km e/ou despesa — não precisas das duas em todos os registos, tal como na folha.</div>
+
+      <div class="tw" style="margin-bottom:18px">
+        <table>
+          <thead><tr><th>Matrícula</th><th>Data</th><th>Km</th><th>Despesa</th><th>Valor</th><th></th></tr></thead>
+          <tbody id="kmf-tbody">
+            <tr><td colspan="6" style="text-align:center;color:var(--muted);padding:16px">Sem registos ainda.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="sh" style="margin-top:4px"><h2 style="font-size:14px">Custo por viatura este mês</h2></div>
+      <div class="tw">
+        <table>
+          <thead><tr><th>Matrícula</th><th>Modelo</th><th>Km percorridos</th><th>Despesa total</th><th>Custo/km</th></tr></thead>
+          <tbody id="kmf-porveiculo-tbody">
+            <tr><td colspan="5" style="text-align:center;color:var(--muted);padding:16px">Sem dados ainda.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
   </div>
 </div>
 
@@ -27395,6 +27503,345 @@ function cfRenderTotais(t){
 }
 window.cfRenderTotais = cfRenderTotais;
 
+// ══════════════════════════════════════════════════════════════════
+// ADD: Frota (pedido da Edna, 20/11/2026, plano de transição da
+// secretária: "podemos fazer de uma forma que deixe de existir o
+// Excel"). Substitui por completo a folha "OpportunityBox Veículos" —
+// ficha das viaturas (ob-frota-veiculos) + leituras de km e despesas por
+// viatura (ob-km-frota), mesmo padrão genérico de
+// 'ob-fornecedores-categorias': cópia local em localStorage +
+// sincronização remota via obSbPush() em 'ob_crm_dados'. A despesa é
+// lançada à mão aqui, tal como era na folha — é o único jeito de ligar
+// uma despesa a UMA viatura (o TOConline categoriza por fornecedor,
+// nunca por fatura, então não há como saber automaticamente qual carro
+// gastou o quê). Isto permite custo/km POR VIATURA (kmFrotaPorVeiculoMes),
+// e não só a média da frota (kmFrotaCustoPorKm, mantida como verificação
+// cruzada contra o total já categorizado no TOConline).
+// ══════════════════════════════════════════════════════════════════
+var KM_FROTA_LISTA;
+try{ KM_FROTA_LISTA = JSON.parse(localStorage.getItem('ob-km-frota')||'[]'); }catch(e){ KM_FROTA_LISTA = []; }
+if(!Array.isArray(KM_FROTA_LISTA)) KM_FROTA_LISTA = [];
+window.KM_FROTA_LISTA = KM_FROTA_LISTA;
+
+var FROTA_VEICULOS;
+try{ FROTA_VEICULOS = JSON.parse(localStorage.getItem('ob-frota-veiculos')||'[]'); }catch(e){ FROTA_VEICULOS = []; }
+if(!Array.isArray(FROTA_VEICULOS)) FROTA_VEICULOS = [];
+window.FROTA_VEICULOS = FROTA_VEICULOS;
+
+var _kmFrotaHidratacaoPromise = null;
+async function kmFrotaHidratar(){
+  if(_kmFrotaHidratacaoPromise) return _kmFrotaHidratacaoPromise;
+  _kmFrotaHidratacaoPromise = (async function(){
+    var sb = (typeof crmSBClient==='function') ? crmSBClient() : null;
+    if(!sb) return;
+    try{
+      var res = await sb.from('ob_crm_dados').select('dados,updated_at').eq('chave','ob-km-frota').maybeSingle();
+      if(res && !res.error && res.data && Array.isArray(res.data.dados)){
+        KM_FROTA_LISTA = res.data.dados;
+        window.KM_FROTA_LISTA = KM_FROTA_LISTA;
+        try{ localStorage.setItem('ob-km-frota', JSON.stringify(KM_FROTA_LISTA)); }catch(e){}
+      }
+    }catch(e){ console.warn('[Frota] Falha a ler ob-km-frota remoto — mantém a cópia local como fallback.', e); }
+    if(typeof kmFrotaRender==='function') kmFrotaRender();
+  })();
+  return _kmFrotaHidratacaoPromise;
+}
+window.kmFrotaHidratar = kmFrotaHidratar;
+
+var _frotaVeiculosHidratacaoPromise = null;
+async function frotaVeiculosHidratar(){
+  if(_frotaVeiculosHidratacaoPromise) return _frotaVeiculosHidratacaoPromise;
+  _frotaVeiculosHidratacaoPromise = (async function(){
+    var sb = (typeof crmSBClient==='function') ? crmSBClient() : null;
+    if(!sb) return;
+    try{
+      var res = await sb.from('ob_crm_dados').select('dados,updated_at').eq('chave','ob-frota-veiculos').maybeSingle();
+      if(res && !res.error && res.data && Array.isArray(res.data.dados)){
+        FROTA_VEICULOS = res.data.dados;
+        window.FROTA_VEICULOS = FROTA_VEICULOS;
+        try{ localStorage.setItem('ob-frota-veiculos', JSON.stringify(FROTA_VEICULOS)); }catch(e){}
+      }
+    }catch(e){ console.warn('[Frota] Falha a ler ob-frota-veiculos remoto — mantém a cópia local como fallback.', e); }
+    if(typeof kmFrotaRender==='function') kmFrotaRender();
+  })();
+  return _frotaVeiculosHidratacaoPromise;
+}
+window.frotaVeiculosHidratar = frotaVeiculosHidratar;
+
+function frotaVeiculoAdicionar(matricula, modelo, anoAquisicao, valorAquisicao){
+  matricula = (matricula||'').trim().toUpperCase();
+  if(!matricula){
+    if(typeof showToast==='function') showToast('⚠ Preenche a matrícula.');
+    return false;
+  }
+  var valorNum = (valorAquisicao===''||valorAquisicao===null||valorAquisicao===undefined) ? null : parseFloat(valorAquisicao);
+  if(valorNum!==null && isNaN(valorNum)) valorNum = null;
+  var existente = FROTA_VEICULOS.find(function(v){ return v.matricula === matricula; });
+  if(existente){
+    existente.modelo = (modelo||'').trim() || existente.modelo || null;
+    existente.anoAquisicao = (anoAquisicao||'').trim() || existente.anoAquisicao || null;
+    existente.valorAquisicao = (valorNum!==null) ? valorNum : existente.valorAquisicao;
+  } else {
+    FROTA_VEICULOS.push({ matricula: matricula, modelo: (modelo||'').trim() || null, anoAquisicao: (anoAquisicao||'').trim() || null, valorAquisicao: valorNum });
+  }
+  window.FROTA_VEICULOS = FROTA_VEICULOS;
+  try{ localStorage.setItem('ob-frota-veiculos', JSON.stringify(FROTA_VEICULOS)); }catch(e){}
+  if(typeof obSbPush==='function') obSbPush('ob-frota-veiculos');
+  return true;
+}
+window.frotaVeiculoAdicionar = frotaVeiculoAdicionar;
+
+function frotaVeiculoRemover(matricula){
+  FROTA_VEICULOS = FROTA_VEICULOS.filter(function(v){ return v.matricula !== matricula; });
+  window.FROTA_VEICULOS = FROTA_VEICULOS;
+  try{ localStorage.setItem('ob-frota-veiculos', JSON.stringify(FROTA_VEICULOS)); }catch(e){}
+  if(typeof obSbPush==='function') obSbPush('ob-frota-veiculos');
+  if(typeof kmFrotaRender==='function') kmFrotaRender();
+}
+window.frotaVeiculoRemover = frotaVeiculoRemover;
+
+function frotaVeiculoFormSubmeter(){
+  var matricula = (document.getElementById('fv-matricula')||{}).value;
+  var modelo = (document.getElementById('fv-modelo')||{}).value;
+  var ano = (document.getElementById('fv-ano-aquisicao')||{}).value;
+  var valor = (document.getElementById('fv-valor-aquisicao')||{}).value;
+  if(!frotaVeiculoAdicionar(matricula, modelo, ano, valor)) return;
+  ['fv-matricula','fv-modelo','fv-ano-aquisicao','fv-valor-aquisicao'].forEach(function(id){ var el=document.getElementById(id); if(el) el.value=''; });
+  kmFrotaRender();
+}
+window.frotaVeiculoFormSubmeter = frotaVeiculoFormSubmeter;
+
+function frotaVeiculosRenderTabela(){
+  var tbody = document.getElementById('fv-tbody');
+  if(tbody){
+    var linhas = FROTA_VEICULOS.slice().sort(function(a,b){ return a.matricula < b.matricula ? -1 : 1; });
+    tbody.innerHTML = linhas.map(function(v){
+      return '<tr>'
+        + '<td style="font-size:13px">'+v.matricula+'</td>'
+        + '<td style="font-size:13px">'+(v.modelo||'—')+'</td>'
+        + '<td style="font-size:13px">'+(v.anoAquisicao||'—')+'</td>'
+        + '<td style="font-size:13px">'+(typeof v.valorAquisicao==='number' ? fmtEurT(v.valorAquisicao) : '—')+'</td>'
+        + '<td><button class="tbtn" style="font-size:11px;padding:3px 8px" onclick="frotaVeiculoRemover(\''+v.matricula+'\')">🗑</button></td>'
+      + '</tr>';
+    }).join('') || '<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:16px">Sem viaturas registadas ainda.</td></tr>';
+  }
+  var datalist = document.getElementById('fv-matriculas-list');
+  if(datalist){
+    datalist.innerHTML = FROTA_VEICULOS.map(function(v){ return '<option value="'+v.matricula+'">'; }).join('');
+  }
+}
+window.frotaVeiculosRenderTabela = frotaVeiculosRenderTabela;
+
+function kmFrotaAdicionar(matricula, data, km, despesa, valor){
+  matricula = (matricula||'').trim().toUpperCase();
+  despesa = (despesa||'').trim();
+  var kmNum = (km===''||km===null||km===undefined) ? null : parseFloat(km);
+  var kmInvalido = (kmNum!==null && (isNaN(kmNum) || kmNum<0));
+  var temKm = (kmNum!==null && !isNaN(kmNum) && kmNum>=0);
+  var temDespesa = !!despesa;
+  var valorNum = (valor===''||valor===null||valor===undefined) ? null : parseFloat(valor);
+  var valorInvalido = temDespesa && (valorNum===null || isNaN(valorNum) || valorNum<0);
+  if(!matricula || !data || kmInvalido || (!temKm && !temDespesa) || valorInvalido){
+    if(typeof showToast==='function') showToast('⚠ Preenche matrícula, data, e km e/ou despesa+valor válidos.');
+    return false;
+  }
+  KM_FROTA_LISTA.push({
+    id: 'kmf_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),
+    matricula: matricula, data: data,
+    km: temKm ? kmNum : null,
+    despesa: temDespesa ? despesa : null,
+    valor: temDespesa ? valorNum : null,
+  });
+  window.KM_FROTA_LISTA = KM_FROTA_LISTA;
+  try{ localStorage.setItem('ob-km-frota', JSON.stringify(KM_FROTA_LISTA)); }catch(e){}
+  if(typeof obSbPush==='function') obSbPush('ob-km-frota');
+  return true;
+}
+window.kmFrotaAdicionar = kmFrotaAdicionar;
+
+function kmFrotaRemover(id){
+  KM_FROTA_LISTA = KM_FROTA_LISTA.filter(function(r){ return r.id !== id; });
+  window.KM_FROTA_LISTA = KM_FROTA_LISTA;
+  try{ localStorage.setItem('ob-km-frota', JSON.stringify(KM_FROTA_LISTA)); }catch(e){}
+  if(typeof obSbPush==='function') obSbPush('ob-km-frota');
+  if(typeof kmFrotaRender==='function') kmFrotaRender();
+}
+window.kmFrotaRemover = kmFrotaRemover;
+
+function kmFrotaFormSubmeter(){
+  var matricula = (document.getElementById('kmf-matricula')||{}).value;
+  var data = (document.getElementById('kmf-data')||{}).value;
+  var km = (document.getElementById('kmf-km')||{}).value;
+  var despesa = (document.getElementById('kmf-despesa')||{}).value;
+  var valor = (document.getElementById('kmf-valor')||{}).value;
+  if(!kmFrotaAdicionar(matricula, data, km, despesa, valor)) return;
+  ['kmf-km','kmf-despesa','kmf-valor'].forEach(function(id){ var el=document.getElementById(id); if(el) el.value=''; });
+  kmFrotaRender();
+}
+window.kmFrotaFormSubmeter = kmFrotaFormSubmeter;
+
+// Agrupa as leituras de km válidas por matrícula, ordenadas por data —
+// função interna partilhada por kmFrotaDistanciaMes() e
+// kmFrotaPorVeiculoMes(), para nunca duplicar a lógica entre as duas.
+function kmFrotaLeiturasPorMatricula_(){
+  var porMatricula = {};
+  KM_FROTA_LISTA.forEach(function(r){
+    if(!r || !r.matricula || !r.data || typeof r.km !== 'number' || isNaN(r.km)) return;
+    var d = new Date(r.data+'T00:00:00');
+    if(isNaN(d.getTime())) return;
+    if(!porMatricula[r.matricula]) porMatricula[r.matricula] = [];
+    porMatricula[r.matricula].push({ data: d, km: r.km });
+  });
+  Object.keys(porMatricula).forEach(function(m){ porMatricula[m].sort(function(a,b){ return a.data - b.data; }); });
+  return porMatricula;
+}
+
+// Distância de UMA matrícula num mês = (última leitura DENTRO do mês) -
+// (última leitura ANTES do mês). null quando falta uma leitura de cada
+// lado, ou quando a leitura dentro do mês é menor que a anterior (erro de
+// registo) — nunca inventa km inicial nem gera distância negativa.
+function kmFrotaDistanciaMatriculaMes_(leituras, inicioMes, fimMes){
+  var antes = null, dentro = null;
+  (leituras||[]).forEach(function(l){
+    if(l.data < inicioMes) antes = l;
+    else if(l.data <= fimMes) dentro = l;
+  });
+  if(antes && dentro && dentro.km >= antes.km) return dentro.km - antes.km;
+  return null;
+}
+
+// Despesa total de UMA matrícula num mês = soma de todos os 'valor'
+// lançados nesse mês para essa matrícula (independente de terem km ou
+// não na mesma linha — tal como a folha permitia).
+function kmFrotaDespesaMatriculaMes_(matricula, ano, mes){
+  var alvo = ano + '-' + String(mes).padStart(2,'0');
+  var total = 0;
+  KM_FROTA_LISTA.forEach(function(r){
+    if(!r || r.matricula !== matricula || typeof r.valor !== 'number' || isNaN(r.valor) || !r.data) return;
+    if(r.data.slice(0,7) === alvo) total += r.valor;
+  });
+  return total;
+}
+
+// Distância percorrida pela FROTA TODA num mês = soma das distâncias de
+// cada matrícula com dados suficientes (kmFrotaDistanciaMatriculaMes_).
+function kmFrotaDistanciaMes(ano, mes){
+  var inicioMes = new Date(ano, mes-1, 1);
+  var fimMes = new Date(ano, mes, 0, 23, 59, 59);
+  var porMatricula = kmFrotaLeiturasPorMatricula_();
+  var distanciaTotal = 0, matriculasComDados = 0;
+  Object.keys(porMatricula).forEach(function(m){
+    var d = kmFrotaDistanciaMatriculaMes_(porMatricula[m], inicioMes, fimMes);
+    if(d !== null){ distanciaTotal += d; matriculasComDados++; }
+  });
+  return { distanciaKm: distanciaTotal, matriculasComDados: matriculasComDados };
+}
+window.kmFrotaDistanciaMes = kmFrotaDistanciaMes;
+
+// Custo médio €/km da FROTA TODA = total TOConline já categorizado
+// "Veículos & Combustível" (finComprasPorCategoriaMes) ÷ km percorridos no
+// mês. Mantida como VERIFICAÇÃO CRUZADA do total gasto (o TOConline é a
+// fonte mais fiável do total pago) — kmFrotaPorVeiculoMes() é que dá o
+// custo/km por viatura, a partir da despesa lançada à mão aqui. Devolve
+// null explicitamente quando falta km suficiente — nunca inventa um
+// custo/km parcial.
+function kmFrotaCustoPorKm(ano, mes){
+  var porCategoria = (typeof finComprasPorCategoriaMes==='function') ? finComprasPorCategoriaMes(ano, mes) : {};
+  var custoVeiculos = porCategoria['Veículos & Combustível'] || 0;
+  var dist = kmFrotaDistanciaMes(ano, mes);
+  if(!dist.distanciaKm || dist.distanciaKm <= 0) return null;
+  return { custoPorKm: custoVeiculos / dist.distanciaKm, custoTotal: custoVeiculos, distanciaKm: dist.distanciaKm, matriculasComDados: dist.matriculasComDados };
+}
+window.kmFrotaCustoPorKm = kmFrotaCustoPorKm;
+
+// Custo/km POR VIATURA num mês — uma linha por matrícula conhecida (ficha
+// em FROTA_VEICULOS, ou já vista em KM_FROTA_LISTA). distanciaKm/custoPorKm
+// ficam null quando faltam dados, em vez de 0 disfarçado de real.
+function kmFrotaPorVeiculoMes(ano, mes){
+  var inicioMes = new Date(ano, mes-1, 1);
+  var fimMes = new Date(ano, mes, 0, 23, 59, 59);
+  var porMatricula = kmFrotaLeiturasPorMatricula_();
+  var matriculasConhecidas = {};
+  (Array.isArray(FROTA_VEICULOS) ? FROTA_VEICULOS : []).forEach(function(v){ if(v && v.matricula) matriculasConhecidas[v.matricula] = true; });
+  KM_FROTA_LISTA.forEach(function(r){ if(r && r.matricula) matriculasConhecidas[r.matricula] = true; });
+  return Object.keys(matriculasConhecidas).sort().map(function(m){
+    var distanciaKm = kmFrotaDistanciaMatriculaMes_(porMatricula[m]||[], inicioMes, fimMes);
+    var despesaTotal = kmFrotaDespesaMatriculaMes_(m, ano, mes);
+    var veiculo = (Array.isArray(FROTA_VEICULOS) ? FROTA_VEICULOS : []).find(function(v){ return v && v.matricula === m; });
+    return {
+      matricula: m,
+      modelo: veiculo ? veiculo.modelo : null,
+      distanciaKm: distanciaKm,
+      despesaTotal: despesaTotal,
+      custoPorKm: (distanciaKm && distanciaKm>0) ? (despesaTotal/distanciaKm) : null,
+    };
+  });
+}
+window.kmFrotaPorVeiculoMes = kmFrotaPorVeiculoMes;
+
+function kmFrotaRenderKpi(){
+  var el = document.getElementById('km-frota-kpi');
+  if(!el) return;
+  var hoje = new Date();
+  var r = kmFrotaCustoPorKm(hoje.getFullYear(), hoje.getMonth()+1);
+  var mesLbl = hoje.toLocaleDateString('pt-PT', { month:'long', year:'numeric' });
+  if(!r){
+    el.innerHTML = 'Verificação cruzada (TOConline): ainda sem km suficiente para calcular o custo/km médio de ' + mesLbl + '.';
+    el.style.color = 'var(--muted)';
+    return;
+  }
+  el.style.color = 'var(--muted)';
+  el.innerHTML = 'Verificação cruzada (TOConline): <strong style="color:var(--txt2)">€' + r.custoPorKm.toFixed(3).replace('.', ',') + ' / km</strong> em ' + mesLbl
+    + ' &nbsp;·&nbsp; ' + fmtEurT(r.custoTotal) + ' em Veículos &amp; Combustível ÷ ' + r.distanciaKm.toLocaleString('pt-PT') + ' km';
+}
+window.kmFrotaRenderKpi = kmFrotaRenderKpi;
+
+function kmFrotaRenderTabela(){
+  var tbody = document.getElementById('kmf-tbody');
+  if(!tbody) return;
+  var linhas = KM_FROTA_LISTA.slice().sort(function(a,b){
+    if(a.matricula !== b.matricula) return a.matricula < b.matricula ? -1 : 1;
+    return (b.data||'').localeCompare(a.data||'');
+  });
+  tbody.innerHTML = linhas.map(function(r){
+    return '<tr>'
+      + '<td style="font-size:13px">'+r.matricula+'</td>'
+      + '<td style="font-size:13px">'+tesFmtDataToco(r.data)+'</td>'
+      + '<td style="font-size:13px">'+(typeof r.km==='number' ? r.km.toLocaleString('pt-PT') : '—')+'</td>'
+      + '<td style="font-size:13px">'+(r.despesa||'—')+'</td>'
+      + '<td style="font-size:13px">'+(typeof r.valor==='number' ? fmtEurT(r.valor) : '—')+'</td>'
+      + '<td><button class="tbtn" style="font-size:11px;padding:3px 8px" onclick="kmFrotaRemover(\''+r.id+'\')">🗑</button></td>'
+    + '</tr>';
+  }).join('') || '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:16px">Sem registos ainda.</td></tr>';
+}
+window.kmFrotaRenderTabela = kmFrotaRenderTabela;
+
+function kmFrotaRenderPorVeiculo(){
+  var tbody = document.getElementById('kmf-porveiculo-tbody');
+  if(!tbody) return;
+  var hoje = new Date();
+  var lista = kmFrotaPorVeiculoMes(hoje.getFullYear(), hoje.getMonth()+1)
+    .filter(function(v){ return v.distanciaKm !== null || v.despesaTotal > 0; });
+  tbody.innerHTML = lista.map(function(v){
+    return '<tr>'
+      + '<td style="font-size:13px">'+v.matricula+'</td>'
+      + '<td style="font-size:13px">'+(v.modelo||'—')+'</td>'
+      + '<td style="font-size:13px">'+(v.distanciaKm!==null ? v.distanciaKm.toLocaleString('pt-PT')+' km' : '—')+'</td>'
+      + '<td style="font-size:13px">'+fmtEurT(v.despesaTotal)+'</td>'
+      + '<td style="font-size:13px;font-weight:700">'+(v.custoPorKm!==null ? '€'+v.custoPorKm.toFixed(3).replace('.',',') : '—')+'</td>'
+    + '</tr>';
+  }).join('') || '<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:16px">Sem dados este mês.</td></tr>';
+}
+window.kmFrotaRenderPorVeiculo = kmFrotaRenderPorVeiculo;
+
+function kmFrotaRender(){
+  kmFrotaRenderKpi();
+  kmFrotaRenderTabela();
+  frotaVeiculosRenderTabela();
+  kmFrotaRenderPorVeiculo();
+}
+window.kmFrotaRender = kmFrotaRender;
+
 function cfLimparFiltros(){
   var setVal = function(id, v){ var el = document.getElementById(id); if(el) el.value = v; };
   var hoje = new Date();
@@ -31162,8 +31609,11 @@ window.goPage = function(id) {
         selMes.setAttribute('data-inicializado','1');
       }
       if(typeof cfRender==='function') cfRender();
-      if(typeof tesHidratarComprasToco==='function') tesHidratarComprasToco().then(function(){ if(typeof cfRender==='function') cfRender(); }).catch(function(){});
+      if(typeof tesHidratarComprasToco==='function') tesHidratarComprasToco().then(function(){ if(typeof cfRender==='function') cfRender(); if(typeof kmFrotaRender==='function') kmFrotaRender(); }).catch(function(){});
       if(typeof fornHidratarCategorias==='function') fornHidratarCategorias().then(function(){ if(typeof cfRender==='function') cfRender(); }).catch(function(){});
+      if(typeof kmFrotaRender==='function') kmFrotaRender();
+      if(typeof kmFrotaHidratar==='function') kmFrotaHidratar();
+      if(typeof frotaVeiculosHidratar==='function') frotaVeiculosHidratar();
     }, 50);
   }
   if (id === 'admin-analise-vendas') {
